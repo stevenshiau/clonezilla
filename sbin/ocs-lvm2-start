@@ -1,0 +1,29 @@
+#!/bin/bash
+# Copyright 1999-2005 Gentoo Foundation
+# Distributed under the terms of the GNU General Public License v2
+
+# Borrow from Gentoo, modified to be used in clonezilla by Steven Shiau <steven _at_ nchc org tw>
+
+# LVM support for /usr, /home, /opt ....
+# This should be done *before* checking local
+# volumes, or they never get checked.
+			        
+# Load LVM module first,
+if modinfo dm_mod &>/dev/null; then
+  # Only for kernel 2.6
+  modprobe dm_mod
+fi
+sleep 1
+if [ -z "${CDBOOT}" ] && type vgscan &>/dev/null && \
+	[ -d /proc/lvm -o "$(grep device-mapper /proc/misc 2>/dev/null)" ]
+then
+	echo "Setting up the Logical Volume Manager"
+	vgscan >/dev/null
+	if [ "$?" -eq 0 ] && type vgchange &>/dev/null && \
+		[ -f /etc/lvmtab -o -d /etc/lvm ]
+	then
+		vgchange -a y
+	fi
+fi
+
+# vim:ts=4

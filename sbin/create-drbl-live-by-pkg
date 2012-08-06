@@ -1,0 +1,228 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: This script is a wrapper program to run create-drbl-live. Here we assign the required packages to create such a live media.
+
+#
+set -e
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+# debian_mirror_url_def, debian_mirror_security_url_def, DRBL_REPOSITORY_URL_def and DRBL_GPG_KEY_URL are loaded from drbl-ocs.conf
+# Based on Debian sid/lenny/etch...
+debian_dist_default="squeeze"
+# DRBL branch in drbl-core: experimental, unstable, testing, stable
+drbl_branch_default="unstable"
+# Live branch in drbl-core: experimental, unstable, testing, stable
+live_branch_default="experimental"
+# Type: xfce, gnome, kde, standard
+de_type_default="xfce"
+cpu_flavor_default="486"
+bootstrap_default="cdebootstrap"
+categories_default="main"
+
+# Common applications for all the version
+common_text_app="arj curlftpfs gpart mdetect boinc-client dnsutils bind9-host sysklogd myrescue pmount vim acpi laptop-detect acpi-support hotkey-setup ipmitool git samba-common-bin"
+# Fonts
+font_pkgs="ttf-arphic-newsung ttf-kochi-gothic"
+# Common applications for the version with X
+common_GUI_app="$font_pkgs x-ttcidfont-conf leafpad conky gpicview isomaster hardinfo pcmanfm xarchiver xfburn iceweasel-l10n-es-es iceweasel-l10n-fr iceweasel-l10n-it iceweasel-l10n-ja iceweasel-l10n-zh-cn iceweasel-l10n-zh-tw scim-chewing scim-tables-ja scim-tables-zh im-switch xresprobe lxrandr wpagui swfdec-mozilla wicd xvnc4viewer"
+
+# $debian_pkgs_for_gparted is from drbl.conf
+pkgs_for_xfce="thunar xfce4-terminal xnetcardconfig hicolor-icon-theme tango-icon-theme $common_text_app $common_GUI_app $debian_pkgs_for_gparted"
+pkgs_for_gnome="gnome-cups-manager $common_text_app $common_GUI_app $debian_pkgs_for_gparted"
+pkgs_for_kde="$common_text_app $common_GUI_app $debian_pkgs_for_gparted"
+pkgs_for_lxde="gdm3 xnetcardconfig $common_text_app $common_GUI_app $debian_pkgs_for_gparted"
+pkgs_for_standard="$common_text_app"
+gen_source_tarball="no"
+
+#
+check_if_root
+#
+prog="$(basename $0)"
+
+#
+USAGE() {
+   echo "$prog [OPTION]"
+   echo "OPTION:"
+   echo "-b, --branch [s|stable|t|testing|u|unstable]  specifies the DRBL branch to be used in Live CD. Default is stable."
+   echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (cdebootstrap or debootstrap). If not specified, $bootstrap_default will be used."
+   echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
+   echo "-d, --debian-dist [stable|testing|unstable|etch|lenny|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
+   echo "-e, --drbl-live-branch [s|stable|t|testing|u|unstable|e|experimental]  specifies the DRBL live branch to be used in Live CD. Default is stable."
+   echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 486 or 686. If it's not assigned, $cpu_flavor will be used."
+   echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
+   echo "-k, --package FILE  Specify package FILE to be installed in Live CD."
+   echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
+   echo "-m, --mirror-url URL  Assign the Debian repository URL instead of default one $debian_mirror_url_def. "
+   echo "-n, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
+   echo "-s, --mirror-security-url URL  Assign the Debian security repository URL instead of default one $debian_mirror_security_url_def."
+   echo "-o, --create-source-tarball  Create a corresponding source image to the binary image.  By default such an source image will not be created since this would require to download quite a few source packages."
+   echo "-t, --de-type [xfce|gnome|kde|standard]   Specify the type to create DRBL live. Default is xfce"
+   echo "-x, --extra-boot-param  EXTRA_PARAM  Assign extra boot parameter EXTRA_PARAM for the kernel to read. These parameters are the same with that from live-initramfs. Ex. \"noprompt\" can be use to not prompt to eject the CD on reboot."
+   echo "Ex: $0 -m xfce -i my-version-1"
+}
+
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -b|--branch)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              drbl_branch="$1"
+              shift
+            fi
+	    [ -z "$drbl_branch" ] && USAGE && exit 1
+            ;;
+    -bt|--bootstrap)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              bootstrap="$1"
+              shift
+            fi
+	    [ -z "$bootstrap" ] && USAGE && exit 1
+            ;;
+    -c|--categories)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              categories="$1"
+              shift
+            fi
+	    [ -z "$categories" ] && USAGE && exit 1
+            ;;
+    -d|--debian-dist)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              debian_dist="$1"
+              shift
+            fi
+	    [ -z "$debian_dist" ] && USAGE && exit 1
+            ;;
+    -e|--drbl-live-branch)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              live_branch="$1"
+              shift
+            fi
+	    [ -z "$live_branch" ] && USAGE && exit 1
+            ;;
+    -i|--assign-version-no)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              version_no="$1"
+              shift
+            fi
+	    [ -z "$version_no" ] && USAGE && exit 1
+            ;;
+    -f|--arch-flavor)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              cpu_flavor="$1"
+              shift
+            fi
+	    [ -z "$cpu_flavor" ] && USAGE && exit 1
+            ;;
+    -g|--drbl-repo-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              DRBL_REPOSITORY_URL="$1"
+              shift
+            fi
+	    [ -z "$DRBL_REPOSITORY_URL" ] && USAGE && exit 1
+            ;;
+    -k|--package)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              extra_pkgs="$1"
+              shift
+            fi
+	    [ -z "$extra_pkgs" ] && USAGE && exit 1
+            ;;
+    -m|--mirror-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              mirror_url="$1"
+              shift
+            fi
+	    [ -z "$mirror_url" ] && USAGE && exit 1
+            ;;
+    -o|--create-source-tarball)
+	    gen_source_tarball="yes"
+            shift ;;
+    -s|--mirror-security-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              mirror_security_url="$1"
+              shift
+            fi
+	    [ -z "$mirror_security_url" ] && USAGE && exit 1
+            ;;
+    -n|--live-kernel-pkg)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              live_kernel_ver="$1"
+              shift
+            fi
+	    [ -z "$live_kernel_ver" ] && USAGE && exit 1
+            ;;
+    -t|--de-type)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              de_type="$1"
+              shift
+            fi
+	    [ -z "$de_type" ] && USAGE && exit 1
+            ;;
+    -x|--extra-boot-param)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              live_extra_boot_param="$1"
+              shift
+            fi
+	    [ -z "$live_extra_boot_param" ] && USAGE && exit 1
+            ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+#
+# Apply default settings if not assigned
+[ -z "$debian_dist" ] && debian_dist="$debian_dist_default"
+[ -z "$categories" ] && categories="$categories_default"
+[ -z "$drbl_branch" ] && drbl_branch="$drbl_branch_default"
+[ -z "$live_branch" ] && live_branch="$live_branch_default"
+[ -z "$de_type" ] && de_type="$de_type_default"
+[ -n "$live_kernel_ver" ] && live_kernel_opt="-n $live_kernel_ver"
+[ -n "$version_no" ] && ver_no_opt="-i $version_no"
+[ -z "$DRBL_REPOSITORY_URL" ] && DRBL_REPOSITORY_URL="$DRBL_REPOSITORY_URL_def"
+[ -z "$mirror_url" ] && mirror_url="$debian_mirror_url_def"
+[ -z "$mirror_security_url" ] && mirror_security_url="$debian_mirror_security_url_def"
+[ -z "$cpu_flavor" ] && cpu_flavor="$cpu_flavor_default"
+[ -z "$bootstrap" ] && bootstrap=$bootstrap_default
+[ -n "$live_extra_boot_param" ] && live_extra_boot_param="-x $live_extra_boot_param"
+[ "$gen_source_tarball" = "yes" ] && gen_source_tarball_opt="-o"
+
+eval pkgs=\$pkgs_for_${de_type}
+time create-drbl-live -l en --bootstrap $bootstrap -c "$categories" -d $debian_dist -p $de_type -k "$pkgs $extra_pkgs" -b $drbl_branch -f $cpu_flavor -g $DRBL_REPOSITORY_URL -m $mirror_url -s $mirror_security_url -e $live_branch $gen_source_tarball_opt $live_extra_boot_param $live_kernel_opt $ver_no_opt 

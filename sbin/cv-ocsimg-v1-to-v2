@@ -1,0 +1,63 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ nchc org tw>
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# functions
+USAGE() {
+    echo "Usage:"
+    echo "To convert clonezilla image from version 1 to version 2:"
+    echo "$0 [OPTION] IMAGE-NAME1 IMAGE-NAME2..." 
+    echo "OPTION:"
+    language_help_prompt_by_idx_no
+    echo "-o, --ocsroot  DIR Assign the image home as DIR."
+    echo "Ex:"
+    echo "To convert clonezilla image sarge-base from version 1 to version 2"
+    echo "$0 sarge-base"
+}
+#
+check_if_root
+
+#
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l|--language)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              specified_lang="$1"
+              shift
+            fi
+	    [ -z "$specified_lang" ] && USAGE && exit 1
+            ;;
+    -o|--ocsroot)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ocsroot="$1"
+              shift
+            fi
+	    [ -z "$ocsroot" ] && USAGE && exit 1
+            ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+tarimg="$*"
+
+[ -z "$tarimg" ] && USAGE && exit 1
+
+ask_and_load_lang_set $specified_lang
+for img in $tarimg; do
+  convert_ocs_format_from_1.5_to_2.0_or_newer $ocsroot/$img/
+done
+
+exit 0

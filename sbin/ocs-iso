@@ -1,0 +1,880 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: This program will put Debian Live minimal + DRBL/Clonezilla program into a bootable iso file.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# other default settings
+# If insert_mode=prog_only, only copy DRBL/Clonezilla programs only, no ocs images.
+insert_mode="prog_and_img"
+img_size_sum=0
+# Default to output the result to iso file, another vaule is cdwriter.
+output_mode="file"
+# If there is any file larger then 2GB, we need to turn on -allow-limited-size option for genisoimage. Actually it can be 4GB. Anyway, here we use 2GB. (man genisoimage for more details)
+iso9660_file_size_limit="2000M"   # For command "find" to find the file size (unit: Bytes)
+
+# Excluding list for mkisofs
+# We will create it like this:
+# -x $DEBIAN_ISO_TMP/isolinux -x $DEBIAN_ISO_TMP/md5sum.txt -x $DEBIAN_ISO_TMP/casper/memtest 
+# "home" should also be excluded since if it exists, it will conflict with the real home later we will merge. Ref: https://sourceforge.net/forum/message.php?msg_id=7599463  Thanks to Andrew Bloxom for this idea.
+mkiso_exclude_list_1="isolinux syslinux md5sum.txt doc live etc pkg ocs-live.d utils"
+mkiso_exclude_list_2="home"  # This should not be a duplicated count.
+mkiso_exclude_list="$mkiso_exclude_list_1 $mkiso_exclude_list_2"
+# Flag to put EFI booting image in iso
+enabled_EFI=""
+
+#
+prog="$(basename $0)"
+prog_option="$*"
+
+# functions
+USAGE() {
+    echo "Usage:"
+    echo "To put clonezilla image into live CD:"
+    echo "$prog [OPTION] CLONEZILLA_IMAGE_NAME"
+    echo "OPTION:"
+    language_help_prompt_by_idx_no
+    echo "-a, --file-name-prefix NAME    Assign the output file name as NAME.iso. $0 will auto append '.iso' in the end of filename."
+    echo "-b, --bg-mode  [text|graphic]  Assign the background of boot menu. Default is graphic"
+    echo "-m, --custom-ocs  PATH/custom-ocs  Use the customized ocs program 'custom-ocs' instead of the default one. Note! PATH should be assigned so that it can be found. This is advanced mode."
+    echo "-e, --extra-param  PARAM  Assign extra parameter PARAM for clonezilla live to run, PARAM will be appended when run in ocs-live-restore or ocs."
+    echo "-g, --ocs-live-language LANGUAGE Assign the language when using clonezilla live, available languages are en_US.UTF-8, zh_TW.UTF-8 "
+    echo "-k, --ocs-live-keymap KEYMAP Assign the keyboard when using clonezilla live. Use full path for KEYMAP, for example: /usr/share/keymaps/i386/azerty/fr.kmap.gz. If 'NONE' is used, the default one (US keyboard) will be use."
+    echo "-t, --ocs-live-batch  Set clonezilla live to run in batch mode, usually it's for restoring. If this mode is set, some dialog question will be ignored."
+    echo "-i, --assign-version-no NO  Assign the version no as NO instead of date. This only works when using with option -s."
+    echo "-j, --debian-iso ISO_FILE  Assign Debian live template iso file name as ISO_FILE to be used to create Clonezilla live."
+    echo "-n, --debian-iso-etc-url-path ISO_ETC_FILE_URL  Assign the url (Ex. http://localhost/clonezilla-live/template-iso) for Debian live template iso file as ISO_FILE_URL to be used to create Clonezilla live."
+    echo "-p, --image-path   Assign the clonezilla image path where CLONEZILLA_IMAGE_NAME exists. Default = $ocsroot"
+    echo "-s, --skip-image   Do not include any clonezilla image. The is used to created a live CD with DRBL/Clonezilla programs only."
+    echo "-f, --on-the-fly DEV  Write the output to CD/DVD writer DEV (such as /dev/hdc) instead of creating an ISO file."
+    echo "-o, --normal-menu  When a clonezilla image is inserted, by default only restore menu will be shown in the created ISO file. If you want to show normal menu, i.e. with save and restore menu, use this one."
+    echo "-x, --extra-boot-param  EXTRA_PARAM  Assign extra boot parameter EXTRA_PARAM for clonezilla live kernel to read. These parameters are the same with that from live-initramfs. Ex. \"noprompt\" can be use to not prompt to eject the CD on reboot."
+    echo "-u, --include-dir DIR     Include a dir in the target iso file."
+    echo "--ocs-live-boot-menu-option EXTRA_OPTION Assign an extra option for ocs-live-boot-menu. //NOTE// Do not put '-' in this EXTRA_OPTION, $0 will add that automatically. e.g. if you want to add -s1 for ocs-live-boot-menu to run, use 's1' only."
+    echo "$prog will download a template Debian live CD for clonezilla iso file if ncecessary. You can also download it by yourself, and put it in the working directory when you run $prog. If you want to create that template iso file in Debian Etch, run create-debian-live."
+    echo "NOTE! Due to the limitation in mkisofs, this program does not work in clonezilla image file larger than $FILE_LIMIT MB."
+    echo "Ex:"
+    echo "To put clonezilla image sarge-ocs (located in /home/partimag in clonezilla server) to Live CD, you can run:"
+    echo "  $prog sarge-ocs"
+    echo "To put more images, just append them, such as:"
+    echo "  $prog sarge-ocs etch-ocs"
+    echo "To create a Live CD with DRBL/Clonezilla programs:"
+    echo "  $prog -s"
+    echo "To specify the Debian live template iso, run like this:"
+    echo "  $prog -j debian-live-for-ocs-1.0.1-3.iso -n http://localhost/clonezilla-live/template-iso/testing -s"
+    echo "To put clonezilla image sarge-ocs, etch-ocs to to Live CD, and write it to cd writer /dev/hdc, you can run:"
+    echo "  $prog -f /dev/hdc sarge-ocs etch-ocs"
+    echo "To create an iso file for restoring with clonezilla image sarge-r5 builtin, and make it boot then restore the image sarge-r5 to hda in unattended mode (Only confirmation in the beginning), you can run:"
+    echo "  $prog -g en_US.UTF-8 -t -k NONE -e \"-b -c restoredisk sarge-r5 hda\" sarge-r5"
+    echo "To create an iso file to run your own custom-ocs program:"
+    echo "  $prog -g en_US.UTF-8 -k NONE -s -m ./custom-ocs"
+}
+#
+check_file_size_in_ocs_image() {
+  local img_path="$1"
+  local size_t
+  for ifile in $img_path/*; do
+    size_t="$(du -Lms $ifile | awk -F" " '{print $1}')"
+    if [ "$size_t" -gt "$FILE_LIMIT" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "$ifile size ($size_t MB) is too large! $msg_mkisofs_unable_process_that"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_are_u_sure_u_want_to_continue"
+      echo -n "[y/N] "
+      read cont_ans
+      case "$cont_ans" in
+        y|Y|[yY][eE][sS])
+           echo $msg_ok_let_do_it
+           ;;
+        *)
+           echo "Abort!"
+           exit 2
+      esac
+    fi
+  done
+}
+
+#
+clean_tmp_dir() {
+  if [ -d "$DEBIAN_ISO_TMP" -a -n "$DEBIAN_ISO_TMP" ]; then
+    # Force to unmount,	althouth it might have beed unmounted, or maybe not (ctrl-c interrupt).
+    umount $DEBIAN_ISO_TMP &>/dev/null
+    rmdir $DEBIAN_ISO_TMP &>/dev/null
+  fi
+  if [ -d "$ISOSYSLNX_TMP" -a -n "$(echo $ISOSYSLNX_TMP | grep "ocs_isosyslnx")" ]; then
+    rm -rf $ISOSYSLNX_TMP
+  fi
+  if [ -d "$WD_TMP" -a -n "$(echo $WD_TMP | grep "ocs_iso_wd")" ]; then
+    rm -rf $WD_TMP
+  fi
+} # End of clean_tmp_dir
+
+#
+check_if_root
+
+# default settings:
+ocs_live_batch="no"
+custom_ocs=""
+normal_menu_with_insert_image="no"
+template_mode=""
+
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -a|--file-name-prefix)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              target_iso_prefix="$1"
+              shift
+            fi
+	    [ -z "$target_iso_prefix" ] && USAGE && exit 1
+            ;;
+    -l|--language)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              specified_lang="$1"
+              shift
+            fi
+	    [ -z "$specified_lang" ] && USAGE && exit 1
+            ;;
+    -b|--bg-mode)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              bg_mode="$1"
+              shift
+            fi
+	    [ -z "$bg_mode" ] && USAGE && exit 1
+            ;;
+    -m|--custom-ocs)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              custom_ocs="$1"
+              shift
+            fi
+	    [ -z "$custom_ocs" ] && USAGE && exit 1
+            ;;
+    -e|--extra-param)
+            shift
+	    # extra param might begin with -, i.e. Ex. -b -p true. Therefore we should not skip this.
+            ocs_live_extra_param="$1"
+            shift
+	    [ -z "$ocs_live_extra_param" ] && USAGE && exit 1
+            ;;
+    -i|--assign-version-no)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              version_no="$1"
+              shift
+            fi
+	    [ -z "$version_no" ] && USAGE && exit 1
+            ;;
+    -g|--ocs-live-language)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ocs_lang="$1"
+              shift
+            fi
+	    [ -z "$ocs_lang" ] && USAGE && exit 1
+            ;;
+    -k|--ocs-live-keymap)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ocs_live_keymap="$1"
+              shift
+            fi
+	    [ -z "$ocs_live_keymap" ] && USAGE && exit 1
+            ;;
+    -p|--image-path)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              image_path="$1"
+              shift
+            fi
+	    [ -z "$image_path" ] && USAGE && exit 1
+            ;;
+    -s|--skip-image)
+            insert_mode="prog_only"
+            shift ;;
+    -t|--ocs-live-batch)
+            ocs_live_batch="yes"
+            shift ;;
+    -o|--normal-menu)
+            normal_menu_with_insert_image="yes"
+            shift ;;
+    -f|--on-the-fly)
+            shift
+	    output_mode="cdwriter"
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              output_dev="$1"
+              shift
+            fi
+	    [ -z "$output_dev" ] && USAGE && exit 1
+            ;;
+    -j|--debian-iso)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              DEBIAN_ISO="$1"
+	      template_mode="from-download-live-media"
+              shift
+            fi
+	    [ -z "$DEBIAN_ISO" ] && USAGE && exit 1
+            ;;
+    -n|--debian-iso-etc-url-path)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              DEBIAN_ISO_ETC_PATH="$1"
+              shift
+            fi
+	    [ -z "$DEBIAN_ISO_ETC_PATH" ] && USAGE && exit 1
+            ;;
+    -x|--extra-boot-param)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              live_extra_boot_param="$1"
+              shift
+            fi
+	    [ -z "$live_extra_boot_param" ] && USAGE && exit 1
+            ;;
+    --ocs-live-boot-menu-option)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ocs_live_boot_menu_option="$1"
+              shift
+            fi
+	    [ -z "$ocs_live_boot_menu_option" ] && USAGE && exit 1
+            ;;
+    -u|--include-dir)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              include_dir="$1"
+	      include_dir_graft_point="$include_dir=$include_dir"
+              shift
+            fi
+	    [ -z "$include_dir" ] && USAGE && exit 1
+            ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+ocs_image="$*"
+# strip the / to avoid problem
+ocs_image="$(echo $ocs_image | sed -e "s|/||g")"
+      
+[ -z "$ocs_image" -a "$insert_mode" = "prog_and_img" ] && USAGE && exit 1
+[ -z "$image_path" ] && image_path=$ocsroot
+[ -z "$bg_mode" ] && bg_mode="$BG_MODE_DEF"
+[ -z "$DEBIAN_ISO_ETC_PATH" ] && DEBIAN_ISO_ETC_PATH="$DEBIAN_ISO_ETC_PATH_DEF"
+[ -z "$DEBIAN_ISO" ] && DEBIAN_ISO="$DEBIAN_ISO_DEF"
+[ -n "$ocs_live_boot_menu_option" ] && ocs_live_boot_menu_option="-$ocs_live_boot_menu_option"
+DEBIAN_ISO_URL="$DEBIAN_ISO_ETC_PATH/$DEBIAN_ISO"
+md5_file_url="$DEBIAN_ISO_ETC_PATH/$md5_file"
+
+#
+ask_and_load_lang_set $specified_lang
+
+#
+if ! type genisoimage &>/dev/null; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Program genisoimage not found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop"
+  exit 1
+fi
+
+# Check if genisoimage support -efi-boot option
+if [ -n "$(LC_ALL=C genisoimage --help 2>&1 | grep -E -- "-efi-boot")" ]; then
+  enabled_EFI="true"
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Warning! Setting EFI boot image name is not supported in genisoimage!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  sleep 5
+  enabled_EFI="false"
+fi
+
+if [ "$output_mode" = "cdwriter" -a type wodim &>/dev/null ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Program wodim is not aviailable! You have to install it."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop"
+  exit 1
+fi
+
+if [ -n "$custom_ocs" -a ! -e "$custom_ocs" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "File $custom_ocs not found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop"
+  exit 1
+fi
+
+# Format the lang variable. This is for clonezilla live running, not for ocs-iso.
+case "$ocs_lang" in 
+  zh_TW.BIG5|zh_TW.big5|tw.BIG5)
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+   echo "For Traditional Chinese locale, Clonezilla live only supports unicode (zh_TW.UTF-8), not Big5 encoding (zh_TW.BIG5). Force to use UTF-8 for Traditional Chinese in Clonezilla live."
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   ocs_lang="zh_TW.UTF-8" ;;
+  zh_TW.UTF-8|zh_TW.utf8|tw.UTF-8|tw.utf8)
+   ocs_lang="zh_TW.UTF-8" ;;
+esac
+
+# Decide where is the $LIVE_MEDIA
+get_live_media_mnt_point &>/dev/null
+
+# Some temp dirs
+# Thanks to Orgad Shaneh. Since the temp files from Clonezilla live won't take too much space, we just use /tmp/ to store these temp files.
+#if [ -w ./ ]; then
+#  ISOSYSLNX_TMP="$(mktemp -d ./isolnx.XXXXXX)"
+#  WD_TMP="$(mktemp -d ./iso_wd.XXXXXX)"
+#else
+#  ISOSYSLNX_TMP="$(mktemp -d /tmp/isolnx.XXXXXX)"
+#  WD_TMP="$(mktemp -d /tmp/iso_wd.XXXXXX)"
+#fi
+ISOSYSLNX_TMP="$(mktemp -d /tmp/ocs_isosyslnx.XXXXXX)"
+WD_TMP="$(mktemp -d /tmp/ocs_iso_wd.XXXXXX)"
+
+#
+trap clean_tmp_dir HUP INT QUIT TERM EXIT
+
+# Try to find if it is running on live cd/usb already
+if [ -z "$template_mode" ]; then
+  if [ -n "$LIVE_MEDIA" ]; then
+    # It's running from Clonezilla live media, use the existing resource
+    template_mode="from-booting-live-media"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Found a Clonezilla live media... Will use that as a template..."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  else
+    template_mode="from-downloaded-live-media"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "No Clonezilla live media was found... Will use the downloaded template from Clonezilla repository..."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi 
+fi 
+
+if [ "$template_mode" = "from-downloaded-live-media" ]; then
+  if [ ! -f "$DEBIAN_ISO" ]; then
+    echo "We need Debian live CD for Clonnezilla to create clonezilla cd."
+    echo "Downloadling the iso file from $DEBIAN_ISO_URL..."
+    wget $DEBIAN_ISO_URL
+    get_iso_rc=$?
+    # validate it
+    if [ "$get_iso_rc" -eq 0 ]; then
+      echo -n "Validating $DEBIAN_ISO... "
+      md5_tmp="$(mktemp -d /tmp/isomd5.XXXXX)"
+      #  wget http://opensource.nchc.org.tw/drbl-core/iso/MD5SUMS
+      echo -n "Downloading $md5_file_url... "
+      wget $wget_opt -P "$md5_tmp" $md5_file_url
+      if ! grep -w "$DEBIAN_ISO" $md5_tmp/MD5SUMS | md5sum -c; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "$DEBIAN_ISO is broken! Something went wrong! Try to remove $DEBIAN_ISO and run this program again."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop"
+        exit 1
+      fi
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Unable to download $DEBIAN_ISO_URL!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop"
+      exit 1
+    fi
+  else
+    echo "A template iso ($DEBIAN_ISO) was found!"
+  fi
+fi
+
+allow_limited_size_flag=""
+if [ "$insert_mode" = "prog_and_img" ]; then
+  # 2 cases:
+  # (1) normal_menu_with_insert_image=no, i.e. only restore menu. ocs-live-restore is the main program.
+  # If it's not batch mode for clonezilla live (especially for restoring), by default we have to append "-x --restore-only", and especially before any other parameters, so that ocs-sr will run like:
+  # ocs-sr -l $ocs_lang -p true -x --restore-only -b restoredisk sarge_image
+  # (2) normal_menu_with_insert_image=yes, i.e. normal menu. ocs-live-general is the main program. Threfore no extra param.
+  if [ "$ocs_live_batch" = "no" ]; then
+    case "$normal_menu_with_insert_image" in
+      no) ocs_live_extra_param="-x --restore-only $ocs_live_extra_param" ;;
+      yes) ocs_live_extra_param="" ;;
+    esac
+  fi
+
+  echo "Creating clonezilla ISO with image(s) $ocs_image from $image_path..."
+  # here we put ocs-live-restore as ocs-live inside live cd, and it will be shown as /$LIVE_MEDIA/ocs-live when using in running live CD.
+  # use the 1st image name as iso filename
+  iso_label_tag="$(echo $ocs_image | awk -F" " '{print $1}')"
+  # mkisofs only allow 32 characters for volume ID
+  iso_label_tag="${iso_label_tag:0:31}"
+  ocs_imgs_with_abs_path=""
+  for im in $ocs_image; do
+    if [ ! -d "$image_path/$im" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$image_path/$im $msg_NOT_found!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop"
+      exit 1
+    fi
+    if [ -z "$allow_limited_size_flag" ]; then
+      if [ -n "$(find $image_path/$im -size +${iso9660_file_size_limit} -print)" ]; then
+        allow_limited_size_flag="yes"
+      fi
+    fi
+    # we will put all the images in $ocsroot/ inside ISO file.
+    # Since we will always use /home/partimag as the image root in Clonezilla live, here the path in the created iso is /home/partimag/
+    ocs_imgs_with_abs_path="$ocs_imgs_with_abs_path /home/partimag/$im/=$image_path/$im/"
+    convert_ocs_format_from_1.5_to_2.0_or_newer $image_path/$im/
+    check_file_size_in_ocs_image $image_path/$im/
+    img_size="$(du -ms $image_path/$im/ | awk -F" " '{print $1}')" # unit: MB
+    img_size_sum="$((img_size_sum+img_size))"
+  done
+else
+  echo "Creating clonezilla Live CD ISO file..."
+  # if version_no is not set, use date (Ex. 20070409)
+  [ -z "$version_no" ] && version_no="$(date +%Y%m%d)"
+  iso_label_tag="${version_no}"
+fi
+boot_menu_opt="--version-no $iso_label_tag"
+
+if [ -n "$target_iso_prefix" ]; then
+  target_iso="${target_iso_prefix}.iso"
+else
+  target_iso="clonezilla-live-${iso_label_tag}.iso"
+fi
+echo "The output file name is: $target_iso."
+
+if [ "$template_mode" = "from-booting-live-media" ]; then
+  DEBIAN_ISO_TMP="$LIVE_MEDIA"
+else
+  DEBIAN_ISO_TMP="$(mktemp -d /tmp/ocs-iso.XXXXXX)"
+  mount -o loop,ro $DEBIAN_ISO $DEBIAN_ISO_TMP
+fi
+
+#
+# Possible kernel/initrd paths are /casper (created by casper) or /live (created by live-initramfs)
+# Find the kernel and initrd in $DEBIAN_ISO_TMP/casper or $DEBIAN_ISO_TMP/live
+# Ex: $DEBIAN_ISO_TMP/casper/vmlinuz1, /$DEBIAN_ISO_TMP/casper/initrd1.img
+# $live_sys_files_dir_list is from drbl-ocs.conf.
+# Possible kernel/initrd paths are /casper (created by casper) or /live (created by live-initramfs)
+sys_files_dir=""
+for i in $live_sys_files_dir_list; do
+  krnfile_full_path="$(find $DEBIAN_ISO_TMP/$i/ -maxdepth 1 -name "vmlinuz*" -print 2>/dev/null)"
+  if [ -n "$krnfile_full_path" ]; then
+    krnfile="$(basename $krnfile_full_path)"
+    sys_files_dir="$i"
+    irdfile_full_path="$(find $DEBIAN_ISO_TMP/$i/ -maxdepth 1 -name "initrd*" -print)"
+    irdfile="$(basename $irdfile_full_path)"
+    break
+  fi
+done
+
+#
+if [ -z "$sys_files_dir" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No system files from template live iso are found! Something went wrong!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop"
+  exit 1
+fi
+
+if [ -z "$krnfile" -o -z "$irdfile" ]; then
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+   echo "Kernel and initrd files NOT found in path $DEBIAN_ISO_TMP/$sys_files_dir/!"
+   echo "$msg_program_stop"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   exit 1
+fi
+
+if [ "$template_mode" = "from-booting-live-media" ]; then
+  # From boot media (clonezilla live), DEBIAN_ISO_TMP is LIVE_MEDIA
+  # The dirs/files in Clonezilla live:
+  # -r--r--r--  1 root root  117 2010-05-21 21:17 Clonezilla-Live-Version
+  # -r--r--r--  1 root root  18K 2010-05-21 21:05 COPYING
+  # dr-xr-xr-x  2 root root 2.0K 2010-05-21 21:17 isolinux/
+  # dr-xr-xr-x  2 root root 2.0K 2010-05-21 21:17 live/
+  # dr-xr-xr-x  2 root root 2.0K 2010-05-21 21:17 syslinux/
+  # dr-xr-xr-x  5 root root 2.0K 2010-05-21 21:17 utils/
+  # We need all of them.
+  template_iso_size="$(LC_ALL=C du -Lmsc $LIVE_MEDIA/{Clonezilla-Live-Version,COPYING,isolinux,$sys_files_dir,syslinux,utils} | tail -n 1 | awk -F" " '{print $1}')"
+else
+  # From iso file (debian-live-for-ocs.iso)
+  # The dirs/files in Debian live for OCS:
+  # dr-xr-xr-x  3 root root 4.0K 2010-05-28 18:03 doc/
+  # dr-xr-xr-x  2 root root 4.0K 2010-05-28 18:03 isolinux/
+  # dr-xr-xr-x  2 root root 2.0K 2010-05-28 18:03 live/
+  # -r--r--r--  1 root root 3.7K 2010-05-28 18:03 md5sum.txt
+  # We only need dirs isolinux and live only
+  template_iso_size="$(LC_ALL=C du -Lmsc $DEBIAN_ISO_TMP/{isolinux,$sys_files_dir} | tail -n 1 | awk -F" " '{print $1}')"
+fi
+target_iso_size="$(($template_iso_size + $img_size_sum))"
+
+#
+BOOT_ITEM_DIR=$ISOSYSLNX_TMP/$sys_files_dir
+[ ! -d $BOOT_ITEM_DIR ] && mkdir $BOOT_ITEM_DIR
+echo -n "Copying the system files to working dir... This might take a few minutes... "
+cp -af $DEBIAN_ISO_TMP/$sys_files_dir $ISOSYSLNX_TMP/
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Failed to copy system files to working dir..."
+  echo "$msg_program_stop"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  exit 1
+fi
+echo "done!"
+
+#
+echo "Estimated target ISO file \"$target_iso\" size: $target_iso_size MB"
+if [ "$target_iso_size" -gt "$FILE_LIMIT" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_ocs_iso_too_big_for_DVD"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_are_u_sure_u_want_to_continue"
+  echo -n "[y/N] "
+  read cont_ans
+  case "$cont_ans" in
+    y|Y|[yY][eE][sS])
+       echo $msg_ok_let_do_it
+       ;;
+    *)
+       echo "Abort!"
+       exit 2
+  esac
+elif [ "$target_iso_size" -gt "$CD_FILE_LIMIT" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_ocs_iso_too_big_for_CD"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_are_u_sure_u_want_to_continue"
+  echo -n "[y/N] "
+  read cont_ans
+  case "$cont_ans" in
+    y|Y|[yY][eE][sS])
+       echo $msg_ok_let_do_it
+       ;;
+    *)
+       echo "Abort!"
+       exit 2
+  esac
+fi
+
+# output setting for clonezilla live
+mkdir -p $WD_TMP/etc/ocs
+
+# Decide ocs_live_run
+# $DRBL_SCRIPT_PATH/sbin/custom-ocs is copied from $LIVE_MEDIA/pkg/custom-ocs by /etc/ocs/ocs-live.d/S03prep-drbl-clonezilla when booting
+if [ -n "$custom_ocs" ]; then
+    custom_ocs_opt="/pkg/custom-ocs=$custom_ocs"
+    ocs_live_run="custom-ocs"
+else
+  if [ "$insert_mode" = "prog_and_img" ]; then
+    case "$normal_menu_with_insert_image" in
+      no) ocs_live_run="ocs-live-restore" ;;
+      yes) ocs_live_run="ocs-live-general" ;;
+    esac
+  else # prog_only mode
+    ocs_live_run="ocs-live-general"
+  fi
+fi
+
+# Create the iso image file
+# isolinux should be rw, so we have to copy it, and exclude the one in iso image.
+mkdir -p $ISOSYSLNX_TMP/isolinux/ $ISOSYSLNX_TMP/syslinux/
+# rsync -a --exclude f*.txt --exclude boot.cat --exclude isolinux.txt --exclude isolinux.bin --exclude splash.rle --exclude doc $DRBL_SCRIPT_PATH/pkg/syslinux/* $ISOSYSLNX_TMP/isolinux/
+# we have to overwrite isolinux.bin since vesamenu.c32 should be same version with that.
+# For isolinux
+cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file $ISOSYSLNX_TMP/isolinux/
+# For syslinux
+cp -af $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file $ISOSYSLNX_TMP/syslinux/
+# Copy the EFI boot files
+if [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootia32.efi" -a -e "$DEBIAN_ISO_TMP/EFI/boot/bootx64.efi" ]; then
+  cp -af $DEBIAN_ISO_TMP/EFI $ISOSYSLNX_TMP/
+  cp -af $ocs_logo_grub2_img_png $ISOSYSLNX_TMP/EFI/boot/
+fi
+
+etherboot_zlilo="$($query_pkglist_cmd drbl-etherboot 2>/dev/null | grep -E "eb-.*-etherboot-pci.zlilo$")"
+# we have to force it name as etherboot.zdsk, since isolinux only uses the "plain" ISO 9660 filenames, i.e. it does not support Rock Ridge or Joliet filenames.
+# ref: http://syslinux.zytor.com/archives/2006-October/007440.html
+# "-" will be regards as "_" if you want to use "-" for isolinux.
+# In syslinux on vfat, etherboot.zlilo is too long, make it ever shorter as eb.zli
+if [ -n "$etherboot_zlilo" ]; then
+  # This is run in DRBL server
+  cp -af $etherboot_zlilo $BOOT_ITEM_DIR/eb.zli
+else
+  # This is run in Clonezilla live with casper or live mechanism
+  for i in $live_sys_files_dir_list; do
+    if [ -e "$LIVE_MEDIA/$i/eb.zli" ]; then
+      cp -af $LIVE_MEDIA/$i/eb.zli $BOOT_ITEM_DIR/eb.zli
+      break
+    fi
+  done
+fi
+# same reason, we have to use different name in isolinux
+# gPXE is deprecated, we will use iPXE. We keep this gpxe part for ref only.
+gpxe_lkn="$($query_pkglist_cmd gpxe 2>/dev/null | grep -E "gpxe.lkrn$")"
+if [ -n "$gpxe_lkn" ]; then
+  # This is run in DRBL server
+  cp -af $gpxe_lkn $BOOT_ITEM_DIR/gpxe.lkn
+else
+  # This is run in Clonezilla live with casper or live mechanism
+  for i in $live_sys_files_dir_list; do
+    if [ -e "$LIVE_MEDIA/$i/gpxe.lkn" ]; then
+      cp -af $LIVE_MEDIA/$i/gpxe.lkn $BOOT_ITEM_DIR/gpxe.lkn
+      break
+    fi
+  done
+fi
+# same reason, we have to use different name in isolinux
+ipxe_lkn="$($query_pkglist_cmd ipxe 2>/dev/null | grep -E "ipxe.lkrn$")"
+if [ -n "$ipxe_lkn" ]; then
+  # This is run in DRBL server
+  cp -af $ipxe_lkn $BOOT_ITEM_DIR/ipxe.lkn
+else
+  # This is run in Clonezilla live with casper or live mechanism
+  for i in $live_sys_files_dir_list; do
+    if [ -e "$LIVE_MEDIA/$i/ipxe.lkn" ]; then
+      cp -af $LIVE_MEDIA/$i/ipxe.lkn $BOOT_ITEM_DIR/ipxe.lkn
+      break
+    fi
+  done
+fi
+# same reason, we have to use different name in isolinux
+if [ -e "$fdos_img_src" ] ; then
+  cp -af $fdos_img_src $BOOT_ITEM_DIR/freedos.img
+else
+  # This is run in Clonezilla live with casper or live mechanism
+  for i in $live_sys_files_dir_list; do
+    if [ -e "$LIVE_MEDIA/$i/freedos.img" ]; then
+      cp -af $LIVE_MEDIA/$i/freedos.img $BOOT_ITEM_DIR/freedos.img
+      break
+    fi
+  done
+fi
+# $memtest86_file (memtest86) is 9 characters, will go wrong when it's FAT (usb flash drive). We use memtest to overwrite the one comes from Debian live.
+# Since live helper will put memtest in casper, we can choose to copy it or not.
+# If we really want to use the memtest from drbl, we have to remove $DEBIAN_ISO_TMP/casper/memtest before doing mkisofs, otherwise it will complain like:
+# Using MEMTEST000.;1 for  /tmp/ocs-iso.E15902/casper/memtest (memtest)
+# genisoimage: Error: '/tmp/isolnx.V15903/casper/memtest' and '/tmp/ocs-iso.E15902/casper/memtest' have the same Rock Ridge name 'memtest'.
+# Unable to sort directory /tmp/ocs-iso.E15902/casper
+# since $DEBIAN_ISO_TMP/casper/memtest is read-only, we can not remove it. Later we will exclude that later by mkisofs.
+if [ -e "$memtest86_file" ]; then
+  cp -af $memtest86_file $BOOT_ITEM_DIR/memtest
+else
+  # This is run in Clonezilla live with casper or live mechanism
+  for i in $live_sys_files_dir_list; do
+    if [ -e "$LIVE_MEDIA/$i/memtest" ]; then
+      cp -af $LIVE_MEDIA/$i/memtest $BOOT_ITEM_DIR/memtest
+      break
+    fi
+  done
+fi
+
+# Excluding list for mkisofs
+for i in $live_sys_files_dir_list; do
+  if [ -e "$DEBIAN_ISO_TMP/$i/memtest" ]; then
+    mkiso_exclude_list="$mkiso_exclude_list $i/memtest"
+    break
+  fi
+done
+mkiso_exclude_opt=""
+for i in $mkiso_exclude_list; do
+  mkiso_exclude_opt="$mkiso_exclude_opt -x $DEBIAN_ISO_TMP/$i"
+done
+
+# Find the boot param $boot_param
+get_live_boot_param $DEBIAN_ISO_TMP/isolinux
+
+#
+if [ -n "$ocs_image" ]; then
+  # Image is included
+  # For isolinux
+  ocs-live-boot-menu $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_keymap=\"$ocs_live_keymap\" ocs_live_batch=\"$ocs_live_batch\" ocs_lang=\"$ocs_lang\"" --title "clonezilla live with img $ocs_image" isolinux $ISOSYSLNX_TMP/isolinux/
+  # For syslinux
+  ocs-live-boot-menu $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_keymap=\"$ocs_live_keymap\" ocs_live_batch=\"$ocs_live_batch\" ocs_lang=\"$ocs_lang\"" --title "clonezilla live with img $ocs_image" syslinux $ISOSYSLNX_TMP/syslinux/
+  # For grub2 efi
+  if [ -e "$ISOSYSLNX_TMP/EFI/boot/bootia32.efi" -a -e "$ISOSYSLNX_TMP/EFI/boot/bootx64.efi" ]; then
+    ocs-live-boot-menu $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_keymap=\"$ocs_live_keymap\" ocs_live_batch=\"$ocs_live_batch\" ocs_lang=\"$ocs_lang\"" --title "clonezilla live with img $ocs_image" grub2-efi $ISOSYSLNX_TMP/EFI/boot/
+  fi
+else
+  # No image is included
+  # For isolinux
+  ocs-live-boot-menu $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_keymap=\"$ocs_live_keymap\" ocs_live_batch=\"$ocs_live_batch\" ocs_lang=\"$ocs_lang\"" isolinux $ISOSYSLNX_TMP/isolinux/
+  # For syslinux
+  ocs-live-boot-menu $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_keymap=\"$ocs_live_keymap\" ocs_live_batch=\"$ocs_live_batch\" ocs_lang=\"$ocs_lang\"" syslinux $ISOSYSLNX_TMP/syslinux/
+  # For grub2 efi
+  if [ -e "$ISOSYSLNX_TMP/EFI/boot/bootia32.efi" -a -e "$ISOSYSLNX_TMP/EFI/boot/bootx64.efi" ]; then
+    ocs-live-boot-menu $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_keymap=\"$ocs_live_keymap\" ocs_live_batch=\"$ocs_live_batch\" ocs_lang=\"$ocs_lang\"" grub2-efi $ISOSYSLNX_TMP/EFI/boot/
+  fi
+fi
+
+#
+echo "Preparing syslinux, syslinux.exe, makeboot.sh, and makeboot.bat in dir utils... "
+# If it's in Clonezilla live environment, we have those files
+if [ -e "$LIVE_MEDIA/utils/linux/syslinux" -a \
+     -e "$LIVE_MEDIA/utils/mbr/mbr.bin" -a \
+     -e "$LIVE_MEDIA/utils/win32/syslinux.exe" ]; then
+  cp -rf $LIVE_MEDIA/utils $ISOSYSLNX_TMP
+else
+  isolinux_ver="$(LC_ALL=C strings $ISOSYSLNX_TMP/isolinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+  put_syslinux_makeboot_for_usb_flash $ISOSYSLNX_TMP $isolinux_ver
+fi
+if [ -d "$ISOSYSLNX_TMP/utils" ]; then
+  utils_files_dir_graft_point="/utils/=$ISOSYSLNX_TMP/utils/"
+fi
+
+# put version tag
+# The content is like clonezilla-live-20070308
+echo "clonezilla-live-${iso_label_tag}" > $ISOSYSLNX_TMP/Clonezilla-Live-Version
+echo "This Clonezilla live iso file was created by this command:" >> $ISOSYSLNX_TMP/Clonezilla-Live-Version
+echo "$prog $prog_option" >> $ISOSYSLNX_TMP/Clonezilla-Live-Version
+
+# $sys_files_dir maybe /casper, /live or /isolinux. If it is isolinux, we can not list them twice otherwise mkisofs will go wrong.
+if [ "$sys_files_dir" != "isolinux" ]; then
+  sys_files_dir_graft_point="/isolinux/=$ISOSYSLNX_TMP/isolinux/ /syslinux/=$ISOSYSLNX_TMP/syslinux/ /$sys_files_dir/=$ISOSYSLNX_TMP/$sys_files_dir/"
+else
+  sys_files_dir_graft_point="/isolinux/=$ISOSYSLNX_TMP/isolinux/ /syslinux/=$ISOSYSLNX_TMP/syslinux/" 
+fi
+
+#
+if [ -d "$ISOSYSLNX_TMP/EFI" ]; then
+  sys_files_dir_graft_point="$sys_files_dir_graft_point /EFI/=$ISOSYSLNX_TMP/EFI"
+fi
+
+# If template_mode="from-booting-live-media", then there is /COPYING and /Clonezilla-Live-Version, then we should not assign that.
+doc_insert_in_root=""
+if [ -e "$DEBIAN_ISO_TMP/COPYING" ]; then
+  doc_insert_in_root="/COPYING=$DEBIAN_ISO_TMP/COPYING" 
+else
+  doc_insert_in_root="/COPYING=$DRBL_SCRIPT_PATH/doc/COPYING" 
+fi
+if [ -e "$DEBIAN_ISO_TMP/Clonezilla-Live-Version" ]; then
+  doc_insert_in_root="$doc_insert_in_root /Clonezilla-Live-Version=$DEBIAN_ISO_TMP/Clonezilla-Live-Version"
+else
+  doc_insert_in_root="$doc_insert_in_root /Clonezilla-Live-Version=$ISOSYSLNX_TMP/Clonezilla-Live-Version"
+fi
+
+# 
+allow_limited_size_opt=""
+if [ "$allow_limited_size_flag" = "yes" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Since there is at least one file larger than ${iso9660_file_size_limit}B in the image file, we turn on the option -allow-limited-size for genisoimage. This also implies enabling UDF format instead of iso9660."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  allow_limited_size_opt="-allow-limited-size"
+fi
+
+# Remove the existing iso
+[ -e "$target_iso" ] && rm -f $target_iso
+
+# Build the EFI boot image. This is especially for iso file. Not for USB stick.
+efi_img_opt=""
+if [ "$enabled_EFI" = "true" ]; then
+  # The following codes are referred from Fedora 
+  EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
+  EFI_BOOTTREE="$DEBIAN_ISO_TMP/EFI"
+  EFI_IMGTREE="$ISOSYSLNX_TMP/EFI-imgs"
+  EFI_IMG="$EFI_IMGTREE/efiboot.img"
+  mkdir -p $EFI_IMGTREE
+  rm -rf $ISOSYSLNX_TMP/.disk
+  rm -f $EFI_IMG
+  
+  BOOTDISKSIZE="$(LC_ALL=C du -kcs $EFI_BOOTTREE | tail -n1 | awk '{print $1}')"
+  BOOTDISKSIZE="$(LC_ALL=C expr $BOOTDISKSIZE + 100)"
+  echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
+  mkdosfs -n OCS-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
+  mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
+  mkdir -p $EFI_BOOTIMG_TMP/EFI/
+  cp -R $EFI_BOOTTREE/* $EFI_BOOTIMG_TMP/EFI/
+  umount $EFI_BOOTIMG_TMP
+  if [ -d "$EFI_BOOTIMG_TMP" -a -n \
+  	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
+    rm -rf $EFI_BOOTIMG_TMP
+  fi
+  
+  # Create an info file for grub2 to autodetect the cd root
+  # Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
+  mkdir $ISOSYSLNX_TMP/.disk
+  echo -n "[Clonezilla]" > $ISOSYSLNX_TMP/.disk/info
+  
+  efi_img_opt="-eltorito-alt-boot -efi-boot EFI-imgs/efiboot.img -no-emul-boot"
+  efi_img_graft_opt="/EFI-imgs/=$EFI_IMG /.disk/=$ISOSYSLNX_TMP/.disk"
+fi
+
+# make iso file
+genisoimage \
+ -A "Clonezilla live CD" \
+ -V "$iso_label_tag" \
+ -publisher "DRBL/Clonezilla http://drbl.org http://clonezilla.org" \
+ -f -r -hide-rr-moved -hide-joliet-trans-tbl -J -l $allow_limited_size_opt \
+ -b isolinux/isolinux.bin -c isolinux/boot.cat \
+ -no-emul-boot -boot-load-size 4 -boot-info-table \
+ $mkiso_exclude_opt $efi_img_opt \
+ -graft-points \
+  $sys_files_dir_graft_point \
+  $utils_files_dir_graft_point \
+  $doc_insert_in_root \
+  $ocs_imgs_with_abs_path \
+  $efi_img_graft_opt \
+  $custom_ocs_opt \
+  $include_dir_graft_point \
+  | \
+  (
+   case "$output_mode" in
+    "cdwriter")
+       wodim dev=$output_dev -data -eject -v -
+       ;;
+    *)
+       # use /dev/stdout as the bridge
+       cat - > $target_iso
+       ;;
+   esac
+  )
+
+rc=$?
+if [ "$rc" -gt 0 ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Something went wrong!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  clean_tmp_dir
+  [ -n "$target_iso" -a -f "$target_iso" ] && rm -fv $target_iso
+  echo "$msg_program_stop"
+  exit 1
+fi
+
+# unmount all iso file
+umount $DEBIAN_ISO_TMP &>/dev/null
+
+# Clean the tmp working directory
+echo "Cleaning tmp dirs..."
+clean_tmp_dir
+
+# 
+if [ -e "$target_iso" ]; then
+  if type isohybrid &>/dev/null; then
+    echo -n "Isohybriding $target_iso... "
+    isohybrid $target_iso
+    echo "done!"
+  fi
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_burn_clonezilla_img_iso: $target_iso"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+fi

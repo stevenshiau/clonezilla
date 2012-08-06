@@ -1,0 +1,561 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# Description: Program to check the Clonezilla image integrity
+# (1) Check the partition table files (GPT included)
+# (2) Check the MBR/EFI boot loader
+# (3) Check the partition image using partclone.chkimg
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /opt/drbl/conf/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+# By default we do not check the image saved by dd.
+dd_checking_method="no-check"
+
+#
+USAGE() {
+    echo "$ocs - To check the image of Clonezilla"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] IMAGE_NAME DEVICE"
+    echo "Options:"
+    echo "-b, --batch-mode   Run image checking in batch mode"
+    echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
+    echo "IMAGE_NAME is the image dir name, not absolute path"
+    echo "DEVICE is the device name, e.g. sda1, sda2..."
+    echo "If \"ask_user\" is used as IMAGE_NAME or DEVICE, a dialog menu will be shown to allow selection."
+    echo "If no IMAGE_NAME is specified, a dialog menu will be shown."
+    echo "Ex:"
+    echo "To check the image \"my-image\", which is located in $ocsroot/my-image, run"
+    echo "   $ocs my-image"
+    echo
+} # end of USAGE
+#
+img_check_by_partclone() {
+  local file_ fs_ partclone_img_info_tmp file_basename rc
+  # First, we find the filesystem 
+  file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
+  file_basename="$(basename ${file_})"
+  if [ -n "${file_}" ]; then
+    if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
+      # new format, image file is like: sda1.ext4-ptcl-img.gz, sda1.ext4-ptcl-img.gz.aa
+      fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-ptcl-img.*//g")"
+    else
+      # old format, image file is like: sda2.hfsp-img.aa  sda2.hfsp-img.ab  sda2.hfsp-img.ac
+      fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-img.*//g")"
+    fi
+  fi
+  if [ -z "${fs_}" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "The file system can not be decided in function img_check_by_partclone!!!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+ 
+  if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img")" ]; then
+    # New format
+    if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img.*.aa")" ]; then
+      # New format with image split, e.g. sda1.ext4-ptcl-img.gz.aa
+      get_image_cat_zip_cmd ${file_basename}
+      # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
+      img_file_prefix="$(echo ${file_basename} | sed -e "s/\.aa$//").*"
+    else
+      # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
+      get_image_cat_zip_cmd ${file_basename}
+      # The file is NOT split, so the file name is just like "sda1.ext4-ptcl-img.gz" only, no "."
+      img_file_prefix="${file_basename}"
+    fi
+  else
+    # Old format
+    if [ -f "$target_d/$img_file.${fs_}-img.aa" ]; then
+      # Old format with image split
+      get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img.aa
+      # The files are split, like hda1.00, hda1.01, so we have to add "."
+      img_file_prefix="$img_file.${fs_}-img.*"
+    else
+      # Old format with image not split
+      get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img
+      # The file is NOT split, so the file name is just like "hda1" only, no "."
+      img_file_prefix="$img_file.${fs_}-img"
+    fi
+  fi
+  echo $msg_delimiter_star_line
+
+  # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
+  ( for img in $target_d/$img_file_prefix; do
+      cat $img
+    done
+  ) | \
+  $unzip_stdin_cmd | LC_ALL=C partclone.chkimg -s -
+  rc="$?"
+  return $rc
+} # end of img_check_by_partclone
+#
+do_partition_or_lv_img_check() {
+  # part is like: /dev/hda1
+  local target_d="$1"
+  local img_file="$2"
+  local rc hdtmp partition
+  image_name_="$(basename $target_d)"
+  # get the cat program: cat, zcat or bzcat
+
+  if [ -f "$target_d/$img_file.000" -o \
+       -f "$target_d/$img_file.aa" -o \
+       -f "$target_d/$img_file" ]; then
+    # The saved image is from partimage
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "This partition image was saved by partimage."
+    echo "$msg_img_check_not_supported"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    rc=1
+    if [ "$ocs_batch_mode" != "on" ]; then
+      echo -n "$msg_press_enter_to_continue..."
+      read
+    fi
+  elif [ -f "$target_d/$img_file.ntfs-img" -o -f "$target_d/$img_file.ntfs-img.aa" ]; then
+    # The saved image is from ntfsclone
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "This partition image was saved by ntfsclone."
+    echo "$msg_img_check_not_supported"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    rc=1
+    if [ "$ocs_batch_mode" != "on" ]; then
+      echo -n "$msg_press_enter_to_continue..."
+      read
+    fi
+  elif is_partclone_image $target_d $img_file; then
+    # The saved image is from partclone
+    img_check_by_partclone
+    rc=$?
+    if [ "$rc" -gt 0 -a "$ocs_batch_mode" != "on" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$msg_this_part_in_the_img_is_broken: $img_file"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo -n "$msg_press_enter_to_continue..."
+      read
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "$msg_this_part_in_the_img_is_ok: $img_file"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    fi
+  elif [ -f "$target_d/$img_file.dd-img" -o -f "$target_d/$img_file.dd-img.aa" ]; then
+    if [ "$dd_checking_method" = "no-check" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Image was saved by dd. No ndeed to check the file system integrity."
+      sleep 1
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      rc=0
+    else
+      # For some of the special partition, even it's dd, we do not need to check that. E.g. VMware vmkcore partition. It only need partition ID=fc, we do not care the content of the file system. Ref: http://communities.vmware.com/thread/85788
+      # The saved image is from dd
+      if [ -e "$target_d/$img_file.dd-img.info" ]; then
+        # Get the paritition info, we will get "$partition"
+        . $target_d/$img_file.dd-img.info
+      fi
+      if [ "$partition" = "VMware_vmkcore_partition" ]; then
+        echo "VMware vmkcore partition found. No ndeed to check the file system."
+        rc=0
+      elif [ "$partition" = "BSD_slice" ]; then
+        echo "BSD slice found. No ndeed to check the file system."
+        rc=0
+      elif [ "$partition" = "BSD_swap_partition" ]; then
+        echo "BSD swap partition found. No ndeed to check the file system."
+        rc=0
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "This partition image was saved by dd."
+        echo "$msg_img_check_not_supported"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        rc=1
+        if [ "$ocs_batch_mode" != "on" ]; then
+          echo -n "$msg_press_enter_to_continue..."
+          read
+        fi
+      fi
+    fi
+  fi
+
+  echo $msg_delimiter_star_line
+  return $rc
+} # end of do_partition_or_lv_img_check
+#
+task_logv_check() {
+  # mode is unicast or multicast
+  local tgt_parts="$1"  # tgt_parts is like: hda1 hda2 hda5
+  local volg is_in_chosen_partition lvm_tmp rc rctlv
+  PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
+  LOGV_PARSE_CONF="$target_dir_fullpath/lvm_logv.list"
+  if [ ! -f "$PV_PARSE_CONF" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "This LVM PV file NOT found: $PV_PARSE_CONF"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo -n "$msg_press_enter_to_continue..."
+    read
+  fi
+  if [ ! -f "$LOGV_PARSE_CONF" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "This LVM LV file NOT found: $LOGV_PARSE_CONF"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo -n "$msg_press_enter_to_continue..."
+    read
+  fi
+  
+  #
+  while read lv fs; do
+   # Then we process the real data partition, only those in the chosen partitions
+   # Ex:
+   # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
+   # Then lvol0 is belong to VG vg3
+   volg="$(echo "$lv" | awk -F"/" '{print $3}')"
+   # Find if the LV is in the chosen partition (via VG, we can determine that)
+   # EX: tgt_parts: hda1, hda3, hda5...
+   #     vg3 /dev/hda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
+   is_in_chosen_partition="no"
+   for ipt in $tgt_parts; do
+     if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
+       # Found the chosen partitions is in the VG
+       is_in_chosen_partition="yes"
+       break
+     fi
+   done
+   # If not in the chosen partition, skip this, continue with the next.
+   [ "$is_in_chosen_partition" = "no" ] && continue
+   fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
+   # create the swap if it's swap partition
+   case "$fs" in 
+     *[Ss][Ww][Aa][Pp]*)
+        echo $msg_delimiter_star_line
+        echo "Found the swap partition $lv info:"
+        # read LABEL, UUID info for $partition if swappt-${fn}.info exists
+        uuid_opt=""
+        label_opt=""
+        if [ -e "$target_dir_fullpath/swappt-${fn}.info" ]; then
+          cat "$target_dir_fullpath/swappt-${fn}.info"
+          echo "Swap partition info file found!"
+        else
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "$msg_this_swap_part_info_not_found: ${fn}"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo -n "$msg_press_enter_to_continue..."
+          read
+        fi
+        echo $msg_delimiter_star_line
+	# then skip the rest.
+        continue;; 
+   esac
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+   echo "Checking the device LV $fn in the image \"$(basename $target_dir_fullpath)\"..."
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   do_partition_or_lv_img_check $target_dir_fullpath $fn $lv
+   rc=$?
+   rctlv="$(($rctlv + $rc))"
+  done < $LOGV_PARSE_CONF
+  return $rctlv
+} # end of task_logv_check
+
+#
+task_checkimage() {
+  local target_dir="$1"
+  local target_parts="$2"
+  local parts_included target_dir_fullpath
+  local ptype rc rct
+
+  if [ "$target_dir" = "ask_user" ]; then
+    get_target_dir_name_when_checking_img_restorable
+  fi
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_the_image_to_be_cheked: $target_dir"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+  #
+  source_parts_no="$(cat $ocsroot/$target_dir/parts | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+
+  #
+  if [ "$target_parts" = "ask_user" ]; then
+    ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+    trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+    get_existing_partitions_from_img $ANS_TMP $ocsroot/$target_dir no check
+    # we have to remove " (comes with checklist in dialog) 
+    # so that for loop will work (Specially for FC3/4...)
+    target_parts="$(cat $ANS_TMP | tr -d \")"
+    [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+    # target name exists, but file "parts" is empty ?
+    check_target_parts $ocsroot/$target_dir/parts "$target_parts"
+  elif [ -z "$target_parts" ]; then
+    target_parts="$(LC_ALL=C cat $ocsroot/$target_dir/parts)"
+  else
+    echo "$msg_the_requested_partition_to_be_checked: $target_parts"
+  fi
+
+  # target_hd will be extract from $target_parts, maybe we will have one more
+  # find the target hd
+  # maybe we will have one more hd (like hda1, hda2, hdb1, hdb3 -> hda, hdb)
+  for ipart in $target_parts; do
+    thd_tmp=${ipart:0:3}
+    if [ -z "$target_hd" ]; then
+      target_hd="$thd_tmp"
+    elif [ -z "$(echo $target_hd | grep -Ew "$thd_tmp" 2>/dev/null)" ]; then
+      target_hd="$target_hd $thd_tmp"
+    fi
+  done
+
+  #
+  if [ -e "$ocsroot/$target_dir/disk" ]; then
+    image_type="disk"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_a_disk_image_saved_from_hd: $(cat $ocsroot/$target_dir/disk)"
+    echo "$msg_the_part_image_to_be_cheked: $target_parts"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  elif [ -e "$ocsroot/$target_dir/parts" ]; then
+    image_type="partition"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_a_part_image_saved_from_partitions: $(cat $ocsroot/$target_dir/parts)"
+    echo "$msg_the_part_image_to_be_cheked: $target_parts"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$msg_broken_image_dir"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+
+  # Use $target_dir_fullpath as the absolute path, i.e. put leading $ocsroot, since from now on we need the full path dir to access them.
+  target_dir_fullpath="$ocsroot/$target_dir"
+  check_input_target_image "$target_dir_fullpath"
+
+  screen_not_blank
+
+  # if $create_part (global variable) is no, only some preparations 
+  # in create_partition, it won't run sfdisk in fact.
+  
+  # strip the leading spaces
+  target_parts="$(echo $target_parts | sed -e "s/^[[:space:]]*//g")"
+
+  echo $msg_delimiter_star_line
+  # Start checking partition table.
+  echo "Checking the partition table in the image \"$target_dir\"..."
+  for ihd in $target_hd; do
+    # Get the partition type from parted output
+    if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $target_dir_fullpath/${ihd}-pt.parted | grep -iE "gpt")" ]; then
+      ptype="gpt"
+    else
+      ptype="mbr"
+    fi
+    case "$ptype" in
+     mbr)
+      if [ ! -e "$target_dir_fullpath/${ihd}-pt.sf" ]; then
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "$msg_this_partition_table_file_not_found: ${ihd}-pt.sf"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo -n "$msg_press_enter_to_continue..."
+         read
+      else
+         echo "Partition table file found!"
+      fi
+      ;;
+     gpt)
+      if [ ! -e "$target_dir_fullpath/${ihd}-gpt-1st" ]; then
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "$msg_this_partition_table_file_not_found: ${ihd}-gpt-1st"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo -n "$msg_press_enter_to_continue..."
+         read
+      else
+         echo "GPT 1st partition table file found!"
+      fi
+      if [ ! -e "$target_dir_fullpath/${ihd}-gpt-2nd" ]; then
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "$msg_this_partition_table_file_not_found: ${ihd}-gpt-2nd"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo -n "$msg_press_enter_to_continue..."
+         read
+      else
+         echo "GPT 2nd partition table file found!"
+      fi
+      if [ ! -e "$target_dir_fullpath/${ihd}-gpt.gdisk" ]; then
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+         echo "$msg_this_partition_table_file_not_found: ${ihd}-gpt.gdisk"
+	 echo "Was this image saved by older version of Clonezilla? If so, we still can use this old image. However, it's recommended to save the image with the latest Clonezilla. "
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo -n "$msg_press_enter_to_continue..."
+         read
+      else
+         echo "GPT partition table file saved by gdisk found!"
+      fi
+      ;;
+    esac
+  done
+
+  # When Clonezilla does not save a whole disk image (i.e. use the mode saveparts), the swap partition will be skipped. Therefore only check if swap info files exist when it is savedisk.
+  if [ "$image_type" = "disk" ]; then
+    echo $msg_delimiter_star_line
+    echo "Checking the swap partition info in the image \"$target_dir\"..."
+    # Check swap partition
+    for ihd in $target_hd; do
+      # Get the partition type from parted output
+      if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $target_dir_fullpath/${ihd}-pt.parted | grep -iE "gpt")" ]; then
+        ptype="gpt"
+      else
+        ptype="mbr"
+      fi
+      case "$ptype" in
+       mbr)
+        echo "Finding swap partition(s) in MBR table $target_dir_fullpath/${ihd}-pt.sf..."
+        for partition in `get_swap_partition_sf_format $target_dir_fullpath/${ihd}-pt.sf`; do
+          echo "Checking swap partition $partition..."
+          # read LABEL, UUID info for $partition if swappt-$partition.info exists
+          uuid_opt=""
+          label_opt=""
+          if [ -e "$target_dir_fullpath/swappt-$partition.info" ]; then
+            cat "$target_dir_fullpath/swappt-$partition.info"
+            echo "Swap partition info file found!"
+          else
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+            echo "$msg_this_swap_part_info_not_found: $partition"
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+            echo -n "$msg_press_enter_to_continue..."
+            read
+          fi
+        done
+        ;;
+       gpt)
+        echo "Finding swap partition(s) in GPT table $target_dir_fullpath/${ihd}-pt.parted..."
+        for partition in `get_swap_partition_parted_format $target_dir_fullpath/${ihd}-pt.parted`; do
+          echo "Checking swap partition $partition..."
+          # read LABEL, UUID info for $partition if swappt-$partition.info exists
+          uuid_opt=""
+          label_opt=""
+          if [ -e "$target_dir_fullpath/swappt-$partition.info" ]; then
+            cat "$target_dir_fullpath/swappt-$partition.info"
+            echo "Swap partition info file found!"
+          else
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+            echo "$msg_this_swap_part_info_not_found: $partition"
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+            echo -n "$msg_press_enter_to_continue..."
+            read
+          fi
+        done
+        ;;
+      esac
+    done
+  else
+    echo "This is not an image for whole disk. Skip checking swap partition info..."
+  fi
+
+  echo $msg_delimiter_star_line
+  # Check MBR
+  echo "Checking the MBR in the image \"$target_dir\"..."
+  # Reinstall executable code area (first 446 bytes in MBR)
+  for ihd in $target_hd; do
+    # Ref: http://en.wikipedia.org/wiki/Master_boot_record
+    # Master Boot Record (MBR) is the 512-byte boot sector:
+    # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
+    # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
+    if [ ! -e "$target_dir_fullpath/${ihd}-mbr" ]; then
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+       echo "$msg_mbr_img_of_this_hd_not_found: ${ihd}"
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       echo -n "$msg_press_enter_to_continue..."
+       read
+    else
+       echo "MBR file found!"
+    fi
+  done
+
+  echo $msg_delimiter_star_line
+  do_LVM_restore="no"
+  rct=0
+  for partition in $target_parts; do
+    # hda1 -> hda
+    hd_tmp="${partition:0:3}"
+    # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
+     if [ -n "$(grep -Ew "$partition" $target_dir_fullpath/lvm_vg_dev.list 2>/dev/null)" ]; then
+      # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
+      do_LVM_restore="yes"
+      continue
+    fi
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Checking the partition $partition in the image \"$target_dir\"..."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    do_partition_or_lv_img_check $target_dir_fullpath $partition
+    rc=$?
+    rct="$(($rct + $rc))"
+  done
+
+  # Check LVM
+  if [ "$do_LVM_restore" = "yes" ]; then
+    # LVM exists, check PV/VG/LV.
+    task_logv_check "$target_parts"
+    rc=$?
+    rct="$(($rct + $rc))"
+    echo $msg_delimiter_star_line
+  fi
+
+  if [ "$rct" -gt 0 -a "$ocs_batch_mode" != "on" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$msg_broken_partition_img_found: $target_dir"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo -n "$msg_press_enter_to_continue..."
+    read
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_all_the_part_lv_are_ok: $target_dir"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+} # end of task_checkimage
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -b|--batch) ocs_batch_mode="on"; shift;;
+   -or|--ocsroot)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             ocsroot="$1"
+             shift;
+           fi
+           [ -z "$ocsroot" ] && USAGE && exit 1
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+ocs_chk_img_name="$1"
+shift
+ocs_chk_dev="$*"
+
+# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
+# otherwise setterm will complain.
+[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
+echo "Setting the TERM as $TERM"
+export TERM="$TERM"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+# imagedir is a variable which ask_user related function need
+imagedir="$ocsroot"
+[ -z "$ocs_chk_img_name" ] && ocs_chk_img_name="ask_user"
+# if "$ocs_chk_dev" is nothing, we check all the partitions.
+
+task_checkimage "$ocs_chk_img_name" "$ocs_chk_dev"

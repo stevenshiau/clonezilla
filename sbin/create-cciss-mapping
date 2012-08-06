@@ -1,0 +1,143 @@
+#!/bin/bash
+# ============================================================================
+# Script to check for /dev/cciss device and remap to /dev/sd<xx> device
+# Necessary for Clonezilla to work properly for imaging
+#
+# Author: Ron Kelley
+# Modified by Steven Shiau <steven _at_ nchc org tw> on 25/Aug/2007
+# License: GPL
+# 2 actions:
+# (1) link the devices in /dev/
+# (2) output the convertion table in file $dev_map
+# From /etc/udev/devfs.rules:
+# RAID controllers
+# KERNEL=="cciss!*|ida!*|rd!*", PROGRAM="raid-devfs.sh %k", ACTION=="add", \
+#					NAME="%c{1}", SYMLINK+="%k"
+# 3 types of cciss name we need to deal with: /dev/cciss/, /dev/ida/, /dev/rd/,
+# ============================================================================
+# The content of output file is like:
+# cciss/c0d0: sdb
+# cciss/c0d0p1: sdb1
+# cciss/c0d0p2: sdb2
+
+#
+cmd_name="$(basename $0)"
+#
+USAGE() {
+    echo "$cmd_name: To create mapping device names (/dev/[hsv]d[a-z][[:digit:]] style) for cciss device. The soft link will be done, and a mapping device list will be created, too."
+    echo "Usage:"
+    echo "  $cmd_name OUTPUT_FILE_NAME"
+    echo "Example:"
+    echo "  To create mapping device names (/dev/[hsv]d[a-z][[:digit:]] style) list in mapdevfile and softlink for them for cciss device in this machine, use:"
+    echo "$cmd_name mapdevfile"
+}         
+
+#
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+# The output file for the mapping
+dev_map="$1"
+
+[ -z "$dev_map" ] && echo "No output file! Exit!" && exit 1
+
+if [ ! -d "/dev/cciss" -a ! -d "/dev/ida" -a ! -d "/dev/rd" ]; then
+  echo "No cciss-related driver was detected!  Exiting..."
+  exit 0
+fi
+
+# ------------------------------------------------
+# Create an array of all unused /dev/sd<x> devices
+# ------------------------------------------------
+declare -a scsi_dev
+for i in {a..z}
+do
+   [ ! -b /dev/sd${i} ] && scsi_dev=( "${scsi_dev[@]}" "sd${i}")
+done
+
+
+# ------------------------------------------------
+# Start looking for /dev/cciss/c?d? major devices
+# and make symbolic links to the next available 
+# unused /dev/sd<x> devices
+# ------------------------------------------------
+index=0
+num=""
+
+# clean the output file first
+echo -n > $dev_map
+
+for cdisk in /dev/cciss/c?d? /dev/ida/c?d? /dev/rd/c?d?; do
+   # If the device is a block device...
+   if [ -b $cdisk ]; then
+        # check if the mapping exists or not. Maybe it's already mapped.
+	# Ex, use: file sda
+	# sda: symbolic link to `/dev/cciss/c0d0'
+	is_linked="no"
+	for idv in /dev/sd[a-z]; do
+	  if [ -n "$(file -h $idv | grep -iE "$cdisk")" ]; then
+	    # found it's already linked.
+	    is_linked="yes"
+	    linked_dev="$(basename $idv)"
+	    continue
+	  fi
+	done
+        # 1st, map the disk
+	if [ "$is_linked" = "no" ]; then
+          lnkd_dsk=${scsi_dev[$index]}
+          echo Linking Device $cdisk to /dev/${lnkd_dsk} 
+          ln -fs $cdisk /dev/${lnkd_dsk}
+	else
+          # already mapped, save the linked_disk
+	  lnkd_dsk="$(basename $linked_dev)"
+	fi
+	# save mapping to the table
+        # remove the leading "/dev/", since in /proc/partitions, the device name is not begin with /dev/, it's only like sda
+        var="$(echo $cdisk | sed 's|^/dev/||g')"
+        echo "$var:${lnkd_dsk}" >> $dev_map
+        unset var
+
+        # 2nd, map the partition
+        # Find all partitions related to $cdisk (ie /dev/cciss/c0d0p1, /dev/cciss/c0d0p2... c0d0p10, c0d0p11, etc) 
+        for cpart in ${cdisk}p*; do 
+           # If the device is a block device...
+           if [ -b ${cpart} ]; then
+              # check if the mapping exists or not. Maybe it's already mapped.
+ 	      # Ex, use: file sda1
+ 	      # sda1: symbolic link to `/dev/cciss/c0d01'
+ 	      is_linked="no"
+              for idv in /dev/sd[a-z][0-9]*; do
+                if [ -n "$(file -h $idv | grep -iE "${cpart}")" ]; then
+                  # found it's already linked.
+                  is_linked="yes"
+                  linked_dev="$(basename $idv)"
+                  continue
+                fi
+              done
+	      if [ "$is_linked" = "no" ]; then
+                num="$(echo "${cpart}" | sed s/\^.*p//g)"
+                echo Linking Partition ${cpart} to ${lnkd_dsk}${num}
+                ln -fs ${cpart} /dev/${lnkd_dsk}${num} 
+	      else
+                # already mapped, save the linked_partition number
+                num="$(echo "${cpart}" | sed s/\^.*p//g)"
+	      fi
+	      # save mapping to the table
+              # remove the leading "/dev/", since in /proc/partitions, the device name is not begin with /dev/, it's only like sda1
+              var="$(echo ${cpart} | sed 's|^/dev/||g')"
+              echo "$var:${lnkd_dsk}${num}" >> $dev_map
+              unset var
+           fi
+        done
+     
+        # Increment the scsi_dev array index.
+        let index+=1
+    fi
+done

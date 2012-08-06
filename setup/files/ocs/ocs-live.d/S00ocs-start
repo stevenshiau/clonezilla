@@ -1,0 +1,21 @@
+#!/bin/bash
+# Test if live-config and upstart are used. If so, we have to wait for live-config to be finished. Otherwise the clonezilla-related process might be faster than live-config. E.g. if the "sudo" config (/lib/live/config/003-sudo) is not yet run, but S03prep-drbl-clonezilla is run, the autologin account won't be found, then the clonezilla auto startup config in the autologin account won't be generated.
+if [ -e /lib/live/config.sh -a -e /etc/init/live-config.conf ]; then
+  echo "Waiting for live-config to be finished..."
+  to_wait=""
+  while [ -z "$to_wait" ]; do
+    # Find the last task in /lib/live/config/ of live-config.
+    # The files list in /lib/live/config/ is like:
+    # 001-hostname 002-user-setup 003-sudo 004-locales 005-tzdata 006-gdm 007-gdm3 008-kdm 009-lxdm 010-nodm 011-slim 012-xinit 014-upstart-tty 015-keyboard-configuration 102-gnome-panel-data 103-gnome-power-manager 104-gnome-screensaver 105-initramfs-tools 106-kaboom 107-kde-services 109-debian-installer-launcher 110-module-init-tools 111-policykit 112-sslcert 113-update-notifier 114-anacron 115-util-linux 116-login 117-xserver-xorg 119-openssh-server 120-umountfs 999-hooks
+    # We find the last one, but exclude 999-hooks since it does not create any tag in /var/lib/live/config/
+    last_num="$(LC_ALL=C ls --color=never -1 /lib/live/config/ | grep -Ev "999-" | awk -F"-" '{print $1}' | sort -r -g | uniq  | head -n 1)"
+    last_task="$(LC_ALL=C ls -1 --color=never /lib/live/config/${last_num}-* | awk -F"-" '{print $2}')"
+    if [ -e "/var/lib/live/config/$last_task" ]; then
+      echo "live-config is finished."
+      to_wait="no"
+    else
+      sleep 0.2
+    fi
+  done
+fi
+echo "Starting to prepare Clonezilla live env..."

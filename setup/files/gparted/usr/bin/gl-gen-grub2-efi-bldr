@@ -1,0 +1,74 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Program to create the EFI boot loader from grub2
+
+# Load functions
+. /usr/share/gparted/bin/gl-functions
+
+efi_required_mod="part_gpt part_msdos hfsplus fat ext2 ntfs normal chain boot configfile linux multiboot iso9660 acpi efi_gop efi_uga elf loadbios loopback video_fb usb search fixvideo png"
+
+# Functions
+USAGE() {
+  echo "To create an EFI boot loader from grub2."
+  echo "Usage: $0 OUTPUT_DIR"
+  echo "OUTPUT_DIR is the where the created boot loader will be placed."
+  echo "   E.g.  $0 /tmp/efi/"
+}
+#
+#############
+###  MAIN ###
+#############
+#
+check_if_root
+
+output_dir="$1"
+
+# Checking
+if [ ! -e /etc/debian_version ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "This is not a Debian Linux system. This program only works on Debian Linux system."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+if [ -z "$output_dir" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No output dir! Program terminated!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  exit 1
+fi
+if [ ! -d "$output_dir" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "The output dir \"$output_dir\" does not exist, or it's not a directory."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+
+#
+grub_efi_dir="$(mktemp -d /tmp/grub-efi.XXXXXX)"
+for i in grub-efi-ia32 grub-efi-amd64; do
+  echo "Download $i from Debian repository..."
+  LC_ALL=C apt-get -d --reinstall -y install $i &>/dev/null
+done
+for i in /var/cache/apt/archives/grub-efi*.deb; do
+  dpkg --extract $i $grub_efi_dir
+done
+for i in i386 x86_64; do
+  export EFI_ARCH=$i
+  case "$EFI_ARCH" in
+    i386)   out_f="$output_dir/bootia32.efi" ;;
+    x86_64) out_f="$output_dir/bootx64.efi" ;;
+  esac
+  grub-mkimage -O $EFI_ARCH-efi -d $grub_efi_dir/usr/lib/grub/$EFI_ARCH-efi/ -o $out_f -p "" $efi_required_mod
+  rc=$?
+  if [ "$rc" -gt 0 ]; then
+    # When grub-mkimage fails, an empty output file will still be created. We'd better to clean it.
+    rm -f $out_f
+  fi
+done
+if [ -e "$grub_efi_dir" -a -n "$(echo $grub_efi_dir | grep -E "grub-efi")" ]; then
+  rm -rf $grub_efi_dir
+fi

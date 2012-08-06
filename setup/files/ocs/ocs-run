@@ -1,0 +1,218 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL 
+
+### BEGIN INIT INFO
+# Provides:		ocs-run	
+# Required-Start:	
+# Should-Start:		
+# Required-Stop:	
+# Should-Stop:		
+# Default-Start:	1
+# Default-Stop:		
+# Short-Description:	Clonezilla SE client service
+# Description:		Clonezilla SE client service
+### END INIT INFO
+
+# To avoid there is no input/output in rc 1 running, we add this one. (This is specially in Ubuntu 6.10 with upstart)
+# Two cases:
+# (1) If it's in runlevel 1 or S (actually S19ocs-run is in rc1.d, but S20single will change to S), we assume it's in clonezilla mode and client is booting. In this case, we redirect the input/output to /dev/console
+# (2) If not in runlevel 1 and not S, it's in debuging when in rc [2-5], and maybe we use ssh to login to debug. In this case, we do not want to use /dev/console.
+RL="$(runlevel | awk -F" " '{print $2}')"
+if [ "$RL" = "1" -o "$RL" = "S" ]; then
+  exec </dev/console >/dev/console 2>&1
+fi
+
+#
+USAGE() {
+  echo "Usage: $0  [OPTION] {start|stop}"
+  echo "OPTION:"
+  echo "-c, --proc-cmdline   Read the parameters from /proc/cmdline"
+  echo "-p, --ocs-run-param  Read the parameters from /etc/ocs/ocs-run.param"
+  echo "-d, --debug          Enter verbose debug mode"
+}
+
+# functions
+countdown() {
+  local time_limit="$1"
+  local i
+       ( i="$time_limit"
+         while [ "$i" -ne 0  ]; do
+           echo -n "$i "
+           sleep 1
+           i=$((i-1))
+         done
+         echo
+       )
+} # end of countdown
+wait_for_press_enter_then_abort() {
+  local messg="$1"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$messg"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Abort!"
+  echo -n "Press Enter to exit..."
+  read
+  exit 1
+}      
+#
+wait_for_udevd() {
+  local TIMEOUT="300"  # Unit: 0.1 sec, time to wait for udevd to be started
+  local DELAY_T="3"   # Unit: sec, time to wait for block device to be started
+  if ! type udevd &>/dev/null; then
+    echo "Program udevd does not exist. Assume it's using old dev mechanism."
+    echo "Skipping waiting for udevd to be started."    
+    return 3
+  fi
+  #
+  echo -n "Waiting for udevd to be started..."
+  while [ -z "$(LC_ALL=C ps -ef | grep udevd | grep -v grep)" ]; do
+    sleep 0.1
+    TIMEOUT=$(( $TIMEOUT - 1 ))
+    if [ $TIMEOUT -le 0 ]; then
+      echo "Timeout."
+      break
+    fi
+  done
+  echo
+  if [ -e "/etc/init/udev.conf" ]; then
+    # Delay for a few secs for upstart >= 0.6.3 (e.g. Ubuntu 9.10)
+    echo "It's upstart >=0.6.3... Force to have some workarounds here..."
+    echo "Force to mount nfs due to a mountall NFS bug..."
+    # Ref: https://bugs.launchpad.net/ubuntu/+source/mountall/+bug/470776
+    mount -a -t nfs
+    echo "Delay a few secs to let block devices to be deteted..."
+    countdown $DELAY_T
+  fi
+} # end of wait_for_udevd
+do_start_ocs_run() {
+  # Example:
+  #  /opt/drbl/sbin/ocs-sr --language 0  -g auto -hn0 PC -p true --max-time-to-wait 300 --mcast-port 2232 multicast_restoredisk 2disks hda hdb
+  
+  # 3 modes, proc-cmdline, ocs-run.param, and both. If both, the ocs_opt are the same in proc-cmdline and ocs-run.param. We choose to use proc-cmdline if it's both so that we can always put "ocs_client_trig_type=both" in drbl-ocs.conf. If we want to interactively debug, use ocs-run -p.
+  case "$ocs_client_trig_type" in
+    proc-cmdline|both)
+      echo "Reading ocs_opt from /proc/cmdline..."
+      ocs_opt="$(grep -Ew "ocs_opt" /proc/cmdline | sed -e "s/.*ocs_opt=\"\(.*\)\".*$/\1/")"
+      [ -z "$ocs_opt" ] && wait_for_press_enter_then_abort "No clonezilla param in /proc/cmdline!"
+      case "$ocs_opt" in
+       *select_in_client*)
+         # remove select_in_client in ocs_opt so the clonezilla can run.
+         ocs_opt="$(echo $ocs_opt | sed -e "s/select_in_client//g")"
+         echo Now run: $verbose_run clonezilla $ocs_opt
+         $verbose_run clonezilla $ocs_opt
+         ;;
+       *)
+         echo Now run: $verbose_run ocs-sr $ocs_opt
+         $verbose_run ocs-sr $ocs_opt
+         ;;
+      esac
+      ;;
+    ocs-run.param)
+      echo "Reading ocs_opt from /etc/ocs/ocs-run.param..."
+      ocs_opt="$(cat /etc/ocs/ocs-run.param 2>/dev/null)"
+      [ -z "$ocs_opt" ] && wait_for_press_enter_then_abort "No clonezilla param in /etc/ocs/ocs-run.param!"
+      case "$ocs_opt" in
+        *select_in_client*)
+         # remove select_in_client in ocs_opt so the clonezilla can run.
+          ocs_opt="$(echo $ocs_opt | sed -e "s/select_in_client//g")"
+          echo Now run: $verbose_run clonezilla $ocs_opt
+          $verbose_run clonezilla $ocs_opt
+          ;;
+        *)
+          echo Now run: $verbose_run ocs-sr $ocs_opt
+          $verbose_run ocs-sr $ocs_opt
+          ;;
+      esac
+      ;;
+    *)
+      wait_for_press_enter_then_abort "Unknown mode, only proc-cmdline or ocs-run.param is accepted!"
+      ;;
+  esac
+} # end of do_start_ocs_run
+#
+do_stop_ocs_run() {
+    kill_ps_by_kill_9 ocs
+    kill_ps_by_kill_9 ocs-sr
+    kill_ps_by_killall_9 udp-receiver
+    kill_ps_by_killall_9 partimage
+    kill_ps_by_killall_9 ntfsclone
+} # end of do_stop_ocs_run
+
+# A workaround to avoid upstart allowing rc-sysinit to start too early.
+# First we have to wait for udevd to be started since the local block device will be shown only when udevd is started. This is especially for the system using upstart >= 0.63, i.e. Ubuntu 9.10 or something similar
+wait_for_udevd
+
+# Load DRBL and Clonezilla functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Setting
+debug_mode=""
+
+# ocs_client_trig_type is read from /opt/drbl/conf/drbl-ocs.conf, but we can overwrite it here.
+# proc-cmdline: read ocs_opt from /proc/cmdline
+# ocs-run.param: read ocs_opt from /etc/ocs/ocs-run.param
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -c|--proc-cmdline)
+            ocs_client_trig_type="proc-cmdline"
+            shift ;;
+    -p|--ocs-run-param)
+            ocs_client_trig_type="ocs-run.param"
+            shift ;;
+    -d|--debug)
+            debug_mode="on"
+            shift ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+action="$1"
+
+#
+if [ "$debug_mode" = "on" ]; then
+  verbose_run="bash -x"
+  set -x
+fi
+
+# Force to set LANG so that we can see yes/no in dialog in console...
+if [ -z "$(localedef --list-archive | grep -iw "en_US.utf8")" ] && \
+   [ -z "$(unalias ls 2>/dev/null; ls /usr/lib/locale | grep -iw "en_US.utf8")" ]
+then
+  # Create locale en_US.UTF-8
+  echo "Trying to create locale en_US.UTF-8..."
+  LANG=C localedef -f UTF-8 -i en_US en_US.UTF-8
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "Use LANG=en_US.UTF-8"
+    export LANG="en_US.UTF-8"
+  else
+    # last choice
+    echo "Use LANG=C"
+    export LANG="C"
+  fi
+else
+  echo "Use LANG=en_US.UTF-8"
+  export LANG="en_US.UTF-8"
+fi
+
+#
+case "$action" in
+  start)
+    do_start_ocs_run;;
+  stop)
+    do_stop_ocs_run;;
+  *)
+    USAGE
+    exit 2 ;;
+esac
+
+exit 0

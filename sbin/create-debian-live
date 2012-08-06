@@ -1,0 +1,396 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: This script will create a Debian live CD iso which is used as a template for clonezilla image with restoration function.
+
+#
+set -e
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# debian_mirror_url_def, debian_mirror_security_url_def, DRBL_REPOSITORY_URL_def and DRBL_GPG_KEY_URL are loaded from drbl-ocs.conf
+
+# debian_type can be minimal (about 67 MB for Etch)/minimal-net (about 85 MB for Etch).
+debian_type="minimal"
+#debian_type="standard"
+DEBIAN_DIST_DEF="squeeze"
+pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DRBL_FOR_CLONEZILLA_LIVE"
+categories_default="main"
+cpu_flavor_default="486"
+bootstrap_default="cdebootstrap"
+
+# The files in dir $ocs_live_script_dir/ will be copied to the dir /live-hook-dir in dir chroot. The file "ocs-live-hook" is in $ocs_live_script_dir
+# We put some files in dir ocs_minimal_hook/ to do some jobs, like clean unnecessary files, set locales...
+ocs_live_script_dir="$DRBL_SCRIPT_PATH/setup/files/ocs/live-hook"
+# The script inside $ocs_live_script_dir/ will be run when chroot. There are many files in $ocs_live_script_dir/, we will just run one here.
+run_hook_script="ocs-live-hook"
+# This hook is for binary_local-hooks, not for chroot hook
+run_binary_hook_script="efi-binary-hook"
+# The option to create a corresponding source image.
+gen_source_tarball="no"
+
+#
+check_if_root
+#
+prog="$(basename $0)"
+
+# functions
+USAGE() {
+    echo "Usage:"
+    echo "To create a Debian live CD which is used a template for Clonezilla live:"
+    echo "$prog [OPTION]"
+    echo "OPTION:"
+    echo "-a, --packages PKG     Specify to add PKG, e.g. firmware-bnx2"
+    echo "-b, --branch [s|stable|t|testing|u|unstable]  Specify the DRBL branch to be used in Live CD. Default is stable."
+    echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (cdebootstrap or debootstrap). If not specified, $bootstrap_default will be used."
+    echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
+    echo "-d, --debian-dist [stable|testing|unstable|lenny|squeeze|wheezy|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
+    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 486 or 686. If it's not assigned, $cpu_flavor will be used."
+    echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
+    echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
+    echo "-k, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
+    echo "-l, --drbl-live-branch [s|stable|t|testing|u|unstable|e|experimental]  specifies the DRBL live branch to be used in Live CD. Default is stable."
+    echo "-p, --use-backports Include backports in the repository."
+    echo "-m, --mirror-url URL  Assign the Debian repository URL instead of default one $debian_mirror_url_def. "
+    echo "-s, --mirror-security-url URL  Assign the Debian security repository URL instead of default one $debian_mirror_security_url_def."
+    echo "-o, --create-source-tarball  Create a corresponding source image to the binary image.  By default such an source image will not be created since this would require to download quite a few source packages."
+    echo "-v, --verbose   Run live build in verbose mode"
+    echo "Ex: $0 -l experimental -b unstable -k 2.6.24-etchnhalf.1"
+}
+#
+turn_on_etch_backports() {
+  # Backports
+  # We use etchbpo instead of bpo to avoid being overwritten by the one "bpo" (it's for sarge-backports) in /etc/make-live.conf.
+  export LIVE_REPOSITORIES="$LIVE_REPOSITORIES etchbpo"
+  export LIVE_REPOSITORY_etchbpo="http://www.backports.org/debian/"
+  export LIVE_REPOSITORY_KEY_etchbpo="http://backports.org/debian/archive.key"
+  export LIVE_REPOSITORY_KEYRING_etchbpo=""
+  export LIVE_REPOSITORY_DISTRIBUTION_etchbpo="etch-backports"
+  export LIVE_REPOSITORY_SECTIONS_etchbpo="main contrib non-free"
+}
+
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -a|--packages)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              extra_pkgs="$1"
+              shift
+            fi
+	    [ -z "$extra_pkgs" ] && USAGE && exit 1
+            ;;
+    -b|--branch)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              drbl_branch="$1"
+              shift
+            fi
+	    [ -z "$drbl_branch" ] && USAGE && exit 1
+            ;;
+    -bt|--bootstrap)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              bootstrap="$1"
+              shift
+            fi
+	    [ -z "$bootstrap" ] && USAGE && exit 1
+            ;;
+    -c|--categories)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              categories="$1"
+              shift
+            fi
+	    [ -z "$categories" ] && USAGE && exit 1
+            ;;
+    -d|--debian-dist)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              debian_dist="$1"
+              shift
+            fi
+	    [ -z "$debian_dist" ] && USAGE && exit 1
+            ;;
+    -i|--assign-version-no)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              version_no="$1"
+              shift
+            fi
+	    [ -z "$version_no" ] && USAGE && exit 1
+            ;;
+    -k|--live-kernel)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              live_kernel_ver="$1"
+              shift
+            fi
+	    [ -z "$live_kernel_ver" ] && USAGE && exit 1
+            ;;
+    -l|--drbl-live-branch)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              drbl_live_branch="$1"
+              shift
+            fi
+	    [ -z "$drbl_live_branch" ] && USAGE && exit 1
+            ;;
+    -p|--use-backports)
+	    use_backports="yes"
+            shift ;;
+    -f|--arch-flavor)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              cpu_flavor="$1"
+              shift
+            fi
+	    [ -z "$cpu_flavor" ] && USAGE && exit 1
+            ;;
+    -g|--drbl-repo-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              DRBL_REPOSITORY_URL="$1"
+              shift
+            fi
+	    [ -z "$DRBL_REPOSITORY_URL" ] && USAGE && exit 1
+            ;;
+    -m|--mirror-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              mirror_url="$1"
+              shift
+            fi
+	    [ -z "$mirror_url" ] && USAGE && exit 1
+            ;;
+    -o|--create-source-tarball)
+	    gen_source_tarball="yes"
+            shift ;;
+    -s|--mirror-security-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              mirror_security_url="$1"
+              shift
+            fi
+	    [ -z "$mirror_security_url" ] && USAGE && exit 1
+            ;;
+    -v|--verbose)
+	    verbose="on"
+            shift ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+if ! type lb &>/dev/null; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "This script only works in Debian Etch or later!"
+  echo "If you are running Debian Etch or later, use 'apt-get install live-build' to install the live-build (version $lh_ver_required or later), then run $0 again."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  exit 1
+fi
+
+create_live_required_debian_based_prompt
+
+rm -rf debian-live/.stage/
+
+# Apply default settings if not assigned
+[ -z "$debian_dist" ] && debian_dist="$DEBIAN_DIST_DEF"
+[ -z "$categories" ] && categories="$categories_default"
+[ -z "$DRBL_REPOSITORY_URL" ] && DRBL_REPOSITORY_URL="$DRBL_REPOSITORY_URL_def"
+[ -z "$mirror_url" ] && mirror_url="$debian_mirror_url_def"
+[ -z "$mirror_security_url" ] && mirror_security_url="$debian_mirror_security_url_def"
+[ -z "$cpu_flavor" ] && cpu_flavor="$cpu_flavor_default"
+[ -z "$bootstrap" ] && bootstrap=$bootstrap_default
+
+# Append the extra packages
+[ -n "$extra_pkgs" ] && pkgs="$pkgs $extra_pkgs"
+
+# If version_no is not assigned, use date (Ex. 20070409)
+[ -z "$version_no" ] && version_no="$(date +%Y%m%d)"
+target_iso="debian-live-for-ocs-${version_no}.iso"
+target_src_tarball="clonezilla-live-src-${version_no}.debian.tar.gz"
+target_src_tarball_list="clonezilla-live-src-${version_no}.debian.list"
+target_src_debian_live_tarball="clonezilla-live-src-${version_no}.debian-live.tar.gz"
+target_src_debian_live_tarball_list="clonezilla-live-src-${version_no}.debian-live.list"
+
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "Creating a Debian live cd iso which is used for clonezilla image with restoration function. The created iso will be in $target_iso" 
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+#
+echo "Using Debian repository from: $mirror_url"
+echo "Using Debian security repository from: $mirror_security_url"
+echo "Using DRBL repository from: $DRBL_REPOSITORY_URL"
+
+#
+case "$drbl_branch" in
+  t|testing)
+     echo "Using DRBL testing branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="stable testing"
+     ;;
+  u|unstable)
+     echo "Using DRBL unstable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="stable testing unstable"
+     ;;
+  *)
+     echo "Using DRBL stable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="stable"
+     ;;
+esac
+case "$drbl_live_branch" in
+  t|testing)
+     echo "Using DRBL Live testing branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-stable live-testing"
+     ;;
+  u|unstable)
+     echo "Using DRBL Live unstable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-stable live-testing live-unstable"
+     ;;
+  e|experimental)
+     echo "Using DRBL Live experimental branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-stable live-testing live-unstable live-experimental"
+     ;;
+  *)
+     echo "Using DRBL live stable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-stable"
+     ;;
+esac
+
+#
+[ "$use_backports" = "yes" ] && turn_on_etch_backports
+
+if [ "$debian_dist" = "squeeze" -o \
+     "$debian_dist" = "wheezy" -o \
+     "$debian_dist" = "sid" ]; then
+  # From around Oct/2009, the dummy package name "grub" is actually grub-pc, therefore we force to use grub-legacy and assume that if grub2 boot loader is used in the restored GNU/Linux, grub2 is available in the restored GNU/Linux so therefore we can use chroot to run it.
+  # 2011/Dec/03 Since most of GNU/Linux distributions now use grub2, no more force to use grub-legacy, and we have backup plan by putting grub1 deb package in the live system. 
+  # pkgs="$(LC_ALL=C echo $pkgs | sed -r -e "s/grub[[:space:]]+/grub-legacy /")"
+  # Since with squeeze or sid, we can use uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
+  pkgs="$pkgs v86d"
+fi
+
+if [ "$verbose" = "on" ]; then
+  pref="bash -x"
+  export CDEBOOTSTRAP_OPTIONS="$CDEBOOTSTRAP_OPTIONS -v --debug"
+fi
+
+if [ -d "debian-live" ]; then
+  echo "Found dir debian-live, clean stale debian-live files..."
+  chroot debian-live/chroot umount /dev/pts &>/dev/null || true
+  chroot debian-live/chroot umount /proc &>/dev/null || true
+  chroot debian-live/chroot umount /sys &>/dev/null || true
+  (
+    cd debian-live/
+    lb clean
+  )
+  rm -rf debian-live
+fi
+
+mkdir debian-live
+(
+cd debian-live
+
+$pref lb config --archive-areas "$categories"
+$pref lb config --mirror-binary $mirror_url --mirror-binary-security $mirror_security_url 
+$pref lb config --mirror-bootstrap $mirror_url
+$pref lb config --mirror-chroot $mirror_url --mirror-chroot-security $mirror_security_url
+$pref lb config --bootstrap-flavour $debian_type --packages "$pkgs" --apt apt --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
+$pref lb config --volatile false
+$pref lb config --initramfs live-boot
+$pref lb config --username user --bootappend username=user
+# Enable cache-indices, by doing this, "apt-get upgrade" won't be run in lb chroot_sources after hook since we might assign older package version when building.
+$pref lb config --cache-indices true
+
+if [ "$debian_dist" = "lenny" ]; then
+  # Force to use iso instead of iso-hybrid. Since the syslinux in lenny comes without isohybrid program.
+  $pref lb config --binary-images iso
+else
+  # Enable iso-hybrid for version >= squeeze
+  $pref lb config --binary-images iso-hybrid
+fi
+
+# This decide_live_kernel_related_pkgs_from_debian function will output "kernel_related_pkgs" and "export MKSQUASHFS_OPTIONS"
+decide_live_kernel_related_pkgs_from_debian
+$pref lb config --distribution $debian_dist --linux-packages "$kernel_related_pkgs"
+
+# We force to use the specific CPU kernel.
+$pref lb config --linux-flavours $cpu_flavor
+
+# For OS arch, we can build amd64 Debian on i386 Debian or vice versus.
+case "$cpu_flavor" in
+  686*|486*) os_arch="i386";;
+  amd64) os_arch="amd64";;
+esac
+$pref lb config --architecture $os_arch
+
+# No memtest from debian, we will use the one from drbl since it's newer.
+$pref lb config --memtest none
+
+# Create a source tarball or not.
+if [ "$gen_source_tarball" = "yes" ]; then
+  $pref lb config --source true
+  $pref lb config --source-images tar
+fi
+
+# Put files to be included in the chroot hook
+mkdir -p config/chroot_local-includes/live-hook-dir
+for i in $ocs_live_script_dir; do
+  cp -pr $i/* config/chroot_local-includes/live-hook-dir/
+done
+cp $DRBL_SCRIPT_PATH/conf/drbl*.conf config/chroot_local-includes/live-hook-dir/
+
+# Put the mirror url and settings, which we might need.
+cat <<-HOOK_APPEND_END >> config/chroot_local-includes/live-hook-dir/ocs-live-hook.conf
+# The following settings were added before running hook" >> config/chroot_local-includes/live-hook-dir/ocs-live-hook.conf
+debian_dist="$debian_dist"
+mirror_url="$mirror_url"
+HOOK_APPEND_END
+
+# Put hook file to be run in chroot
+mkdir -p config/chroot_local-hooks
+cp $ocs_live_script_dir/$run_hook_script config/chroot_local-hooks/
+
+# Put hook file to be run in the binary_local-hooks
+mkdir -p config/binary_local-hooks
+cp $ocs_live_script_dir/$run_binary_hook_script config/binary_local-hooks/
+
+# prepare drbl source list
+cat << AddDRBLRepository > config/chroot_sources/drbl.chroot
+deb $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
+deb-src $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
+AddDRBLRepository
+
+# prepare drbl key
+LC_ALL=C wget -O config/chroot_sources/drbl.chroot.gpg $DRBL_GPG_KEY_URL
+
+# Disable apt languages and translations when creating DRBL live. This could reduce apt repository issue.
+disable_apt_lang_translation chroot/etc/apt/apt.conf.d/99lang
+
+# Build it.
+$pref lb build
+)
+mv -f debian-live/binary*.iso $target_iso
+if [ "$gen_source_tarball" = "yes" ]; then
+  mv -f debian-live/source.debian.tar.gz $target_src_tarball
+  mv -f debian-live/source.debian.list $target_src_tarball_list
+  mv -f debian-live/source.debian-live.tar.gz $target_src_debian_live_tarball
+  mv -f debian-live/source.debian-live.list $target_src_debian_live_tarball_list
+fi

@@ -1,0 +1,49 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+#
+# In this example, it will allow your user to use clonezilla live to choose 
+# (1) A samba server as clonezilla home image where images exist.
+# (2) Choose an image to restore to disk.
+
+# When this script is ready, you can run
+# /opt/drbl/sbin/ocs-iso -g en_US.UTF-8 -k NONE -s -m ./custom-ocs-1
+# to create the iso file for CD/DVD. or
+# /opt/drbl/sbin/ocs-live-dev -g en_US.UTF-8 -k NONE -s -c -m ./custom-ocs-1
+# to create the zip file for USB flash drive.
+
+# Begin of the scripts:
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# load the setting for clonezilla live.
+[ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
+# Load language files. For English, use "en_US.UTF-8". For Traditional Chinese, use "zh_TW.UTF-8"
+ask_and_load_lang_set en_US.UTF-8
+
+# The above is almost necessary, it is recommended to include them in your own custom-ocs.
+# From here, you can write your own scripts.
+
+# 1. Configure network
+dhclient
+
+# 2. Mount the clonezilla image home. Available types:
+# local_dev, ssh_server, samba_server, nfs_server
+prep-ocsroot -t samba_server
+
+# 3. Restore the image
+if mountpoint $ocsroot &>/dev/null; then
+  ocs-sr -g auto -e1 auto -e2 -c -r -j2 -p choose restoredisk "ask_user" "ask_user"
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Fail to find the Clonezilla image home $ocsroot!"
+  echo "Program terminated!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+fi
+
+#
+umount $ocsroot &>/dev/null

@@ -1,0 +1,158 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# Description: Program to update the syslinux partition, including the file ldlinux.sys and the files (*.c32 and *.bin) in the dir syslinux.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+syslinux_lib_path="/usr/lib/syslinux"
+
+#
+USAGE() {
+    echo "$ocs - To update the syslinux partition, including the file ldlinux.sys and the files (*.c32 and *.bin) in the dir syslinux"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] [PARTITION]"
+    echo "Options:"
+    echo "-f, --force   Force to update the *.c32 and *.bin files even if the syslinux version on the PARTITION is the same version with syslinux on this running operating system."
+    echo "-b, --batch   Run program in batch mode, i.e. without any prompt or wait for pressing enter key."
+    echo "PARTITION is the FAT partition device name, e.g. sda1, sdb1..."
+    echo "Ex:"
+    echo "To update the syslinux partition /dev/sdg1, run:"
+    echo "   $ocs sdg1"
+    echo
+} # end of USAGE
+#
+update_syslinux_and_c32_bin(){
+  # For syslinux partition, there must be:
+  # (1) A FAT partition
+  # (2) A file "ldlinux.sys" exists
+  # (3) A dir /syslinux/ exists  
+  local syslinux_dev rc systmpd file_name fs_
+  syslinux_dev="/dev/$1"   # e.g. /dev/sdg1
+  systmpd="$(mktemp -d /tmp/syslinux_tmp.XXXXXX)"
+
+  # (1) Check if FAT partition
+  fs_="$(LC_ALL=C ocs-get-part-info $syslinux_dev filesystem)"
+  if [ -z "$(echo $fs_ | grep -i "fat" )" ]; then
+    echo "Device $syslinux_dev is not a FAT partition."
+    echo "Skip updating syslinux on that."
+    [ -d "$systmpd" -a -n "$systmpd" ] && rmdir $systmpd
+    return 1
+  fi
+
+  # (2) If ldlinux.sys exists
+  if mount $syslinux_dev $systmpd; then
+    if [ -e "$systmpd/ldlinux.sys" ]; then
+      echo "Found syslinux partition $syslinux_dev."
+      if [ "$batch_mode" = "false" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "The next step is to update syslinux ldlinux.sys and other released files on this device: $syslinux_dev"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	confirm_continue_or_default_quit
+      fi
+      DEV_SYSLINUX_VER="$(LC_ALL=C strings $systmpd/ldlinux.sys | grep -iE "^SYSLINUX.*[[:digit:]]+" | awk -F" " '{print $2}' | sort | uniq)"
+      # The output of command: "syslinux --version" is like:
+      # syslinux 4.04  Copyright 1994-2011 H. Peter Anvin et al
+      SYS_SYSLINUX_VER="$(LC_ALL=C syslinux --version 2>&1 | grep -iE "^SYSLINUX.*[[:digit:]]+" | awk -F" " '{print $2}')"
+      if [ "$DEV_SYSLINUX_VER" != "$SYS_SYSLINUX_VER" -o "$force_update" = "true" ]; then
+        echo "Updating the syslinux-related files on $syslinux_dev..."
+        # Will update files _ONLY ALL_ the related file exist, otherwise it might mismatch.
+        # Two cases for the dir containing syslinux files, (1) /  (2) /syslinux/
+        cand_dir="/ /syslinux"
+        for idir in $cand_dir; do
+          sl_f_2_be_upd=""
+          sl_f_2_fnd_on_system=""
+          to_update_flag=""  
+          echo "Searching syslinux related files in $systmpd/$idir/..."
+          for i in $systmpd/$idir/{*.bin,*.c32,*.com,memdisk}; do
+            [ ! -e "$i" ] && continue   # Skip like "*.c32" name, but no file exists
+            file_name="$(basename $i)"
+            sl_f_2_be_upd="$sl_f_2_be_upd $file_name"
+            if [ -e "$syslinux_lib_path/$file_name" ]; then
+              sl_f_2_fnd_on_system="$sl_f_2_fnd_on_system $file_name"
+            else
+              to_update_flag="no" # If any one not found
+            fi
+          done
+          if [ -n "$sl_f_2_be_upd" ]; then
+            echo "Syslinux related files to be updated: $sl_f_2_be_upd"
+          fi
+          if [ -n "$sl_f_2_fnd_on_system" ]; then
+            echo "Syslinux related files found on the system: $sl_f_2_fnd_on_system"
+          fi
+          if [ "$to_update_flag" != "no" -a -n "$sl_f_2_be_upd" ]; then
+            to_update_flag="yes"
+	  fi
+          if [ "$to_update_flag" = "yes" ]; then
+            for i in $sl_f_2_fnd_on_system; do
+              if [ -e "$syslinux_lib_path/$i" ]; then
+                cp -afv $syslinux_lib_path/$i $systmpd/$idir/
+              fi
+            done
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "All the syslinux related files found on the Clonezilla live, now updating those related files in $systmpd/$idir, and install the syslinux ldlinux.sys on $syslinux_dev..."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+            # Before running syslinux -i, umount it first.
+            umount $syslinux_dev
+            sleep 1
+            echo "Running \"syslinux -i $syslinux_dev\"..."
+            syslinux -i $syslinux_dev
+          else
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+             echo "Not all the syslinux related files found on the Clonezilla live, skip updating those related files. Skip updating $systmpd/$idir."
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          fi
+	  # sl_f_2_be_upd is not nothing, it means $idir (syslinux dir) is found, so not continuing to find the next $idir
+	  [ -n "$sl_f_2_be_upd" ] && break
+        done
+        echo "done!"
+      fi
+    fi
+  fi
+  if mountpoint $systmpd &>/dev/null; then
+    umount $systmpd
+  fi
+  [ -d "$systmpd" -a -n "$systmpd" ] && rmdir $systmpd
+} # end of update_syslinux_and_c32_bin
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+
+# Default settings
+batch_mode="false"
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -f|--force)  force_update="true"; shift;;
+   -b|--batch)  batch_mode="true"; shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+syslinux_part="$*"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+if [ -z "$syslinux_part" ]; then
+  USAGE
+  exit 1
+fi
+
+for i in $syslinux_part; do
+  update_syslinux_and_c32_bin $i
+done

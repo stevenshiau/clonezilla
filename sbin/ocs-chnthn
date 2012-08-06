@@ -1,0 +1,264 @@
+#!/bin/bash
+######################################################
+#
+# Author:	Ceasar Sun Chen-kai <ceasar@nchc.org.tw>
+# License:	GPL
+# Description: 	This script uses Offline NT register editor tool: 
+#               chntpw <http://home.eunet.no/pnordahl/ntpasswd/>
+#		to change Windows Hostname under drbl environment
+# Usage:	ocs-chnthn.sh --help
+# ChangeLog:	
+#		* 110218 
+#			* Add find_registry_realname function to search correct SAM file
+#			* Fix chntpw script to fetch Win7/Vista
+#		* 060728 Synchronize with drbl-winRoll package configuration
+#			 Add fixed hostname assignment method 
+#			 Fix ntfs module loading failed
+#			 Fix mount method for different file system
+#			 Fix umount first checking
+#			 Fix some bugs
+#
+#		* 060721 First version
+#			 Support using vfat FS as windows root file system
+# Wish list:
+#
+# Thanks to Chris Macaulay <macaulayca _at_ hotmail com> for providing the 
+# method and program so that we have this program. Ref:
+# http://sourceforge.net/forum/message.php?msg_id=3750804
+######################################################
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+
+
+######################################################
+# Sub functions
+######################################################
+# Source the ocs-chnthn related functions
+. $DRBL_SCRIPT_PATH/sbin/ocs-chnthn-functions
+
+######################################################
+#Main 
+######################################################
+declare ACTIVE_MODE ALLDEV WIN_ROOT HDDEV
+
+declare __VERSION='060728'
+
+declare HN_FORMAT_PREFIX='PC'
+declare HN_FORMAT_VARI='IP'
+declare HN_VARI_BITS=6; 
+declare WIN_HN="non-assign"
+declare ACTIVE_MODE="interact"
+
+declare NTFSMOUNTPROG="ntfs-3g ntfsmount "			# check needed execute progarm
+declare EXECPROG="drbl-chntpw"			# check needed execute progarm
+declare DEFAULT_WIN_ROOT="WINDOWS WINNT"			# windows root directory
+declare WIN_SYSTEM_SAM="system32/config/system"		# System-specific part (HKEY_LOCAL_MACHINE\System)
+declare WIN_SOFTWARE_SAM="system32/config/software"	# Software-Specific part (HKEY_LOCAL_MACHINE\SOFTWARE)
+declare REAL_WIN_SOFTWARE_SAM REAL_WIN_SOFTWARE_SAM
+declare HDDEV=$(Get_Hd_List)
+declare IF_SYNC_WINROLL_CONFIG=1
+declare DRBL_WINROLL_CONFIG='cygwin/drbl_winroll-config/winroll.conf'
+
+declare tmpmount=$(mktemp -d /tmp/ocs-chnthn-mnt.XXXXXX)
+declare tmWinRegScript=$(mktemp /tmp/ocs-chnthn-winregscript.XXXXXX)
+#declare tmpmount=/tmp/ocs-chnthn-mnt.4test
+#declare tmWinRegScript=/tmp/ocs-chnthn-winregscript.4test
+declare -a PART_DEV_ARR
+declare -a PART_FS_ARR
+declare -a PART_WINROOT_ARR
+declare -a PART_WIN_SYSTEM_SAM
+declare -a PART_WIN_SOFTWARE_SAM
+declare -i PARTIDCOUNT
+declare -i i j k
+
+[ $# -eq 0 ] && Usage && exit 1;
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-b|--batch)
+				shift; ACTIVE_MODE="batch";
+		;;
+		-d|--device)
+				shift;
+				if [ -e $1 ]; then HDDEV="${1:5}"
+				else echo "Device fail , aborted !!" ;exit 1;
+				fi
+				shift
+		;;
+		-h|--help)
+				Usage; exit 1;
+		;;
+		-i|--interact)
+				shift; ACTIVE_MODE="interact";
+		;;
+		-n|--ntfsmount)
+				shift; NTFSMOUNTPROG="$1";
+		shift;
+		;;
+		-p|--prefix)
+				shift; HN_FORMAT_PREFIX="$1"
+		 shift
+		;;
+		-S|--no_sync_config)
+				shift; IF_SYNC_WINROLL_CONFIG=0;
+		;;
+		-V|-R|--readme )
+				README
+				PrintFooter
+				exit 0;
+		;;
+		-v|--variable)
+				shift;
+		if [ -n "$(echo $1 | grep -iE '^IP$')" -o -n	"$(echo $1 | grep -iE '^MAC$')"	-o -n	"$(echo $1 | grep -iE '^_fix$')"	] ; then
+			HN_FORMAT_VARI="$1";
+		else
+			echo "No support variable : $1 ... Use default variable : $HN_FORMAT_VARI"
+		fi
+		 shift
+		;;
+		-w|--winroot )
+			shift; DEFAULT_WIN_ROOT="$1"
+			shift
+		;;
+	 *)
+		Usage
+		exit 1
+	;;
+	esac
+done
+
+check_if_root
+Check_Package $EXECPROG
+Select_ntfsmount_prog $NTFSMOUNTPROG
+Perpare_Env	# check fuse for kernel
+
+# Real start
+
+# Print program header
+PrintHeader
+
+# Step1 : print harddisk info
+Print_Allpartition_Info "$HDDEV";
+
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING ; echo -e "** Please select partition :"; [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
+	
+# print available partition info for user selecting
+for (( i=1; i<=$PARTIDCOUNT; i=i+1)); do
+	echo -n "[$i]: ${PART_DEV_ARR[$i]}	[${PART_FS_ARR[$i]}]	[${PART_WINROOT_ARR[$i]}]   [${PART_WIN_SYSTEM_SAM[$i]}]  [${PART_WIN_SOFTWARE_SAM[$i]}]"
+	[ -n "${PARTSTORYARR[$i]}" ] && [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo -e "\t<${PARTSTORYARR[$i]}>" && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
+	[ -n "${PARTFSCKARR[$i]}" ] && [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo -e "\t${PARTFSCKARR[$i]}" && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
+done
+echo "======================================================"
+
+# selected partition	, all fo device id would cache in "prepartarr"
+prepartarr=
+
+until [ -n "$prepartarr" ]
+do
+	if [ "$ACTIVE_MODE" = "batch" ];then
+		for (( i=1; i<=$PARTIDCOUNT; i=i+1)); do
+			prepartarr="$prepartarr $i"
+		done
+	else
+		echo "1 ..[n] to select, [Ctrl+C] to exit ..."
+		echo -n "[1]"
+		read partid junk
+		[ -z "$partid" ] && partid=1 ;
+
+		if [ -n "$(echo $partid | grep -w [Qq])"	]; then
+			echo "User abort !!"; exit 1;
+		elif [ $((partid+1-1)) -le 0 ] || [ $((partid+1-1)) -gt $PARTIDCOUNT ];then
+			echo "ID failed !! Select again !!!"
+		else
+			prepartarr="$((partid+1-1))"
+		fi
+	fi
+done
+
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo -e "** Device assigned: " && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL; 
+for id in $prepartarr 
+do
+	echo -e "\t[$id]:	${PART_DEV_ARR[$id]}	[${PART_FS_ARR[$id]}]	[${PART_WINROOT_ARR[$id]}]" ;
+done
+
+# Design hostname by $WIN_HN
+gen_hn_stream "$HN_FORMAT_PREFIX" "$HN_FORMAT_VARI"
+
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo -e "** Use hostname => $WIN_HN" && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
+
+# Generate a script for editing win register
+
+cat >$tmWinRegScript << EOF
+cd \ControlSet001\Services\Tcpip\Parameters
+ed Hostname
+$WIN_HN
+cd \ControlSet001\services\Tcpip\Parameters
+ed Hostname
+$WIN_HN
+ed NV Hostname
+$WIN_HN
+cd \ControlSet001\Control\ComputerName\ComputerName
+ed ComputerName
+$WIN_HN
+h 1
+cd \Microsoft\Windows NT\CurrentVersion\Winlogon
+ed DefaultDomainName
+$WIN_HN
+EOF
+
+cp -f "$tmWinRegScript" "/tmp/.ocs-chnthn.log"
+
+# Start to process each selected partation
+for id in $prepartarr 
+do
+	[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo -e "** Process:	${PART_DEV_ARR[$id]}" && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
+
+	if [ "${PART_FS_ARR[$id]}" = "ntfs" ]; then
+		MOUNTCOMM=$NTFSMOUNTPROG
+	elif [ "${PART_FS_ARR[$id]}" = "vfat" ] ; then
+		MOUNTCOMM="mount -t auto"
+	else
+		echo FS:${PART_FS_ARR[$id]} error, abort !! && exit 1;
+	fi
+
+	df $tmpmount
+	sleep 2
+	$MOUNTCOMM ${PART_DEV_ARR[$id]} $tmpmount &>/dev/null
+	sleep 2
+	df $tmpmount
+
+	#find_registry_realname "$tmpmount/${PART_WINROOT_ARR[$id]}" "$WIN_SYSTEM_SAM" "$WIN_SOFTWARE_SAM"
+
+	#[ -z "$REAL_WIN_SYSTEM_SAM" ] && echo "No WIN_SYSTEM_SAM file:$WIN_SYSTEM_SAM" && exit 1;
+	#[ -z "$REAL_WIN_SOFTWARE_SAM" ] && echo "No WIN_SOFTWARE_SAM file:$WIN_SOFTWARE_SAM" && exit 1;
+
+	if [ -w "${PART_WIN_SYSTEM_SAM[$id]}" -a -w "${PART_WIN_SOFTWARE_SAM[$k]}" ]; then
+		[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING 
+		echo -e "\nExecute command:"
+		[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
+		echo "drbl-chntpw -f $tmWinRegScript $REAL_WIN_SYSTEM_SAM  $REAL_WIN_SOFTWARE_SAM" ;
+
+		# Real to edit windows register
+		drbl-chntpw -f $tmWinRegScript "$REAL_WIN_SYSTEM_SAM" "$REAL_WIN_SOFTWARE_SAM" &>/dev/null
+
+		[ "$IF_SYNC_WINROLL_CONFIG" = 1 ]  && SYNC_DRBL_winroll_config;
+
+		[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo -e "** Success !!" && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
+	else
+		[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+		echo "Filesystem write error : $REAL_WIN_SYSTEM_SAM or $REAL_WIN_SOFTWARE_SAM";
+		[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	fi
+	umount $tmpmount
+done
+# clean temp file and directory
+rm -rf /tmp/ocs-chnthn-*
+
+# Print program footer
+PrintFooter
+echo "Bye !!" ;
+exit 0

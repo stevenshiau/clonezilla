@@ -1,0 +1,89 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Program to create the EFI boot loader from grub2
+
+# Settings
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+
+efi_required_mod="part_gpt part_msdos hfsplus fat ext2 ntfs btrfs normal chain boot configfile linux appleldr minicmd multiboot iso9660 acpi efi_gop efi_uga elf loadbios loopback video_fb usb search fixvideo png gfxterm echo videotest video pci reboot halt gfxmenu gettext"
+grub_required_files="/usr/share/grub/unicode.pf2"
+
+# Functions
+USAGE() {
+  echo "To create an EFI boot loader from grub2."
+  echo "Usage: $0 OUTPUT_DIR"
+  echo "OUTPUT_DIR is the where the created boot loader will be placed."
+  echo "   E.g.  $0 /tmp/efi/"
+}
+#
+#############
+###  MAIN ###
+#############
+#
+check_if_root
+
+output_dir="$1"
+
+# Checking
+if [ ! -e /etc/debian_version ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "This is not a Debian/Ubuntu Linux system. This program only works on Debian/Ubuntu Linux system."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+if [ -z "$output_dir" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No output dir! Program terminated!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  exit 1
+fi
+if [ ! -d "$output_dir" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "The output dir \"$output_dir\" does not exist, or it's not a directory."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+
+#
+grub_efi_dir="$(mktemp -d /tmp/grub-efi.XXXXXX)"
+for i in grub-efi-ia32 grub-efi-amd64; do
+  echo "Download $i from deb packages repository..."
+  LC_ALL=C apt-get -d --reinstall -y install $i &>/dev/null
+done
+for i in /var/cache/apt/archives/grub-efi*.deb; do
+  dpkg --extract $i $grub_efi_dir
+done
+# Prepare a grub.cfg so that the eltorito image could find it.
+cat <<-GRUB_END > $grub_efi_dir/grub_head.cfg
+search --file --set=root /.disk/info
+set prefix=(\$root)/EFI/boot/
+
+GRUB_END
+#
+for i in i386 x86_64; do
+  export EFI_ARCH=$i
+  case "$EFI_ARCH" in
+    i386)   out_f="$output_dir/bootia32.efi" ;;
+    x86_64) out_f="$output_dir/bootx64.efi" ;;
+  esac
+  grub-mkimage -O $EFI_ARCH-efi -d $grub_efi_dir/usr/lib/grub/$EFI_ARCH-efi/ -o $out_f --prefix=/EFI/boot/ -c $grub_efi_dir/grub_head.cfg $efi_required_mod
+  rc=$?
+  if [ "$rc" -gt 0 ]; then
+    # When grub-mkimage fails, an empty output file will still be created. We'd better to clean it.
+    rm -f $out_f
+  fi
+done
+# Copy the required files, e.g. fonts to the output dir.
+cp -a $grub_required_files $output_dir
+
+# Clean the temp dir
+if [ -e "$grub_efi_dir" -a -n "$(echo $grub_efi_dir | grep -E "grub-efi")" ]; then
+  rm -rf $grub_efi_dir
+fi

@@ -1,0 +1,134 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+
+# Load gparted live functions
+. /usr/share/gparted/bin/gl-functions
+
+echo "Updating /etc/gparted-live/gparted-live.conf based on kernel parameters if found... "
+# Get options from kernel parameter if available.
+# gl_kbd (wiill not be used in the future) is like: en, es, uk (2 lowecase letters), which will be used by:
+# install-keymap ${gl_kbd}
+# keyb is the same with that from live-initramfs. The reason we need to parse it is because sometimes user does not assign that in the boot parameters, but it's when gparted-related service is run
+param_2_be_parsed="gl_kbd gl_lang gl_numlk gl_capslk keyb"
+parse_cmdline_option "$param_2_be_parsed"
+
+# 2012/06/30 Give warning about gl_lang, gl_kbd and keyb are deprecated.
+show_deprecated_gl_lang_and_keymap
+
+# 2012/06/29 gl_lang should honor the parameter "locales" of live-config.
+# 2012/06/29 live-config.keyboard-layouts=*|keyboard-layouts=* is from boot parameters of live-config. Here we only want to be compatible with live-config.keyboard-layouts or keyboard-layouts. Still let live-config to do the keyboard configuration.
+# Then ocs_live_keymap should be depreciated.
+for ARGUMENT in $(cat /proc/cmdline); do
+  case "${ARGUMENT}" in
+    live-config.locales=*|locales=*) 
+	    gl_lang="${ARGUMENT#*locales=}" 
+	    ;;
+    live-config.keyboard-layouts=*|keyboard-layouts=*)
+    	    live_keyboard_layouts="${ARGUMENT#*keyboard-layouts=}" 
+	    ;;
+  esac
+done
+
+# tune the param in /etc/gparted-live/gparted-live.conf
+for ik in $param_2_be_parsed live_keyboard_layouts; do
+  eval real_var=\$$ik
+  if [ -n "$real_var" ]; then
+    if [ -z "$(grep -E "^[[:space:]]*$ik=" /etc/gparted-live/gparted-live.conf 2>/dev/null)" ]; then
+      # append it
+      echo "$ik=\"$real_var\"" >> /etc/gparted-live/gparted-live.conf
+    else
+      # modify it
+      perl -pi -e "s|^[[:space:]]*$ik=.*|$ik=\"$real_var\"|g" /etc/gparted-live/gparted-live.conf
+    fi
+  fi
+done
+echo "done!"
+
+#
+[ -e /etc/gparted-live/gparted-live.conf ] && . /etc/gparted-live/gparted-live.conf
+
+# Process the number lock and capslock
+case "$gl_numlk" in
+  on|ON) setleds +num ;;
+  off|OFF) setleds -num ;;
+esac
+	
+case "$gl_capslk" in
+  on|ON) setleds +caps;;
+  off|OFF) setleds -caps ;;
+esac
+
+#
+# Append start gparted in auto login account's (with sudo privilege) bash profile
+get_live_autologin_account
+if [ -z "$live_autologin_account" ]; then
+   echo "No account with NOPASSWD sudo privilege was found!"
+   echo "Program terminated!"
+   exit 1
+fi
+get_live_auto_login_id_home
+
+#
+gparted_desktop_rep="/root/gparted-live/"
+
+cp -af $gparted_desktop_rep/ideskrc $live_auto_login_id_home/.ideskrc
+cp -af $gparted_desktop_rep/idesktop $live_auto_login_id_home/.idesktop
+cp -af $gparted_desktop_rep/apps $live_auto_login_id_home/
+
+#
+cat <<-XINITRC_END >> $live_auto_login_id_home/.xinitrc
+#!/bin/bash
+exec fluxbox &
+
+[ -e /etc/gparted-live/gparted-live.conf ] && . /etc/gparted-live/gparted-live.conf
+# Force to load system keymap in X if "keyb" and "live_keyboard_layouts" is not set, otherwise the default in xorg.conf is "us".
+# 2012/6/29 Actually "keyb" is deprecated. We should let live-config.keyboard-layouts=*|keyboard-layouts=* of live-config take care of the keymap. Therefore the following is only for backward compability. User shoud be able to use live-config.keyboard-layouts=*|keyboard-layouts=* to configure the keymap in console and X. Live-config will take care of that.
+if [ -z "\$keyb" -a -z "\$live_keyboard_layouts" ]; then
+  # This case means keyb or live-config.keyboard-layouts=*|keyboard-layouts=*) is not assigned in boot parameter, it's got from dpkg-configure console-common. Therefore we have to find the keyb via getkmapchoice.pl
+  # The keymaps get from getkmapchoice.pl are like: mac-usb-fr, dvorak-de...
+  # Ref: files names in /usr/share/keymaps/i386/
+  # While setxkmap only accepts something like: fr, de, us... Here it's a workaround to make this. However, a better mechanism should be used here in the future.
+  keybs="\$(LC_ALL=C /usr/share/console/getkmapchoice.pl 2>&1 | sed -e "s/-/ /g")"
+  for kb in \$keybs; do
+    setxkbmap -layout \$kb
+    [ "\$?" -eq 0 ] && break
+  done
+elif [ -n "\$keyb" ]; then
+  setxkbmap -layout \$keyb
+fi
+
+#
+action=""
+while [ -z "\$action" ]; do
+  if [ -d "\$HOME/.fluxbox" ]; then
+    mv -f ~/apps \$HOME/.fluxbox/
+    # Ref: https://bugzilla.gnome.org/show_bug.cgi?id=578842#c8
+    echo "# Ref: https://bugzilla.gnome.org/show_bug.cgi?id=578842#c8" >> \$HOME/.fluxbox/keys
+    echo "Menu :RootMenu" >> \$HOME/.fluxbox/keys
+    action="done"
+  else
+    echo "Waiting for \$HOME/.fluxbox to be created..."
+    sleep 0.1
+  fi
+done
+idesk &
+# Do not start gparted immediately, wait a sec so that it can read the setting of ~/.fluxbox/apps.
+sleep 1
+sudo gparted &
+wait \$wmpid
+XINITRC_END
+
+# From live-config 2.0.6, startx will be appended in /etc/profile.d/zz-xinit.sh for Debian Squeeze. Therefore we do not append startx to .bash_profile if it exists in zz-xinit.sh
+if [ -e /etc/profile.d/zz-xinit.sh ]; then
+  if [ -z "$(LC_ALL=C grep -Ew "[[:space:]]*startx" /etc/profile.d/zz-xinit.sh)" ]; then
+    cat <<-PROFILE_END >> $live_auto_login_id_home/.bash_profile
+# Added by GParted live
+# Start X in tty1 only
+sudo [ "\$(tty)" = "/dev/tty1" ] && sudo startx
+PROFILE_END
+  fi
+fi
+
+chown -R $live_autologin_account.$live_autologin_account $live_auto_login_id_home
+

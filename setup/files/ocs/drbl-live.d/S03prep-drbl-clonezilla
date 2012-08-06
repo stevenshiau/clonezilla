@@ -1,0 +1,145 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+
+# Load functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+LIVE_MEDIA=""
+get_live_media_mnt_point
+
+if [ -z "$LIVE_MEDIA" ]; then
+  echo "///WARNING/// filesystem.squashfs not found! No idea where is LIVE_MEDIA!!!"
+fi
+echo "Live media is in $LIVE_MEDIA"
+
+# Prepare drbl/clonezilla runtime programs and dir
+if [ -e $LIVE_MEDIA/pkg/custom-ocs ]; then
+  echo "Preparing customized Clonezilla program $DRBL_SCRIPT_PATH/sbin/custom-ocs..."
+  install -m 755 $LIVE_MEDIA/pkg/custom-ocs $DRBL_SCRIPT_PATH/sbin/
+fi
+
+echo "Updating /etc/ocs/ocs-live.conf based on kernel parameters if found... "
+# Get options from kernel parameter if available.
+# A normal bootparam in /proc/cmdline for clonezilla live is like:
+# initrd=initrd-pxe.img devfs=nomount drblthincli=off selinux=0 ip=frommedia ocs_live_run="ocs-live-general"
+param_2_be_parsed="ocs_live_run ocs_live_extra_param ocs_live_keymap ocs_live_batch ocs_lang ocs_daemonon ocs_daemonoff ocs_numlk ocs_capslk dcs_choose_client ocs_user_mode dcs_input_img_name ocs_postmode dcs_img_vol_limit dcs_save_extra_opt dcs_cast_mode dcs_mcast_type dcs_restore_extra_opt limit_pxe_drbl_client ocs_batch_mode ocs_live_type ocsroot_src ocs_sr_save_extra_opt ocs_sr_restore_extra_opt ocs_client_no_per_NIC"
+parse_cmdline_option "$param_2_be_parsed"
+
+# 2012/06/30 Give warning about ocs_lang and ocs_live_keymap are deprecated.
+show_deprecated_ocs_lang_and_keymap
+
+#
+mkdir -p /etc/ocs/
+
+# 2012/06/28 ocs_lang should honor the parameter "locales" of live-config.
+# 2012/06/29 live-config.keyboard-layouts=*|keyboard-layouts=* is from boot parameters of live-config. Here we only want to be compatible with live-config.keyboard-layouts or keyboard-layouts. Still let live-config to do the keyboard configuration. Then ocs_live_keymap should be depreciated.
+for ARGUMENT in $(cat /proc/cmdline); do
+  case "${ARGUMENT}" in
+    live-config.locales=*|locales=*) 
+	    ocs_lang="${ARGUMENT#*locales=}"
+            ;;
+    live-config.keyboard-layouts=*|keyboard-layouts=*)
+            live_keyboard_layouts="${ARGUMENT#*keyboard-layouts=}"
+            ;;
+  esac
+done
+
+# tune the param in /etc/ocs/ocs-live.conf
+for ik in $param_2_be_parsed live_keyboard_layouts; do
+  eval real_var=\$$ik
+  if [ -n "$real_var" ]; then
+    if [ -z "$(LANG=C grep -E "^[[:space:]]*$ik=" /etc/ocs/ocs-live.conf 2>/dev/null)" ]; then
+      # append it
+      echo "$ik=\"$real_var\"" >> /etc/ocs/ocs-live.conf
+    else
+      # modify it
+      perl -pi -e "s|^[[:space:]]*$ik=.*|$ik=\"$real_var\"|g" /etc/ocs/ocs-live.conf
+    fi
+  fi
+done
+echo "done!"
+
+# Parse the cmdline then add options for uvesafb
+if LANG=C grep -q "mode_option=" /proc/cmdline; then
+  echo "Updating /etc/modprobe.d/options based on mode_option in kernel parameter... "
+  mode_option="$(grep mode_option /proc/cmdline | sed -e "s/.*mode_option=\([^ ]\+\).*$/\1/")"
+  if [ -z "$(LANG=C grep -E "^[[:space:]]*options uvesafb" /etc/modprobe.d/options 2>/dev/null)" ]; then
+    # append it
+    echo "options uvesafb mode_option=\"$mode_option\"" >> /etc/modprobe.d/options
+  else
+    # modify it
+    perl -pi -e "s|^[[:space:]]*options uvesafb mode_option=.*|options uvesafb mode_option=\"$mode_option\"|g" /etc/modprobe.d/options
+  fi
+  echo "done!"
+  if [ -n "$(lsmod | grep uvesafb)" ]; then
+    echo "Unloading uvesafb and load it again to make mode_option=\"$mode_option\" work... "
+    rmmod uvesafb
+    echo "done!"
+  fi
+  echo "Loading uvesafb module..."
+  modprobe uvesafb
+fi
+
+#
+[ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
+
+# Process the daemon on and off
+for i in $ocs_daemonon; do
+  /etc/init.d/$i start
+done
+
+for i in $ocs_daemonoff; do
+  /etc/init.d/$i stop
+done
+
+# Process the number lock and capslock
+case "$ocs_numlk" in
+  on|ON) setleds +num ;;
+  off|OFF) setleds -num ;;
+esac
+	
+case "$ocs_capslk" in
+  on|ON) setleds +caps;;
+  off|OFF) setleds -caps ;;
+esac
+
+# drbl_live_keymap/ocs_live_keymap and drbl_lang/ocs_lang will be processed later in another service
+
+# Append some files in auto login account (with sudo privilege)
+get_live_autologin_account
+if [ -z "$live_autologin_account" ]; then
+   echo "No account with NOPASSWD sudo privilege was found!"
+   echo "Program terminated!"
+   exit 1
+fi
+get_live_auto_login_id_home
+# put some desktop icons in the account $autologin_account.
+mkdir -p $live_auto_login_id_home/Desktop
+chown -R $live_autologin_account.$live_autologin_account $live_auto_login_id_home/Desktop/
+cp -a $DRBL_SCRIPT_PATH/setup/files/misc/desktop-icons/drbl-live/*.desktop $live_auto_login_id_home/Desktop/
+# If /usr/share/applications/xfce-display-settings.desktop, use it instead of the default one (lxrandr or grandr).
+if [ -f /usr/share/applications/xfce-display-settings.desktop ]; then
+  cp -a /usr/share/applications/xfce-display-settings.desktop $live_auto_login_id_home/Desktop/Display.desktop
+fi
+chown $live_autologin_account.$live_autologin_account $live_auto_login_id_home/Desktop/*.desktop
+
+if ! type X &>/dev/null; then
+  if [ -z "$(LANG=C grep -E "^[^#][[:space:]]*sudo -i ocs-live-run-menu" $live_auto_login_id_home/.bash_profile 2>/dev/null)" ]; then
+    cat <<-PROFILE_END >> $live_auto_login_id_home/.bash_profile
+# Added by Clonezilla live
+clear
+# By default we will start clonezilla on /dev/tty1 (no more /dev/ttyS0) only when \$ocs_live_run_tty is not specivied. If you want to use ttyS0, add live-getty and console=ttyS0,38400n81 in the boot parameter. The control is inside ocs-live-run-menu.
+if type ocs-live-run-menu &>/dev/null; then
+ sudo -i ocs-live-run-menu
+fi
+PROFILE_END
+    chown $live_autologin_account.$live_autologin_account $live_auto_login_id_home/.bash_profile
+  fi
+fi
+
+# Prepare mounting point for $ocsroot
+[ -n "$ocsroot" ] && mkdir -p $ocsroot

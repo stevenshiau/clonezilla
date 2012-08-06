@@ -1,0 +1,1211 @@
+#!/bin/bash
+#
+# License: GPL 
+# Original author: Blake, Kuo-Lien Huang
+# Description:
+#  2003/04/11 the first version, only work on /dev/hda1 & PXE
+#  2003/06/01 disk to disk mode & etherboot support 
+#             (the etherboot lzdsk images are located in
+#              /tftpboot/etherboot-5.0.7 after DRBLCD installed)
+#  2003/07/18 `checkInodeForDevice`
+#
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# 2003/07/21 the first version for Redhat, modified from Blake's version,
+# only work on /dev/hda1 & PXE
+# 2004/02/04 add the multicast function
+# 2005/01/21 add code to save/restore some partitions (not entire disk).
+# 2005/11/06 Many thanks to Christian Treczoks for providing "dd skip=1" method
+# 2006/05/06 Remove save & restore hda1, since we can use save & restore partitions.
+# 2006/12/07 Rewrite drbl-ocs to drbl-ocs + ocs-sr + ocs-functions.
+
+# input parameters:
+# save/savedisk/saveparts/restore/restoredisk/restoreparts/multicast_restore/multicast_restoredisk IMAGE-NAME DEVICES
+
+# Notes:
+# task_restorexxx/savexxx function will always use $ocsroot (/home/partimag) as mount point to do the save/restore, so it might overwrite the /home/partimag by mounting $ocsroot from server:/home2 (for example).
+# The mount action is done in function task_preprocessing
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+ocs_myself_id="$$"
+# we need ocs_ppid for ocs-functions
+ocs_ppid="$PPID"
+# log file for sfdisk when restoring
+# RESTORE_SFDISK_LOG is loaded from drbl.conf
+
+# Some initial setting
+confirm_before_clone="no"
+ocs_sr_mode=""
+gen_md5sum="no"
+gen_sha1sum="no"
+check_md5sum="no"
+check_sha1sum="no"
+chk_img_restoreable="yes"
+# Flag to check target disk size before creating partition table
+chk_tgt_disk_size_bf_mk_pt="yes"
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /opt/drbl/conf/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
+# otherwise setterm will complain.
+[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
+echo "Setting the TERM as $TERM"
+export TERM="$TERM"
+
+#
+check_if_root
+
+#
+USAGE() {
+    echo "Usage:"
+    echo "To save or restore image"
+    echo "$ocs [OPTION] {savedisk|saveparts|restoredisk|restoreparts} IMAGE_NAME DEVICE"
+    echo 
+    echo " Options for saving:"
+    USAGE_common_save
+    echo " -i, --image-size SIZE    Set the split image file volume size SIZE (MB). When $ocs is run with -x, the default SIZE is set as $VOL_LIMIT_IN_INTERACTIVE, if without -x, we will not split it."
+    USAGE_reserved_word_for_save
+    echo
+    echo " Options for restoring:"
+    USAGE_common_restore
+    echo " --mcast-port   NO     Assign the udp port number for multicast restore. This is used by clonezilla server. Normally it's not necessary to manually assign this option."
+    USAGE_reserved_word_for_restore
+    echo
+    echo " General options:"
+    USAGE_common_general
+    dialog_like_prog_help_prompt
+    echo " -x, --interactive     Interactive mode to save or restore."
+    echo
+    echo "Example:"
+    echo "   To save or restore image in client (Only that DRBL client will join, and its local partitions is NOT mounted). NOTE!!! You should run the command in DRBL client or you have to make sure the target device is NOT busy!."
+    echo "   To save all the data in local first IDE harddrive 'hda' as image 'IMAGE1', use ntfsclone instead of partimage, and lzop compression (NOTE!!! You should run the command in DRBL client or make sure hda is NOT busy/mounted!):"
+    echo "   $ocs --use-ntfsclone -z3 savedisk IMAGE1 hda"
+    echo
+    echo "   To save the data in first and second partitions in local first IDE harddrive 'hda' as image 'IMAGE2', use ntfsclone instead of partimage, and lzop compression (NOTE!!! You should run the command in DRBL client, or make sure hda is NOT busy/mounted!):"
+    echo "   $ocs" '--use-ntfsclone -z3 saveparts IMAGE2 "hda1 hda2"'
+    echo
+    echo "   To restore image "IMAGE1" to local hda. grub-install will be run after cloning (image IMAGE1 is already in DRBL server. NOTE!!!  You should run the command in DRBL client or make sure hda is NOT busy/mounted!):"
+    echo "   $ocs -g auto restoredisk IMAGE1 hda"
+    echo
+    echo "   To restore image first and second partitions from "IMAGE2" to local hda1 and hda2. grub-install will be run after cloning (image IMAGE2 is already in DRBL server. NOTE!!!  You should run the command in DRBL client or make sure hda is NOT busy/mounted!):"
+    echo "   $ocs" '-g auto restoreparts IMAGE2 "hda1 hda2"'
+    echo
+    echo "   To save disk(s)/partitition(s) as an image or restore an image to disk(s)/partitition(s) interactively, use:"
+    echo "   $ocs -x"
+}
+#
+parse_ocs_sr_cmd_options_with_dash() {
+ # Parse command-line options
+ # It's UGLY to use "shift; n_shift=$((n_shift+1))"
+ # However, we want to reuse the parse_ocs_sr_cmd_options_with_dash, 
+ # a problem here:
+ # The parameters (-b -g auto --nogui --max-time-to-wait 300 --language 0 multicast_restoreparts sarge-base "hda1 hda3" 2232), when put it as $*, it will
+ # become (-b -g auto --nogui --max-time-to-wait 300 --language 0 multicast_restoreparts sarge-base hda1 hda3 2232), you see, "hda1 hda3" -> hda1 hda3
+ # Then everyting is in a mess... so now the best solution I can find is to
+ # calculate the n_shift, then parse it to original shell, not in the function.
+
+ n_shift=0
+ while [ $# -gt 0 ]; do
+  case "$1" in
+    -l|--language)
+            shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      specified_lang="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$specified_lang" ] && USAGE && exit 1
+	    ;;
+    -g|--grub-install)  
+            install_grub="on"
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              grub_partition=$1
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$grub_partition" ] && USAGE && exit 1
+            ;;
+    -a|--no-force-dma-on)  
+	    force_dma_on="no"
+            shift; n_shift=$((n_shift+1));;
+    -k|--no-fdisk|--no-create-partition)  
+	    create_part="no"
+            shift; n_shift=$((n_shift+1));;
+    -k1|--fdisk-proportion)  
+	    create_part="yes"
+	    create_part_type="proportion"
+            shift; n_shift=$((n_shift+1));;
+    -k2|--fdisk-manual)  
+	    create_part="yes"
+	    create_part_type="manual"
+            shift; n_shift=$((n_shift+1));;
+    -t|--no-restore-mbr)  
+	    restore_mbr="no"
+            shift; n_shift=$((n_shift+1));;
+    -t1|--restore-raw-mbr)  
+            # The flag to restore syslinux mbr.bin to M$ windows system.
+	    restore_prebuild_mbr="yes"
+            shift; n_shift=$((n_shift+1));;
+    -u|--select-img-in-client)
+	    select_img_in_client="yes"
+            shift; n_shift=$((n_shift+1));;
+    -e|--load-geometry)
+	    load_HD_CHS_from_img="yes"
+            shift; n_shift=$((n_shift+1));;
+    -e1|--change-geometry)  
+            change_ntfs_boot_chs="on"
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              ntfs_boot_partition=$1
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$ntfs_boot_partition" ] && USAGE && exit 1
+            ;;
+    -e2|--load-geometry-from-edd)
+	    use_HD_CHS_from_EDD_pref="yes"
+            shift; n_shift=$((n_shift+1));;
+    -y|-y0|--always-restore|--always-restore-default-local)
+	    always_restore="yes"
+            pxe_menu_default_mode="local"
+            shift; n_shift=$((n_shift+1));;
+    -y1|--always-restore-default-clone)
+	    always_restore="yes"
+            pxe_menu_default_mode="clone"
+            shift; n_shift=$((n_shift+1));;
+    -y2|--always-restore-default-drbl)
+	    always_restore="yes"
+            pxe_menu_default_mode="drbl"
+            shift; n_shift=$((n_shift+1));;
+    -c|--confirm)
+            confirm_before_clone="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -sc|--skip-check-restorable)
+            # flag to check if the image is restorable
+	    chk_img_restoreable="no"
+	    shift; n_shift=$((n_shift+1));;
+    -w|--wait-time)
+            shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      TIME_to_wait="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+	    ;;
+    --debug=?*)
+            debug_level=${1#--debug=}
+	    shift; n_shift=$((n_shift+1));;
+    -b|-batch|--batch)
+            ocs_batch_mode="on"
+	    shift; n_shift=$((n_shift+1));;
+    -d|--debug-mode)
+            debug_mode="on"
+	    shift; n_shift=$((n_shift+1));;
+    -d0|--dialog)  
+	    DIA="dialog" 
+	    shift;;
+    -d1|--Xdialog)  
+	    DIA="Xdialog" 
+	    shift;;
+    -d2|--whiptail)  
+	    DIA="whiptail" 
+	    shift;;
+    -d3|--gdialog)  
+	    DIA="gdialog" 
+	    shift;;
+    -d4|--kdialog)  
+	    DIA="kdialog" 
+	    shift;;
+    -m|--module)
+            shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              module_to_load=$1
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$module_to_load" ] && USAGE && exit 1
+            ;;
+    -r|--resize-partition)
+            resize_partition="on"
+	    shift; n_shift=$((n_shift+1));;
+    -v|--verbose)
+	    verbose="on"
+	    shift; n_shift=$((n_shift+1));;
+    -z0|--no-compress)
+            IMG_CLONE_CMP="cat"
+	    shift; n_shift=$((n_shift+1));;
+    -z1|--gzip-compress)
+            IMG_CLONE_CMP="gzip -c $extra_gzip_opt"
+	    shift; n_shift=$((n_shift+1));;
+    -z1p|--smp-gzip-compress)
+            IMG_CLONE_CMP="pigz -c $extra_pigz_opt"
+	    shift; n_shift=$((n_shift+1));;
+    -z2|--bz2-compress)
+            IMG_CLONE_CMP="bzip2 -c $extra_bzip2_opt"
+	    shift; n_shift=$((n_shift+1));;
+    -z2p|--smp-bzip2-compress)
+            if [ "$parallel_bzip2_prog" = "pbzip2" ]; then
+              IMG_CLONE_CMP="pbzip2 -c $extra_pbzip2_opt"
+            elif [ "$parallel_bzip2_prog" = "lbzip2" ]; then
+              IMG_CLONE_CMP="lbzip2 -c $extra_lbzip2_opt"
+	    fi
+	    shift; n_shift=$((n_shift+1));;
+    -z3|--lzo-compress)
+            # Now only for ntfsclone, partimage not yet.
+            IMG_CLONE_CMP="lzop -c $extra_lzop_opt"
+	    shift; n_shift=$((n_shift+1));;
+    -z4|--lzma-compress)
+            IMG_CLONE_CMP="lzma -c $extra_lzma_opt"
+	    shift; n_shift=$((n_shift+1));;
+    -z5|--xz-compress)
+            IMG_CLONE_CMP="xz -c $extra_xz_opt"
+	    shift; n_shift=$((n_shift+1));;
+    -z5p|--smp-xz-compress)
+            IMG_CLONE_CMP="pxz -c $extra_pxz_opt"
+	    shift; n_shift=$((n_shift+1));;
+    -z6|--lzip-compress)
+            IMG_CLONE_CMP="lzip -c $extra_lzip_opt"
+	    shift; n_shift=$((n_shift+1));;
+    -z6p|--smp-lzip-compress)
+            IMG_CLONE_CMP="plzip -c $extra_plzip_opt"
+	    shift; n_shift=$((n_shift+1));;
+    -z7|--lrzip-compress)
+            # The option for lrzip is different from that of gzip (not -c)
+            # Although lrzip uses "-p value      Set processor count to override number of threads" to assign the CPU number, however, from the manual of lrzip:
+            # -p value
+            # Set  the  number  of  processor count to determine the number of
+            # threads to run.  Normally lrzip will scale according to the num‐
+            # ber  of  CPUs  it detects. Using this will override the value in
+            # case you wish to use less CPUs to either decrease  the  load  on
+            # your  machine,  or  to improve compression. Setting it to 1 will
+            # maximise compression but will not attempt to use more  than  one
+            # CPU.
+            # Therefore there is no need to assign a parallel version of lrzip.
+            IMG_CLONE_CMP="lrzip -q - $extra_lrzip_opt"
+	    shift; n_shift=$((n_shift+1));;
+    -nogui|--nogui)
+            # -nogui is for backward compatable, better to use --nogui
+            nogui="on"
+	    shift; n_shift=$((n_shift+1));;
+    -ntfs-ok|--ntfs-ok)
+            # if ntfs integrity is assumed OK, do not check
+            ntfs_integrity_check="no"
+	    shift; n_shift=$((n_shift+1));;
+    -rm-win-swap-hib|--rm-win-swap-hib)
+            # Remove page and hibernation files in M$ windows
+	    rm_win_swap_hib="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -rescue|--rescue)
+            rescue_mode="on"
+	    shift; n_shift=$((n_shift+1));;
+    -fsck-src-part|--fsck-src-part)
+            fsck_src_part_intr="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -fsck-src-part-y|--fsck-src-part-y)
+            fsck_src_part_auto="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -mp|--mount-point)
+            shift; n_shift=$((n_shift+1)); 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              mount_point=$1
+	      shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$mount_point" ] && USAGE && exit 1
+	    ;;
+    -or|--ocsroot)
+            # overwrite the ocsroot in drbl.conf
+            shift; n_shift=$((n_shift+1)); 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ocsroot="$1"
+	      shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$ocsroot" ] && USAGE && exit 1
+	    ;;
+    -i|--image-size)
+	    shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              VOL_LIMIT=$1
+	      shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$VOL_LIMIT" ] && USAGE && exit 1
+	    ;;
+    --max-time-to-wait)
+	    # ocs-sr need to know the --max-time-to-wait so that when sleeping
+	    # between partitions restoring clone won't timeout.
+	    shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      mcast_max_wait_time="$1"
+	      shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$mcast_max_wait_time" ] && USAGE && exit 1
+	    ;;
+    -q|--use-ntfsclone)
+            USE_NTFSCLONE="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -q1|--force-to-use-dd)
+            FORCE_TO_USE_DD="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -q2|--use-partclone)
+            USE_PARTCLONE="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -j|--create-part-by-sfdisk)
+            # We leave this option for backward compatability.
+            create_part_by_sfdisk="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -j0|--create-part-by-dd)
+            create_part_by_sfdisk="no"
+	    shift; n_shift=$((n_shift+1));;
+    -j1|--dump-mbr-in-the-end)
+            dump_mbr_in_the_end="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -j2|--clone-hidden-data)
+	    clone_hidden_data="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -icrc|--icrc)
+	    do_partclone_crc_check="no"
+	    shift; n_shift=$((n_shift+1));;
+    -irhr|--irhr)
+	    do_rm_hardware_record="no"
+	    shift; n_shift=$((n_shift+1));;
+    -ius|--ius)
+	    do_update_syslinux="no"
+	    shift; n_shift=$((n_shift+1));;
+    -hn0)
+	    shift; n_shift=$((n_shift+1))
+            change_win_hostname="By_IP"
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      win_hostname_prefix="$1"
+	      shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$win_hostname_prefix" ] && USAGE && exit 1
+	    ;;
+    -hn1)
+	    shift; n_shift=$((n_shift+1))
+            change_win_hostname="By_MAC"
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      win_hostname_prefix="$1"
+	      shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$win_hostname_prefix" ] && USAGE && exit 1
+	    ;;
+    -o|-o1|--run-postrun-dir) 
+            # -o is for backward compatability
+	    run_postrun_dir="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -o0|--run-prerun-dir) 
+	    run_prerun_dir="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -ns|--ntfs-progress-in-image-dir)
+	    ntfsclone_progress="image_dir"
+	    shift; n_shift=$((n_shift+1));;
+    -gm|--gen-md5sum)
+	    gen_md5sum="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -gs|--gen-sha1sum)
+	    gen_sha1sum="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -cm|--check-md5sum)
+	    check_md5sum="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -cs|--check-sha1sum)
+	    check_sha1sum="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -x|--interactive) 
+	    ocs_sr_mode="interactive"
+	    shift; n_shift=$((n_shift+1));;
+    --mcast-port)
+            shift; n_shift=$((n_shift+1)); 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ocs_sr_mcast_port="$1"
+	      shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$ocs_sr_mcast_port" ] && USAGE && exit 1
+	    ;;
+    -p|--postaction)  
+            shift; n_shift=$((n_shift+1)); 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      postrun="$1"
+	      shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$postrun" ] && USAGE && exit 1
+            ;;
+    --restore-only)
+	    ocs_x_mode="restore_only"
+	    shift; n_shift=$((n_shift+1));;
+    --save-only)
+	    ocs_x_mode="save_only"
+	    shift; n_shift=$((n_shift+1));;
+    -um|--user-mode)
+            shift; n_shift=$((n_shift+1)); 
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              ocs_user_mode="$1"
+              shift; n_shift=$((n_shift+1)); 
+            fi
+            [ -z "$ocs_user_mode" ] && USAGE && exit 1
+	    ;;
+    -icds|--ignore-chk-dsk-size-pt)
+	    chk_tgt_disk_size_bf_mk_pt="no"
+	    shift; n_shift=$((n_shift+1));;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+ done
+} # end of parse_ocs_sr_cmd_options_with_dash
+#
+save_only_dia_des() {
+  savedisk_msg_1="savedisk"
+  savedisk_msg_2="$(rep_whspc_w_udrsc "$msg_clonezilla_save_local_disk")"
+  saveparts_msg_1="saveparts"
+  saveparts_msg_2="$(rep_whspc_w_udrsc "$msg_clonezilla_save_local_parts")"
+}
+#
+restore_only_dia_des() {
+  restoredisk_msg_1="restoredisk"
+  restoredisk_msg_2="$(rep_whspc_w_udrsc "$msg_clonezilla_restore_local_disk")"
+  restoreparts_msg_1="restoreparts"
+  restoreparts_msg_2="$(rep_whspc_w_udrsc "$msg_clonezilla_restore_local_parts")"
+}
+recovery_clonezilla_live_dia_des() {
+  recovery_clonezilla_live_msg_1="recovery-iso-zip"
+  recovery_clonezilla_live_msg_2="$(rep_whspc_w_udrsc "$msg_recovery_clonezilla_live")"
+}
+chk_img_restorable_dia_des() {
+  chk_img_restorable_msg_1="chk-img-restorable"
+  chk_img_restorable_msg_2="$(rep_whspc_w_udrsc "$msg_check_if_image_restorable")"
+}
+one_image_to_multiple_disks_dia_des() {
+  one_2_m_disks_msg_1="1-2-mdisks"
+  one_2_m_disks_msg_2="$(rep_whspc_w_udrsc "$msg_restore_1_image_to_multiple_local_disks")"
+}
+# functions to process options.
+wrap_up_opt() {
+  [ -z "$VOL_LIMIT" ] && VOL_LIMIT=$VOL_LIMIT_DEFAULT
+  
+  # put default postrun if empty
+  [ -z "$postrun" ] && postrun="$POSTRUN_DEF"
+  
+  # change to other mount point for extra harddisk
+  # Note: functions get_existing_disk_image, get_existing_parts_image and get_existing_partitions_from_img will use $imagedir 
+  if [ -n "$mount_point" ]; then
+     echo "Option -mp|--mount-point is assigned."
+     echo "Using the image root directory $mount_point instead of $ocsroot."
+     imagedir="$mount_point" 
+  else
+     imagedir="$ocsroot"
+  fi
+  
+  check_ocs_input_params
+  
+  # Set/Reset init values
+  PARTIMAGE_SAVE_OPT="$PARTIMAGE_SAVE_OPT_INIT --debug=$debug_level"
+  PARTIMAGE_RESTORE_OPT="$PARTIMAGE_RESTORE_OPT_INIT --debug=$debug_level"
+  PARTCLONE_SAVE_OPT="$PARTCLONE_SAVE_OPT_INIT"
+  PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT_INIT"
+  if [ "$nogui" = "on" ]; then
+    # Partimage default uses TUI, if noguid, we have to run it with -B gui=no
+    PARTIMAGE_SAVE_OPT="$PARTIMAGE_SAVE_OPT -B gui=no"
+    PARTIMAGE_RESTORE_OPT="$PARTIMAGE_RESTORE_OPT -B gui=no"
+  fi
+  if [ "$nogui" = "off" ]; then
+    # TUI is on.
+    # Use the TUI mode for partclone (i.e. run with -N, otherwise by default partclone runs only text output)
+    # //NOTE// Even if -N is set for partclone in save mode, it's useless, since we will stdout to another program to compress.
+    PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT_INIT -N"
+  fi
+  if [ "$rescue_mode" = "on" ]; then
+    PARTCLONE_SAVE_OPT="$PARTCLONE_SAVE_OPT --rescue"
+  fi
+  if [ "$do_partclone_crc_check" = "no" ]; then
+    PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT --ignore_crc"
+  fi
+  
+  echo $msg_delimiter_star_line
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  [ "$create_part" = "no" ] && echo "$msg_do_not_create_part"
+  [ "$restore_mbr" = "no" ] && echo "$msg_do_not_restore_mbr"
+  [ "$select_img_in_client" = "yes" ] && echo "$msg_you_have_to_input_image_names_in_client"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  
+  # Append postrun, since we did not ask that in set_ocs_sr_extra_param and we might already set that.
+  if [ -n "$postrun" -a \
+       -z "$(echo $OCS_OPTS | grep -Ewo -- "-p")" ]
+  then
+       OCS_OPTS="$OCS_OPTS -p $postrun"
+  fi
+  if [ "$verbose" = "on" ]; then
+    PARTCLONE_SAVE_OPT="$PARTCLONE_SAVE_OPT -d"
+    PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT -d"
+    echo "OCS_OPTS: $OCS_OPTS"
+    echo "PARTIMAGE_SAVE_OPT: $PARTIMAGE_SAVE_OPT"
+    echo "PARTIMAGE_RESTORE_OPT: $PARTIMAGE_RESTORE_OPT"
+    echo "PARTCLONE_SAVE_OPT: $PARTCLONE_SAVE_OPT"
+    echo "PARTCLONE_RESTORE_OPT: $PARTCLONE_RESTORE_OPT"
+    # The default output for udpcast stderr is surpressed, now turn it on
+    udpcast_stderr="/dev/stderr"
+  fi
+} # end of wrap_up_opt
+#
+run_ocs_sr_again_prompt() {
+  local img dev
+  # OCS_OPTS is a global variable
+  img="$1"
+  dev="$2"
+  if [ "$ocs_sr_mode" = "interactive" ]; then
+    run_again_fname="/tmp/ocs-$img-`date +%F-%H-%M`"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+    echo PS. $msg_run_drbl_ocs_again_cmd 
+    echo $0 $OCS_OPTS $ocs_sr_type $img $dev | tee $run_again_fname
+    echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
+    if [ "$ocs_batch_mode" != "on" ]; then
+      echo -n "$msg_press_enter_to_continue "
+      read
+    fi
+  fi
+} # end of run_ocs_sr_again_prompt
+#
+create_clonezilla_live_recovery_iso_zip() {
+    # Target command Ex: 
+    # ocs-iso -g en -t -k NONE -e "-b -c restoredisk sarge-r5 hda" sarge-r5
+    # ocs-live-dev -c -g en -t -k NONE -e "-b -c restoredisk sarge-r5 hda" sarge-r5
+    local REC_TMP ans_
+    REC_TMP=`mktemp /tmp/ocs_recovery_tmp.XXXXXX`
+    trap "[ -f "$REC_TMP" ] && rm -f $REC_TMP" HUP INT QUIT TERM EXIT
+
+    # Ask image name first (disk or parts image)
+    if [ "$ocs_sr_img_name" = "ask_user" ]; then
+      # Since get_target_dir_name_when_restoring_parts can search disk and parts image, we use this function instead of get_target_dir_name_when_restoring_disk
+      get_target_dir_name_when_restoring_parts # get $target_dir
+    else
+      target_dir="$ocs_sr_img_name"
+    fi
+    check_input_target_image "$ocsroot/$target_dir"
+    # Check if the image is disk or parts
+    if [ -e "$ocsroot/$target_dir/disk" ]; then
+      rec_dev_action=restoredisk
+    else
+      rec_dev_action=restoreparts
+    fi
+
+    # ask target disk/parts
+    case "$rec_dev_action" in
+     "restoredisk")
+           dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'hda' $msg_or 'sda' $msg_or 'hda hdb' $msg_or 'sda sdb') \n$msg_linux_disk_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
+	   # savedisk_preset is borrowed from drbl-ocs.conf
+	   dev_preset="$(cat $ocsroot/$target_dir/disk)"
+           ;;
+     "restoreparts")
+           dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'hda1 hda2' $msg_or 'sda1 sda2') \n$msg_linux_parts_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
+	   # saveparts_preset is borrowed from drbl-ocs.conf
+	   dev_preset="$(cat $ocsroot/$target_dir/parts)"
+           ;;
+    esac
+    ASK_DEV_NAME=1
+    while [ "$ASK_DEV_NAME" -ne 0 ]; do
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+      --inputbox "$dev_prompt_and_example" 0 0 "$dev_preset" 2> $REC_TMP
+      rec_dev_name="$(cat $REC_TMP)"
+      if [ -z "$rec_dev_name" ]; then
+        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+        --yesno "$msg_you_must_input_device_name_to_be_restored! $msg_do_u_want_to_do_it_again" 0 0 
+         ans_="$?"
+         case "$ans_" in
+           0) # yes is chosen
+              ASK_DEV_NAME=1;;
+           1) # no is chosen
+              echo "$msg_program_stop!"
+              [ -f "$REC_TMP" ] && rm -f $REC_TMP
+              exit 1;;
+         esac
+      else
+        ASK_DEV_NAME=0
+      fi
+    done
+    echo > $REC_TMP # clean REC_TMP
+
+    # ask if want to set ocs extra param for recovery iso/zip
+    set_ocs_sr_extra_param restore $REC_TMP $ocs_sr_type
+    OCS_OPTS="$(cat $REC_TMP)"
+    parse_ocs_sr_cmd_options_with_dash $OCS_OPTS
+    OCS_OPTS="$(echo $OCS_OPTS)"  # make it in a line
+    echo > $REC_TMP # clean REC_TMP
+
+    # Ask language to be used in live iso/zip
+    # $DRBL_SCRIPT_PATH/lang/bash/$lang
+    get_existing_language $REC_TMP
+    rec_lang="$(cat $REC_TMP)"
+
+    # Ask keymap
+    ASK_KEYMAP_FILE=1
+    while [ "$ASK_KEYMAP_FILE" -ne 0 ]; do
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+      --inputbox "$keymap_file_prompt_and_example" 0 0 "NONE" 2> $REC_TMP
+      rec_keymap_file="$(cat $REC_TMP)"
+      if [ -z "$rec_keymap_file" ]; then
+        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+        --yesno "$msg_you_must_input_keymap_file! $msg_do_u_want_to_do_it_again" 0 0 
+         ans_="$?"
+         case "$ans_" in
+           0) # yes is chosen
+              ASK_KEYMAP_FILE=1;;
+           1) # no is chosen
+              echo "$msg_program_stop!"
+              [ -f "$REC_TMP" ] && rm -f $REC_TMP
+              exit 1;;
+         esac
+      else
+        ASK_KEYMAP_FILE=0
+      fi
+    done
+    echo > $REC_TMP # clean REC_TMP
+
+    # Generage iso, zip or both ?
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+    --menu "$msg_recovery_clonezilla_file_type $msg_choose_file_type" \
+    0 0 0 \
+    "iso"   "$msg_create_recovery_clonezilla_live_iso" \
+    "zip"   "$msg_create_recovery_clonezilla_live_zip" \
+    "both"  "$msg_create_recovery_clonezilla_live_iso_and_zip" \
+    2> $REC_TMP
+    rec_file_type="$(cat $REC_TMP)"
+
+    [ -f "$REC_TMP" ] && rm -f $REC_TMP
+
+    # Run ocs-iso/ocs-live-dev
+    # Ex:ocs-iso -g en -t -k NONE -e "-b -c restoredisk sarge-r5 hda" sarge-r5
+    #    ocs-live-dev -c -g en -t -k NONE -e "-b -c restoredisk sarge-r5 hda" sarge-r5
+    (cd $ocsroot
+    case "$rec_file_type" in
+       iso)
+          run_again_fname="/tmp/ocs-iso-zip-`date +%F-%H-%M`"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+          echo PS. $msg_run_drbl_ocs_again_cmd 
+          echo ocs-iso -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee $run_again_fname
+	  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
+          echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
+	  echo "$msg_the_output_file_is_in_dir: $ocsroot"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo -n "$msg_press_enter_to_continue"
+          read 
+          ocs-iso -g $rec_lang -t -k $rec_keymap_file -e "$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name" $target_dir 
+          ;;
+       zip)
+          run_again_fname="/tmp/ocs-iso-zip-`date +%F-%H-%M`"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+          echo PS. $msg_run_drbl_ocs_again_cmd 
+          echo ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee $run_again_fname
+	  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
+          echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
+	  echo "$msg_the_output_file_is_in_dir: $ocsroot"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo -n "$msg_press_enter_to_continue"
+          read 
+          ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e "$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name" $target_dir 
+          ;;
+       both)
+          run_again_fname="/tmp/ocs-iso-zip-`date +%F-%H-%M`"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+          echo PS. $msg_run_drbl_ocs_again_cmd 
+          echo ocs-iso -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee $run_again_fname
+          echo ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee -a $run_again_fname
+	  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
+          echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
+	  echo "$msg_the_output_file_is_in_dir: $ocsroot"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo -n "$msg_press_enter_to_continue"
+          read 
+          ocs-iso -g $rec_lang -t -k $rec_keymap_file -e "$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name" $target_dir 
+          ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e "$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name" $target_dir 
+          ;;
+    esac
+    )
+} # end of create_clonezilla_live_recovery_iso_zip
+#
+get_extra_param_when_type_is_ask_user_and_interactive_mode() {
+  if [ "$ocs_sr_type_assign" = "ask_user" -o \
+       "$ocs_sr_mode" = "interactive" ]; then
+   # since this ocs-sr asks for ocs_sr type, this means the option maybe not parsed.
+   case "$ocs_sr_type" in
+    save*)
+     # ask if want to set ocs extra param
+     OCS_PARAM_TMP=`mktemp /tmp/ocs_sr_param_tmp.XXXXXX`
+     trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
+     set_ocs_sr_extra_param save $OCS_PARAM_TMP $ocs_sr_type
+     # In interactive mode, we reset OCS_OPTS instead of appending it. Later wrap_up_opt will process more.
+     OCS_OPTS="$(cat $OCS_PARAM_TMP)"
+     [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
+     ;;
+    restore*)
+     # Skip the multicast_restore*, since it's spawned by drbl-ocs, not from ocs-sr
+     # ask if want to set ocs extra param
+     OCS_PARAM_TMP=`mktemp /tmp/ocs_sr_param_tmp.XXXXXX`
+     trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
+     set_ocs_sr_extra_param restore $OCS_PARAM_TMP $ocs_sr_type
+     # In interactive mode, we reset OCS_OPTS instead of appending it. Later wrap_up_opt will process more.
+     OCS_OPTS="$(cat $OCS_PARAM_TMP)"
+     [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
+     ;;
+    exit)
+     echo "To use it again, run \"$ocs -x\"."
+     exit 2
+     ;;
+   esac
+   # Some options might be assigned in in /etc/ocs/ocs-live.conf. Here we have to add that.
+   if [ -n "$ocs_sr_save_extra_opt" -o -n "$ocs_sr_restore_extra_opt" ]; then
+     case "$ocs_sr_type" in
+      *save*)    OCS_OPTS="$OCS_OPTS $ocs_sr_save_extra_opt" ;;
+      *restore*) OCS_OPTS="$OCS_OPTS $ocs_sr_restore_extra_opt" ;;
+     esac
+   fi
+   parse_ocs_sr_cmd_options_with_dash $OCS_OPTS
+  fi
+} # end of get_extra_param_when_type_is_ask_user_and_interactive_mode
+
+# OCS_OPT is for drbl-ocs using, will not put into the partimage command options
+# PARTIMAGE_RESTORE_OPT & PARTIMAGE_SAVE_OPT will put into partimage command options
+PARTIMAGE_SAVE_OPT_INIT=""
+PARTIMAGE_RESTORE_OPT_INIT=""
+PARTCLONE_SAVE_OPT_INIT=""
+PARTCLONE_RESTORE_OPT_INIT=""
+OCS_OPT=""
+report_msg=""
+# Set some default values, 
+nfs_restart="no"
+always_restore="no"
+pxe_menu_default_mode=""
+mcast_loop="1"
+USE_NTFSCLONE="no"
+nogui="off"   # Default to turn on TUI
+FORCE_TO_USE_DD="no"
+force_dma_on="yes"
+create_part="yes"
+restore_mbr="yes"
+restore_prebuild_mbr="no"
+rm_win_swap_hib="no"
+rescue_mode="off"
+select_img_in_client="no"
+# If create_part_by_sfdisk=no, then we will use "dd if=$tgt_dir/mbr of=$sfdisk_target_hd skip=446 seek=446 bs=1 count=66" to dump the partition table.
+create_part_by_sfdisk="yes"
+# we want to make sfdisk --force if sfdisk is used.
+sfdisk_opt="--force"
+# Normally we do not dump MBR again when everything is done. However, This is an insurance for some hard drive has different numbers of cylinder, head and sector between image was saved and restored.". If the option is "yes", we will use dd to dump the MBR (total 512 Bytes, i.e. 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes) after disk was restored. 
+dump_mbr_in_the_end="no"
+# The flag to save or restore the hidden data between MBR and 1st partition.
+clone_hidden_data="no"
+# default output for udpcast stderr is surpressed.
+# NOTE! Do not redirect it to standard output (stdin), otherwise partimage/ntfsclone pipe will get wrong image!
+udpcast_stderr="/dev/null"
+# default not to run those scripts in $OCS_PRERUN_DIR $OCS_POSTRUN_DIR
+run_prerun_dir="no"
+run_postrun_dir="no"
+# default to put the ntfsclone progress in local /tmp/ (tmpfs)
+ntfsclone_progress="local_tmp"
+# Default to do CRC checking of partclone when restoring
+do_partclone_crc_check="yes"
+# Default to remove the Linux udev MAC address records on the restored GNU/Linux
+do_rm_hardware_record="yes"
+# Default to run ocs-update-syslinux to update the syslinux files (ldlinux.sys, *.c32 and *.bin)
+do_update_syslinux="yes"
+
+# The parameters, example: 
+# (-b -g auto --nogui --max-time-to-wait 300 --language 0 multicast_restoreparts sarge-base "hda1 hda3" 2232) ->
+# (multicast_restoreparts sarge-base "hda1 hda3" 2232)
+parse_ocs_sr_cmd_options_with_dash $*
+shift ${n_shift}
+ocs_sr_type_assign="$1"
+ocs_sr_img_name="$2"
+shift 2
+ocs_sr_dev="$*"
+# If the inputted dev is: "hda hdb", convert it to hda hdb (so it won't be ""hda hdb"")
+ocs_sr_dev="$(echo $ocs_sr_dev | tr -d \")"
+
+#
+ask_and_load_lang_set $specified_lang
+
+# check DIA
+check_DIA_set_ESC $DIA
+
+##############
+#### MAIN ####
+##############
+
+# ocs root
+if [ ! -d "$ocsroot" ]; then
+  echo "Please make sure your $ocsroot is a directory!!!"
+  # The common error is user try to create a ocsroot as /home/partimage, the default is /home/partimag (without e)
+  if [ "$ocsroot" = "/home/partimag" -a -d "/home/partimage" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_home_partimag_not_home_partimage" 
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  echo "We can NOT go on! Press \"c\" to enter command prompt or any other key to quit the program..." 
+  read fail_answer
+  case "$fail_answer" in
+    [cC]) sulogin ;;
+       *) exit 1 ;;
+  esac
+fi
+
+#
+get_ntfsclone_progress_opt
+
+#
+if [ "$ocs_sr_type_assign" = "ask_user" -o \
+     "$ocs_sr_mode" = "interactive" ]; then
+  ASK_OCS_SR_TYPE=1
+  TMP=$(mktemp /tmp/menu.XXXXXX)
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  case "$ocs_x_mode" in
+    "save_only")
+      save_only_dia_des
+      ;;
+    "restore_only")
+      restore_only_dia_des
+      ;;
+    *) # Both when image exists, or only save menu
+      save_only_dia_des
+      if check_if_any_image_exists; then
+        restore_only_dia_des
+      fi
+      ;;
+  esac
+  # If there is any image in $ocsroot, we can create recovery clonezilla live iso/zip and check the image.
+  if check_if_any_image_exists; then
+    recovery_clonezilla_live_dia_des
+    chk_img_restorable_dia_des
+    one_image_to_multiple_disks_dia_des
+  fi
+
+  #
+  [ -z "$ocs_user_mode" ] && ask_if_beginner_or_expert_mode
+
+  #
+  echo "Choose the mode for ocs-sr"
+  while [ "$ASK_OCS_SR_TYPE" -ne 0 ]; do
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    "Clonezilla: $msg_choose_mode" --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_overwrite_data_on_disk_when_restoring\n$msg_hint_multiple_choice_select_by_space\n$msg_choose_mode:" \
+    0 0 0 \
+    $savedisk_msg_1 $savedisk_msg_2 \
+    $saveparts_msg_1 $saveparts_msg_2 \
+    $restoredisk_msg_1 $restoredisk_msg_2 \
+    $restoreparts_msg_1 $restoreparts_msg_2 \
+    $one_2_m_disks_msg_1 $one_2_m_disks_msg_2 \
+    $recovery_clonezilla_live_msg_1 $recovery_clonezilla_live_msg_2 \
+    $chk_img_restorable_msg_1 $chk_img_restorable_msg_2 \
+    "exit"           "$msg_exit. $msg_enter_cml" \
+    2> $TMP
+    ocs_sr_type="$(cat $TMP)"
+    if [ -z "$ocs_sr_type" ]; then
+      ASK_OCS_SR_TYPE=1
+    else
+      ASK_OCS_SR_TYPE=0
+    fi
+  done
+  [ -f "$TMP" ] && rm -f $TMP
+  [ "$ocs_sr_type" = "exit" ] && exit 0
+  [ -z "$ocs_sr_type" ] && echo "You must specify the action! Program terminated!!!" && exit 1
+  # If ocs_sr_type from ask_user, then we should let ocs_sr_img_name & ocs_sr_dev as ask_user, too
+  ocs_sr_img_name="ask_user"
+  ocs_sr_dev="ask_user"
+  # Do not default to reboot, otherwise if it's save mode, user does not have
+  # any chance to umount device after save is done. If postrun is assigned, honor that.
+  [ -z "$postrun" ] && postrun="choose"
+  # Overwrite the default HALT_REBOOT_OPT (-f -n) so that if user choose to halt/reboot, it will use normal halt/reboot sequence, then mounted device will be unmounted.
+  HALT_REBOOT_OPT=""
+  VOL_LIMIT="$VOL_LIMIT_IN_INTERACTIVE"
+else
+  ocs_sr_type="$ocs_sr_type_assign"
+fi
+# ocs_mode_prompt is to be shown in the title of dialog menu later
+ocs_mode_prompt="$ocs_sr_type"
+
+echo $msg_delimiter_star_line
+# Clonezilla image home
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "Clonezilla image dir: $ocsroot"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+[ ! -d "$ocsroot" ] && mkdir -p $ocsroot
+  
+# Some options might be assigned in in /etc/ocs/ocs-live.conf. Here we have to add that.
+if [ -n "$ocs_sr_save_extra_opt" -o -n "$ocs_sr_restore_extra_opt" ]; then
+  case "$ocs_sr_type" in
+   *save*)    OCS_OPTS="$OCS_OPTS $ocs_sr_save_extra_opt" ;;
+   *restore*) OCS_OPTS="$OCS_OPTS $ocs_sr_restore_extra_opt" ;;
+  esac
+  parse_ocs_sr_cmd_options_with_dash $OCS_OPTS
+fi
+
+# Process options. //NOTE// There might be twice of wrap_up_opt, one is for the command options assigned, the other one is the command options got from interactive mode.
+wrap_up_opt
+
+# Before starting, we turn off swap and LVM2, unlock the busy partitions.
+turn_off_swap_and_LVM2
+
+#
+case "$ocs_sr_type" in
+  "savedisk")
+    task_preprocessing "$ocs_sr_type"
+
+    if [ "$ocs_sr_img_name" = "ask_user" ]; then
+      get_target_dir_name_when_saving  # get $target_dir
+    elif [ "$ocs_sr_img_name" = "autoname" ]; then 
+      # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/799287/topic/4815557
+      # We need something unique, so MAC address is a good choice
+      for i in `LC_ALL=C get-nic-devs`; do
+	prefix_mac="$(LC_ALL=C drbl-get-macadd $i)"
+	if [ -n "$prefix_mac" ]; then
+          prefix_mac="$(LC_ALL=C echo $prefix_mac | sed -e 's/://g')"
+          break
+	fi
+      done
+      # If not found, use UUID from MB manufacture
+      [ -z "$prefix_mac" ] && prefix_mac="$(LC_ALL=C dmidecode | grep -io "UUID: .*$" | head -n 1 | sed -e "s/^UUID: //g")"
+      target_dir="${prefix_mac}-$(LC_ALL=C date '+%Y-%m-%d-%H%M')-img" 
+    elif [ "$ocs_sr_img_name" = "autohostname" ]; then 
+      # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
+      ip=""
+      for i in `LC_ALL=C get-nic-devs`; do
+        ip="$(drbl-get-ipadd $i)"
+	if [ -n "$ip" ]; then
+          break
+	fi
+      done
+      # If not found, give it a default name based on time.
+      if [ -z "ip" ]; then
+	prefix_host="autohostname-$(LC_ALL=C date '+%Y%m%d-%H%M')" 
+      else
+        if LC_ALL=C host $ip &>/dev/null; then
+          # FQDN found
+          prefix_host="$(LC_ALL=C host $ip | sed -r -e "s/^.*name pointer//g" -e "s/^[[:space:]]*//g" -e "s|\.$||g")"
+	else
+          # FQDN not found. Give it a default name based on IP address and time.
+	  prefix_host="autohostname-${ip}-$(LC_ALL=C date '+%Y%m%d-%H%M')"
+	fi
+      fi
+      target_dir="${prefix_host}-img"
+    else
+      target_dir="$ocs_sr_img_name"
+    fi
+
+    if [ "$ocs_sr_dev" = "ask_user" ]; then
+      # To get $target_hd
+      get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
+    elif [ "$ocs_sr_dev" = "all" ]; then
+      get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
+      target_hd="$dev_list"
+    else
+      target_hd="$ocs_sr_dev"
+    fi
+    # check if the device exists
+    ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
+    trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+    check_if_input_device_exist $ANS_TMP $target_hd 
+    target_hd="$(cat $ANS_TMP | tr -d \")"
+    [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+    get_extra_param_when_type_is_ask_user_and_interactive_mode
+    wrap_up_opt  # Since extra param inputed again, wrap up again
+
+    task_processing_after_parameters_checked
+
+    run_ocs_sr_again_prompt "$target_dir" "$target_hd"
+
+    task_savedisk "$target_dir" "$target_hd"
+    if [ "$?" -eq 0 -a "$chk_img_restoreable" = "yes" ]; then
+      check_image_if_restorable
+    fi
+    echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_hd" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
+
+    task_postprocessing
+    ;;
+  "restoredisk")
+    task_preprocessing "$ocs_sr_type"
+
+    if [ "$ocs_sr_img_name" = "ask_user" ]; then
+      get_target_dir_name_when_restoring_disk  # get $target_dir
+    else
+      target_dir="$ocs_sr_img_name"
+    fi
+    check_input_target_image "$ocsroot/$target_dir"
+    source_dsk_no="$(cat $ocsroot/$target_dir/disk | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+
+    if [ "$ocs_sr_dev" = "ask_user" ]; then
+      if [ "$source_dsk_no" -eq 1 ]; then
+        dia_sel_opt="menu"
+      else
+        dia_sel_opt="checklist"
+      fi
+      # To get $target_hd
+      get_target_hd_name_from_local_machine "$msg_choose_the_disks_to_restore \n$msg_linux_disk_naming $msg_press_space_to_mark_selection" $dia_sel_opt
+    elif [ "$ocs_sr_dev" = "all" ]; then
+      target_hd="$(cat $ocsroot/$target_dir/disk)"
+    else
+      target_hd="$ocs_sr_dev"
+    fi
+    get_extra_param_when_type_is_ask_user_and_interactive_mode
+    wrap_up_opt  # Since extra param inputed again, wrap up again
+
+    task_processing_after_parameters_checked
+
+    run_ocs_sr_again_prompt "$target_dir" "$target_hd"
+    task_restoredisk "$target_dir" "$target_hd"
+    task_postprocessing
+    ;;
+  "saveparts")
+    task_preprocessing "$ocs_sr_type"
+
+    if [ "$ocs_sr_img_name" = "ask_user" ]; then
+      get_target_dir_name_when_saving   # get $target_dir
+    elif [ "$ocs_sr_img_name" = "autoname" ]; then 
+      # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/799287/topic/4815557
+      # We need something unique, so MAC address is a good choice
+      for i in `LC_ALL=C get-nic-devs`; do
+	prefix_mac="$(LC_ALL=C drbl-get-macadd $i)"
+	if [ -n "$prefix_mac" ]; then
+          prefix_mac="$(LC_ALL=C echo $prefix_mac | sed -e 's/://g')"
+          break
+	fi
+      done
+      # If not found, use UUID from MB manufacture
+      [ -z "$prefix_mac" ] && prefix_mac="$(LC_ALL=C dmidecode | grep -io "UUID: .*$" | head -n 1 | sed -e "s/^UUID: //g")"
+      target_dir="${prefix_mac}-$(LC_ALL=C date '+%Y-%m-%d-%H%M')-img" 
+    elif [ "$ocs_sr_img_name" = "autohostname" ]; then 
+      # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
+      ip=""
+      for i in `LC_ALL=C get-nic-devs`; do
+        ip="$(drbl-get-ipadd $i)"
+	if [ -n "$ip" ]; then
+          break
+	fi
+      done
+      # If not found, give it a default name based on time.
+      if [ -z "ip" ]; then
+	prefix_host="autohostname-$(LC_ALL=C date '+%Y%m%d-%H%M')" 
+      else
+        if LC_ALL=C host $ip &>/dev/null; then
+          # FQDN found
+          prefix_host="$(LC_ALL=C host $ip | sed -r -e "s/^.*name pointer//g" -e "s/^[[:space:]]*//g" -e "s|\.$||g")"
+	else
+          # FQDN not found. Give it a default name based on IP address and time.
+	  prefix_host="autohostname-${ip}-$(LC_ALL=C date '+%Y%m%d-%H%M')"
+	fi
+      fi
+      target_dir="${prefix_host}-img"
+    else
+      target_dir="$ocs_sr_img_name"
+    fi
+
+    if [ "$ocs_sr_dev" = "ask_user" ]; then
+      get_target_parts_name_from_local_machine  # get $target_parts
+    elif [ "$ocs_sr_dev" = "all" ]; then
+      get_not_busy_disks_or_parts partition "" ""  # we will get dev_list
+      target_parts="$dev_list"
+    else
+      target_parts="$ocs_sr_dev"
+    fi
+    
+    # check if the device exists
+    ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
+    trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+    check_if_input_device_exist $ANS_TMP $target_parts
+    # we have to remove " (comes with checklist in dialog) so that for loop
+    # will work (Specially for FC3/4...)
+    target_parts="$(cat $ANS_TMP | tr -d \")"
+    [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+    get_extra_param_when_type_is_ask_user_and_interactive_mode
+    wrap_up_opt  # Since extra param inputed again, wrap up again
+
+    task_processing_after_parameters_checked
+
+    run_ocs_sr_again_prompt "$target_dir" "$target_parts"
+
+    task_saveparts "$target_dir" "$target_parts"
+    if [ "$?" -eq 0 -a "$chk_img_restoreable" = "yes" ]; then
+      check_image_if_restorable
+    fi
+    echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_parts" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
+
+    task_postprocessing
+    ;;
+  "restoreparts")
+    task_preprocessing "$ocs_sr_type"
+
+    if [ "$ocs_sr_img_name" = "ask_user" ]; then
+      get_target_dir_name_when_restoring_parts  # get $target_dir
+    else
+      target_dir="$ocs_sr_img_name"
+    fi
+    check_input_target_image "$ocsroot/$target_dir"
+    source_parts_no="$(cat $ocsroot/$target_dir/parts | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+    
+    if [ "$ocs_sr_dev" = "ask_user" ]; then
+      if [ "$source_parts_no" -eq 1 ]; then
+        dia_sel_opt="menu"
+      else
+        dia_sel_opt="checklist"
+      fi
+      get_target_parts_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt
+    elif [ "$ocs_sr_dev" = "all" ]; then
+      target_parts="$(cat $ocsroot/$target_dir/parts)"
+    else
+      target_parts="$ocs_sr_dev"
+    fi
+    get_extra_param_when_type_is_ask_user_and_interactive_mode
+    wrap_up_opt  # Since extra param inputed again, wrap up again
+
+    task_processing_after_parameters_checked
+
+    run_ocs_sr_again_prompt "$target_dir" "$target_parts"
+    task_restoreparts "$target_dir" "$target_parts"
+    task_postprocessing
+    ;;
+  "recovery-iso-zip")
+    create_clonezilla_live_recovery_iso_zip
+    ;;
+  "chk-img-restorable")
+    ocs-chkimg
+    ;;
+  "1-2-mdisks")
+    ocs-restore-mdisks -um $ocs_user_mode
+    ;;
+  "multicast_restoredisk")
+    task_preprocessing "$ocs_sr_type"
+    task_processing_after_parameters_checked
+
+    task_multicast_restoredisk "$ocs_sr_img_name" "$ocs_sr_dev" "$ocs_sr_mcast_port"
+    task_postprocessing
+    ;;
+  "multicast_restoreparts")
+    task_preprocessing "$ocs_sr_type"
+    task_processing_after_parameters_checked
+
+    task_multicast_restoreparts "$ocs_sr_img_name" "$ocs_sr_dev" "$ocs_sr_mcast_port"
+    task_postprocessing
+    ;;
+  *)
+    USAGE
+    exit 2
+    ;;
+esac
+
+exit 0

@@ -1,0 +1,556 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: This script will create a Ubuntu live CD iso which is used as a template for clonezilla image with restoration function.
+
+#
+set -e
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# ubuntu_mirror_url_def, ubuntu_mirror_security_url_def, DRBL_REPOSITORY_URL_def and DRBL_GPG_KEY_URL are loaded from drbl-ocs.conf
+
+# debian_type can be minimal (about 67 MB for Etch)/minimal-net (about 85 MB for Etch).
+# 
+debian_type="minimal"
+#debian_type="standard"
+DEBIAN_DIST_DEF="maverick"
+pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DRBL_FOR_CLONEZILLA_LIVE"
+categories_default="main restricted universe multiverse"
+workdir="ubuntu-live"
+bootstrap_default="debootstrap"
+
+# UGLY... but we have to semi hard coded them... since live helper won't work in Ubuntu if we do not assign version number. It's because the kernel package name in Ubuntu is like linux-image-2.6.24-7-generic, and if we do not assign version number, live-helper will try to install linux-image-2.6-generic, which does not exist in ubuntu. In Ubuntu, it's linux-image-generic.
+# This is only set as default, later we will use get_latest_kernel_in_repository to find the latest kernel in repository.
+gutsy_release_kernel_ver_def="2.6.22-14"
+hardy_release_kernel_ver_def="2.6.24-15"
+intrepid_release_kernel_ver_def="2.6.27-7"
+jaunty_release_kernel_ver_def="2.6.28-8"
+karmic_release_kernel_ver_def="2.6.31-14"
+lucid_release_kernel_ver_def="2.6.32-14"
+maverick_release_kernel_ver_def="2.6.35-22"
+natty_release_kernel_ver_def="2.6.37-6"
+oneiric_release_kernel_ver_def="3.0.0-7"
+
+# The files in dir $ocs_live_script_dir/ will be copied to the dir /live-hook-dir in dir chroot. The file "ocs-live-hook" is in $ocs_live_script_dir
+# We put some files in dir ocs_minimal_hook/ to do some jobs, like clean unnecessary files, set locales...
+ocs_live_script_dir="$DRBL_SCRIPT_PATH/setup/files/ocs/live-hook"
+# The script inside $ocs_live_script_dir/ will be run when chroot. There are many files in $ocs_live_script_dir/, we will just run one here.
+run_hook_script="ocs-live-hook"
+# This hook is for binary_local-hooks, not for chroot hook
+run_binary_hook_script="efi-binary-hook"
+# The option to create a corresponding source image.
+gen_source_tarball="no"
+
+#
+check_if_root
+#
+prog="$(basename $0)"
+
+# functions
+USAGE() {
+    echo "Usage:"
+    echo "To create a Ubuntu live CD which is used a template for Clonezilla live:"
+    echo "$prog [OPTION]"
+    echo "OPTION:"
+    echo "-a, --packages PKG     Specify to add PKG, e.g. firmware-bnx2"
+    echo "-b, --branch [stable|testing|unstable]  Specify the DRBL branch to be used in Live CD. Default is stable."
+    echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (cdebootstrap or debootstrap). If not specified, $bootstrap_default will be used."
+    echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main universe', default is \'$categories_default\' if not specified."
+    echo "-d, --debian-dist [gutsy|hardy|intrepid|jaunty|karmic|lucid|maverick|natty|oneiric]  Assign Ubuntu dist, the default is $DEBIAN_DIST_DEF if not assigned."
+    echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
+    echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
+    echo "-k, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
+    echo "-l, --drbl-live-ubuntu-branch [s|stable|t|testing|u|unstable|e|experimental]  specifies the DRBL live-ubuntu branch to be used in Live CD. Default is stable."
+    echo "-m, --mirror-url URL  Assign the Ubuntu repository URL instead of default one $ubuntu_mirror_url_def. "
+    echo "-s, --mirror-security-url URL  Assign the Ubuntu security repository URL instead of default one $ubuntu_mirror_security_url_def."
+    echo "-o, --create-source-tarball  Create a corresponding source image to the binary image.  By default such an source image will not be created since this would require to download quite a few source packages."
+    echo "-t, --batch     Run in batch mode"
+    echo "-v, --verbose   Run live build in verbose mode"
+}
+#
+get_latest_kernel_in_repository() {
+  # Since we might run this on gutsy to create hardy live, so we can not use apt-cache to search that. Another approach is to use apt-file to do that. However, it looks like the file http://opensource.nchc.org.tw/ubuntu/dists/hardy/Contents-i386.gz which apt-file fetched is not updated with repository.
+  local ktmp kver
+  ktmp="$(mktemp -d /tmp/live_kver.XXXXXX || exit 1)"
+  for i in $debian_dist-updates $debian_dist; do
+    echo "Downloading $mirror_url/dists/$i/main/binary-i386/Packages.gz  to finding latest kernel version..."
+    LC_ALL=C wget $wget_opt -P $ktmp/ $mirror_url/dists/$i/main/binary-i386/Packages.gz
+    # The info in the Packges.gz is like:
+    # Package: linux-image-2.6.24-10-386
+    # Package: linux-image-2.6.24-10-generic
+    # Package: linux-image-2.6.24-10-server
+    # Package: linux-image-2.6.24-10-virtual
+    # Package: linux-image-2.6.24-11-386
+    # Package: linux-image-2.6.24-11-generic
+    # Package: linux-image-2.6.24-11-server
+    # Package: linux-image-2.6.24-11-virtual
+    kver="$(zgrep -E "^Package: linux-image-(2\.6\.|3\.)[[:digit:]]+.*-generic" $ktmp/Packages.gz  | pkg-ver-latest | sed -e "s|^Package: linux-image-||g" -e "s|-generic$||g")"
+    if [ -z "$kver" ]; then
+      # Clean Packages.gz to avoid wget using another name like Packages.gz.1 then search the next again
+      rm -f $ktmp/Packages.gz
+    else
+      # Found! Use it. 
+      break
+    fi
+  done
+  if [ -n "$kver" ]; then
+    release_kernel_ver="$kver"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Warning!"
+    echo "Unable to find the latest kernel version in $mirror_url/dists/$i/main/binary-i386/Packages.gz. Use the pre-defined one."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo -n "$msg_press_enter_to_continue"
+    read 
+    eval release_kernel_ver="\$${i}_release_kernel_ver_def"
+  fi
+  [ -d "$ktmp" -a -n "$(echo $ktmp | grep "live_kver")" ] && rm -rf $ktmp
+} # end of get_latest_kernel_in_repository
+
+batch_mode="off"
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -a|--packages)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              extra_pkgs="$1"
+              shift
+            fi
+	    [ -z "$extra_pkgs" ] && USAGE && exit 1
+            ;;
+    -b|--branch)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              drbl_branch="$1"
+              shift
+            fi
+	    [ -z "$drbl_branch" ] && USAGE && exit 1
+            ;;
+    -bt|--bootstrap)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              bootstrap="$1"
+              shift
+            fi
+	    [ -z "$bootstrap" ] && USAGE && exit 1
+            ;;
+    -c|--categories)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              categories="$1"
+              shift
+            fi
+	    [ -z "$categories" ] && USAGE && exit 1
+            ;;
+    -d|--debian-dist)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              debian_dist="$1"
+              shift
+            fi
+	    [ -z "$debian_dist" ] && USAGE && exit 1
+            ;;
+    -i|--assign-version-no)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              version_no="$1"
+              shift
+            fi
+	    [ -z "$version_no" ] && USAGE && exit 1
+            ;;
+    -k|--live-kernel)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              live_kernel_ver="$1"
+              shift
+            fi
+	    [ -z "$live_kernel_ver" ] && USAGE && exit 1
+            ;;
+    -l|--drbl-live-branch)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              drbl_live_branch="$1"
+              shift
+            fi
+	    [ -z "$drbl_live_branch" ] && USAGE && exit 1
+            ;;
+    -g|--drbl-repo-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              DRBL_REPOSITORY_URL="$1"
+              shift
+            fi
+	    [ -z "$DRBL_REPOSITORY_URL" ] && USAGE && exit 1
+            ;;
+    -m|--mirror-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              mirror_url="$1"
+              shift
+            fi
+	    [ -z "$mirror_url" ] && USAGE && exit 1
+            ;;
+    -s|--mirror-security-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              mirror_security_url="$1"
+              shift
+            fi
+	    [ -z "$mirror_security_url" ] && USAGE && exit 1
+            ;;
+    -o|--create-source-tarball)
+	    gen_source_tarball="yes"
+            shift ;;
+    -t|--batch)
+	    batch_mode="on"
+            shift ;;
+    -v|--verbose)
+	    verbose="on"
+            shift ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+if ! type lb &>/dev/null; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "This program only works in Ubuntu 7.10 or later!"
+  echo "If you are running Ubuntu 7.10 or later, use 'apt-get install live-build' to install the live-build (version $lh_ver_required or later), then run $0 again."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  exit 1
+fi
+
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "///NOTE///"
+echo "1. This program works on Debian or Ubuntu with the live-build (version $lh_ver_required or later) installed."
+echo "2. Both cdebootstrap (version 0.5.5 or later) and debootstrap (version 1.0.20 or later) should work."
+#echo "3. If you want to create maverick live on Ubuntu hardy or Debian lenny, you have to make sure the following exist in /usr/share/cdebootstrap/suites:"
+#echo "-------------------------------------"
+#echo "Suite: maverick"
+#echo "Config: generic-ubuntu"
+#echo "Keyring: ubuntu-archive-keyring.gpg"
+#echo "-------------------------------------"
+echo "3. If you want to create maverick live on Ubuntu Lucid or Debian lenny, you have to make sure the file /usr/share/debootstrap/scripts/maverick exists, if not you can try to link gutsy as maverick by:"
+echo "-------------------------------------"
+echo "cd /usr/share/debootstrap/scripts/; ln -fs gutsy maverick"
+echo "-------------------------------------"
+echo "Besides, you have to install ubuntu-keyring, e.g. 'wget http://archive.ubuntu.com/ubuntu/pool/main/u/ubuntu-keyring/ubuntu-keyring_2008.03.04_all.deb' and 'dpkg -i ubuntu-keyring_2008.03.04_all.deb'"
+echo "4. You might also need to use the live-experimental from DRBL (i.e. use run $0 with '-l e') so that:"
+echo "  a. Enable aufs instead of unionfs (To avoid this bug: https://bugs.launchpad.net/ubuntu/+source/linux-ubuntu-modules-2.6.22/+bug/150788)."
+echo "5. If you want to run this on Debian etch or lenny, remember to import Ubuntu keyring. It's available on any Ubuntu mirror repository. e.g.: http://free.nchc.org.tw/ubuntu/pool/main/u/ubuntu-keyring/"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+if [ "$batch_mode" = "no" ]; then
+  echo -n "Press enter to continue... "
+  read
+fi
+
+rm -rf $workdir/.stage/
+
+# Apply default settings if not assigned
+[ -z "$debian_dist" ] && debian_dist="$DEBIAN_DIST_DEF"
+[ -z "$categories" ] && categories="$categories_default"
+[ -z "$DRBL_REPOSITORY_URL" ] && DRBL_REPOSITORY_URL="$DRBL_REPOSITORY_URL_def"
+[ -z "$mirror_url" ] && mirror_url="$ubuntu_mirror_url_def"
+[ -z "$mirror_security_url" ] && mirror_security_url="$ubuntu_mirror_security_url_def"
+[ -z "$bootstrap" ] && bootstrap=$bootstrap_default
+
+# Append the extra packages
+[ -n "$extra_pkgs" ] && pkgs="$pkgs $extra_pkgs"
+
+# If version_no is not assigned, use date (Ex. 20070409)
+[ -z "$version_no" ] && version_no="$(date +%Y%m%d)"
+target_iso="ubuntu-live-for-ocs-${version_no}.iso"
+target_src_tarball="clonezilla-live-src-${version_no}.ubuntu.tar.gz"
+target_src_tarball_list="clonezilla-live-src-${version_no}.ubuntu.list"
+target_src_debian_live_tarball="clonezilla-live-src-${version_no}.debian-live.tar.gz"
+target_src_debian_live_tarball_list="clonezilla-live-src-${version_no}.debian-live.list"
+
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "Creating an Ubuntu live cd iso which is used for clonezilla image with restoration function. The created iso will be in $target_iso" 
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+#
+echo "Using Ubuntu repository from: $mirror_url"
+echo "Using Ubuntu security repository from: $mirror_security_url"
+echo "Using DRBL repository from: $DRBL_REPOSITORY_URL"
+
+#
+case "$drbl_branch" in
+  t|testing)
+     echo "Using DRBL testing branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="stable testing"
+     ;;
+  u|unstable)
+     echo "Using DRBL unstable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="stable testing unstable"
+     ;;
+  *)
+     echo "Using DRBL stable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="stable"
+     ;;
+esac
+case "$drbl_live_branch" in
+  t|testing)
+     echo "Using DRBL Live Ubuntu testing branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-ubuntu-stable live-ubuntu-testing"
+     ;;
+  u|unstable)
+     echo "Using DRBL Live Ubuntu unstable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-ubuntu-stable live-ubuntu-testing live-ubuntu-unstable"
+     ;;
+  e|experimental)
+     echo "Using DRBL Live Ubuntu experimental branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-ubuntu-stable live-ubuntu-testing live-ubuntu-unstable live-ubuntu-experimental"
+     ;;
+  *)
+     echo "Using DRBL live Ubuntu stable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-ubuntu-stable"
+     ;;
+esac
+
+#
+if [ "$verbose" = "on" ]; then
+  pref="bash -x"
+  export CDEBOOTSTRAP_OPTIONS="$CDEBOOTSTRAP_OPTIONS -v --debug"
+fi
+
+if [ -d "$workdir" ]; then
+  echo "Found dir $workdir, clean stale files..."
+  chroot $workdir/chroot umount /dev/pts &>/dev/null || true
+  chroot $workdir/chroot umount /proc &>/dev/null || true
+  chroot $workdir/chroot umount /sys &>/dev/null || true
+  ( cd $workdir/; lb clean )
+  [ -d "$workdir" -a -n "$(echo $workdir | grep "ubuntu-live")" ] && rm -rf $workdir
+fi
+
+mkdir $workdir
+(
+cd $workdir
+
+$pref lb config --mode ubuntu
+$pref lb config --archive-areas "$categories"
+$pref lb config --mirror-binary $mirror_url --mirror-binary-security $mirror_security_url 
+$pref lb config --mirror-bootstrap $mirror_url
+$pref lb config --mirror-chroot $mirror_url --mirror-chroot-security $mirror_security_url
+$pref lb config --mirror-chroot-volatile "none"
+
+# For Hardy, mkisofs is obsolete. Use genisoimage instead. Since aptitude won't fail if mkisofs (which is listed in drbl.conf) is not found in the repository. We can list mkisofs and genisoimage for pkgs. aptitude, unlike apt, won't exit if mkisofs is not found.
+pkgs="$pkgs genisoimage"
+
+# Disable the volatile repository. No such repository for Ubuntu.
+$pref lb config --volatile false
+
+# Since casper does not support aufs, and we need aufs to avoid this bug: 
+# https://bugs.launchpad.net/ubuntu/+source/linux-ubuntu-modules-2.6.22/+bug/150788. Comment this:
+# //NOTE// We must use the live-initramfs patched by DRBL otherwise the created iso won't boot into command line. Some errors like:
+# init:/etc/event.d/tty1:15: Unknown stanza
+# will occur when booting, so upstart won't run gettty
+$pref lb config --initramfs live-initramfs
+#$pref lb config --linux-flavours generic --linux-packages "linux-restricted-modules"
+$pref lb config --linux-flavours generic
+
+# get the latest kernel ver "release_kernel_ver"
+get_latest_kernel_in_repository
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "The kernel version in this live CD will be: $release_kernel_ver"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+if [ "$debian_dist" = "gutsy" ]; then
+  # Updated! 2007/12/27 with the patch from http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448210, now we can use cdebootstrap.
+  # ///OLD/// Here actually we can not use "--bootstrap cdebootstrap" due to this bug:
+  # ///OLD/// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448348&trim=no
+  # Looks like if we use "--apt apt" instead of "--apt aptitude", there are a lot of warning about failing authenticating deb packages.
+  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs" --apt aptitude --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
+  # For Ubuntu 7.10, only unionfs comes with kernel, no aufs. However, we need aufs to avoid a bug (see above). An aufs module provided by DRBL works for this.
+  # $pref lb config --distribution $debian_dist --union-filesystem aufs --linux-packages "linux-image${kernel_extra_tag} aufs-modules${kernel_extra_tag} squashfs-modules${kernel_extra_tag}" 
+  # For gutsy: linux-image-2.6.22-14-386
+  # Live helper auto append "-386" for param from "--linux-packages"
+  # TODO: UGLY! 2.6.22-14 should not be hardcoded in this program. We should find a better solution to work with kernel and aufs module.
+  $pref lb config --distribution $debian_dist
+  $pref lb config --linux-packages "linux-image-$release_kernel_ver linux-ubuntu-modules-$release_kernel_ver aufs-modules-$release_kernel_ver"
+  # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
+  export MKSQUASHFS_OPTIONS="-b 1024k -e boot"
+elif [ "$debian_dist" = "hardy" ]; then
+  # Updated! 2007/12/27 with the patch from http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448210, now we can use cdebootstrap.
+  # ///OLD/// Here actually we can not use "--bootstrap cdebootstrap" due to this bug:
+  # ///OLD/// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448348&trim=no
+  # Looks like if we use "--apt apt" instead of "--apt aptitude", there are a lot of warning about failing authenticating deb packages.
+  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs" --hook /live-hook-dir/$run_hook_script --apt aptitude --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
+  # For hardy, mkisofs was removed. Force to use genisoimage
+  # //NOTE// DO NOT put lb config command option too long, otherwise lb config will fail and show something like: E: internal error
+  # --genisoimage was removed in live-helper 1.0~a37
+  # ///NOTE/// From hardy with kernel 2.6.24-7 or later, linux-ubuntu-modules includes aufs module. Therefore aufs-modules-$release_kernel_ver is not requred anymore.
+  $pref lb config --distribution $debian_dist
+  # $pref lb config --linux-packages "linux-image-$release_kernel_ver linux-ubuntu-modules-$release_kernel_ver aufs-modules-$release_kernel_ver" 
+  $pref lb config --linux-packages "linux-image-$release_kernel_ver linux-ubuntu-modules-$release_kernel_ver" 
+  # $pref lb config --genisoimage genisoimage 
+  # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
+  # Do not use lzma (For Hardy or later). /NOTE/ "-e dir_list" must be the last param for mksquashfs.
+  export MKSQUASHFS_OPTIONS="-b 1024k -nolzma -e boot"
+elif [ "$debian_dist" = "intrepid" -o "$debian_dist" = "jaunty" ]; then
+  # Updated! 2007/12/27 with the patch from http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448210, now we can use cdebootstrap.
+  # ///OLD/// Here actually we can not use "--bootstrap cdebootstrap" due to this bug:
+  # ///OLD/// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448348&trim=no
+  # In Intrepid, "--apt aptitude" does not work since aptitude is not the default one. Use "--apt apt" (default) instead of "--apt aptitude".
+  # Since intrepid uses uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
+  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs v86d" --hook /live-hook-dir/$run_hook_script --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
+  # ///NOTE/// From intrepid with kernel 2.6.26-4 or later, linux-ubuntu-modules no more exists, and aufs is builtin in linux-image (not as a module)
+  $pref lb config --distribution $debian_dist
+  $pref lb config --linux-packages "linux-image-$release_kernel_ver"
+  # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
+  # Do not use lzma (For Hardy or later). /NOTE/ "-e dir_list" must be the last param for mksquashfs.
+  export MKSQUASHFS_OPTIONS="-b 1024k -nolzma -e boot"
+elif [ "$debian_dist" = "karmic" -o "$debian_dist" = "lucid" -o \
+       "$debian_dist" = "maverick" ]; then
+  # ///OLD/// Updated! 2007/12/27 with the patch from http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448210, now we can use cdebootstrap.
+  # ///OLD/// Here actually we can not use "--bootstrap cdebootstrap" due to this bug:
+  # ///OLD/// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448348&trim=no
+  # In Intrepid, "--apt aptitude" does not work since aptitude is not the default one. Use "--apt apt" (default) instead of "--apt aptitude".
+  # Since intrepid uses uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
+  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs v86d" --hook /live-hook-dir/$run_hook_script --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
+  # ///NOTE/// From intrepid with kernel 2.6.26-4 or later, linux-ubuntu-modules no more exists, and aufs is builtin in linux-image (not as a module)
+  $pref lb config --distribution $debian_dist
+  $pref lb config --linux-packages "linux-image-$release_kernel_ver"
+  # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
+  # Do not use lzma (For Hardy or later). /NOTE/ "-e dir_list" must be the last param for mksquashfs.
+  # On karmic, mksquashfs does not support --nolzma anymore
+  export MKSQUASHFS_OPTIONS="-b 1024k -e boot"
+elif [     "$debian_dist" = "natty" \
+	-o "$debian_dist" = "oneiric" \
+	-o "$debian_dist" = "precise" \
+	-o "$debian_dist" = "quantal" ]; then
+  # ///OLD/// Updated! 2007/12/27 with the patch from http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448210, now we can use cdebootstrap.
+  # ///OLD/// Here actually we can not use "--bootstrap cdebootstrap" due to this bug:
+  # ///OLD/// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448348&trim=no
+  # In Intrepid, "--apt aptitude" does not work since aptitude is not the default one. Use "--apt apt" (default) instead of "--apt aptitude".
+  # Since intrepid uses uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
+  # For Uubntu 12.10, linux-image has spilt as linux-image and linux-image-extra
+  # Ref: https://lists.ubuntu.com/archives/kernel-team/2012-May/020448.html
+  if [ "$debian_dist" = "quantal" ]; then
+    pkgs="$pkgs linux-image-extra-${release_kernel_ver}"
+  fi
+  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs v86d" --hook /live-hook-dir/$run_hook_script --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
+  # ///NOTE/// From intrepid with kernel 2.6.26-4 or later, linux-ubuntu-modules no more exists, and aufs is builtin in linux-image (not as a module)
+  $pref lb config --distribution $debian_dist
+  $pref lb config --linux-packages "linux-image-$release_kernel_ver"
+  # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
+  # //NOTE// "-e boot" must be the last option if you want to append more.
+  # "-comp xz -Xbcj x86" is used since the CONFIG_SQUASHFS_XZ is on in kernel of natty.
+  # For "-Xbcj x86", refer to: http://kerneltrap.org/mailarchive/linux-fsdevel/2010/12/9/6887823
+  export MKSQUASHFS_OPTIONS="-b 1024k -comp xz -Xbcj x86 -e boot"  
+else
+  echo "This distribution \"$debian_dist\" is not supported!"
+  echo "Program terminated!"
+  exit 1
+fi
+
+# Due to a bug, we have to include some essential packages otherwise it will faild in debian_type=minimal. The size difference between minimal and standard for intrepid is about 8 MB. Ref: https://bugs.launchpad.net/ubuntu/+source/cdebootstrap/+bug/189474
+if [ "$debian_type" = "minimal" ]; then
+ case "$debian_dist" in
+  "gutsy"|"hardy"|"intrepid")
+    export CDEBOOTSTRAP_OPTIONS="$CDEBOOTSTRAP_OPTIONS --include=sysv-rc,upstart,system-services,belocs-locales-bin" ;;
+  #"jaunty"|"karmic"|"lucid")
+  *)
+    # Jaunty now use locale generation programs back to libc6, no more belocs-locales-bin. Check /usr/share/doc/libc6/changelog.Debian.gz from glibc (2.9-0ubuntu10)
+    export CDEBOOTSTRAP_OPTIONS="$CDEBOOTSTRAP_OPTIONS --include=sysv-rc,upstart,system-services,gnupg"
+    export DEBOOTSTRAP_OPTIONS="$DEBOOTSTRAP_OPTIONS --include=ubuntu-keyring,gnupg" ;;
+ esac
+fi
+
+# We force to use 486 kernel only.
+$pref lb config --linux-flavours generic
+
+# No memtest from debian, we will use the one from drbl since it's newer.
+$pref lb config --memtest none
+
+$pref lb config --hostname "$debian_dist" 
+$pref lb config --username user --bootappend "username=user"
+# Enable cache-indices, by doing this, "apt-get upgrade" won't be run in lb chroot_sources after hook since we might assign older package version when building.
+$pref lb config --cache-indices true
+
+case "$debian_dist" in
+  "gutsy"|"hardy"|"intrepid"|"jaunty"|"karmic"|"lucid")
+    # Force to use iso instead of iso-hybrid. Since the syslinux (e.g. on lucid) comes without isohybrid program.
+    $pref lb config --binary-images iso
+    ;;
+  *)
+    # Enable isohybrid
+    $pref lb config --binary-images iso-hybrid
+    ;;
+esac
+
+# Disable the security, otherwise live-helper >= 1.0~a37 does not support Ubuntu and will create a wrong sources.list for ubuntu updates and securit. We will create it by ourself.
+$pref lb config --security false
+
+# Create a source tarball or not.
+if [ "$gen_source_tarball" = "yes" ]; then
+  $pref lb config --source true
+  $pref lb config --source-images tar
+fi
+
+# Put files to be included in the chroot hook
+mkdir -p config/chroot_local-includes/live-hook-dir
+for i in $ocs_live_script_dir; do
+  cp -pr $i/* config/chroot_local-includes/live-hook-dir/
+done
+cp $DRBL_SCRIPT_PATH/conf/drbl*.conf config/chroot_local-includes/live-hook-dir/
+
+# Put the mirror url and settings, which we might need.
+cat <<-HOOK_APPEND_END >> config/chroot_local-includes/live-hook-dir/ocs-live-hook.conf
+# The following settings were added before running hook" >> config/chroot_local-includes/live-hook-dir/ocs-live-hook.conf
+debian_dist="$debian_dist"
+mirror_url="$mirror_url"
+HOOK_APPEND_END
+
+# Put hook file to be run in chroot
+mkdir -p config/chroot_local-hooks
+cp $ocs_live_script_dir/$run_hook_script config/chroot_local-hooks/
+
+# Put hook file to be run in the binary_local-hooks
+mkdir -p config/binary_local-hooks
+cp $ocs_live_script_dir/$run_binary_hook_script config/binary_local-hooks/
+
+# prepare ubuntu updates and security source list and drbl source list
+cat << AddDRBLRepository > config/chroot_sources/drbl.chroot
+deb $mirror_security_url ${debian_dist}-updates $categories
+deb-src $mirror_security_url ${debian_dist}-updates $categories
+deb $mirror_security_url ${debian_dist}-security $categories
+deb-src $mirror_security_url ${debian_dist}-security $categories
+deb $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
+deb-src $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
+AddDRBLRepository
+
+# prepare drbl key
+LC_ALL=C wget -O config/chroot_sources/drbl.chroot.gpg $DRBL_GPG_KEY_URL
+
+# Disable apt languages and translations when creating DRBL live. This could reduce apt repository issue.
+disable_apt_lang_translation chroot/etc/apt/apt.conf.d/99lang
+
+# Build it.
+$pref lb build
+)
+mv -f $workdir/binary*.iso $target_iso
+if [ "$gen_source_tarball" = "yes" ]; then
+  mv -f $workdir/source.debian.tar.gz $target_src_tarball
+  mv -f $workdir/source.debian.list $target_src_tarball_list
+  mv -f $workdir/source.debian-live.tar.gz $target_src_debian_live_tarball
+  mv -f $workdir/source.debian-live.list $target_src_debian_live_tarball_list
+fi

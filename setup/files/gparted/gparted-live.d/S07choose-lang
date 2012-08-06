@@ -1,0 +1,176 @@
+#!/bin/bash
+# Load gparted live functions
+. /usr/share/gparted/bin/gl-functions
+
+gparted_chooseLanguage() 
+{
+	VALIDLANG=0
+	echo "Loading language settings:"
+	echo " 01: Bresilian            18: Latvian"
+	echo " 02: British English      19: Macedonian"
+	echo " 03: Bulgarian            20: Norwegian"
+	echo " 04: Catalan              21: Nepali"
+	echo " 05: Czech                22: Portuguese"
+	echo " 06: Dutch                23: Punjabi"
+	echo " 07: Finnish              24: Russian"
+	echo " 08: French               25: Spanish"
+	echo " 09: Galician             26: Simplified Chinese"
+	echo " 10: German               27: Sloven"
+	echo " 11: Greek                28: Swedish"
+	echo " 12: Hebrew               29: Traditional Chinese (Hong Kong)"
+	echo " 13: Hungarian            30: Traditional Chinese (Taiwan)"
+	echo " 14: Italian              31: Turkish"
+	echo " 15: Japan                32: Ukrainian"
+	echo " 16: Kinyarwanda          33: US English"
+	echo " 17: Lithuanian           34: Vietnamese"
+	echo " "
+
+	while [ "$VALIDLANG" -eq 0 ]; do
+                [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+		echo "Which language do you prefer ?"
+                [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+		echo -n "[33] "
+		read lang_ans
+		
+		if [ "$lang_ans" = "01" ]; then
+			VALIDLANG=1
+			lang="pt_BR"
+		elif [ "$lang_ans" = "02" ]; then
+			VALIDLANG=1
+			lang="en_GB"
+		elif [ "$lang_ans" = "03" ]; then
+			VALIDLANG=1
+			lang="bg_BG"
+		elif [ "$lang_ans" = "04" ]; then
+			VALIDLANG=1
+			lang="ca_ES"
+		elif [ "$lang_ans" = "05" ]; then
+			VALIDLANG=1
+			lang="cz_CZ"
+		elif [ "$lang_ans" = "06" ]; then
+			VALIDLANG=1
+			lang="nl_NL"
+		elif [ "$lang_ans" = "07" ]; then
+			VALIDLANG=1
+			lang="fi_FI"
+		elif [ "$lang_ans" = "08" ]; then
+			VALIDLANG=1
+			lang="fr_FR"
+		elif [ "$lang_ans" = "09" ]; then
+			VALIDLANG=1
+			lang="gl_ES"
+		elif [ "$lang_ans" = "10" ]; then
+			VALIDLANG=1
+			lang="de_DE"
+		elif [ "$lang_ans" = "11" ]; then
+			VALIDLANG=1
+			lang="el_GR"
+		elif [ "$lang_ans" = "12" ]; then
+			VALIDLANG=1
+			lang="he_IL"
+		elif [ "$lang_ans" = "13" ]; then
+			VALIDLANG=1
+			lang="hu_HU"
+		elif [ "$lang_ans" = "14" ]; then
+			VALIDLANG=1
+			lang="it_IT"
+		elif [ "$lang_ans" = "15" ]; then
+			VALIDLANG=1
+			lang="ja_JP"
+		elif [ "$lang_ans" = "16" ]; then
+			VALIDLANG=1
+			lang="rw_RW"
+		elif [ "$lang_ans" = "17" ]; then
+			VALIDLANG=1
+			lang="lt_LT"
+		elif [ "$lang_ans" = "18" ]; then
+			VALIDLANG=1
+			lang="lv_LV"
+		elif [ "$lang_ans" = "19" ]; then
+			VALIDLANG=1
+			lang="mk_MK"
+		elif [ "$lang_ans" = "20" ]; then
+			VALIDLANG=1
+			lang="nb_NO"
+		elif [ "$lang_ans" = "21" ]; then
+			VALIDLANG=1
+			lang="ne_NP"
+		elif [ "$lang_ans" = "22" ]; then
+			VALIDLANG=1
+			lang="pt_PT"
+		elif [ "$lang_ans" = "23" ]; then
+			VALIDLANG=1
+			lang="pa_IN"
+		elif [ "$lang_ans" = "24" ]; then
+			VALIDLANG=1
+			lang="ru_RU"
+		elif [ "$lang_ans" = "25" ]; then
+			VALIDLANG=1
+			lang="es_ES"
+		elif [ "$lang_ans" = "26" ]; then
+			VALIDLANG=1
+			lang="zh_CN"
+		elif [ "$lang_ans" = "27" ]; then
+			VALIDLANG=1
+			lang="sl_SI"
+		elif [ "$lang_ans" = "28" ]; then
+			VALIDLANG=1
+			lang="sv_SE"
+		elif [ "$lang_ans" = "29" ]; then
+			VALIDLANG=1
+			lang="zh_HK"
+		elif [ "$lang_ans" = "30" ]; then
+			VALIDLANG=1
+			lang="zh_TW"
+		elif [ "$lang_ans" = "31" ]; then
+			VALIDLANG=1
+			lang="tr_TR"
+		elif [ "$lang_ans" = "32" ]; then
+			VALIDLANG=1
+			lang="uk_UA"
+		elif [ "$lang_ans" = "33" ]; then
+			VALIDLANG=1
+			lang="en_US"
+		elif [ "$lang_ans" = "34" ]; then
+			VALIDLANG=1
+			lang="vi_VN"
+		elif [ "$lang_ans" = "" ]; then
+		    	VALIDLANG=1
+			echo "The default language US English is used"
+			lang="en_US"
+		fi 
+		if [ "$VALIDLANG" -eq 0 ]; then
+			echo "\"$lang_ans\" is NOT a valid language number. Please retry:"
+		fi
+	done
+	echo "Language selected $lang"
+}
+echo "*****************************************************"
+[ -e /etc/gparted-live/gparted-live.conf ] && . /etc/gparted-live/gparted-live.conf
+
+if [ -z "$gl_lang" ]; then
+  gparted_chooseLanguage 
+else
+  # 2012/07/01 If gl_lang is taken from locales, it will be like: en_US.UTF-8, we will remove ".UTF-8" for compability here. Actually gl_lang is deprecated. However we still want the compability.
+  lang="$(LC_ALL=C echo $gl_lang | sed -e "s/\.UTF-8//g")"
+fi
+if [ -z "$(localedef --list-archive | grep -iw "$lang.utf8")" ] && \
+   [ -z "$(unalias ls 2>/dev/null; ls /usr/lib/locale | grep -iw "$lang.utf8")" ]
+then
+  echo -n "Generating $lang locale by \"localedef -f UTF-8 -i $lang $lang.UTF-8\"... "
+  localedef -f UTF-8 -i $lang $lang.UTF-8
+  echo "done!"
+fi
+echo "Setting locale in /etc/default/locale... "
+cat <<-LOCALE_END > /etc/default/locale
+LC_ALL="$lang.UTF-8"
+LANG="$lang.UTF-8"
+LOCALE_END
+
+echo "Setting locale in /etc/environment... "
+cat <<-LOCALE_END > /etc/environment
+LC_ALL="$lang.UTF-8"
+LANG="$lang.UTF-8"
+LOCALE_END
+
+echo "done!"

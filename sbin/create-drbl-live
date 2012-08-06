@@ -1,0 +1,817 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: This script will create a DRBL live CD/USB flash drive iso/zip
+
+#
+set -e
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# debian_mirror_url_def, debian_mirror_security_url_def, DRBL_REPOSITORY_URL_def and DRBL_GPG_KEY_URL are loaded from drbl-ocs.conf
+
+# debian_type can be minimal (about 67 MB for Etch)/minimal-net (about 85 MB for Etch).
+# We have to use standard, since if using minimal, it will ignore apt key from DRBL.
+#debian_type="minimal"
+debian_type="standard"
+DEBIAN_DIST_DEF="squeeze"
+pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DBN $PKG_TO_QUERY $PKG_FROM_DRBL"
+categories_default="main"
+cpu_flavor_default="486"
+bootstrap_default="cdebootstrap"
+
+# The files in dir $ocs_live_script_dir/ will be copied to the dir live-hook-dir in dir chroot. The file "drbl-live-hook" is in $ocs_live_script_dir
+ocs_live_script_dir="$DRBL_SCRIPT_PATH/setup/files/ocs/live-hook"
+# The script inside $ocs_live_script_dir/ will be run when chroot. There are many files in $$ocs_live_script_dir/, we will just run one here.
+run_hook_script="drbl-live-hook"
+# This hook is for binary_local-hooks, not for chroot hook
+run_binary_hook_script="efi-binary-hook"
+# The option to create a corresponding source image.
+gen_source_tarball="no"
+
+#
+check_if_root
+#
+prog="$(basename $0)"
+full_cmd="$prog $*"
+
+# functions
+USAGE() {
+    echo "Usage:"
+    echo "To create a Debian live CD which is used a template for Clonezilla live:"
+    echo "$prog [OPTION]"
+    echo "OPTION:"
+    language_help_prompt_by_idx_no
+    echo "-b, --branch [s|stable|t|testing|u|unstable]  Specify the DRBL branch to be used in Live CD. Default is stable."
+    echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (cdebootstrap or debootstrap). If not specified, $bootstrap_default will be used."
+    echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
+    echo "-d, --debian-dist [stable|testing|unstable|lenny|squeeze|wheezy|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
+    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 486 or 686. If it's not assigned, $cpu_flavor will be used."
+    echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
+    echo "-n, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
+    echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
+    echo "-e, --drbl-live-branch [s|stable|t|testing|u|unstable|e|experimental]  specifies the DRBL live branch to be used in Live CD. Default is stable."
+    echo "-k, --package FILE  Specify package FILE to be installed in Live CD."
+    echo "-p, --packages-list FILE  specifies an external package list file (such as xfce, gnome, kde, lxde...), one package for each line"
+    echo "-m, --mirror-url URL  Assign the Debian repository URL instead of default one $debian_mirror_url_def. "
+    echo "-r, --rm-tmp-iso    Remove the first stage temp iso file"
+    echo "-s, --mirror-security-url URL  Assign the Debian security repository URL instead of default one $debian_mirror_security_url_def."
+    echo "-o, --create-source-tarball  Create a corresponding source image to the binary image.  By default such an source image will not be created since this would require to download quite a few source packages."
+    echo "-t, --target-media-file  [cd|iso|usb|zip|b|both] Assign the target media file as CD (cd or iso), USB flash drive (usb or zip) or both of them (b or both). Default is both"
+    echo "-u, --use-existing-tmp-iso  Use the existing first stage temp iso file"
+    echo "-x, --extra-boot-param  EXTRA_PARAM  Assign extra boot parameter EXTRA_PARAM for the kernel to read. These parameters are the same with that from live-initramfs. Ex. \"noprompt\" can be use to not prompt to eject the CD on reboot."
+    echo "-v, --verbose    Run live build in verbose mode"
+    echo "Ex: $0 -l en -d etch -p xfce -b u -k \"iceweasel-l10n-zh-tw x-ttcidfont-conf ttf-arphic-newsung gparted scim-chewing scim-tables-zh im-switch mlterm mlterm-im-scim discover1 xresprobe mdetect\" -e e -n 2.6.24-etchnhalf.1 -i 0.9.11-7"
+}
+#
+clean_tmp_dirs_files() {
+  [ -d "$stage1_iso_TMP" -a -n "$(echo $stage1_iso_TMP | grep "ocs-iso-tmp")" ] && rm -rf $stage1_iso_TMP
+  [ -d "$ISOSYSLNX_TMP" -a -n "$(echo $ISOSYSLNX_TMP | grep "isolnx-tmp")" ] && rm -rf $ISOSYSLNX_TMP
+  [ -d "$USB_TMP" -a -n "$(echo $USB_TMP | grep "ocs-usb-dev")" ] && rm -rf $USB_TMP
+  # clean the tmp iso.
+  [ "$rm_tmp_iso" = "yes" -a -f "$stage1_target_iso" ] && rm -f $stage1_target_iso
+} # end of clean_tmp_dirs_files
+#
+create_version_tag_in_live() {
+  local tag_file_in_abs_path="$1"
+  local ver_tag_="$2"
+  local drbl_v clonezilla_v
+  drbl_v="$(dpkg -l drbl | tail -n 1 | awk -F" " '{print $3}')"
+  clonezilla_v="$(dpkg -l clonezilla | tail -n 1 | awk -F" " '{print $3}')"
+  cat <<-TAG_END > $tag_file_in_abs_path
+$ver_tag_
+DRBL: $drbl_v
+Clonezilla: $clonezilla_v
+This DRBL live was created by:
+$full_cmd
+TAG_END
+}
+#
+create_drbl_live_iso(){
+  echo "$msg_delimiter_star_line"
+  echo "Creating DRBL server iso file..."
+  echo "$msg_delimiter_star_line"
+  #
+  # Possible kernel/initrd paths are /casper (created by casper) or /live (created by live-initramfs)
+  # Find the kernel and initrd in $stage1_iso_TMP/casper or $stage1_iso_TMP/live
+  # Ex: $stage1_iso_TMP/casper/vmlinuz1, /$stage1_iso_TMP/casper/initrd1.img
+  # $live_sys_files_dir_list is from drbl-ocs.conf.
+  # Possible kernel/initrd paths are /casper (created by casper) or /live (created by live-initramfs)
+  sys_files_dir=""
+  for i in $live_sys_files_dir_list; do
+    krnfile="$(find $stage1_iso_TMP/$i/ -maxdepth 1 -name "vmlinuz*" -print 2>/dev/null)"
+    if [ -n "$krnfile" ]; then
+      krnfile="$(basename $krnfile)"
+      sys_files_dir="$i"
+      irdfile="$(find $stage1_iso_TMP/$i/ -maxdepth 1 -name "initrd*" -print)"
+      irdfile="$(basename $irdfile)"
+      break
+    fi
+  done
+  BOOT_ITEM_DIR=$ISOSYSLNX_TMP/$sys_files_dir
+  [ ! -d $BOOT_ITEM_DIR ] && mkdir $BOOT_ITEM_DIR
+
+  if [ -z "$sys_files_dir" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No system files from template live iso are found! Something went wrong!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop"
+    exit 1
+  fi
+  
+  if [ -z "$krnfile" -o -z "$irdfile" ]; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "Kernel and initrd files NOT found in path $stage1_iso_TMP/$sys_files_dir/!"
+     echo "$msg_program_stop"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     exit 1
+  fi
+
+  # Now we can insert the boot menu of isolinux
+  mkdir -p $ISOSYSLNX_TMP/syslinux $ISOSYSLNX_TMP/isolinux
+  # create isolinux menu
+  # isolinux should be rw, so we have to copy it, and exclude the one in iso image.
+  rsync -a --exclude f*.txt --exclude boot.cat --exclude isolinux.txt --exclude isolinux.bin --exclude splash.rle --exclude doc $stage1_iso_TMP/isolinux $ISOSYSLNX_TMP/
+  # We have to overwrite isolinux.bin since vesamenu.c32 should be same version with that.
+  # For isolinux
+  cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $pxelinux_chain_file $ISOSYSLNX_TMP/isolinux/
+  # For syslinux
+  cp -af $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $pxelinux_chain_file $ISOSYSLNX_TMP/syslinux/
+  # For grub2 efi
+  if [ -e "$stage1_iso_TMP/EFI/boot/bootia32.efi" -a -e "$stage1_iso_TMP/EFI/boot/bootx64.efi" ]; then
+    cp -af $stage1_iso_TMP/EFI $ISOSYSLNX_TMP
+    cp -af $pxelinux_bg_img $ISOSYSLNX_TMP/EFI/boot/
+  fi
+
+  # etherboot_zlilo="$($query_pkglist_cmd drbl-etherboot 2>/dev/null | grep -E "eb-.*-etherboot-pci.zlilo$" || true)"
+  # if [ -n "$etherboot_zlilo" ]; then
+  #   # We have to force it name as etherboot.zdsk, since isolinux only uses the "plain" ISO 9660 filenames, i.e. it does not support Rock Ridge or Joliet filenames.
+  #   # ref: http://syslinux.zytor.com/archives/2006-October/007440.html
+  #   # "-" will be regards as "_" if you want to use "-" for isolinux.
+  #   # In syslinux on vfat, etherboot.zlilo is too long, make it ever shorter as eb.zli
+  #   cp -af $etherboot_zlilo $BOOT_ITEM_DIR/eb.zli
+  # fi
+  # Same reason, we have to use different name in isolinux
+  # gPXE is deprecated, we will use iPXE. We keep this gpxe part for ref only.
+  gpxe_lkn="$($query_pkglist_cmd gpxe 2>/dev/null | grep -E "gpxe.lkrn$" || true)"
+  if [ -n "$gpxe_lkn" ]; then
+    # This is run in DRBL server
+    cp -af $gpxe_lkn $BOOT_ITEM_DIR/gpxe.lkn
+  fi
+  # Same reason, we have to use different name in isolinux
+  ipxe_lkn="$($query_pkglist_cmd ipxe 2>/dev/null | grep -E "ipxe.lkrn$" || true)"
+  if [ -n "$ipxe_lkn" ]; then
+    # This is run in DRBL server
+    cp -af $ipxe_lkn $BOOT_ITEM_DIR/ipxe.lkn
+  fi
+  # Same reason, we have to use different name in isolinux
+  [ -e "$fdos_img_src" ] && cp -af $fdos_img_src $BOOT_ITEM_DIR/freedos.img
+  [ -e "$memtest86_file" ] && cp -af $memtest86_file $BOOT_ITEM_DIR/memtest
+
+  # Put the tag
+  # The VER_TAG is like drbl-live-xfce-20070315
+  VER_TAG="$(echo $real_target_iso | sed -e "s/.iso$//g")"
+  create_version_tag_in_live $ISOSYSLNX_TMP/DRBL-Live-Version "$VER_TAG"
+
+  # Excluding list for mkisofs
+  # We will create it like this:
+  # -x $stage1_iso_TMP/isolinux -x $stage1_iso_TMP/md5sum.txt -x $stage1_iso_TMP/casper/memtest 
+  mkiso_exclude_list="isolinux syslinux md5sum.txt doc utils"
+  for i in $live_sys_files_dir_list; do
+    if [ -e "$stage1_iso_TMP/$i/memtest" ]; then
+      mkiso_exclude_list="$mkiso_exclude_list $i/memtest"
+      break
+    fi
+  done
+  mkiso_exclude_opt=""
+  for i in $mkiso_exclude_list; do
+    mkiso_exclude_opt="$mkiso_exclude_opt -x $stage1_iso_TMP/$i"
+  done
+
+  # Find the boot param $boot_param
+  get_live_boot_param $stage1_iso_TMP/isolinux
+  # generate the menu
+  # For isolinux
+  ocs-live-boot-menu -s -l $lang_answer --title "DRBL Live" -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param" isolinux $ISOSYSLNX_TMP/isolinux/
+  # For syslinux
+  ocs-live-boot-menu -s -l $lang_answer --title "DRBL Live" -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param" syslinux $ISOSYSLNX_TMP/syslinux/
+  # For grub2 efi
+  if [ -e "$ISOSYSLNX_TMP/EFI/boot/bootia32.efi" -a -e "$ISOSYSLNX_TMP/EFI/boot/bootx64.efi" ]; then
+    ocs-live-boot-menu -s -l $lang_answer --title "DRBL Live" -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param" grub2-efi $ISOSYSLNX_TMP/EFI/boot/
+  fi
+
+  echo "Preparing syslinux.exe, syslinux, makeboot.bat and makeboot.sh in dir utils... "
+  isolinux_ver="$(LC_ALL=C strings $ISOSYSLNX_TMP/isolinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+  put_syslinux_makeboot_for_usb_flash $ISOSYSLNX_TMP/ $isolinux_ver
+  
+  # $sys_files_dir maybe /casper, /live or /isolinux. If it is isolinux, we can not list them twice otherwise mkisofs will go wrong.
+  if [ "$sys_files_dir" != "isolinux" ]; then
+    sys_files_dir_graft_point="/isolinux/=$ISOSYSLNX_TMP/isolinux/ /syslinux/=$ISOSYSLNX_TMP/syslinux/ /$sys_files_dir/=$ISOSYSLNX_TMP/$sys_files_dir/"
+  else
+    sys_files_dir_graft_point="/isolinux/=$ISOSYSLNX_TMP/isolinux/ /syslinux/=$ISOSYSLNX_TMP/syslinux/" 
+  fi
+  #
+  if [ -d "$ISOSYSLNX_TMP/EFI" ]; then
+    sys_files_dir_graft_point="$sys_files_dir_graft_point /EFI/=$ISOSYSLNX_TMP/EFI"
+  fi
+
+  # Create the iso file
+  genisoimage \
+   -A "DRBL Live CD" \
+   -V "DRBL-live" \
+   -publisher "DRBL/Clonezilla http://drbl.name http://clonezilla.org" \
+   -r -J -l \
+   -b isolinux/isolinux.bin -c isolinux/boot.cat \
+   -no-emul-boot -boot-load-size 4 -boot-info-table \
+   -x $stage1_iso_TMP/isolinux \
+   -x $stage1_iso_TMP/md5sum.txt \
+   -x $stage1_iso_TMP/EFI \
+   $mkiso_exclude_opt \
+   -graft-points $stage1_iso_TMP \
+    $sys_files_dir_graft_point \
+    /COPYING=$DRBL_SCRIPT_PATH/doc/COPYING \
+    /DRBL-Live-Version=$ISOSYSLNX_TMP/DRBL-Live-Version \
+    /utils=$ISOSYSLNX_TMP/utils \
+   > $real_target_iso
+  RC_ISO=$?
+  if [ "$RC_ISO" -eq 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+    echo "The $real_target_iso is created successfully!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "The $real_target_iso is NOT created! Something went wrong!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+} # end of create_drbl_live_iso
+#
+create_drbl_live_zip() {
+  # create temp dir for usb flash drive
+  echo "$msg_delimiter_star_line"
+  echo "Creating DRBL server zip file..."
+  echo "$msg_delimiter_star_line"
+  #
+  # Possible kernel/initrd paths are /casper (created by casper) or /live (created by live-initramfs)
+  # Find the kernel and initrd in $stage1_iso_TMP/casper or $stage1_iso_TMP/live
+  # Ex: $stage1_iso_TMP/casper/vmlinuz1, /$stage1_iso_TMP/casper/initrd1.img
+  # $live_sys_files_dir_list is from drbl-ocs.conf.
+  # Possible kernel/initrd paths are /casper (created by casper) or /live (created by live-initramfs)
+  sys_files_dir=""
+  for i in $live_sys_files_dir_list; do
+    krnfile="$(find $stage1_iso_TMP/$i/ -maxdepth 1 -name "vmlinuz*" -print 2>/dev/null)"
+    if [ -n "$krnfile" ]; then
+      krnfile="$(basename $krnfile)"
+      sys_files_dir="$i"
+      irdfile="$(find $stage1_iso_TMP/$i/ -maxdepth 1 -name "initrd*" -print)"
+      irdfile="$(basename $irdfile)"
+      break
+    fi
+  done
+
+  if [ -z "$sys_files_dir" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No system files from template live iso are found! Something went wrong!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop"
+    exit 1
+  fi
+  
+  if [ -z "$krnfile" -o -z "$irdfile" ]; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "Kernel and initrd files NOT found in path $stage1_iso_TMP/$sys_files_dir/!"
+     echo "$msg_program_stop"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     exit 1
+  fi
+
+  WD="$(pwd)"
+  USB_TMP="$(mktemp -d /tmp/ocs-usb-dev.XXXXXX)"
+  mkdir -p $USB_TMP/$sys_files_dir
+  mkdir -p $USB_TMP/syslinux/ $USB_TMP/isolinux/
+  echo "Copying files to temp working directory... This might take some time..."
+  rsync -av --exclude isolinux --exclude md5sum.txt --exclude doc $stage1_iso_TMP/*  $USB_TMP/
+  cp -af $DRBL_SCRIPT_PATH/doc/COPYING $USB_TMP/
+  # For syslinux
+  cp -af $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $pxelinux_chain_file $USB_TMP/syslinux/
+  # For isolinux
+  cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $pxelinux_chain_file $USB_TMP/isolinux/
+  # For grub2 efi
+  # The EFI/boot/{bootia32.efi,boox64.efi} are copied by the above rsync command from $$stage1_iso_TMP
+  if [ -d "$USB_TMP/EFI/boot/" ]; then
+    cp -af $pxelinux_bg_img $USB_TMP/EFI/boot/
+  fi
+
+  # ref: http://syslinux.zytor.com/archives/2006-October/007440.html
+  # "-" will be regards as "_" if you want to use "-" for isolinux.
+  # In syslinux on vfat, etherboot.zlilo is too long, make it ever shorter as eb.zli
+  # etherboot_zlilo="$($query_pkglist_cmd drbl-etherboot | grep -E "eb-.*-etherboot-pci.zlilo$" || true)"
+  # if [ -n "$etherboot_zlilo" ]; then
+  #   # we have to force it name as etherboot.zdsk, since isolinux only uses the "plain" ISO 9660 filenames, i.e. it does not support Rock Ridge or Joliet filenames.
+  #   # ref: http://syslinux.zytor.com/archives/2006-October/007440.html
+  #   # "-" will be regards as "_" if you want to use "-" for isolinux.
+  #   # In syslinux on vfat, etherboot.zlilo is too long, make it ever shorter as eb.zli
+  #   cp -af $etherboot_zlilo $USB_TMP/$sys_files_dir/eb.zli
+  # fi
+  [ -e "$fdos_img_src" ] && cp -af $fdos_img_src $USB_TMP/$sys_files_dir/freedos.img
+  [ -e "$memtest86_file" ] && cp -af $memtest86_file $USB_TMP/$sys_files_dir/memtest
+  cp -af $stage1_iso_TMP/$sys_files_dir/{$krnfile,$irdfile} $USB_TMP/$sys_files_dir/
+  # Put the tag
+  # The VER_TAG is like drbl-live-xfce-20070315
+  VER_TAG="$(echo $real_target_zip | sed -e "s/.zip$//g")"
+  create_version_tag_in_live $USB_TMP/DRBL-Live-Version "$VER_TAG" 
+
+  # Find the boot param $boot_param
+  get_live_boot_param $stage1_iso_TMP/isolinux
+  # generate the menu
+  # For syslinux
+  ocs-live-boot-menu -s -l $lang_answer --title "DRBL Live" -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param noprompt" syslinux $USB_TMP/syslinux/
+  # For isolinux
+  ocs-live-boot-menu -s -l $lang_answer --title "DRBL Live" -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param noprompt" isolinux $USB_TMP/isolinux/
+  # For grub2 efi
+  if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -a -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
+    ocs-live-boot-menu -s -l $lang_answer --title "DRBL Live" -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param noprompt" grub2-efi $USB_TMP/EFI/boot/
+  fi
+
+  echo "Preparing syslinux.exe, syslinux, makeboot.bat and makeboot.sh in dir utils... "
+  # Since we can not judge the version from any files in $USB_TMP/syslinux, we use $USB_TMP/isolinux/isolinux.bin.
+  isolinux_ver="$(LC_ALL=C strings $USB_TMP/isolinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+  put_syslinux_makeboot_for_usb_flash $USB_TMP $isolinux_ver
+  # just store it. since big files, like squash flie and opt_drbl.tgz are compressed, it's not necessary to compress it again.
+  [ -e "$WD/$real_target_zip" ] && rm -f $WD/$real_target_zip
+  (cd $USB_TMP; zip -0 -r $WD/$real_target_zip *)
+  echo "The created release file is $real_target_zip. You can extract all the files into your pendrive, and run makeboot.bat from pendrive on MS windows."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Warning: DO NOT RUN makeboot.bat from your local hard drive!! It is intended to be run from your USB device."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  
+} # end of create_drbl_live_zip
+
+# default settings
+extra_pkgs=""
+pkg_list=""
+pkg_list_opt=""
+rm_tmp_iso="no"
+use_existing_stage1_iso="no"
+TARGET_MEDIA_FILE_DEF="both"
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l|--language)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              specified_lang="$1"
+              shift
+            fi
+	    [ -z "$specified_lang" ] && USAGE && exit 1
+            ;;
+    -b|--branch)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              drbl_branch="$1"
+              shift
+            fi
+	    [ -z "$drbl_branch" ] && USAGE && exit 1
+            ;;
+    -bt|--bootstrap)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              bootstrap="$1"
+              shift
+            fi
+	    [ -z "$bootstrap" ] && USAGE && exit 1
+            ;;
+    -c|--categories)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              categories="$1"
+              shift
+            fi
+	    [ -z "$categories" ] && USAGE && exit 1
+            ;;
+    -d|--debian-dist)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              debian_dist="$1"
+              shift
+            fi
+	    [ -z "$debian_dist" ] && USAGE && exit 1
+            ;;
+    -i|--assign-version-no)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              version_no="$1"
+              shift
+            fi
+	    [ -z "$version_no" ] && USAGE && exit 1
+            ;;
+    -k|--package)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              extra_pkgs="$1"
+              shift
+            fi
+	    [ -z "$extra_pkgs" ] && USAGE && exit 1
+            ;;
+    -n|--live-kernel-pkg)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              live_kernel_ver="$1"
+              shift
+            fi
+	    [ -z "$live_kernel_ver" ] && USAGE && exit 1
+            ;;
+    -e|--drbl-live-branch)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              drbl_live_branch="$1"
+              shift
+            fi
+	    [ -z "$drbl_live_branch" ] && USAGE && exit 1
+            ;;
+    -p|--packages-list)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              pkg_list="$pkg_list $1"
+              shift
+            fi
+	    [ -z "$pkg_list" ] && USAGE && exit 1
+            ;;
+    -f|--arch-flavor)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              cpu_flavor="$1"
+              shift
+            fi
+	    [ -z "$cpu_flavor" ] && USAGE && exit 1
+            ;;
+    -g|--drbl-repo-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              DRBL_REPOSITORY_URL="$1"
+              shift
+            fi
+	    [ -z "$DRBL_REPOSITORY_URL" ] && USAGE && exit 1
+            ;;
+    -m|--mirror-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              mirror_url="$1"
+              shift
+            fi
+	    [ -z "$mirror_url" ] && USAGE && exit 1
+            ;;
+    -o|--create-source-tarball)
+	    gen_source_tarball="yes"
+            shift ;;
+    -s|--mirror-security-url)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              mirror_security_url="$1"
+              shift
+            fi
+	    [ -z "$mirror_security_url" ] && USAGE && exit 1
+            ;;
+    -t|--target-media-file)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              target_media_file="$1"
+              shift
+            fi
+	    [ -z "$target_media_file" ] && USAGE && exit 1
+            ;;
+    -r|--rm-tmp-iso)
+	    rm_tmp_iso="yes"
+            shift ;;
+    -u|--use-existing-tmp-iso)
+            use_existing_stage1_iso="yes"
+            shift ;;
+    -v|--verbose)
+	    verbose="on"
+            shift ;;
+    -x|--extra-boot-param)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              live_extra_boot_param="$1"
+              shift
+            fi
+	    [ -z "$live_extra_boot_param" ] && USAGE && exit 1
+            ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+#
+if [ "$use_existing_stage1_iso" = "no" ]; then
+  # if we use existing stage 1 iso file, then we do not have to check if lb exists. Otherwise we need make-live to create the stage 1 iso file
+  if ! type lb &>/dev/null; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "This script only works in Debian Etch or later!"
+    echo "If you are running Debian Etch or later, use 'apt-get install live-build' to install the live-build (version $lh_ver_required or later), then run $0 again."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 1
+  fi
+  create_live_required_debian_based_prompt
+fi
+
+# we need zip to create the release file when target_mode is release_file
+if ! type zip &>/dev/null; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Command zip not found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop"
+  exit 1
+fi
+
+ask_and_load_lang_set $specified_lang
+
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "Creating DRBL live..." 
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+rm -rf debian-live/.stage/
+
+# Apply default settings if not assigned
+[ -z "$debian_dist" ] && debian_dist="$DEBIAN_DIST_DEF"
+[ -z "$categories" ] && categories="$categories_default"
+[ -z "$DRBL_REPOSITORY_URL" ] && DRBL_REPOSITORY_URL="$DRBL_REPOSITORY_URL_def"
+[ -z "$mirror_url" ] && mirror_url="$debian_mirror_url_def"
+[ -z "$mirror_security_url" ] && mirror_security_url="$debian_mirror_security_url_def"
+[ -z "$cpu_flavor" ] && cpu_flavor="$cpu_flavor_default"
+[ -z "$bootstrap" ] && bootstrap=$bootstrap_default
+
+# Append the extra packages
+[ -n "$extra_pkgs" ] && pkgs="$pkgs $extra_pkgs"
+
+echo "The packages to be included in this live CD:"
+echo "$msg_delimiter_star_line"
+echo "$pkgs"
+echo "$msg_delimiter_star_line"
+if [ -n "$pkg_list" ]; then
+  pkg_list_opt="$pkg_list_opt --packages-list $pkg_list"
+  echo "The packages list to be included in this live CD:"
+  echo "$msg_delimiter_star_line"
+  echo "$pkg_list"
+  echo "$msg_delimiter_star_line"
+fi
+
+#
+echo "Using Debian $debian_dist..."
+echo "Using Debian repository from: $mirror_url"
+echo "Using Debian security repository from: $mirror_security_url"
+echo "Using DRBL repository from: $DRBL_REPOSITORY_URL"
+
+#
+case "$drbl_branch" in
+  t|testing)
+     echo "Using DRBL testing branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="stable testing"
+     ;;
+  u|unstable)
+     echo "Using DRBL unstable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="stable testing unstable"
+     ;;
+  *)
+     echo "Using DRBL stable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="stable live-stable"
+     ;;
+esac
+case "$drbl_live_branch" in
+  t|testing)
+     echo "Using DRBL Live testing branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-stable live-testing"
+     ;;
+  u|unstable)
+     echo "Using DRBL Live unstable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-stable live-testing live-unstable"
+     ;;
+  e|experimental)
+     echo "Using DRBL Live experimental branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-stable live-testing live-unstable live-experimental"
+     ;;
+  *)
+     echo "Using DRBL live stable branch..."
+     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-stable"
+     ;;
+esac
+
+if [ -z "$pkg_list" ]; then
+  nametag="standard"
+else
+  # choose the first one, and strip space.
+  #nametag="$(echo $pkg_list | awk -F" " '{print $1}' | sed -e "s/ //g")"
+  # strip the spaces in the beginning and end, replace other space with -
+  nametag="$(echo $pkg_list | sed -e "s/^ *//g" -e "s/ *$//g" -e "s/ /-/g")"
+fi
+  
+# if version_no is not assigned, use date (Ex. 20070409)
+[ -z "$version_no" ] && version_no="$(date +%Y%m%d)"
+stage1_target_iso="drbl-live-${nametag}-stage1-${version_no}.iso"
+real_target_iso="drbl-live-${nametag}-${version_no}.iso"
+real_target_zip="drbl-live-${nametag}-${version_no}.zip"
+target_src_tarball="drbl-live-src-${version_no}.debian.tar.gz"
+target_src_tarball_list="drbl-live-src-${version_no}.debian.list"
+target_src_debian_live_tarball="drbl-live-src-${version_no}.debian-live.tar.gz"
+target_src_debian_live_tarball_list="drbl-live-src-${version_no}.debian-live.list"
+[ -z "$target_media_file" ] && target_media_file="$TARGET_MEDIA_FILE_DEF"
+echo "$msg_delimiter_star_line"
+
+#2011/Dec/03 Since most of GNU/Linux distributions now use grub2, no more force to use grub-legacy, and we have backup plan by putting grub1 deb package in the live system. 
+#if [ "$debian_dist" = "squeeze" -o \
+#     "$debian_dist" = "wheezy" -o \
+#     "$debian_dist" = "sid" ]; then
+#  # From around Oct/2009, the dummy package name "grub" is actually grub-pc, therefore we force to use grub-legacy and assume that if grub2 boot loader is used in the restored GNU/Linux, grub2 is available in the restored GNU/Linux so therefore we can use chroot to run it.
+#  # pkgs="$(LC_ALL=C echo $pkgs | sed -r -e "s/grub[[:space:]]+/grub-legacy /")"
+#  # Since with squeeze or sid, we can use uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
+#fi
+
+if [ "$verbose" = "on" ]; then
+  pref="bash -x"
+  export CDEBOOTSTRAP_OPTIONS="$CDEBOOTSTRAP_OPTIONS -v --debug"
+fi
+
+if [ "$use_existing_stage1_iso" = "no" ]; then
+  if [ -d "debian-live" ]; then
+    echo "Found dir debian-live, clean stale debian-live files..."
+    chroot debian-live/chroot umount /dev/pts &>/dev/null || true
+    chroot debian-live/chroot umount /proc &>/dev/null || true
+    chroot debian-live/chroot umount /sys &>/dev/null || true
+    (
+      cd debian-live/
+      lb clean
+    )
+  fi
+  rm -rf debian-live
+  mkdir debian-live
+  (
+  cd debian-live
+
+  $pref lb config --archive-areas "$categories"
+  $pref lb config --mirror-binary $mirror_url --mirror-binary-security $mirror_security_url 
+  $pref lb config --mirror-bootstrap $mirror_url
+  $pref lb config --mirror-chroot $mirror_url --mirror-chroot-security $mirror_security_url
+  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs" $pkg_list_opt --bootappend ip=frommedia
+  $pref lb config --apt aptitude --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
+  $pref lb config --volatile false
+  $pref lb config --initramfs live-boot
+  $pref lb config --username user --bootappend username=user
+  # Enable cache-indices, by doing this, "apt-get upgrade" won't be run in lb chroot_sources after hook since we might assign older package version when building.
+  $pref lb config --cache-indices true
+
+  if [ "$debian_dist" = "lenny" ]; then
+    # Force to use iso instead of iso-hybrid. Since the syslinux in lenny comes without isohybrid program.
+    $pref lb config --binary-images iso
+  else
+    # Enable iso-hybrid for version >= squeeze
+    $pref lb config --binary-images iso-hybrid
+  fi
+
+  # This decide_live_kernel_related_pkgs_from_debian function will output "kernel_related_pkgs" and "export MKSQUASHFS_OPTIONS"
+  decide_live_kernel_related_pkgs_from_debian
+  $pref lb config --distribution $debian_dist --linux-packages "$kernel_related_pkgs"
+
+  # We force to use the specific CPU kernel.
+  $pref lb config --linux-flavours $cpu_flavor
+
+  # No memtest from debian, we will use the one from drbl since it's newer.
+  $pref lb config --memtest none
+
+  # Create a source tarball or not.
+  if [ "$gen_source_tarball" = "yes" ]; then
+    $pref lb config --source true
+    $pref lb config --source-images tar
+  fi
+
+  # Put files to be included in the chroot hook
+  mkdir -p config/chroot_local-includes/live-hook-dir
+  for i in $ocs_live_script_dir; do
+    cp -pr $i/* config/chroot_local-includes/live-hook-dir/
+  done
+  cp $DRBL_SCRIPT_PATH/conf/drbl*.conf config/chroot_local-includes/live-hook-dir/
+
+  # Put the mirror url and settings, which we might need.
+  cat <<-HOOK_APPEND_END >> config/chroot_local-includes/live-hook-dir/ocs-live-hook.conf
+  # The following settings were added before running hook" >> config/chroot_local-includes/live-hook-dir/ocs-live-hook.conf
+  debian_dist="$debian_dist"
+  mirror_url="$mirror_url"
+HOOK_APPEND_END
+
+  # Put hook file to be run in chroot
+  mkdir -p config/chroot_local-hooks
+  cp $ocs_live_script_dir/$run_hook_script config/chroot_local-hooks/
+
+  # Put hook file to be run in the binary_local-hooks
+  mkdir -p config/binary_local-hooks
+  cp $ocs_live_script_dir/$run_binary_hook_script config/binary_local-hooks/
+  
+  # prepare drbl source list
+  cat << AddDRBLRepository > config/chroot_sources/drbl.chroot
+  deb $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
+  deb-src $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
+AddDRBLRepository
+  
+  # prepare drbl key
+  LC_ALL=C wget -O config/chroot_sources/drbl.chroot.gpg $DRBL_GPG_KEY_URL
+  
+  # Disable apt languages and translations when creating DRBL live. This could reduce apt repository issue.
+  disable_apt_lang_translation chroot/etc/apt/apt.conf.d/99lang
+
+  # Build it.
+  $pref lb build
+  )
+  mv -f debian-live/binary*.iso $stage1_target_iso
+  if [ "$gen_source_tarball" = "yes" ]; then
+    mv -f debian-live/source.debian.tar.gz $target_src_tarball
+    mv -f debian-live/source.debian.list $target_src_tarball_list
+    mv -f debian-live/source.debian-live.tar.gz $target_src_debian_live_tarball
+    mv -f debian-live/source.debian-live.list $target_src_debian_live_tarball_list
+  fi
+else
+  echo "Use existing temp iso file: $stage1_target_iso"
+fi
+  # clean the dir debian-live if $stage1_target_iso is already created
+  if [ -f "$stage1_target_iso" -a -d "debian-live" ]; then
+    echo "Removing working dir debian-live in background..."
+    rm -rf debian-live &
+  fi
+# 
+[ ! -e "$stage1_target_iso" ] && echo "$stage1_target_iso does NOT exist!" && exit 1
+
+# mount the stage 1 iso file
+stage1_iso_TMP="$(mktemp -d /tmp/ocs-iso-tmp.XXXXXX)"
+trap "[ -d "$stage1_iso_TMP" ] && umount $stage1_iso_TMP &>/dev/null && clean_tmp_dirs_files" HUP INT QUIT TERM EXIT
+ISOSYSLNX_TMP="$(mktemp -d /tmp/isolnx-tmp.XXXXXX)"
+mount -o loop $stage1_target_iso $stage1_iso_TMP
+
+#
+case "$target_media_file" in
+  cd|CD|iso|ISO)
+     create_drbl_live_iso
+     ;;
+  usb|zip)
+     create_drbl_live_zip
+     ;;
+  b|both|BOTH)
+     create_drbl_live_iso
+     create_drbl_live_zip
+     ;;
+esac
+
+# unmount all iso file
+umount $stage1_iso_TMP &>/dev/null
+# Clean the tmp working directory
+echo "Cleaning tmp dirs..."
+clean_tmp_dirs_files
+
+# We use "lb config --binary-images iso-hybrid" in version >= squeeze. However, for lenny, the syslinux does not provide isohybrid.
+if [ "$debian_dist" = "lenny" ]; then
+  if type isohybrid &>/dev/null; then
+    if [ -e "$real_target_iso" ]; then
+      echo -n "Isohybriding $real_target_iso... "
+      isohybrid $real_target_iso
+      echo "done!"
+    fi
+  fi
+fi
+
+case "$target_media_file" in
+  cd|CD|iso|ISO)
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+     echo "$msg_burn_drbl_live_img_iso: $real_target_iso"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     ;;
+  usb|zip)
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+     echo "$msg_burn_drbl_live_img_zip: $real_target_zip"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     ;;
+  b|both|BOTH)
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+     echo "$msg_burn_drbl_live_img_iso: $real_target_iso"
+     echo "$msg_burn_drbl_live_img_zip: $real_target_zip"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     ;;
+esac

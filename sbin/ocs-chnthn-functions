@@ -1,0 +1,324 @@
+# -*-Shell-script-*-
+# Author: Ceasar Sun <ceasar _at_ nchc org tw>
+# License: GPL
+# Version:	060728
+# Function:	Run DRBL chnthn needed functions
+# ChangeLog:	
+#			* Please check ~/drbl/sbin/ocs-chnthn
+##################################################
+
+#
+Perpare_Env(){
+	echo -n "Checking fuse support... "
+        # Since fuse is not always a module, we check /proc/filesystems
+        if ! (grep -Eqw fuse /proc/filesystems) && !( modprobe fuse &> /dev/null ) ; then
+	  echo -e "no\n** Can't find fuse support !"
+          exit 1
+        fi
+	echo "yes"
+
+	echo -n "check ntfs module... "
+	!( modprobe ntfs &> /dev/null ) && echo -e "no\n**Can't load ntfs module , but it still can work normally... ."
+	( modprobe ntfs &> /dev/null ) && echo "yes"
+}
+# Print usage
+Usage(){
+	echo "Usage:";
+	echo " -b, --batch		batch mode"
+	echo " -d, --device	assign device , like: /dev/hda1 or /dev/sda3"
+	echo " -i, --interact	interactive mode"
+	echo " -p, --prefix		hostname prefix"
+	echo " -n, --ntfsmount	assign ntfs mount prog , like: ntfsmount or ntfs-3g"
+	echo " -R, --readme	Print readme information"
+	echo " -S, --no_sync_config		Do not sync with DRBL-winRoll configuration, default is to sync"
+	echo " -v, --variable		Hostname by what: [ IP | MAC | _fix]"
+	echo " -w, --winroot	Assign windows root directory, like: windows (for XP, win 2003) or winNT (for Win2000, Win NT)"
+	echo " -h, --help        print help page"
+	echo "	"
+	echo "Example:"
+	echo "$0 -i	: Use interactive mode "
+	echo "$0 -b -n ntfs-3g -v IP -p MyPC	: Assign hostname format like: MyPC-\$ip via using ntfs-3g tool in batch mode"
+	echo "$0 -b -v _fix -p HOST_101 -S	: Assign fixed hostname 'HOST_101' and dotn't sync drbl-winRoll config in batch mode "
+}
+
+README(){
+
+	cat << EOF
+
+*
+* Program:	ocs-chnthn
+* Version:	$__VERSION 
+* Author:	Ceasar Sun Chen-kai <ceasar@nchc.org.tw>
+* License:	GPL
+* Description: 	this script use Offline NT register editor tool: chntpw <http://home.eunet.no/pnordahl/ntpasswd/>
+*			 to change Windows Hostname under drbl environment
+* Usage:	ocs-chnthn.sh --help
+* ChangeLog:	
+*			* 060728	Synchronize with drbl-winRoll package configuration
+*						Add new assignment method for fixed hostname
+*						Select multi-partaion if available windows root as possible in batch mode
+*						Fix ntfs module loading failed
+*						Fix mount method for different file system
+*						Fix umount first checking
+*						Fix some bugs
+*
+*			* 060721	First version
+*						Support using vfat FS as windows root file system
+* Wish list:
+*
+
+EOF
+}
+
+# Print program header
+PrintHeader(){
+	echo "** "
+	echo "** chnthn: A tool to change the hostname of MS windows"
+	echo "** "
+}
+
+PrintFooter(){
+	echo "*********************************************************"
+	echo "*  NCHC Free Software Lab, NCHC, Taiwan "
+	echo "*  License:	GPL "
+	echo "*  Author:	Ceasar Sun and Steven Shiau "
+	echo "*********************************************************"
+}
+
+Select_ntfsmount_prog(){
+	local ntfsmount_prog=""
+	for execprog
+	do
+		echo -n "checking $execprog...    "
+		!( which $execprog &> /dev/null ) && echo "no" ;
+		( which $execprog &> /dev/null ) && echo "yes" && ntfsmount_prog=$execprog && break;
+	done
+	[ -z $ntfsmount_prog ] && echo "No ntfs mount prog, System aborted !!" && exit;
+	NTFSMOUNTPROG=$ntfsmount_prog	
+	echo "Use $NTFSMOUNTPROG."
+}
+
+Check_Package(){
+	for execprog
+	do
+		# system aborted if the executing program don't exist in $PATH
+		echo -n "checking $execprog...    "
+		!( which $execprog &> /dev/null ) && echo "No \"$execprog\" in ($PATH), System aborted !!" && exit;
+		echo "yes"
+	done 
+}
+
+# Obtain local hard-disk
+Get_Hd_List() {
+  local 
+  # it's devfs compiled into kernel, we will use the conv_devfspart_to_tradpart to convert the devfs style partitions.into traditional partitions
+  if grep -Eq '(scsi/host|ide/host)' /proc/partitions 2>/dev/null; then
+     # it's devfs compiled into kernel...
+     partition_table=$(mktemp /tmp/ocs-chnthn-parttable.XXXXXX)
+     conv_devfspart_to_tradpart $partition_table
+  else
+     # the devfs is not compiled into kernel, good!
+     partition_table="/proc/partitions"
+  fi
+
+  hd_list=$(LC_ALL=C awk '/[hsv]d[a-z]$/ { print $4; }' $partition_table)  					# like hda, hdb, sda, sdb,...
+
+  echo "$hd_list";
+  return  1;
+}
+# Print all hisk and partition info
+Print_Allpartition_Info(){
+	local hd_list=$@
+
+	[ $# -eq 0 ] && [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo "Damn...., no hardisk ?? System aborted !!" \
+	&& [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL && exit;
+
+	[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING; echo '** Search your possible hard-disk in local system'; [ "$BOOTUP" = "color" ] \
+	&& $SETCOLOR_NORMAL;
+    
+	PARTIDCOUNT=0
+	i=0;j=0;k=0;
+
+  for hd in $hd_list; do
+    partedhdinfo=`LC_ALL=C parted /dev/$hd p`;
+    #Str="/^[0-9]+/ && !/(extended.+(lba)*)$|(linux-swap)/";
+    Str="/^[[:space:]]*[0-9]+/ && /(fat12|fat16|fat32|vfat)|(ntfs)/";
+
+    if [ "`echo -n $hd | wc -m`" = "4" ]; then 
+      part_infos=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$hd\\t\"\$2\"\t\"\$3\"\t\"\$4; }"  );
+    else
+      part_infos=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$hd\"\$0; }"  );
+    fi 
+    
+    if [ "`echo -n $hd | wc -m`" = "4" ]; then 
+      partdev=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$hd\"; }"  );
+    else
+      partdev=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$hd\"\$1; }"  );
+    fi 
+
+	i=0
+    for part in $partdev; do
+		i=$i+1;
+		partfs=$()
+		tmp_PARTDEVARR[$i]=$part
+		tmp_PARTFSARR[$i]=$(ocs-get-part-info $part filesystem)
+
+	df $part  | grep $part &> /dev/null
+	# 原先有被自動 mount 的情形下要先umount ，如果 umount 失敗則要跳出程式
+	if [ $? -eq 0 ]; then
+		echo -n "umount $tmpdev if necessary... "
+		 umount $part  &> /dev/null
+		 [ $? -eq 1 ] && [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo "Umount device: $part failed...  " && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL && exit 1;
+		[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo -e " done\n" && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL  
+	fi 
+	
+    done
+    tmp_PARTIDCOUNT=$i;
+
+	# check if include windows root]
+	j=0		# 紀錄每個 disk 的可能數目
+	for (( i=1; i<=$tmp_PARTIDCOUNT; i=i+1)); do
+		dev_winroot='';
+		#dev_winroot=$(check_if_winroot "${tmp_PARTDEVARR[$i]}" "${tmp_PARTFSARR[$i]}")
+	
+		if [ "${tmp_PARTFSARR[$i]}"  = "ntfs" ] ; then
+			$NTFSMOUNTPROG ${tmp_PARTDEVARR[$i]} $tmpmount
+		elif [ -n "(echo "${tmp_PARTFSARR[$i]}" | grep -iE "fat")" ] ; then
+			mount -t auto ${tmp_PARTDEVARR[$i]} $tmpmount
+		else
+			echo "No support filesystem '$tmpfs' on $tmpdev !! "
+			return;
+		fi
+		#echo "mount $tmpdev $tmpmount... "
+
+		for test_root in $DEFAULT_WIN_ROOT ; do
+			_tmp_winroot=$(cd $tmpmount; ls -d */ | grep -i $test_root)
+			[ -z "$_tmp_winroot" ] && break
+			find_registry_realname "$tmpmount/$_tmp_winroot" "$WIN_SYSTEM_SAM" "$WIN_SOFTWARE_SAM"
+			if [ -n "$REAL_WIN_SYSTEM_SAM" ] && [ -n "$REAL_WIN_SOFTWARE_SAM" ] ; then	
+				j=$j+1;
+				k=$k+1;
+				PART_DEV_ARR[$k]=${tmp_PARTDEVARR[$i]};
+				PART_FS_ARR[$k]=${tmp_PARTFSARR[$i]};
+				PART_WINROOT_ARR[$k]=$_tmp_winroot
+				PART_WIN_SYSTEM_SAM[$k]=$REAL_WIN_SYSTEM_SAM
+				PART_WIN_SOFTWARE_SAM[$k]=$REAL_WIN_SOFTWARE_SAM
+
+			fi
+		done
+		umount $tmpmount
+	done
+
+	if [ $j -gt 0 ]; then 
+	    echo "[/dev/$hd]"
+	    echo "======================================================"
+	    echo "$part_infos"
+	    echo "======================================================"
+	fi
+  done;
+
+	PARTIDCOUNT=$k;
+  
+	[ $PARTIDCOUNT -eq 0 ] && [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo "No available partition, aborted!" \
+	&& [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL && exit 1;
+	return 0;
+}
+
+gen_hn_stream() {
+	local hn_fix=$1;tmp_hn_fix="" ;hn_prefix=$1; hn_vari=$2; 
+	local hn_ip_fix_bits=$HN_VARI_BITS;
+
+	[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING  && echo "** Setup hostname prefix and variable:" && [ "$BOOTUP" = "color" ]  && $SETCOLOR_NORMAL;
+	if [ "$ACTIVE_MODE" = "interact" ]; then
+		echo "Select hostname  variable: [ip] ,[mac] or [fix] ? "
+		echo "[0]: IP , as:PC-001-014"
+		echo "[1]: MAC address , as:PC-DA2199"
+		echo "[2]: Manual"
+		read -p "[0]" tmp_hn_vari junk
+
+		[ -z "$tmp_hn_vari" ] ||  [ "$tmp_hn_vari" !=  '0' -a  "$tmp_hn_vari" !=  '1'  -a  "$tmp_hn_vari" !=  '2'   ] && tmp_hn_vari=0;
+
+		if [ "$tmp_hn_vari" =  '2' ]; then
+			hn_vari='_fix'
+			echo "Input your assigned hostname"
+			read -p "[$hn_fix]" tmp_hn_fix junk
+			[ -n "$(echo $tmp_hn_fix)" ] && hn_fix=$tmp_hn_fix
+			echo "Use fixed hostname format: $hn_fix"
+		else 
+			[ "$tmp_hn_vari" =  '0' ] && hn_vari='IP';
+			[ "$tmp_hn_vari" =  '1' ] && hn_vari='MAC';
+			read -p "Input hostname  prefix , no space: [$hn_prefix]" tmp_hn_prefix junk
+			[ -n "$(echo $tmp_hn_prefix)" ] && hn_prefix=$tmp_hn_prefix
+			echo "Use hostname format: $hn_prefix-\$$hn_vari"
+		fi
+	fi 
+
+	#  把 ip 轉成字串
+	tmp_ip=$(ifconfig | awk  '/inet addr:/ && !/127.0.0.1/  { print $2 };' | cut -d':' -f 2 |awk -F. '{print $1+1000"-"$2+1000"-"$3+1000"-"$4+1000 }' | sed -e 's/^1//' -e 's/\-1/-/g' | head -n 1)
+	tmp_mac=$(ifconfig | awk  '/HWaddr/  { print $5 };' | sed -e 's/://g' | head -n 1)
+	
+	# 修正給 ip 的位元數
+	[ "$hn_vari" = "IP" ] && hn_ip_fix_bits=`expr $HN_VARI_BITS +  $HN_VARI_BITS / 3 - 1`
+
+	IP_stream=${tmp_ip:(-$hn_ip_fix_bits)}
+	MAC_stream=${tmp_mac:(-$hn_ip_fix_bits)}
+	HN_VARI_BITS=$hn_ip_fix_bits
+	HN_FORMAT_PREFIX=$hn_prefix
+	HN_FORMAT_VARI=$hn_vari
+
+	if [ "$HN_FORMAT_VARI" = "IP" ] ; then
+		WIN_HN="$HN_FORMAT_PREFIX"-"$IP_stream"
+	elif [ "$HN_FORMAT_VARI" = "MAC" ]; then
+		WIN_HN="$HN_FORMAT_PREFIX"-"$MAC_stream"
+	else
+		WIN_HN="$hn_fix"
+	fi
+	
+	return
+}
+
+find_registry_realname(){
+
+	local _search_path=$1 _win_system_sam=$2 _win_software_sam=$3 _dirname _filename;
+
+	_dirname=$(dirname $_win_system_sam )
+	_filename=$(basename $_win_system_sam )
+	REAL_WIN_SYSTEM_SAM="$(find $_search_path -iname $_filename -type f | grep -i $_win_system_sam)"
+
+	_dirname=$(dirname $_win_software_sam )
+	_filename=$(basename $_win_software_sam )
+	REAL_WIN_SOFTWARE_SAM="$(find $_search_path -iname $_filename -type f | grep -i $_win_software_sam)"
+
+}
+
+
+SYNC_DRBL_winroll_config(){
+
+	# Check drbl-winroll setting 
+	[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo -n "** Check with drbl-winroll configuration:" && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
+	if [ -w "$tmpmount/$DRBL_WINROLL_CONFIG" ] ; then
+		#_Match_str="^HN_WSNAME_PARAM\ =[\s\S]*$"
+		#_Replace_str="HN_WSNAME_PARAM\ =\ \/N:$HN_FORMAT_PREFIX-\\\$$HN_FORMAT_VARI\[$HN_VARI_BITS\+\]\t\t# generated by ocs-chnthn\n/g"
+		 #perl -pi -e "s/$_Match_str/$_Replace_str/g" "$tmpmount/$DRBL_WINROLL_CONFIG"
+
+		# 先將原始資料備份
+		echo -e "\tBackup winroll.conf ... "
+		cp -f "$tmpmount/$DRBL_WINROLL_CONFIG" "$tmpmount/$DRBL_WINROLL_CONFIG.ocs-chnthn.bak" &> /dev/null
+		if [ "$HN_FORMAT_VARI" = "_fix" ] ; then
+			 LC_ALL=C perl -pi -e "s/^HN_WSNAME_PARAM\ =[\s\S]*$/HN_WSNAME_PARAM\ =\ \/N:$WIN_HN\t\t# generated by ocs-chnthn\n/g" "$tmpmount/$DRBL_WINROLL_CONFIG";
+		elif [ "$HN_FORMAT_VARI" = "MAC" -o "$HN_FORMAT_VARI" = "IP" ]; then
+			 LC_ALL=C perl -pi -e "s/^HN_WSNAME_PARAM\ =[\s\S]*$/HN_WSNAME_PARAM\ =\ \/N:$HN_FORMAT_PREFIX-\\\$$HN_FORMAT_VARI\[$HN_VARI_BITS\+\]\t\t# generated by ocs-chnthn\n/g" "$tmpmount/$DRBL_WINROLL_CONFIG"
+		else
+			# impossible to reach this option
+			[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo "** Error: impossible to the value of HN_FORMAT_VARI " && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
+		fi
+		#cat "$tmpmount/$DRBL_WINROLL_CONFIG"
+		[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo -e "** Done !!" && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
+	elif [ ! -f "$tmpmount/$DRBL_WINROLL_CONFIG" ]; then
+		[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo "No drbl-winroll config file, skip..." && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	fi
+
+	return
+}
+
+

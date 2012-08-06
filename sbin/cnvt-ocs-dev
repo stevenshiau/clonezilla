@@ -1,0 +1,215 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL 
+# Description: This program is used to convert the clonezilla image from hdx to sdx or vice versa.
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
+# otherwise setterm will complain.
+[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
+echo "Setting the TERM as $TERM"
+export TERM="$TERM"
+
+# 
+ocs=`basename $0`
+# Initial setting
+batch_mode="no"
+
+#
+check_if_root
+
+#
+USAGE() {
+    echo "$ocs: To change the device name in saved clonezilla image"
+    echo "Usage:"
+    echo "$ocs [OPTION] IMAGE_NAME SOURCE_DEV_NAME TARGET_DEVICE_NAME"
+    echo "NOTE! (1) The cloned OS should support the device driver, such as SCSI or SATA if you convert it to SCSI/SATA. (2) If it's GNU/Linux, maybe you have to modify the /etc/fstab in the cloned OS"
+    echo 
+    echo "OPTION:"
+    language_help_prompt_by_idx_no
+    echo "-b, --batch        Run in batch mode, i.e. without any prompt or wait to press enter"
+    echo "-d, --ocsroot DIR  Specify clonezilla image dir as DIR"
+    echo
+    echo "Example:"
+    echo "To convert the image located in /home/images/, which was originally saved from hda, to sda, use: "
+    echo "$ocs" '-d /home/images NOMOREXP hda sda'
+}
+#
+wait_for_confirm() {
+  local rename_confirm_ans=""
+  echo -n "Are you sure you want to continue ? (y/N) "
+  read rename_confirm_ans
+  case "$rename_confirm_ans" in
+        y|Y|[yY][eE][sS])
+           echo "Let's do it!"
+           ;;
+        *)
+           echo "Program terminated!"
+           exit 1
+  esac
+}
+#
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -b|--batch)
+            batch_mode="yes"
+	    shift;;
+    -l|--language)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      specified_lang="$1"
+              shift
+            fi
+            [ -z "$specified_lang" ] && USAGE && exit 1
+	    ;;
+    -d|--ocsroot)
+            # overwrite the ocsroot in drbl.conf
+            shift; 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ocsroot="$1"
+	      shift
+            fi
+            [ -z "$ocsroot" ] && USAGE && exit 1
+	    ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+image_name="$1"
+src_dev="$2"
+tgt_dev="$3"
+
+#
+ask_and_load_lang_set $specified_lang
+
+# 
+for i in image_name src_dev tgt_dev; do
+  eval iv=\$$i
+  [ -z "$iv" ] && USAGE && exit 1
+done
+
+# ocs root
+echo "clonezilla image dir: $ocsroot"
+
+##############
+#### main ####
+##############
+
+# check image
+if [ ! -d "$ocsroot/$image_name" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$ocsroot/$image_name NOT found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+
+# check if src and target is same
+if [ "$src_dev" = "$tgt_dev" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Source device ($src_dev) and target device ($tgt_dev) are same one!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Skip converting!"
+  exit 1
+fi
+
+# check src_dev
+check_input_hd $src_dev
+if [ -z "$(unalias ls 2>/dev/null; ls $ocsroot/$image_name/${src_dev}* 2>/dev/null)" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$ocsroot/$image_name/${src_dev}* NOT found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+
+# check tgt_dev
+check_input_hd $tgt_dev
+
+#
+if [ "$batch_mode" = "no" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
+  echo "$msg_uppercase_Warning! THIS ACTION IS RISKY! THE CONVERTION MAYBE WILL LET CLIENT FAIL TO BOOT!"
+  echo "NOTE!"
+  echo "(1) The OS itself from image \"$image_name\" should support the device driver, such as SCSI or SATA if you convert it to SCSI/SATA."
+  echo "(2) If the OS itself from image \"$image_name\" is GNU/Linux, maybe you have to modify the /etc/fstab inside it. You can do that after cloing it to harddisk, then boot it into single user mode, or use Live CD/DRBL client mode to make it."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  wait_for_confirm
+fi
+
+# The files in an image are, for example: 
+# Clonezilla 1.x
+# chs.sf  disk  hda1.ntfs-img  mbr  parts  pt.sf
+# Clonezilla 2.x
+# Ex 1:
+# hda-chs.sf  disk  hda1.ntfs-img  hda-mbr  parts  hda-pt.sf
+# Ex 2:
+# disk hda1.aa hda3.aa hda-chs.sf hda-mbr hda-pt.sf parts swappt-hda2.info hda-pt.parted
+# chs.sf is not necessary to be modified.
+# In this example, just modify: disk parts pt.sf hda-pt.sf, actually pt.sf only exists in clonezilla 1.x, and hda-pt.sf only exists in clonezilla 2.x. Anyway, if it is found, just modify that.
+files_2_be_mod="disk parts pt.sf ${src_dev}-pt.sf ${src_dev}-pt.parted"
+
+if [ -n "$(unalias ls 2>/dev/null; ls $ocsroot/$image_name/${tgt_dev}* 2>/dev/null)" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Target device files ($ocsroot/$image_name/${tgt_dev}*) already exist!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  wait_for_confirm
+fi
+for ifile in $files_2_be_mod; do
+  if [ -f "$ocsroot/$image_name/$ifile" ]; then
+    echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
+    LC_ALL=C perl -pi -e "s/$src_dev/$tgt_dev/g" $ocsroot/$image_name/$ifile
+    echo "done!"
+  fi
+done
+# There are 3 files (lvm_etch.conf  lvm_logv.list  lvm_vg_dev.list) about LVM devices in Clonezilla image, and only lvm_vg_dev.list is necessary to be modified. We separate this from the above is because it's format is like "/dev/hda" instead of "hda".
+if [ -f "$ocsroot/$image_name/lvm_vg_dev.list" ]; then
+  echo -n "Change /dev/$src_dev to /dev/$tgt_dev in $ocsroot/$image_name/lvm_vg_dev.list... "
+  LC_ALL=C perl -pi -e "s|/dev/$src_dev|/dev/$tgt_dev|g" $ocsroot/$image_name/lvm_vg_dev.list
+  echo "done!"
+fi
+
+# hda, hda1.ntfs-img...
+# hda1.ntfs-img -> sda1.ntfs-img
+# For clonezilla 2.x format, hda-mbr, hda-pt.sf, hda-pt.parted, hda-chs.sf also will be processed here: hda-mbr -> sda-mbr...
+for im in $ocsroot/$image_name/${src_dev}*; do
+  imname="$(basename $im)"
+  newname="$(echo $imname| sed -e "s/$src_dev/$tgt_dev/g")"
+  if [ -z "$newname" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Name converted failed!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated!"
+    exit 1
+  fi
+  mv -f $ocsroot/$image_name/$imname $ocsroot/$image_name/$newname
+done
+# For swappt-*.info
+for im in $ocsroot/$image_name/swappt-${src_dev}*.info; do
+  [ ! -e "$im" ] && continue
+  imname="$(basename $im)"
+  newname="$(echo $imname| sed -e "s/$src_dev/$tgt_dev/g")"
+  if [ -z "$newname" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Name converted failed!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated!"
+    exit 1
+  fi
+  mv -f $ocsroot/$image_name/$imname $ocsroot/$image_name/$newname
+done
+
+exit 0

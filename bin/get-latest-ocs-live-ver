@@ -1,0 +1,55 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: This program is used to parse the latest Clonezilla live on the sourceforge repository.
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+
+#
+branches="stable testing alternative alternative_testing"
+sf_clonezilla_url="http://sourceforge.net/projects/clonezilla/"
+nchc_clonezilla_url="http://free.nchc.org.tw/clonezilla-live/"
+#
+query_branch() {
+  local i="$1"
+  cz_tmp="$(mktemp /tmp/cz_ver.XXXXXX)"
+  wget --quiet -O $cz_tmp $sf_clonezilla_url/files/clonezilla_live_$i
+  # The output for "grep -Eo -- "/projects/clonezilla/files/clonezilla_live_$i/([0-9A-Za-z]|-|\.)*/" $cz_tmp | grep -vi OldFiles | sort | uniq"
+  # /projects/clonezilla/files/clonezilla_live_stable/1.2.6-40/
+  cz_ver="$(LC_ALL=C grep -Eo -- "/projects/clonezilla/files/clonezilla_live_$i/([0-9A-Za-z]|-|\.)*/" $cz_tmp | grep -vi OldFiles | sort -r | uniq | head -n 1 | sed -e "s|/projects/clonezilla/files/clonezilla_live_$i/||g" -e "s|/$||g" | pkg-ver-latest)"
+  if [ -z "$cz_ver" ]; then
+    # Backup plan if version is not found on sf.net download page.
+    wget --quiet -O $cz_tmp $nchc_clonezilla_url/$i
+    cz_ver="$(LC_ALL=C grep -iEo "clonezilla-live-([0-9A-Za-z]|-|\.)*.iso" $cz_tmp | grep -Ev "(http|\?|\&|%)" | pkg-ver-latest | sed -r -e "s/^clonezilla-live-//g" -e "s/-(486|686|i486|i686|amd64)//g" -e "s/\.iso//g" -e "s/-nk$//g")"
+  fi
+  [ -e "$cz_tmp" ] && rm -f $cz_tmp
+}
+#
+USAGE() {
+  echo "Usage: $0 branch" 1>&2
+  echo "Where branch is one of:" 1>&2
+  echo "$branches" 1>&2
+}
+
+branch="$1"
+if [ -z "$branch" ]; then
+  echo "No branch specified!" 1>&2
+  USAGE
+  exit 1
+fi
+if [ -z "$(echo "$branches" | grep -wE "$branch")" ]; then
+  echo "\"$branch\" is not an appropriate branch!" 1>&2
+  USAGE
+  exit 1
+fi
+query_branch $branch
+if [ -n "$cz_ver" ]; then
+  echo "$cz_ver"
+  rc=0
+else
+  rc=1
+fi
+
+exit $rc

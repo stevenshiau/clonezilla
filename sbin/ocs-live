@@ -1,0 +1,100 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ nchc org tw>
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /opt/drbl/conf/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+#
+USAGE() {
+    echo "Usage:"
+    echo "To run clonezilla live:"
+    echo "$ocs [OPTION]"
+    echo " Options:"
+    language_help_prompt_by_idx_no
+    echo " -p, --postaction [choose|poweroff|reboot|command|CMD]     When save/restoration finishs, choose action in the client, poweroff, reboot (default), in command prompt or run CMD"
+    echo " -s, --skip-prep-ocsroot  Skip preparing the clonezilla image home directory (assume it's ready)."
+}
+#
+start-prep-ocsroot() {
+  prep-ocsroot $lang_opt
+  rc="$?"
+  if [ "$rc" -gt 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_unable_to_mnt_ocsroot."
+    echo "$msg_are_u_sure_u_want_to_continue"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo -n "[y/N] "
+    read continue_without_mnt
+    case "$continue_without_mnt" in
+      y|Y|[yY][eE][sS])
+         echo "$msg_ok_let_do_it"
+         ;;
+      *)
+         echo "$msg_program_stop"
+         exit 1
+         ;;
+    esac
+  fi
+} # end of start-prep-ocsroot
+#
+check_if_root
+
+# default setting
+do_prep_ocsroot="yes"
+#
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l|--language)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      ocs_lang="$1"
+              shift
+            fi
+	    [ -z "$ocs_lang" ] && USAGE && exit 1
+	    ;;
+    -p|--postaction)  
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      postrun="$1"
+              shift
+            fi
+	    [ -z "$postrun" ] && USAGE && exit 1
+            ;;
+    -s|--skip-prep-ocsroot)  
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      do_prep_ocsroot="no"
+              shift
+            fi
+	    [ -z "$do_prep_ocsroot" ] && USAGE && exit 1
+            ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+# ocs_lang is loaded from /etc/ocs/ocs-live.conf
+[ -z "$ocs_lang" ] && ocs_lang=en_US
+ask_and_load_lang_set $ocs_lang
+[ -n "$ocs_lang" ] && lang_opt="-l $ocs_lang"
+[ -n "$postrun" ] && postrun_opt="-p $postrun"
+# 1. prep-ocsroot
+if [ "$do_prep_ocsroot" = "yes" ]; then
+  start-prep-ocsroot
+fi
+
+# 2. ocs-sr -x
+ocs-sr -x $lang_opt $postrun_opt

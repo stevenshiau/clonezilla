@@ -1,0 +1,264 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Program to create GParted live, based on Debian Live helper.
+
+# load config files
+. /live-hook-dir/drbl.conf
+. /live-hook-dir/ocs-live-hook.conf
+# load functions
+. /live-hook-dir/ocs-live-hook-functions 
+
+# Overwrite the locale_to_keep in /live-hook-dir/ocs-live-hook.conf. We just keep C and en_US only. Later we will restore the gparted locales file.
+locale_to_keep="C.UTF-8, en_US.UTF-8"
+
+# Set the environment variable LIVE_CREATING_MODE so we know what we are doing
+LIVE_CREATING_MODE="gparted"
+export LIVE_CREATING_MODE
+
+# Initial flag for updating initramfs
+update_initramfs_flag="no"
+
+# LIVE_CREATING_MODE will be used in download_grub_1_2_deb_for_later_use
+download_grub_1_2_deb_for_later_use
+
+#
+clean_udev_persistent_net_rules
+
+# create a dummy /etc/fstab in Live CD so that nis/yp won't complain
+touch /etc/fstab
+
+# Append /sbin and /usr/sbin in the system PATH 
+echo "export PATH=\$PATH:/sbin:/usr/sbin" >> /etc/profile
+echo "export PATH=\$PATH:/sbin:/usr/sbin" >> /etc/bash.bashrc
+
+# Before localepurge, save gparted locales. We will put it back in the end (after any apt action)
+echo "Backup gparted locales..."
+( cd /usr/share/locale 
+  find -iname "gparted*" -print | xargs tar -cf /gparted-locale.tar
+)
+
+#
+install_debian_extra_modules
+
+# clean some locales
+set_localepurge
+localepurge
+
+# Exclude live mount point in /etc/init.d/umountfs to avoid error messages when rebooting or halting.
+exclude_umount_live_mnt_point_in_umountfs
+
+# Turn off some services
+for i in $service_2_be_off_for_gparted_live; do
+  remove_service_in_system $i
+done
+
+# append the module so that it will be loaded, then gparted can grow filesystem
+# Ref: http://gparted.sourceforge.net/features.php
+append_mod_in_etc_modules
+
+# set root passwd (maybe none)
+set_root_passwd
+
+# No more use this. Let live-initramfs deal with that.
+# We have to create account user, otherwise there is some problem. See ocs-live-hook-functions for more details.
+# preseed_autologin_account
+
+# If lxterminal or mlterm is found with xfce installed, set default x-terminal-emulator as mlterm. Since xterm is not as good as mlterm in Traditional Chinese font.
+if dpkg -L lxterminal &>/dev/null; then
+  echo "Set lxterminal as default x-terminal-emulator."
+  update-alternatives --set x-terminal-emulator /usr/bin/lxterminal
+elif dpkg -L mlterm &>/dev/null; then
+  echo "Set mlterm as default x-terminal-emulator."
+  update-alternatives --set x-terminal-emulator /usr/bin/mlterm
+  # change the fg/bg color
+  perl -pi -e "s/^.*fg_color=.*/fg_color=white/g" /etc/mlterm/main
+  perl -pi -e "s/^.*bg_color=.*/bg_color=black/g" /etc/mlterm/main
+fi
+
+# since ssh services is on, and autologin account is known for the whole world, we have to block it.
+block_all_clients_by_tcpwrapper
+
+# fluxbox menu, icons, exe files and others...
+cp -af /live-hook-dir/gparted/fluxbox/menu /etc/X11/fluxbox/fluxbox.menu-user
+cp -af /live-hook-dir/gparted/usr /
+
+# put some desktop icons in the root account, when client boot, we will need them.
+gparted_desktop_rep="/root/gparted-live/"
+mkdir -p $gparted_desktop_rep
+cp -af /live-hook-dir/gparted/ideskrc $gparted_desktop_rep/ideskrc
+cp -af /live-hook-dir/gparted/idesktop $gparted_desktop_rep/idesktop
+# //NOTE// We can not just put apps into ~$autologin_account/.fluxbox, otherwise some other files won't be put by startfluxbox when fluxbox is run first time. Therefore we put apps in home dir, then after fluxbox is started, put it into .fluxbox/
+cp -af /live-hook-dir/gparted/fluxbox/apps $gparted_desktop_rep
+
+# Put main gparted live start service
+if [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
+  # Ubuntu's upstart. We use the compatibility mode of sysv-init in upstart
+  cp -af /live-hook-dir/start-gparted-live /etc/rc2.d/S99start-gparted-live
+elif type insserv &>/dev/null; then
+  # This has to be 2nd (i.e. in elif, since ubuntu also has insserv, but it is not enabled)
+  install -o root -g root -m 755 /live-hook-dir/start-gparted-live /etc/init.d/
+  insserv start-gparted-live
+else
+  cp -af /live-hook-dir/start-gparted-live /etc/rc2.d/S99start-gparted-live
+fi
+
+# Put start scripts
+mkdir -p /etc/gparted-live/
+cp -ar /live-hook-dir/gparted/gparted-live.d /etc/gparted-live/
+
+# Put a link for vol_id so that GParted can use it to read linux-swap labels
+if [ -e /lib/udev/vol_id ]; then
+  (cd /sbin; ln -fs /lib/udev/vol_id vol_id)
+fi
+
+# we need real /sbin/start-stop-daemon
+remove_cdebootstrap-helper-diverts
+
+# Dirty hacking: rm files
+echo "Starting dirty hacking to remove files..."
+# Example:
+# //NOTE// list them very carefully, otherwise maybe due to dependence, required package will be removed!
+# unnecessary_packages="libc6-dev ncpfs libpam-ncp binutils dpkg-dev linux-libc-dev make patch wget alsa bzip2 xserver-xorg-input-wacom whiptail"
+unnecessary_packages=""
+if [ -n "$unnecessary_packages" ]; then
+  echo "Force to remove some packages ($unnecessary_packages) if installed..."
+  for i in $unnecessary_packages; do
+   if dpkg -L $i &>/dev/null; then	   
+     echo "Force to removing $i..."
+     apt-get --yes --force-yes --purge remove $i
+   fi
+  done
+fi
+
+#
+kernel_ver="$(unalias ls 2>/dev/null; ls /lib/modules/)"
+# List for the file or dir to be removed:
+# /lib/modules/$kernel_ver/kernel/
+# //NOTE// /lib/modules/$kernel_ver/kernel/lib is important for Debian lenny, since isofs need that. DO NOT REMOVE IT! Thanks to Louie Chen.
+kdir_2_be_rm="sound" 
+# /lib/modules/$kernel_ver/kernel/drivers/
+drv_2_be_rm="atm telephony isdn bluetooth infiniband isdn media leds kvm spi w1" 
+# /lib/modules/$kernel_ver/kernel/fs/
+# Forget about removing the fs driver... we'd better to keep them.
+#fs_2_be_rm="9p afs dlm smbfs cifs coda autofs* minix gfs* nfs* quota* lockd romfs ncpfs ocfs* udf" 
+fs_2_be_rm=""
+# /usr/share/fonts/X11/misc/
+font_2_be_rm="*ja* *ko* *kan* *gb*"
+# /usr/share/
+share_dir_2_be_rm="info doc-base doc"
+# Remove them
+for i in $kdir_2_be_rm; do
+  rm -rf /lib/modules/$kernel_ver/kernel/$i
+done
+for i in $drv_2_be_rm; do
+  rm -rf /lib/modules/$kernel_ver/kernel/drivers/$i
+done
+for i in $fs_2_be_rm; do
+  rm -rf /lib/modules/$kernel_ver/kernel/fs/$i
+done
+for i in $font_2_be_rm; do
+  rm -f /usr/share/fonts/X11/misc/$i
+done
+
+#
+decide_if_use_xz_compression_for_initrd
+
+# We might need more /lib/udev/*_id than that initramfs-tools copies. E.g. for Live CD, we need cdrom_id, which udev (>= version 146 won't copy).
+copy_all_dev_id_prog_from_udev_lib
+
+# Keep the parameters.txt, avoid it to be removed later.
+# live-initramfs want to copy parameters.txt to live cd
+[ -e /usr/share/doc/live-initramfs/parameters.txt ] && {
+  cp -p /usr/share/doc/live-initramfs/parameters.txt /
+}
+for i in $share_dir_2_be_rm; do
+  # Here we remove files only, but keep dirs so that later if user want to install packages, postrun won't exit because no /usr/share/man/man1, for example.
+  # rm -rf /usr/share/$i/*
+  find /usr/share/$i/ -type f -exec rm -f {} \;
+done
+# put it back
+[ -e /parameters.txt ] && {
+  mkdir -p /usr/share/doc/live-initramfs/
+  mv -f /parameters.txt /usr/share/doc/live-initramfs/
+}
+
+#
+dist="$(cat /etc/debian_version)"
+if [ "$dist" = "4.0" ]; then
+  # etch
+  sed -i 's/libxrender1, gksu/libxrender1/' /var/lib/dpkg/status
+else
+  # lenny
+  sed -i 's/Depends: gksu, libatk1.0-0/Depends: libatk1.0-0/' /var/lib/dpkg/status
+fi
+echo "gparted hold" | dpkg --set-selections
+#apt-get remove --purge --yes --force-yes gksu libgksu2-0
+
+#
+if [ -n "$(LANG=C apt-get --help 2>&1 | grep autoremove)" ]; then
+  apt-get -y autoremove
+fi
+
+# Just clean them
+# Log
+# Log, clean them, but keep the file name. i.e. make the size 0, otherwise if we clean them, some daemon will complain.
+find /var/log/ -type f | xargs -I % bash -c "echo -n '' > %"
+# CPP
+find /usr/lib/gcc/ -name "cc1" -exec rm {} \;
+find /usr/bin/ -name "cpp*" -exec rm {} \;
+# Forget about removing zoneinfo.... This might break live-config.
+#if [ -e /usr/share/zoneinfo/UTC ]; then
+#  rm -f /etc/localtime # The original is a soft link file to UTC
+#  cp -af /usr/share/zoneinfo/UTC /etc/localtime
+#  rm -rf /usr/share/zoneinfo/*
+#  # Restore UTC only to avoind live-initramfs giving error
+#  cp -af /etc/localtime /usr/share/zoneinfo/UTC 
+#fi
+# Forget about removing gconv, since some program, e.g. mtools 4.10 need that.
+# [ -d /usr/lib/gconv/ ] && rm -rf /usr/lib/gconv/*
+[ -d /var/backups ] && rm -rf /var/backups/*
+# gconf2* gconf2-common* gksu* gnome-keyring* libgconf2-4* libgksu2-0* libgnome-keyring0 python* python-minimal*
+pkg_force_2_be_rm="python2.4-minimal python2.4 gksu gksudo gnome-keyring gnome-keyring-manager libgnome-keyring0 libgksu2-0 libgnome-keyring0"
+
+# ///Note/// This should be the last one after any apt-get.
+# clean unnecessary backup file to save space
+clean_unnecessary_backup_file_in_boot
+# prevent "W: Couldn't stat source package list http://..." error message
+perl -pi -e "s/^/#/" /etc/apt/sources.list
+apt-get update
+
+# Remove grpck option "-p". This is only a workaround since the issue has not been fixed in Debian
+# Ref: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=638263
+remove_grpck_opt_p
+
+if dpkg -L deborphan &>/dev/null; then	   
+   echo "Removing deborphan..."
+   apt-get --yes --force-yes --purge remove deborphan
+fi
+
+packages=$(LANG=C dpkg --list | grep -E "^rc" | awk '{print $2}')
+[ -n "$packages" ] && dpkg --purge $packages
+
+for i in $pkg_force_2_be_rm; do
+  dpkg -L $i 2>/dev/null | xargs -I % bash -c "test -f % && rm -f %"
+done
+
+# We have to run update-initramfs so that the new busybox/cdromid/... will be in initramfs. This should be after dirty_hacking_rm_files_for_ocs_live since some files which we do not want (e.g. plymouth) might be included in initrd.
+[ "$update_initramfs_flag" = "yes" ] && update-initramfs -u
+
+# Create a list of all packages:
+dpkg --get-selections > /root/gparted-livecd-packages.txt
+
+# Restore gparted locales 
+echo "Restoring gparted locales..."
+( cd /usr/share/locale
+  tar -xf /gparted-locale.tar
+  rm -f /gparted-locale.tar
+)
+# After this, even if live helper to use apt to install squashfs and memtest, although the gparted locales will be removed, but they are not in the directory that will be packed by mksquashfs. Therefore, we can keep those gparted locales in filesystem.squashfs.
+
+### THE END ###
+# DO NOT PUT ANY SCRIPT AFTHER THIS!!!
+# kill this program before creating squashfs filesystem.
+rm -rf /live-hook-dir

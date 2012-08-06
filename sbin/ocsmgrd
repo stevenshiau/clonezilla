@@ -1,0 +1,158 @@
+#!/usr/bin/perl
+#
+# Author: Blake, Kuo-Lien Huang
+# License: GPL
+# Description:
+#   2003/04/11 the first version, only work for PXE
+
+# Reference: 
+#  perldoc IO::Select
+#  perldoc IO::Socket:INET
+#
+#  2005/1/20
+#  Steven Shiau modified the following to meet 
+#  DRBL for RedHat/Fedora/Mandrake
+#  tftpboot => '/tftpboot/nbi_img',
+
+#  2005/3/30
+#  use udp-cast, so we won't deal with client_to_wait or time_to_wait, let udp-cast takes are of that!
+
+use strict;
+use IO::Select;
+use IO::Socket;
+use POSIX qw(strftime);
+
+$|++;
+
+our $start_time = time;
+our $DRBL_SCRIPT_PATH = '/opt/drbl';
+our %config = (
+  port => 6461,
+  log => 1,
+  logfile => '/var/log/clonezilla/ocsmgrd.log',
+  joblog => 1,
+  joblogfile => '/var/log/clonezilla/clonezilla-jobs.log',
+  tftpboot => '/tftpboot/nbi_img',
+  script_to_exec => '',
+  nocheck => 0,
+);
+
+while ( $_ = shift ) {
+  if (/-p|--port/) { 
+    $config{port} = shift;
+  } elsif (/-l|--log/) {
+    $config{log} = 1;
+    $config{logfile} = shift;
+  } elsif(/-s|--script_to_exec/) {
+    $config{script_to_exec} = shift;
+  } elsif(/--nocheck/) {
+    $config{nocheck} = 1;
+  }
+}
+
+# check if root or not.
+# added by Steven Shiau 2005/02/19
+my $whoiam = `LC_ALL=C id -nu`;
+chomp($whoiam);
+if ("$whoiam" ne "root") { 
+  print "[$ENV{LOGNAME}] You need to run this program as root.\n";
+  exit(1);
+}
+
+# clean the stale log files.
+unlink ($config{logfile}) if -f $config{logfile};
+unlink ($config{joblogfile}) if -f $config{joblogfile};
+
+# start the ocsmgrd server
+# print "Client jobs are logged in $config{joblogfile}\n";
+my $now_string = strftime "%Y-%m%d-%H%M", localtime;
+&client_joblog("Start clonezilla logging.");
+&start_server(%config);
+
+sub gen_pxe_cfg {
+  my $peeraddr="$_[0]";
+  my $peermac="$_[1]";
+  # create PXE config file in $config{tftpboot}/pxelinux.cfg/ 
+  #my $PXECFGFN=`/usr/bin/gethostip $peeraddr | cut -d" " -f3`;
+  my $PXECFGFN=`drbl-gethostip $peeraddr`;
+  chomp($PXECFGFN);
+  my $PXECFGFN_FULL=$config{tftpboot}."/pxelinux.cfg/".$PXECFGFN;
+  my $pxe_conf_default=$config{tftpboot}."/pxelinux.cfg/default";
+  system("cp -f $pxe_conf_default $PXECFGFN_FULL");
+  system("set-default-pxe-img -i local -c $PXECFGFN_FULL >/dev/null 2>&1");
+  system("hide_reveal_pxe_img clonezilla hide $PXECFGFN_FULL >/dev/null 2>&1");
+  # We might have Clonezilla-live-based client
+  system("[ -n \"\$(LC_ALL=C grep -iE '^label Clonezilla-live' $PXECFGFN_FULL)\" ] && hide_reveal_pxe_img Clonezilla-live hide $PXECFGFN_FULL >/dev/null 2>&1");
+
+  close(PXECFG);
+
+  # HOST_OPTION_MODIFY: modified since we specify hosts by MAC.
+  # for PXE MAC config style, like 01-00-50-56-01-01-01
+  my $PXECFG_MACFN=`echo $peermac | tr ":" "-"`;
+  $PXECFG_MACFN="01-".$PXECFG_MACFN;
+  my $PXECFG_MACFN_FULL=$config{tftpboot}."/pxelinux.cfg/".$PXECFG_MACFN;
+  unlink ($PXECFG_MACFN_FULL) if -f $PXECFG_MACFN_FULL;
+  system("LC_ALL=C cp -f $PXECFGFN_FULL $PXECFG_MACFN_FULL");
+}
+
+sub log($) {
+  my $line = shift;
+  return unless $config{log} and $config{logfile};
+  open(LOG, ">> $config{logfile}") || die $!;
+  my $now_string = strftime "%Y-%m%d-%H%M", localtime;
+  print LOG $now_string, ":", $line, "\n";
+  close(LOG);
+}
+
+sub client_joblog($) {
+  my $line = shift;
+  return unless $config{joblog} and $config{joblogfile};
+  open(JOBLOG, ">> $config{joblogfile}") || die $!;
+  my $now_string = strftime "%Y-%m%d-%H%M", localtime;
+  print JOBLOG $now_string, ", ", $line, "\n";
+  close(JOBLOG);
+}
+
+sub start_server(%) {
+  my %config = @_;
+  die unless $config{port} > 0;
+  my $lsn = new IO::Socket::INET(Listen => 1, LocalPort => $config{port}, Reuse => 1);
+  my $sel = new IO::Select($lsn);
+
+  &log("server started");
+  #$SIG{CHLD}='IGNORE';
+
+  while(my @ready = $sel->can_read) {
+    foreach my $fh (@ready) {
+      my $new;
+      if($fh == $lsn) {
+        # create a new socket
+        $new = $lsn->accept;
+        $sel->add($new);
+      } else {
+        # process socket
+        if(my $pid = fork()) {
+          # parent: close the connection so we can keep listening
+          $sel->remove($fh);
+          $fh->close();
+        } else {
+          # child: deal with the connection
+          my $peeraddr_mac = $fh->getline;
+          chomp($peeraddr_mac);
+	  my @peerdata=split(" ",$peeraddr_mac);
+	  my $peeraddr="$peerdata[0]";
+	  my $peermac="$peerdata[1]";
+	  my $peermsg="@peerdata[2..$#peerdata]";
+	  if (! $peermsg) {$peermsg="N/A"};
+          &log("connection opened: ".$fh->peerhost());
+          # add code to parse if it is IP ? or other keyword to check...
+          print "Client $peeraddr ($peermac) finished cloning. Stats: $peermsg\n";
+          &client_joblog("client $peeraddr ($peermac) finished cloning. Stats: $peermsg");
+          gen_pxe_cfg("$peeraddr", "$peermac");
+          &log("connection closed: ".$fh->peerhost());
+          $fh->close();
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,200 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>, Thomas Tsai <thomas _at_ nchc org tw>
+# License: GPL
+# In this example, the image repository is on /dev/sda7, it will allow your user to use clonezilla live to choose 
+# (1) backup the WinXP image of /dev/sda1 to /dev/sda7
+# (2) backup the EZGO8 image of /dev/sda2 to /dev/sda7
+# (3) restore WinXP image in /dev/sda7 to /dev/sda1
+# (4) restore EZGO8 image in /dev/sda7 to /dev/sda2
+# (5) restore default WinXP image in /dev/sda7 to /dev/sda1
+# (6) restore default EZGO8 image in /dev/sda7 to /dev/sda2
+# Here we assume the filesystems are ntfs.
+# The interface is traditional Chinese (zh_TW.UTF-8).
+
+# When this script is ready, you can run
+# /opt/drbl/sbin/ocs-iso -g zh_TW.UTF-8 -k NONE -s -m ./custom-ocs-2
+# to create the iso file for CD/DVD. or
+# /opt/drbl/sbin/ocs-live-dev -g zh_TW.UTF-8 -k NONE -s -c -m ./custom-ocs-2
+# to create the zip file for USB flash drive.
+
+# Begin of the scripts:
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# load the setting for clonezilla live.
+. /etc/ocs/ocs-live.conf
+# Load language files. For English, use "en_US.UTF-8". For Chinese, use "zh_TW.UTF-8"
+ask_and_load_lang_set zh_TW.UTF-8
+export LANG=zh_TW.UTF-8
+
+# The above is almost necessary, it is recommended to include them in your own custom-ocs.
+# From here, you can write your own scripts.
+
+# functions
+decide_sda_or_hda() {
+  if [ -n "$(grep -Ew sda1 /proc/partitions)" -a -n "$(grep -Ew sda7 /proc/partitions)" ]; then
+   disk=sda
+  elif [ -n "$(grep -Ew hda1 /proc/partitions)" -a -n "$(grep -Ew hda7 /proc/partitions)" ]; then
+   disk=hda
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "/dev/hda1 and /dev/hda7 do not exist or /dev/sda1 and /dev/sda7 do not exist!"
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  # src_part: hda1(2) or sda1(2), tgt_part: hda7 or sda7
+  src_part1=${disk}1
+  src_part2=${disk}2
+  tgt_part7=${disk}7
+  def_tgt_part7=${disk}7
+}
+action_backup_xp() {
+  mkdir -p /home/partimag/
+  if ! mountpoint /home/partimag/ &>/dev/null; then
+    ntfs-3g /dev/$tgt_part7 /home/partimag/
+  fi
+  if mountpoint /home/partimag/ &>/dev/null; then
+    rm -rf /home/partimag/xp-backup
+    # If you want to run it in batch mode, add option "-b" in the ocs-sr command
+    # For more options about ocs-sr, run "ocs-sr -h"
+    ocs-sr -b -q2 -b -j2 -z1p -i 2000 -p true saveparts xp-backup $src_part1
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Fail to mount /dev/$tgt_part7 as /home/partimag!"
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  umount /home/partimag/
+}
+
+action_backup_go() {
+  mkdir -p /home/partimag/
+  if ! mountpoint /home/partimag/ &>/dev/null; then
+    ntfs-3g /dev/$tgt_part7 /home/partimag/
+  fi
+  if mountpoint /home/partimag/ &>/dev/null; then
+    rm -rf /home/partimag/go-backup
+    # If you want to run it in batch mode, add option "-b" in the ocs-sr command
+    # For more options about ocs-sr, run "ocs-sr -h"
+    ocs-sr -b -q2 -b -j2 -z1p -i 2000 -p true saveparts go-backup $src_part2
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Fail to mount /dev/$tgt_part7 as /home/partimag!"
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  umount /home/partimag/
+}
+ 
+action_restore_xp() {
+  mkdir -p /home/partimag/
+  if ! mountpoint /home/partimag/ &>/dev/null; then
+    ntfs-3g /dev/$tgt_part7 /home/partimag/
+  fi
+  if mountpoint /home/partimag/ &>/dev/null; then
+    # If you want to run it in batch mode, add option "-b" in the ocs-sr command
+    # For more options about ocs-sr, run "ocs-sr -h"
+    ocs-sr -g auto -e1 auto -e2 -r -j2 -k -p true restoreparts xp-backup "$src_part1"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Fail to mount /dev/$tgt_part7 as /home/partimag!"
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  umount /home/partimag/
+} 
+
+action_restore_go() {
+  mkdir -p /home/partimag/
+  if ! mountpoint /home/partimag/ &>/dev/null; then
+    ntfs-3g /dev/$tgt_part7 /home/partimag/
+  fi
+  if mountpoint /home/partimag/ &>/dev/null; then
+    # If you want to run it in batch mode, add option "-b" in the ocs-sr command
+    # For more options about ocs-sr, run "ocs-sr -h"
+    ocs-sr -g auto -e1 auto -e2 -r -j2 -k -p true restoreparts go-backup "$src_part2"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Fail to mount /dev/$tgt_part7 as /home/partimag!"
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  umount /home/partimag/
+} 
+
+action_default_xp() {
+  mkdir -p /home/partimag/
+  if ! mountpoint /home/partimag/ &>/dev/null; then
+    ntfs-3g /dev/$tgt_part7 /home/partimag/
+  fi
+  if mountpoint /home/partimag/ &>/dev/null; then
+    # If you want to run it in batch mode, add option "-b" in the ocs-sr command
+    # For more options about ocs-sr, run "ocs-sr -h"
+    ocs-sr -g auto -e1 auto -e2 -r -j2 -k -p true restoreparts WINXP "$src_part1"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Fail to mount /dev/$tgt_part7 as /home/partimag!"
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  umount /home/partimag/
+}
+
+action_default_go() {
+  mkdir -p /home/partimag/
+  if ! mountpoint /home/partimag/ &>/dev/null; then
+    ntfs-3g /dev/$tgt_part7 /home/partimag/
+  fi
+  if mountpoint /home/partimag/ &>/dev/null; then
+    # If you want to run it in batch mode, add option "-b" in the ocs-sr command
+    # For more options about ocs-sr, run "ocs-sr -h"
+    ocs-sr -g auto -e1 auto -e2 -r -j2 -k -p true restoreparts EZGO8 "$src_part2"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Fail to mount /dev/$tgt_part7 as /home/partimag!"
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  umount /home/partimag/
+}
+
+##################
+###### MAIN ######
+##################
+TMP=$(mktemp /tmp/menu.XXXXXX)
+trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+$DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+"$msg_nchc_clonezilla" --menu "$msg_choose_mode:" \
+0 0 0 \
+"Backup_xp"  "備份XP" \
+"Backup_go"  "備份Ezgo" \
+"Restore_xp" "還原XP" \
+"Restore_go" "還原Ezgo" \
+"Restore_default_xp" "還原預設XP" \
+"Restore_default_go" "還原預設Ezgo" \
+2> $TMP
+mode="$(cat $TMP)"
+[ -f "$TMP" ] && rm -f $TMP
+
+# find the device and partition
+decide_sda_or_hda
+
+#
+case "$mode" in
+  Backup_xp) action_backup_xp;;
+  Backup_go) action_backup_go;;
+  Restore_xp) action_restore_xp;;
+  Restore_go) action_restore_go;;
+  Restore_default_xp) action_default_xp;;
+  Restore_default_go) action_default_go;;
+  *)
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Unknown mode \"$mode\"!"
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 1
+esac

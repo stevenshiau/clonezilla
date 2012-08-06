@@ -1,0 +1,259 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: This program will create bootable device by grub (non-FAT) or syslinux (FAT) for USB device.
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+
+#
+prog="$(basename $0)"
+# Default Sttings
+KERNEL_FILE_DEFAULT="$kernel_file"
+INITRD_FILE_DEFAULT="$initrd_file"
+# default to confirm
+force="no"
+
+
+# Functions.
+USAGE() {
+    echo "Usage:"
+    echo "To make a bootable device (such as pendrive/usb stick):"
+    echo "$prog [OPTION] TARGET_PARTITION"
+    echo "TARGET_PARTITION  The target device partition name, such as /dev/sda1."
+    echo "OPTION:"
+    echo "-b, --boot-loader [grub|syslinux]  Assign grub or syslinux as boot loader in target device"
+    echo "-f, --force                        Force to do that, i.e. without confirm."
+    echo "-k, --kernel-file FILENAME         Provide the kernel name to be used in the config file (menu.lst or syslinux.cfg) of boot manager (with absolute path if necessary, Ex: /casper/vmlinuz1). If unset, $KERNEL_FILE_DEFAULT will be used" 
+    echo "-i, --initrd-file FILENAME         Provide the initrd name to be used in the config file (menu.lst or syslinux.cfg) of boot manager (with absolute path if necessary, Ex: /casper/vmlinuz1). If unset, $INITRD_FILE_DEFAULT will be used" 
+    echo "-p, --boot-param  PARAM            Provide the append strings for kernel bootparam. which will be used in the menu.lst or syslinux.cfg. If unset, $BOOT_PARAM_DEFAULT will be used" 
+    echo "Ex:"
+    echo "To make a USB device /dev/sda1 bootable, you can run:"
+    echo "  $prog /dev/sda1"
+}
+
+#
+check_if_root
+
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l|--language)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              specified_lang="$1"
+              shift
+            fi
+	    [ -z "$specified_lang" ] && USAGE && exit 1
+            ;;
+    -b|--boot-loader)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              boot_loader="$1"
+              shift
+            fi
+	    [ -z "$boot_loader" ] && USAGE && exit 1
+            ;;
+    -f|--force)
+            shift
+	    force="yes"
+            ;;
+    -k|--kernel-file)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              kernel_file="$1"
+              shift
+            fi
+	    [ -z "$kernel_file" ] && USAGE && exit 1
+            ;;
+    -i|--initrd-file)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              initrd_file="$1"
+              shift
+            fi
+	    [ -z "$initrd_file" ] && USAGE && exit 1
+            ;;
+    -p|--boot-param)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              boot_param="$1"
+              shift
+            fi
+	    [ -z "$boot_param" ] && USAGE && exit 1
+            ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+output_dev=$1
+[ -z "$output_dev" ] && USAGE && exit 1
+[ -z "$kernel_file" ] && kernel_file="$KERNEL_FILE_DEFAULT"
+[ -z "$initrd_file" ] && initrd_file="$INITRD_FILE_DEFAULT"
+[ -z "$boot_param" ] && boot_param="$BOOT_PARAM_DEFAULT"
+
+#
+ask_and_load_lang_set $specified_lang
+
+# Prepare output dev, name, grub dev name...
+# /dev/sda1 -> /dev/sda, sda1, 1 (output_dev_hd, output_dev_name, output_part_no)
+output_dev_hd="$(echo $output_dev | sed -e "s/[[:digit:]]*$//g")"
+output_dev_name="$(basename $output_dev)"
+output_part_no="${output_dev_name:3}"
+# The mapping for grub. Ex:
+# root		(hd0,0)
+# hda -> hd0... Ha... Ugly...
+output_dev_n="${output_dev_name:2:1}"
+op_hd_no_grub="$(ab2dig $output_dev_n)"
+op_hd_dev_grub="hd""$op_hd_no_grub"
+# 1 -> 0
+op_part_no_grub="$((output_part_no-1))"
+#
+# check if the target exists
+# Todo: if it's devfs ?
+if [ -z "$(grep -Ew "$output_dev_name" /proc/partitions)" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$output_dev $msg_NOT_found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop"
+  exit 1
+fi
+
+# check if the target is busy or not
+if [ -n "$(grep -Ew "^$output_dev" /proc/mounts)" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$msg_is_mounted_u_must_unmount_it: $output_dev"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_this_is_disk_usage_status:"
+  df -h
+  echo "$msg_program_stop"
+  exit 1
+fi
+
+if [ "$force" = "no" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_create_live_device_warning: $output_dev"
+  echo "$msg_this_is_disk_usage_status:"
+  fdisk -l $output_dev_hd
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_are_u_sure_u_want_to_continue"
+  echo -n "[y/N] "
+  read cont_ans
+  case "$cont_ans" in
+    y|Y|[yY][eE][sS])
+       echo $msg_ok_let_do_it
+       ;;
+    *)
+       echo "Abort!"
+       exit 2
+  esac
+fi
+
+# put boot loader in MBR if not assign
+[ -z "$boot_loader" ] && set_boot_loader $output_dev
+# check & format boot_loader
+case "$boot_loader" in
+  grub|GRUB)
+     if ! type grub-install &>/dev/null; then
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+       echo "grub-install is not found!"
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       echo "$msg_program_stop"
+       exit 1
+     fi
+     boot_loader="grub"
+     ;;
+  syslinux|SYSLINUX) 
+     if ! type syslinux &>/dev/null; then
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+       echo "syslinux is not found!"
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       echo "$msg_program_stop"
+       exit 1
+     fi
+     boot_loader="syslinux"
+     ;;
+  *) 
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "Unknown boot loader $boot_loader!"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     echo "$msg_program_stop"
+     exit 1
+esac
+
+trap "[ -d "$USB_TMP" ] && umount $USB_TMP &>/dev/null" HUP INT QUIT TERM EXIT
+USB_TMP="$(mktemp -d /tmp/ocs-usb-dev.XXXXXX)"
+case "$boot_loader" in
+  grub)
+      mount $output_dev $USB_TMP
+      rc=$?
+      if [ "$rc" -eq 0 ]; then
+        echo -n "Creating grub menu.lst... "
+        mkdir -p $USB_TMP/boot/grub/
+	# default to use root as (hd0,0), and root=/dev/sda1 for usb flash drive.
+        ocs-live-boot-menu -l $lang_answer -p "$boot_param" -f $VGA_MODE_DEF -b graphic -k $kernel_file -i $initrd_file -m $ocs_logo_img_xpm -g1 hd0 -g2 0 -g3 /dev/sda1 grub $USB_TMP/boot/grub/
+        umount $USB_TMP &>/dev/null
+        install_grub_hd $output_dev
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "Unable to create /boot/grub/menu.lst in target device $output_dev!"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop"
+        exit 1
+      fi
+      ;;
+  syslinux)
+      echo "Now put boot files..."
+      # lilo -s /dev/null -M $output_dev_hd
+      echo "Install MBR first by: cat $pxelinux_binsrc_dir/mbr.bin > $output_dev_hd"
+      cat $pxelinux_binsrc_dir/mbr.bin > $output_dev_hd
+
+      echo "Set $output_dev as bootable..."
+      parted $output_dev_hd set $output_part_no boot on &>/dev/null
+      # active device before using syslinux
+      fdisk -l "$output_dev_hd" &>/dev/null
+      sleep 5
+      # Gnome/KDE will auto mount $output_dev after "parted $output_dev_hd set $output_part_no boot on" is run. We have to umount it before run syslinux -s.
+      umount $output_dev &>/dev/null
+
+      echo "Installing boot loader by: syslinux -s $output_dev"
+      syslinux -s $output_dev
+      sleep 5
+
+      echo "Making kernel re-read the partition table of $output_dev_hd... "
+      sfdisk -R $output_dev_hd
+      sleep 5
+      # Gnome/KDE will auto mount $output_dev after "sfdisk -R $output_dev_hd" is run. We have to umount it before mount it again.
+      umount $output_dev &>/dev/null
+
+      mount -t vfat $output_dev $USB_TMP
+      rc=$?
+      if [ "$rc" -eq 0 ]; then
+        sleep 2
+        echo -n "Creating syslinux.cfg... "
+        ocs-live-boot-menu -l $lang_answer -p "$boot_param" -f $VGA_MODE_DEF -b graphic -k $kernel_file -i $initrd_file -m $ocs_logo_img_png syslinux $USB_TMP/syslinux/
+       umount $USB_TMP &>/dev/null
+      else
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+       echo "Unable to create /syslinux.cfg in target device $output_dev!"
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       echo "$msg_program_stop"
+       exit 1
+      fi
+      ;;
+esac
+[ -d "$USB_TMP" -a -n "$(echo $USB_TMP | grep "ocs-usb-dev")" ] && rm -rf $USB_TMP
+echo "done!"

@@ -1,0 +1,746 @@
+#!/bin/bash
+#
+# License: GPL 
+# Original author: Blake, Kuo-Lien Huang
+# Description:
+#  2003/04/11 the first version, only work on /dev/hda1 & PXE
+#  2003/06/01 disk to disk mode & etherboot support 
+#             (the etherboot lzdsk images are located in
+#              /tftpboot/etherboot-5.0.7 after DRBLCD installed)
+#  2003/07/18 `checkInodeForDevice`
+#
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# 2003/07/21 the first version for Redhat, modified from Blake's version,
+# only work on /dev/hda1 & PXE
+# 2004/02/04 add the multicast function
+# 2005/01/21 add code to save/restore some partitions (not entire disk).
+# 2005/11/06 Many thanks to Christian Treczoks for providing "dd skip=1" method
+# 2006/05/06 Remove save & restore hda1, since we can use save & restore partitions.
+# 2006/12/07 Rewrite drbl-ocs to drbl-ocs + ocs-sr + ocs-functions.
+
+# input parameters:
+# startdisk/startparts IMAGE-NAME DEVICES
+
+# Notes:
+# task_restorexxx/savexxx function will always use $ocsroot (/home/partimag) as mount point to do the save/restore, so it might overwrite the /home/partimag by mounting $ocsroot from server:/home2 (for example).
+# The mount action is done in function task_preprocessing
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+ocs_myself_id="$$"
+# log file for sfdisk when restoring
+# RESTORE_SFDISK_LOG is loaded from drbl.conf
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
+# otherwise setterm will complain.
+[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
+echo "Setting the TERM as $TERM"
+export TERM="$TERM"
+
+#
+check_if_root
+
+#
+USAGE() {
+    echo "Usage:"
+    echo "To start clonezilla in server:"
+    echo "$ocs [OPTION] {startdisk|startparts} {save|restore|multicast_restore}"
+    echo " startdisk   operate on all partitions of the disk"
+    echo " startparts  operate on the chosen partitions"
+    echo
+    echo " Options for saving:"
+    USAGE_common_save
+    echo " -i, --image-size SIZE    Set the split image file volume size SIZE (MB)."
+    USAGE_reserved_word_for_save
+    echo 
+    echo " Options for restoring:"
+    USAGE_common_restore
+    echo " --time-to-wait TIME  Even when the necessary amount of clients do have connected, still wait until TIME seconds since first client connection have passed"
+    echo " --clients-to-wait NUMBER  Automatically start as soon as a minimal number of clients NUMBER have connected"
+    echo " -brdcst, --broadcast  Use Ethernet broadcast, rather than multicast in udpcast. Useful if you have Ethernet cards or switch which don't support multicast."
+    USAGE_reserved_word_for_restore
+    echo
+    echo " General options:"
+    USAGE_common_general
+    dialog_like_prog_help_prompt
+    echo " -h, --hosts     IP_LIST  Instead of all DRBL clients, assign the clients by IP address, like: -h \"192.168.0.1 192.168.0.2\" NOTE!!! You must put \" \" before and after the IP_LIST!"
+    echo " -s, --skip-hw-detect     Skip the hardware detection (kudzu, harddrake or discover)"
+    echo " -n, --no-nfs-restart     Do not to restart nfs when start or stop $ocs (This is default)"
+    echo " -f, --nfs-restart        Restart nfs when start or stop $ocs (Default is to restart nfs)"
+    echo " --mcast-iface  PORT      Specify the multicast seed ethernet port PORT (eth0, eth1, eth2...). Suppose clonezilla will try to find that for you, but in some case, you might want to specify that."
+    echo " -x, --full-duplex         Use full-duplex network with udpcast in multicast mode (faster, but does not work with network hub, only works in switch.)."
+    echo
+    echo "Example:"
+    echo "To start clonezilla in server (Both server and clients all will join):"
+    echo "Prepare the clonezilla server, let client to save partitions hda1 and hda2 as image name 2006-12-05-22-img, with lzop compression, prompt language English. "
+    echo "  $ocs" '-b -q -z3 -l en startparts save 2006-12-05-22-img "hda1 hda2"'
+    echo
+    echo "Prepare the clonezilla server, let client to restore hda1 and hda2 fromimage 2006-12-03-10-img to client local harddrive, with lzop compression, prompt language English, and grub-install will be run after cloning."
+    echo "  $ocs -b -g auto -x -l en startparts restore 2006-12-03-10-img \"hda1 hda2\""
+    echo
+
+    echo "To stop clonezilla:"
+    echo "  $ocs stop"
+    echo
+} # end of USAGE
+#
+prepare_pxecfg_for_pxe_ocs_live_if_required() {
+  if [ "$diskless_client_os" = "clonezilla-live" ]; then
+    # Check if Clonezilla live exists...
+    if [ -z "$(ls $pxecfg_pd/Clonezilla-live-vmlinuz* 2>/dev/null)" -o \
+         -z "$(ls $pxecfg_pd/Clonezilla-live-initrd*.img 2>/dev/null)" ] || \
+       [ ! -e "$pxecfg_pd/Clonezilla-live-filesystem.squashfs" -a \
+         ! -e "$drbl_common_root/clonezilla-live/live/filesystem.squashfs" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Clonezilla live related files (Clonezilla-live-vmlinuz*, Clonezilla-live-initrd*.img, and Clonezilla-live-filesystem.squashfs) NOT found in $pxecfg_pd!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "You have to download Clonezilla live iso file (1.2.5-2 or later is required), then run 'drbl-SL.sh -i ISO_FILE'. E.g. '$DRBL_SCRIPT_PATH/sbin/DRBL-SL.sh -i clonezilla-live-1.2.5-2-486.iso'"
+      echo "$msg_program_stop!"
+      exit 1
+    fi
+    echo "Modifying ocs_live_keymap, ocs_lang, ocs_daemonon, and ocs_prerun in $PXE_CONF if necessary..."
+    # Todo: keymap should be the same with server.
+    if [ -n "$ocs_live_keymap_for_pxe_ocs_live" ]; then
+      # If ocs_live_keymap_for_pxe_ocs_live is assigned in drbl-ocs.conf, force to update it.
+      add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_keymap "$ocs_live_keymap_for_pxe_ocs_live"
+    fi
+    if [ -n "$ocs_lang_for_pxe_ocs_live" ]; then
+      add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_lang "$ocs_lang_for_pxe_ocs_live"
+    fi
+    if [ -n "$ocs_daemonon_for_pxe_ocs_live" ]; then
+      add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_daemonon "$ocs_daemonon_for_pxe_ocs_live"
+    fi
+    server_IP="$(LC_ALL=C get-all-nic-ip -i | awk -F" " '{print $1}')"
+    # For Clonezilla live, the mount point is always /home/partimag/
+    if [ -n "$ocs_prerun_for_pxe_ocs_live" ]; then
+      add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_prerun "$ocs_prerun_for_pxe_ocs_live"
+    elif [ -z "$(grep -E "ocs_prerun=\"[^\"]+\"" $PXE_CONF)" ]; then
+      add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_prerun "mount -t nfs $server_IP:$ocsroot /home/partimag/" 
+    fi
+    if [ "$remove_some_boot_param_for_pxe_ocs_live" = "yes" ]; then
+      # We prefer verbose messages
+      for i in $boot_param_2_be_removed_in_pxe_ocs_live; do
+        remove_opt_in_pxelinux_cfg_block Clonezilla-live $i
+      done
+    fi
+  fi
+} # end of prepare_pxecfg_for_pxe_ocs_live_if_required
+
+# OCS_OPT is for ocs-sr
+OCS_OPT=
+# Set some default values, 
+nfs_restart="no"
+always_restore="no"
+pxe_menu_default_mode=""
+# If always restore, i.e. multicast loop, we will show the loop number, starting from 1.
+mcast_loop="1"
+udp_sender_extra_opt="$udp_sender_extra_opt_default"
+USE_NTFSCLONE="no"
+FORCE_TO_USE_DD="no"
+create_part="yes"
+restore_mbr="yes"
+restore_prebuild_mbr="no"
+rm_win_swap_hib="no"
+select_img_in_client="no"
+# default output for udpcast stderr is surpressed.
+# NOTE! Do not redirect it to standard output (stdin), otherwise partimage/ntfsclone pipe will get wrong image!
+udpcast_stderr="/dev/null"
+# default not to run those scripts in $OCS_PRERUN_DIR $OCS_POSTRUN_DIR
+run_prerun_dir="no"
+run_postrun_dir="no"
+gen_md5sum="no"
+gen_sha1sum="no"
+check_md5sum="no"
+check_sha1sum="no"
+
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l|--language)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      specified_lang="$1"
+              shift
+            fi
+	    ;;
+    -p|--postaction)  
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      postrun="$1"
+              shift
+            fi
+	    OCS_OPT="$OCS_OPT -p $postrun"
+            ;;
+    -g|--grub-install)  
+            install_grub="on"
+            shift
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              grub_partition=$1
+              shift
+            fi
+            [ -z "$grub_partition" ] && USAGE && exit 1
+	    OCS_OPT="$OCS_OPT -g $grub_partition"
+            ;;
+    -a|--no-force-dma-on)  
+	    OCS_OPT="$OCS_OPT --no-force-dma-on"
+            shift;;
+    -k|--no-fdisk|--no-create-partition)  
+	    create_part="no"
+	    OCS_OPT="$OCS_OPT -k"
+            shift;;
+    -k1|--fdisk-proportion)  
+	    create_part="yes"
+	    create_part_type="proportion"
+	    OCS_OPT="$OCS_OPT -k1"
+            shift;;
+    -k2|--fdisk-manual)  
+	    create_part="yes"
+	    create_part_type="manual"
+	    OCS_OPT="$OCS_OPT -k2"
+            shift;;
+    -t|--no-restore-mbr)  
+	    restore_mbr="no"
+	    OCS_OPT="$OCS_OPT -t"
+            shift;;
+    -t1|--restore-raw-mbr)  
+            # The flag to restore syslinux mbr.bin to M$ windows system.
+	    restore_prebuild_mbr="yes"
+	    OCS_OPT="$OCS_OPT -t1"
+            shift;;
+    -u|--select-img-in-client)
+	    select_img_in_client="yes"
+	    OCS_OPT="$OCS_OPT -u"
+            shift;;
+    -e|--load-geometry)
+	    OCS_OPT="$OCS_OPT -e"
+            shift;;
+    -e1|--change-geometry)  
+            change_ntfs_boot_chs="on"
+            shift
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              ntfs_boot_partition=$1
+              shift
+            fi
+            [ -z "$ntfs_boot_partition" ] && USAGE && exit 1
+	    OCS_OPT="$OCS_OPT -e1 $ntfs_boot_partition"
+            ;;
+    -e2|--load-geometry-from-edd)
+	    OCS_OPT="$OCS_OPT -e2"
+            shift;;
+    -y|-y0|--always-restore|--always-restore-default-local)
+	    always_restore="yes"
+            pxe_menu_default_mode="local"
+	    OCS_OPT="$OCS_OPT -y0"
+            shift;;
+    -y1|--always-restore-default-clone)
+	    always_restore="yes"
+            pxe_menu_default_mode="clone"
+	    OCS_OPT="$OCS_OPT -y1"
+            shift;;
+    -y2|--always-restore-default-drbl)
+	    always_restore="yes"
+            pxe_menu_default_mode="drbl"
+	    OCS_OPT="$OCS_OPT -y2"
+            shift;;
+    -c|--confirm)
+	    OCS_OPT="$OCS_OPT -c"
+	    shift;;
+    -w|--wait-time)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      TIME_to_wait="$1"
+	      OCS_OPT="$OCS_OPT -w $TIME_to_wait"
+              shift
+            fi
+	    ;;
+    -s|--skip-hw-detect)
+            hw_detect="off"
+	    shift;;
+    --debug=?*)
+            debug_level=${1#--debug=}
+	    OCS_OPT="$OCS_OPT --debug=$debug_level"
+	    shift;;
+    -b|--batch)
+            # Here we append --batch to OCS_OPT instead of -b, (it will confuse init, sinice -b for init is emergency mode)
+            ocs_batch_mode="on"
+	    OCS_OPT="$OCS_OPT --batch"
+	    shift;;
+    -d|--debug-mode)
+            debug_mode="on"
+	    OCS_OPT="$OCS_OPT -d"
+	    shift;;
+    -d0|--dialog)  
+	    DIA="dialog" 
+	    shift;;
+    -d1|--Xdialog)  
+	    DIA="Xdialog" 
+	    shift;;
+    -d2|--whiptail)  
+	    DIA="whiptail" 
+	    shift;;
+    -d3|--gdialog)  
+	    DIA="gdialog" 
+	    shift;;
+    -d4|--kdialog)  
+	    DIA="kdialog" 
+	    shift;;
+    -h|--hosts)
+	    LIST_HOST="on"
+	    shift
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+	      # parse if the arg is IP, skip those not IP
+              if [ -n "$(echo $1 | grep -E "^[[:space:]]*([[:digit:]]+\.){3}[[:digit:]]+([[:space:]]|$)+")" ] ; then
+                IP_LIST=$1
+                shift
+	      else
+		echo "\"$1\" is not a suitable IP_LIST!!! Program terminated!!!"
+		exit 1
+              fi
+            fi
+	    ;;
+    -m|--module)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              module_to_load=$1
+              shift
+            fi
+            [ -z "$module_to_load" ] && USAGE && exit 1
+	    OCS_OPT="$OCS_OPT -m \"$module_to_load\""
+            ;;
+    -n|--no-nfs-restart)
+            # This function is deprecated, and it's not necesssary (since we already set nfs_restart="no"), but we have to be compatable with the old version. We will remove this in the future.
+	    nfs_restart="no"
+	    shift;;
+    -f|--nfs-restart)
+	    nfs_restart="yes"
+	    shift;;
+    -r|--resize-partition)
+	    OCS_OPT="$OCS_OPT -r"
+	    shift;;
+    -v|--verbose)
+	    verbose="on"
+	    OCS_OPT="$OCS_OPT -v"
+	    shift;;
+    -z0|--no-compress)
+            OCS_OPT="$OCS_OPT -z0"
+	    shift;;
+    -z1|--gzip-compress)
+            OCS_OPT="$OCS_OPT -z1"
+	    shift;;
+    -z1p|--smp-gzip-compress)
+            OCS_OPT="$OCS_OPT -z1p"
+	    shift;;
+    -z2|--bz2-compress)
+            OCS_OPT="$OCS_OPT -z2"
+	    shift;;
+    -z2p|--smp-bzip2-compress)
+            OCS_OPT="$OCS_OPT -z2p"
+	    shift;;
+    -z3|--lzo-compress)
+            OCS_OPT="$OCS_OPT -z3"
+	    shift;;
+    -z4|--lzma-compress)
+            OCS_OPT="$OCS_OPT -z4"
+	    shift;;
+    -z5|--xz-compress)
+            OCS_OPT="$OCS_OPT -z5"
+	    shift;;
+    -z5p|--smp-xz-compress)
+            OCS_OPT="$OCS_OPT -z5p"
+	    shift;;
+    -z6|--lzip-compress)
+            OCS_OPT="$OCS_OPT -z6"
+	    shift;;
+    -z6p|--smp-lzip-compress)
+            OCS_OPT="$OCS_OPT -z6p"
+	    shift;;
+    -nogui|--nogui)
+            # -nogui is for backward compatable, better to use --nogui
+            OCS_OPT="$OCS_OPT --nogui"
+	    shift;;
+    -ntfs-ok|--ntfs-ok)
+            # if ntfs integrity is assumed OK, do not check
+            OCS_OPT="$OCS_OPT --ntfs-ok"
+	    shift;;
+    -rm-win-swap-hib|--rm-win-swap-hib)
+            # Remove page and hibernation files in M$ windows
+            OCS_OPT="$OCS_OPT --rm-win-swap-hib"
+	    shift;;
+    -rescue|--rescue)
+            OCS_OPT="$OCS_OPT --rescue"
+	    shift;;
+    -fsck-src-part|--fsck-src-part)
+            OCS_OPT="$OCS_OPT --fsck-src-part"
+	    shift;;
+    -fsck-src-part-y|--fsck-src-part-y)
+            OCS_OPT="$OCS_OPT --fsck-src-part-y"
+	    shift;;
+    -mp|--mount-point)
+            shift; 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              mount_point=$1
+	      shift
+            fi
+            [ -z "$mount_point" ] && USAGE && exit 1
+	    OCS_OPT="$OCS_OPT --mount-point $mount_point" ; 
+	    ;;
+    -i|--image-size)
+	    shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              VOL_LIMIT=$1
+	      shift
+            fi
+            [ -z "$VOL_LIMIT" ] && USAGE && exit 1
+            OCS_OPT="$OCS_OPT -i $VOL_LIMIT"
+	    ;;
+    --time-to-wait)
+	    shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      mcast_wait_time="$1"
+	      shift
+            fi
+	    ;;
+    --clients-to-wait)
+	    shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      n_clients="$1"
+	      shift
+            fi
+	    ;;
+    --max-time-to-wait)
+	    shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      mcast_max_wait_time="$1"
+	      shift
+            fi
+            [ -z "$mcast_max_wait_time" ] && USAGE && exit 1
+	    # Client need to know the --max-time-to-wait so that when sleeping
+	    # between partitions restoring clone won't timeout.
+            OCS_OPT="$OCS_OPT --max-time-to-wait $mcast_max_wait_time"
+	    ;;
+    -x|--full-duplex)
+            udp_sender_extra_opt="$udp_sender_extra_opt --full-duplex"
+	    shift;;
+    -brdcst|--broadcast)
+            udp_sender_extra_opt="$udp_sender_extra_opt --broadcast"
+	    shift;;
+    -q|--use-ntfsclone)
+            USE_NTFSCLONE="yes"
+            OCS_OPT="$OCS_OPT --use-ntfsclone"
+	    shift;;
+    -q1|--force-to-use-dd)
+            FORCE_TO_USE_DD="yes"
+            OCS_OPT="$OCS_OPT --force-to-use-dd"
+	    shift;;
+    -q2|--use-partclone)
+            USE_PARTCLONE="yes"
+            USE_NTFSCLONE="yes"
+            OCS_OPT="$OCS_OPT --use-partclone"
+	    shift;;
+    -j|--create-part-by-sfdisk)
+            # We leave this option for backward compatability.
+	    OCS_OPT="$OCS_OPT --create-part-by-sfdisk"
+	    shift;;
+    -j0|--create-part-by-dd)
+	    OCS_OPT="$OCS_OPT --create-part-by-dd"
+	    shift;;
+    -j1|--dump-mbr-in-the-end)
+	    OCS_OPT="$OCS_OPT --dump-mbr-in-the-end"
+	    shift;;
+    -j2|--clone-hidden-data)
+	    OCS_OPT="$OCS_OPT --clone-hidden-data"
+	    shift;;
+    -icrc|--icrc)
+	    OCS_OPT="$OCS_OPT --icrc"
+	    shift;;
+    -irhr|--irhr)
+	    OCS_OPT="$OCS_OPT --irhr"
+	    shift;;
+    -ius|--ius)
+	    OCS_OPT="$OCS_OPT --ius"
+	    shift;;
+    -icds|--ignore-chk-dsk-size-pt)
+	    OCS_OPT="$OCS_OPT --ignore-chk-dsk-size-pt"
+	    shift;;
+    -hn0)
+	    shift
+            change_win_hostname="By_IP"
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      win_hostname_prefix="$1"
+	      shift
+            fi
+            [ -z "$win_hostname_prefix" ] && USAGE && exit 1
+            OCS_OPT="$OCS_OPT -hn0 $win_hostname_prefix"
+	    ;;
+    -hn1)
+	    shift
+            change_win_hostname="By_MAC"
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      win_hostname_prefix="$1"
+	      shift
+            fi
+            [ -z "$win_hostname_prefix" ] && USAGE && exit 1
+            OCS_OPT="$OCS_OPT -hn1 $win_hostname_prefix"
+	    ;;
+    -o|-o1|--run-postrun-dir) 
+            # -o is for backward compatability
+	    run_postrun_dir="yes"
+	    OCS_OPT="$OCS_OPT --run-postrun-dir"
+	    shift;;
+    -o0|--run-prerun-dir) 
+	    run_prerun_dir="yes"
+	    OCS_OPT="$OCS_OPT --run-prerun-dir"
+	    shift;;
+    -ns|--ntfs-progress-in-image-dir)
+	    OCS_OPT="$OCS_OPT --ntfs-progress-in-image-dir"
+	    shift;;
+    -gm|--gen-md5sum)
+	    gen_md5sum="yes"
+	    OCS_OPT="$OCS_OPT -gm"
+	    shift;;
+    -gs|--gen-sha1sum)
+	    gen_sha1sum="yes"
+	    OCS_OPT="$OCS_OPT -gs"
+	    shift;;
+    -cm|--check-md5sum)
+	    check_md5sum="yes"
+	    OCS_OPT="$OCS_OPT -cm"
+	    shift;;
+    -cs|--check-sha1sum)
+	    check_sha1sum="yes"
+	    OCS_OPT="$OCS_OPT -cs"
+	    shift;;
+    --mcast-iface)
+	    shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      eth_for_multicast="$1"
+	      shift
+            fi
+            [ -z "$eth_for_multicast" ] && USAGE && exit 1
+	    ;;
+    -um|--user-mode)
+            shift
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              ocs_user_mode="$1"
+              shift
+            fi
+            [ -z "$ocs_user_mode" ] && USAGE && exit 1
+	    OCS_OPT="$OCS_OPT -um"
+	    ;;
+    -sc|--skip-check-restorable)
+            # flag to check if the image is restorable
+	    chk_img_restoreable="no"
+	    OCS_OPT="$OCS_OPT -sc"
+	    shift
+            ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+# drbl_ocs_type, task, target_image are global variables.
+# we use 3 times shift instead of "shift 3", it because the run command maybe like:
+# /opt/drbl/sbin/drbl-ocs -b -q -p reboot -z3 -l en startdisk save
+# so if we use "shift 3", it will fail, then target_dev will be "startdisk save"! It's wrong.
+drbl_ocs_type="$1"
+shift
+task="$1"
+shift
+target_image="$1"
+shift
+target_dev="$*"
+# If the inputted dev is: "hda hdb", convert it to hda hdb (so it won't be ""hda hdb"")
+target_dev="$(echo $target_dev | tr -d \")"
+
+#
+ask_and_load_lang_set $specified_lang
+
+# check DIA
+check_DIA_set_ESC $DIA
+
+[ -z "$VOL_LIMIT" ] && VOL_LIMIT=$VOL_LIMIT_DEFAULT
+# ask_user is used for interactive dialog.
+if [ "$target_image" = "ask_user" -a "$(echo $task | grep -E "save")" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$msg_ask_user_is_reserved_for_save_mode"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!!!"
+  exit 1
+fi
+
+check_ocs_input_params
+
+# ocs root
+[ ! -d "$ocsroot" ] && mkdir -p $ocsroot
+
+# change to other mount point for extra harddisk
+# Note: functions get_existing_disk_image, get_existing_parts_image and get_existing_partitions_from_img will use $imagedir 
+if [ -n "$mount_point" ]; then
+   echo "Using the image root directory $mount_point instead of $ocsroot."
+   imagedir="$mount_point" 
+else
+   imagedir="$ocsroot"
+fi
+
+echo $msg_delimiter_star_line
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+[ "$create_part" = "no" ] && echo "$msg_do_not_create_part"
+[ "$restore_mbr" = "no" ] && echo "$msg_do_not_restore_mbr"
+[ "$select_img_in_client" = "yes" ] && echo "$msg_you_have_to_input_image_names_in_client"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+echo $msg_delimiter_star_line
+
+if [ "$verbose" = "on" ]; then
+  # The default output for udpcast stderr is surpressed, now turn it on
+  udpcast_stderr="/dev/stderr"
+fi
+
+# To avoid confusion about multicast or broadcast, we use different prompts.
+if [ -n "$(echo "$udp_sender_extra_opt" | grep -E -- "--broadcast")" ]; then
+  multi_broad_cast_prompt="broadcast"
+else
+  multi_broad_cast_prompt="multicast"
+fi
+
+##############
+#### main ####
+##############
+
+# HOST_OPTION_MODIFY: add this part for specifying the hosts.
+if [ "$LIST_HOST" = "on" ]; then
+  # copy the skeleton file
+  PXE_CONF="$PXELINUX_DIR/default_skeleton"
+  cp -f $PXELINUX_DIR/default $PXE_CONF
+else
+  PXE_CONF="$PXELINUX_DIR/default"
+  # Clean all the previous saved config file.
+  # These files maybe look like: 01-MAC address, something like C0A8XXXX (only for 192.168.x), default_skeleton
+  echo -n "Clean all the previous saved config file if they exist..."
+  for ifile in $PXELINUX_DIR/*; do
+    # we'd better not to affect the default_skeleton since when in DRBL_SSI and clonezilla box mode, it will always stop clonezilla before it generates the template. If we remove default_skeleton, when clonezilla box mode with LIST_HOST=on, this will have a problem!!! (we'd better to modify drbl-gen-ssi-files to support LIST_HOST=on/off so that this won't be confused)
+    if [ "$ifile" != "$PXELINUX_DIR/default" -a "$ifile" != "$PXELINUX_DIR/default_skeleton" ]; then
+      [ -f "$ifile" ] && rm -f $ifile
+    fi
+  done
+  echo "done!"
+fi
+
+if [ ! -d "$ocsroot" ]; then
+  echo "Please make sure your $ocsroot is a directory!!!"
+  echo "We can NOT go on! Press \"c\" to enter command prompt or any other key to quit the program..." 
+  read fail_answer
+  case "$fail_answer" in
+    [cC]) sulogin ;;
+       *) exit 1 ;;
+  esac
+fi
+#
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "Client OS type when doing Clonezilla job is: $diskless_client_os"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+#
+prepare_pxecfg_for_pxe_ocs_live_if_required
+
+# Create the dir for clonezilla pre/post run when clone starts/finishes. Therefore we can put some scripts in that directory.
+[ ! -d $OCS_PRERUN_DIR ] && mkdir -p $OCS_PRERUN_DIR
+[ ! -d $OCS_POSTRUN_DIR ] && mkdir -p $OCS_POSTRUN_DIR
+
+# put default postrun if empty
+[ -z "$postrun" ] && postrun="$POSTRUN_DEF"
+
+#
+case "$drbl_ocs_type" in
+  "startdisk")
+    target_hd="$target_dev"
+    # task, target_image & target_hd are global variables
+    do_startdisk
+    if [ "$diskless_client_os" = "clonezilla-live" ]; then
+      hide_reveal_pxe_img Clonezilla-live reveal $PXE_CONF
+    else
+      hide_reveal_pxe_img clonezilla reveal $PXE_CONF
+    fi
+    [ "$copy_rc1d_for_drbl_ssi_clone_box" = "yes" ] && copy_rc1d_for_drbl_ssi
+    prompt_to_turn_on_client $task
+    ;;
+  "startparts")
+    target_parts="$target_dev"
+    # task, target_image & target_parts are global variables
+    do_startparts
+    if [ "$diskless_client_os" = "clonezilla-live" ]; then
+      hide_reveal_pxe_img Clonezilla-live reveal $PXE_CONF
+    else
+      hide_reveal_pxe_img clonezilla reveal $PXE_CONF
+    fi
+    [ "$copy_rc1d_for_drbl_ssi_clone_box" = "yes" ] && copy_rc1d_for_drbl_ssi
+    prompt_to_turn_on_client $task
+    ;;
+  "select_in_client")
+    do_select_in_client
+    if [ "$diskless_client_os" = "clonezilla-live" ]; then
+      hide_reveal_pxe_img Clonezilla-live reveal $PXE_CONF
+    else
+      hide_reveal_pxe_img clonezilla reveal $PXE_CONF
+    fi
+    [ "$copy_rc1d_for_drbl_ssi_clone_box" = "yes" ] && copy_rc1d_for_drbl_ssi
+    prompt_to_turn_on_client "select_in_client"
+    ;;
+  "stop")
+    [ "$copy_rc1d_for_drbl_ssi_clone_box" = "yes" ] && remove_rc1d_for_drbl_ssi
+    # since now drbl and clonezilla separates in PXELinux menu, no more regen the drbl ssi template tarball.
+    stop_ocs_service no
+    # Make client to boot in drbl mode with menu label specified.
+    # get the distribution name and type: OS_Version and OS_type
+    check_distribution_name
+    force_pxe_clients_boot_label drbl
+    # When stopping the service, we disable all, no matter it's NFSroot-based or Clonezilla-live based.
+    # (1) for NFSroot-based
+    hide_reveal_pxe_img clonezilla hide $PXE_CONF
+    remove_opt_in_pxelinux_cfg_block clonezilla ocs_opt
+    # (2) for Clonezila-live-based
+    if [ -n "$(LC_ALL=C grep -E '^label Clonezilla-live' $PXE_CONF)" ]; then
+      hide_reveal_pxe_img Clonezilla-live hide $PXE_CONF
+      remove_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run
+    fi
+    # Since now we separate Clonezilla and DRBL label block in PXE menu, 
+    # Clonezilla will always with runlevel 1. Skip this.
+    # remove runlevel 1 to kernel parameter in pxelinux config
+    # remove_runlevel_1_in_pxelinux_cfg_block clonezilla
+
+    # If the mode is in always_restore, we will set local boot as default. Since
+    # the always_restore mode is only useful with local OS exists.
+    if [ "$always_restore" = "yes" ]; then
+      force_pxe_clients_boot_label local "$local_os_menu_label"
+    fi
+    ;;
+  *)
+    USAGE
+    ;;
+esac
+
+exit 0

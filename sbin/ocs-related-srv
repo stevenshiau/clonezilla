@@ -1,0 +1,166 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL 
+# 
+# Param: 
+# $1: IP address of the client
+# $2: nothing or off, if it's off, we won't turn on hardware detecting for client $1
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+#
+prog="$(basename $0)"
+
+check_if_root
+check_if_run_in_drbl_server $0
+
+#
+USAGE() {
+    echo "Put or remove Clonezilla related services to client's rc1.d"
+    echo "Usage:"
+    echo "$prog [OPTION] {-n|--node-ip IP} {put|remove}"
+    echo 
+    echo "Options:"
+    echo "-n, --node-ip  IP    Specify the client(s), using IP address(es)."
+    echo "-d, --hw-detect {on|off}    Use off to skip the hardware detecting (kudzu, discover...) service in the clients."
+    echo
+    echo "Example:"
+    echo "To put Clonezilla related services to client's (192.168.1.1) rc1.d, hardware detecting is put also, use:"
+    echo "$prog -n 192.168.1.1 put"
+}
+
+# Setting:
+# summarize the services, this will be used when ocs is stopped.
+non_rc1_service="portmap rpcbind nfslock netfs sshd kudzu harddrake ocs-run mountall.sh mountnfs.sh mountnfs.sh ssh discover hwscan arm-wol"
+
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n|--node-ip)
+	shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+	  node_ip="$1"
+	  shift
+        fi
+	[ -z "$node_ip" ] && USAGE && exit 1
+	;;
+    -d|--hw-detect)
+	shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+	  hw_detect="$1"
+	  shift
+        fi
+	[ -z "$hw_detect" ] && USAGE && exit 1
+	;;
+    -v|--verbose) verbose="on"; shift;;
+    -*) echo "${0}: ${1}: invalid option" >&2
+        USAGE >& 2
+        exit 2 ;;
+    *)  break ;;
+  esac
+done
+
+action="$1"
+
+[ -z "$action" ] && USAGE && exit 1
+
+#
+deploy_ocs_related_srv_in_client() {
+# prepare some services
+# Note!!! This functions must be consistent with "non_rc1_service" in stop()
+# S00single (RH), S20single (Debian), so we have to put these services
+# before 20.
+if [ ! -d "$drblroot/$node_ip/$RCX_ROOTDIR/rc1.d" ]; then
+   echo "No such directory $drblroot/$node_ip/$RCX_ROOTDIR/rc1.d!"
+   echo "Program terminated!"
+   exit 1
+fi
+#
+cd $drblroot/$node_ip/$RCX_ROOTDIR/rc1.d 
+# RH-like: nfslock, netfs...
+# Debian: ssh, nfs-common, mountall.sh...
+# SUSE: nfs, but nfs is server for RH-like...
+if [ -e /etc/debian_version ]; then
+  # Debian
+  [ -x $RCX_REL_INITD/portmap ] && ln -fs $RCX_REL_INITD/portmap S13portmap 
+  [ -x $RCX_REL_INITD/rpcbind ] && ln -fs $RCX_REL_INITD/rpcbind S13rpcbind
+  [ -x $RCX_REL_INITD/nfs-common ] && ln -fs $RCX_REL_INITD/nfs-common S15nfs-common
+  [ -x $RCX_REL_INITD/ssh ] && ln -fs $RCX_REL_INITD/ssh S16ssh
+  [ -x $RCX_REL_INITD/mountall.sh ] && ln -fs $RCX_REL_INITD/mountall.sh S17mountall.sh
+  [ -x $RCX_REL_INITD/mountvirtfs ] && ln -fs $RCX_REL_INITD/mountvirtfs S17mountvirtfs
+  [ -x $RCX_REL_INITD/mountnfs.sh ] && ln -fs $RCX_REL_INITD/mountnfs.sh S17mountnfs.sh
+  [ -x $RCX_REL_INITD/arm-wol ] && ln -fs $RCX_REL_INITD/arm-wol S17arm-wol
+  # To avoid single to be run before ocs-run, we force to make single as the last one
+  mv S*single S99single
+elif [ -e /etc/SuSE-release ]; then
+  # SuSE
+  [ -x $RCX_REL_INITD/kbd ] && ln -fs $RCX_REL_INITD/kbd S12kbd
+  [ -x $RCX_REL_INITD/portmap ] && ln -fs $RCX_REL_INITD/portmap S13portmap 
+  [ -x $RCX_REL_INITD/rpcbind ] && ln -fs $RCX_REL_INITD/rpcbind S13rpcbind
+  [ -x $RCX_REL_INITD/nfs ] && ln -fs $RCX_REL_INITD/nfs S15nfs
+  [ -x $RCX_REL_INITD/sshd ] && ln -fs $RCX_REL_INITD/sshd S16sshd
+  [ -x $RCX_REL_INITD/arm-wol ] && ln -fs $RCX_REL_INITD/arm-wol S17arm-wol
+else
+  # RH-like
+  [ -x $RCX_REL_INITD/portmap ] && ln -fs $RCX_REL_INITD/portmap S13portmap 
+  # From FC7, it's rpcbind instead of portmap
+  [ -x $RCX_REL_INITD/rpcbind ] && ln -fs $RCX_REL_INITD/rpcbind S13rpcbind
+  [ -x $RCX_REL_INITD/nfslock ] && ln -fs $RCX_REL_INITD/nfslock S14nfslock 
+  # From Mandriva 2008.1, it's nfs-common instead of nfslock
+  [ -x $RCX_REL_INITD/nfs-common ] && ln -fs $RCX_REL_INITD/nfs-common S14nfs-common
+  [ -x $RCX_REL_INITD/netfs ] && ln -fs $RCX_REL_INITD/netfs S15netfs 
+  [ -x $RCX_REL_INITD/sshd ] && ln -fs $RCX_REL_INITD/sshd S16sshd
+  [ -x $RCX_REL_INITD/arm-wol ] && ln -fs $RCX_REL_INITD/arm-wol S17arm-wol
+fi
+
+# we need kudzu or harddrake so that for SCSI devices, the driver can be loaded auto.
+if [ "$hw_detect" != "off" ]; then
+  for ihw in kudzu harddrake discover hwscan; do
+    if [ "$ihw" = "kudzu" ]; then
+      if [ -x "$RCX_REL_INITD/kudzu" ]; then
+        # We have to modify kudzu, thereforce we can not use link since it will affect those services in rc[3-5].d
+        # The reason we have to modify is because kudzu will force to change to rc5.d if /var/run/Xconfig is found. But actually for Clonezilla we need to saty in rc1.d, we can not change to rc5 since S19ocs-run will be run later (S19)
+	# In kudzu, comment these 2 lines:
+	#    grep -q "^id:5:initdefault:" /etc/inittab && telinit 5
+	# and
+	#    telinit 3
+	# We also rename it as kudzu-drbl to show it's modified.
+        cp -a $RCX_REL_INITD/kudzu S05kudzu-drbl
+	perl -pi -e "s|(^[[:space:]]*)(.*id:5:initdefault:.*telinit 5)|\$1# \$2 # Commented by DRBL $prog|g" S05kudzu-drbl
+	perl -pi -e "s|(^[[:space:]]*)(telinit 3)|\$1# \$2 # Commented by DRBL $prog|g" S05kudzu-drbl
+      fi
+    else
+      [ -x "$RCX_REL_INITD/$ihw" ] && ln -fs $RCX_REL_INITD/$ihw S05${ihw}
+    fi
+  done
+fi
+} # end of deploy_ocs_related_srv_in_client
+
+#
+clean_ocs_related_srv_in_client() {
+  # HOST_OPTION_MODIFY: modified since we specify hosts.
+  # clean the services in rc1.d which are specially for drbl-ocs
+  # The service name is both for RH-like, Debian or SuSE
+  for inon in $non_rc1_service; do
+    rm -f $drblroot/$node_ip/$RCX_ROOTDIR/rc1.d/S[0-9][0-9]${inon}
+  done
+} # end of clean_ocs_related_srv_in_client
+
+
+#
+case "$action" in
+  "put")
+     [ -n "$verbose" ] && echo "Putting clonezilla related services to client ($node_ip) rc1.d/ ..."
+     deploy_ocs_related_srv_in_client;;
+  "remove")
+     [ -n "$verbose" ] && echo "Removing clonezilla related services from client ($node_ip) rc1.d/ ..."
+     clean_ocs_related_srv_in_client;;
+esac
+
+exit 0

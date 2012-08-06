@@ -1,0 +1,976 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: This program will put a syslinux.cfg or isolinux.cfg in target directory, which is used to boot clonezilla live.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+KERNEL_FILE_DEFAULT="casper/$kernel_file"
+INITRD_FILE_DEFAULT="casper/$initrd_file"
+# default time (Unit: 1/10 secs)
+TIMEOUT_DEF="300"
+# Grub config
+# root default is (hd0,0), root for Linux in bootparam is default as /dev/sda1 (root=/dev/sda1)
+OP_HD_DEV_GRUB_DEF="hd0"
+OP_PART_NO_GRUB_DEF="0"
+OUTPUT_DEV_GRUB_DEF="/dev/sda1"
+OUTPUT_TITLE_DEF="Clonezilla live"
+GPARTED_LIVE_MAINTAINER="Steven Shiau"
+# ocs_logo_img_png is loaded from drbl.conf
+BGIMG_FILE_DEF="$ocs_logo_img_png"
+#
+quiet_opt=""
+splash_opt="nosplash"
+# The flag about dark or light background
+background_mode="light"
+
+#
+prog="$(basename $0)"
+
+# functions
+USAGE() {
+    echo "Usage:"
+    echo "To create syslinux or isolinux menu for clonezilla live:"
+    echo "$prog [OPTION] [isolinux|syslinux|grub|grub2-efi|grub2-efi-ia32|grub2-efi-x64] OUTPUT-DIR" 
+    echo "OPTION:"
+    language_help_prompt_by_idx_no
+    echo "-a, --splash                       Assign boot parameter 'splash'"
+    echo "-b, --bg-mode  [text|graphic]      Assign the back ground of boot menu. Default is graphic"
+    echo "-d, --dark-bg                      Assign the dark background. The prompt text will use be the brighter on. By default we use lighter background."
+    echo "-f, --framebuffer-mode  VGA_MODE   Assign the framebuffer mode as VGA_MODE, for example, 788 is resolution 800x600 with 16 bpp."
+    echo "-k, --kernel-file FILENAME         Provide the kernel name, which wiil be used in the menu.lst or syslinux.cfg. If unset, $KERNEL_FILE_DEFAULT will be used" 
+    echo "-i, --initrd-file FILENAME         Provide the initrd name, which wiil be used in the menu.lst or syslinux.cfg. If unset, $INITRD_FILE_DEFAULT will be used" 
+    echo "-n, --version-no VER_no            Provide the version number to be shown in the syslinux/isolinux boot menu."
+    echo "-p, --boot-param  PARAM            Provide the append strings for kernel bootparam. which wiil be used in the menu.lst or syslinux.cfg. If unset, $BOOT_PARAM_DEFAULT will be used. Note! For clonezilla live (based on Debian Live), boot=casper or boot=live is a must, so do not forget to include it." 
+    echo "-g1, grub-hd-dev DEV     Assign grub root device DEV (Ex: hd0)"
+    echo "-g2, grub-part-no NO     Assign grub root partition number index NO (Ex: 0)"
+    echo "-g3, OS-root-dev ROOTDEV Assign ROOTDEV which grub will pass as boot param (Ex. /dev/sda1)"
+    echo "-s, --show-only-one-vga  Show only one default VGA mode. By default, we will show 3 modes (1024x768, 800x600 and 640x480). If this is set, only the mode assigned by option -f|--framebuffer-mode will be shown. If you do not assign the mode by option -f|--framebuffer-mode, the default one ($VGA_MODE_DEF) will be shown."
+    echo "-u, --use-uvesafb  Use uvesafb mode instead of vesafb (mode should be set according to the kernel support)."
+    echo "-t, --timeout TIME   Assign TIME*0.1 secs for timeout when booting."
+    echo "-e, --title TITLE    Assign boot menu title (Clonezilla live, DRBL/Clonezilla server live...), default is 'Clonezilla live'."
+    echo "-m, --bgimg IMG      Assign boot menu title background as IMG file (absolute file, 640x480 image.)"
+    echo "-q, --quiet          Assign boot parameter 'quiet'"
+    echo "-z, --add-lang-menu LANG   Add locale LANG menu in boot menu"
+    echo "Ex:"
+    echo "To create a isolinux menu in dir isolinux_tmp/isolinux/"
+    echo "$prog isolinux isolinux_tmp/isolinux/"
+    echo "To create a grub menu in dir grub_tmp/boot/grub/"
+    echo "$prog grub grub_tmp/boot/grub/"
+}
+gen_config_syslinux() {
+  local type=$1
+  case "$type" in
+    isolinux) output_file="$output_dir/isolinux.cfg" ;;
+    syslinux) output_file="$output_dir/syslinux.cfg" ;;
+  esac
+  bg_img="$(basename $bgimg_file)"
+  echo "Adding $type menus for $output_title..."
+  cat <<-BOOT_MENU_END > $output_file
+# Created by generate-pxe-menu! Do NOT edit unless you know what you are doing! 
+# Keep those comment "MENU DEFAULT" and "MENU HIDE"! Do NOT remove them.
+# Note!!! If "serial" directive exists, it must be the first directive
+default $MENUC32
+timeout $timeout
+prompt 0
+noescape 1
+MENU MARGIN 5
+$mask MENU BACKGROUND $bg_img
+# Set the color for unselected menu item and timout message
+BOOT_MENU_END
+
+if [ "$background_mode" = "dark" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+$mask MENU COLOR TITLE    1;36;44    #ffffffff #00000000
+$mask MENU COLOR SEL      7;37;40    #FF000000 #FFC0C0C0
+$mask MENU COLOR HOTSEL   1;7;37;40  #FF000000 #FFC0C0C0
+
+BOOT_MENU_END
+else
+  cat <<-BOOT_MENU_END >> $output_file
+$mask MENU COLOR UNSEL 7;32;41 #c0000090 #00000000
+$mask MENU COLOR TIMEOUT_MSG 7;32;41 #c0000090 #00000000
+$mask MENU COLOR TIMEOUT 7;32;41 #c0000090 #00000000
+$mask MENU COLOR HELP 7;32;41 #c0000090 #00000000
+
+BOOT_MENU_END
+fi
+
+  cat <<-BOOT_MENU_END >> $output_file
+# MENU MASTER PASSWD
+
+say **********************************************************************
+say $boot_menu_txt_say_pkg
+say $boot_menu_txt_say_org
+say $project_url
+say THIS SOFTWARE COMES WITH ABSOLUTELY NO WARRANTY! USE AT YOUR OWN RISK! 
+say **********************************************************************
+
+# Allow client to edit the parameters
+ALLOWOPTIONS 1
+
+# simple menu title
+MENU TITLE $project_url
+
+# Since no network setting in the squashfs image, therefore if ip=frommedia, the network is disabled. That's what we want.
+label $output_title
+  MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title (Default settings$vga_default_prompt)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param $vga_default_mode ip=frommedia $quiet_opt $splash_opt
+  TEXT HELP
+  $boot_menu_pkg_ver_cpright
+  $boot_menu_pkg_disclaimer
+  ENDTEXT
+
+BOOT_MENU_END
+
+echo "MENU BEGIN Other modes of $output_title" >> $output_file
+
+if [ "$show_vga_mode" = "3" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+label $output_title 1024x768
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title (Default settings$vga_1024x768_prompt)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param $vga_mode_1024x768 ip=frommedia $quiet_opt $splash_opt
+  TEXT HELP
+  VGA mode 1024x768. OK for most of VGA cards.
+  ENDTEXT
+
+label $output_title 640x480
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title (Default settings$vga_640x480_prompt)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param $vga_mode_640x480 ip=frommedia $quiet_opt $splash_opt
+  TEXT HELP
+  VGA mode 640x480. OK for most of VGA cards.
+  ENDTEXT
+
+BOOT_MENU_END
+fi
+
+cat <<-BOOT_MENU_END >> $output_file
+label $output_title (To RAM)
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title (To RAM. Boot media can be removed later)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param_toram $vga_default_mode toram=filesystem.squashfs ip=frommedia $quiet_opt $splash_opt
+  TEXT HELP
+  All the programs will be copied to RAM, so you can
+  remove boot media (CD or USB flash drive) later
+  ENDTEXT
+
+BOOT_MENU_END
+
+if [ -n "$lang_locale" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+label $output_title ($lang_locale)
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title ($lang_locale, default settings$vga_default_prompt)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param $vga_default_mode locale=$lang_locale ip=frommedia $quiet_opt $splash_opt
+  TEXT HELP
+  $lang_locale, and VGA mode 1024x768
+  ENDTEXT
+
+BOOT_MENU_END
+if [ "$show_vga_mode" = "3" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+label $output_title ($lang_locale) 1024x768
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title ($lang_locale, default settings$vga_1024x768_prompt)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param $vga_mode_1024x768 locale=$lang_locale ip=frommedia $quiet_opt $splash_opt
+  TEXT HELP
+  $lang_locale, and VGA mode 1024x768.
+  ENDTEXT
+
+label $output_title ($lang_locale) 640x480
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title ($lang_locale, default settings$vga_640x480_prompt)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param $vga_mode_640x480 locale=$lang_locale ip=frommedia $quiet_opt $splash_opt
+  TEXT HELP
+  $lang_locale, and VGA mode 640x480. OK for most of VGA cards, 
+  Choose this if this is an Asus Eee PC
+  ENDTEXT
+
+BOOT_MENU_END
+fi
+  cat <<-BOOT_MENU_END >> $output_file
+label $output_title ($lang_locale. To RAM)
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title ($lang_locale. To RAM. Boot media can be removed later)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param_toram $vga_default_mode locale=$lang_locale toram=filesystem.squashfs ip=frommedia $quiet_opt $splash_opt
+  TEXT HELP
+  $lang_locale, and alll the programs will be copied to RAM,
+  so you can remove boot media (CD or USB flash drive) later
+  ENDTEXT
+
+BOOT_MENU_END
+fi
+
+  cat <<-BOOT_MENU_END >> $output_file
+label $output_title without framebuffer
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title (Safe graphic settings, vga=normal)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param ip=frommedia nomodeset vga=normal nosplash
+  TEXT HELP
+  Disable console frame buffer support
+  ENDTEXT
+
+label $output_title failsafe mode
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title (Failsafe mode)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param acpi=off irqpoll noapic noapm nodma nomce nolapic nosmp ip=frommedia nomodeset vga=normal nosplash
+  TEXT HELP
+  acpi=off irqpoll noapic noapm nodma nomce nolapic 
+  nosmp nomodeset vga=normal nosplash
+  ENDTEXT
+
+BOOT_MENU_END
+echo "MENU END" >> $output_file
+
+cat <<-BOOT_MENU_END >> $output_file
+label local
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL Local operating system in harddrive (if available)
+  # MENU PASSWD
+  # 2 method to boot local device:
+  # (1) For localboot 0, it is decided by boot order in BIOS, so uncomment the follow 1 line if you want this method:
+  # localboot 0
+
+  # (2) For chain.c32, you can assign the boot device.
+  # Ref: extlinux.doc from syslinux
+  # Syntax: APPEND [hd|fd]<number> [<partition>]
+  # [<partition>] is optional.
+  # Ex:
+  # Second partition (2) on the first hard disk (hd0);
+  # Linux would *typically* call this /dev/hda2 or /dev/sda2, then it's "APPEND hd0 2"
+  #
+  kernel chain.c32
+  append hd0
+  TEXT HELP
+  Boot local OS from first hard disk if it's available
+  ENDTEXT
+
+BOOT_MENU_END
+
+# If both memtest and fdos exist, group them
+if [ -e "$tmp_sys_files_path/$memtest_filename" -a -e "$tmp_sys_files_path/freedos.img" ]; then
+  echo "MENU BEGIN Memtest & FreeDOS" >> $output_file
+fi
+
+if [ -e "$tmp_sys_files_path/$memtest_filename" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+
+# Note! *.bin is specially purpose for syslinux, 
+# Do NOT use memtest.bin, use memtest instead of memtest.bin
+label memtest
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL Memory test using Memtest86+
+  # MENU PASSWD
+  kernel $sys_files_dir/$memtest_filename
+  TEXT HELP
+  Run memory test using Memtest86+
+  ENDTEXT
+
+BOOT_MENU_END
+fi
+
+# The following depends on the image exists or not 
+if [ -e "$tmp_sys_files_path/freedos.img" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+label FreeDOS
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL FreeDOS
+  # MENU PASSWD
+  kernel memdisk
+  append initrd=$sys_files_dir/freedos.img
+  TEXT HELP
+  Run FreeDOS
+  ENDTEXT
+
+BOOT_MENU_END
+fi
+# End of the group "memtest and freedos"
+if [ -e "$tmp_sys_files_path/$memtest_filename" -a -e "$tmp_sys_files_path/freedos.img" ]; then
+  echo "MENU END" >> $output_file
+fi
+
+#
+if [ -e "$tmp_sys_files_path/eb.zli" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+MENU BEGIN Network Boot
+
+label etherboot
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL Network boot via etherboot
+  # MENU PASSWD
+  kernel $sys_files_dir/eb.zli
+  TEXT HELP
+  Run Etherbot to enable network (PXE) boot
+  ENDTEXT
+
+BOOT_MENU_END
+fi
+if [ -e "$tmp_sys_files_path/gpxe.lkn" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+label gPXE
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL Network boot via gPXE
+  # MENU PASSWD
+  kernel $sys_files_dir/gpxe.lkn
+  TEXT HELP
+  Run gPXE to enable network (PXE) boot
+  ENDTEXT
+
+MENU END
+BOOT_MENU_END
+fi
+if [ -e "$tmp_sys_files_path/ipxe.lkn" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+label iPXE
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL Network boot via iPXE
+  # MENU PASSWD
+  kernel $sys_files_dir/ipxe.lkn
+  TEXT HELP
+  Run iPXE to enable network (PXE) boot
+  ENDTEXT
+
+MENU END
+BOOT_MENU_END
+fi
+} # end of gen_config_syslinux
+#
+gen_config_grub_1(){
+  local grub_conf=$1
+  local bg_img output_file
+  [ -z "$grub_conf" ] && grub_conf=menu.lst
+  bg_img="$(basename $ocs_logo_img_xpm)"
+  output_file="$output_dir/$grub_conf"
+  # the timeout is in unit 1/10 sec, convert to sec for grub
+  timeout_sec="$(echo "scale=0; $timeout /10" | bc -l)"
+  echo "Adding grub menus for $output_title..."
+  cat <<-BOOT_MENU_END > $output_file
+default	0
+timeout $timeout_sec
+color cyan/blue white/blue
+splashimage=/boot/grub/$bg_img
+# since no network setting in the squashfs image, therefore if ip=frommedia, the network is disabled.
+
+title $output_title (Default settings$vga_default_prompt)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_default_mode ip=frommedia 
+  initrd $initrd_file
+
+BOOT_MENU_END
+if [ "$show_vga_mode" = "3" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+title $output_title (Default settings$vga_1024x768_prompt)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_mode_1024x768 ip=frommedia 
+  initrd $initrd_file
+
+title $output_title (Default settings$vga_640x480_prompt)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_mode_640x480 ip=frommedia 
+  initrd $initrd_file
+
+BOOT_MENU_END
+fi
+  cat <<-BOOT_MENU_END >> $output_file
+title $output_title (To RAM, boot media can be removed later)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param_toram $vga_default_mode toram ip=frommedia 
+  initrd $initrd_file
+
+BOOT_MENU_END
+
+if [ -n "$lang_locale" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+title $output_title ($lang_locale, default settings$vga_default_prompt)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_default_mode locale=$lang_locale ip=frommedia
+  initrd $initrd_file
+
+BOOT_MENU_END
+if [ "$show_vga_mode" = "3" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+title $output_title ($lang_locale, default settings$vga_1024x768_prompt)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_mode_1024x768 locale=$lang_locale ip=frommedia
+  initrd $initrd_file
+
+title $output_title ($lang_locale, default settings$vga_640x480_prompt)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_mode_640x480 locale=$lang_locale ip=frommedia
+  initrd $initrd_file
+
+BOOT_MENU_END
+fi
+
+  cat <<-BOOT_MENU_END >> $output_file
+title $output_title ($lang_locale. To RAM. Boot media can be removed later)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param_toram $vga_default_mode locale=$lang_locale toram ip=frommedia
+  initrd $initrd_file
+
+BOOT_MENU_END
+fi
+
+  cat <<-BOOT_MENU_END >> $output_file
+title $output_title Safe graphic settings (vga=normal)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param ip=frommedia nomodeset vga=normal nosplash
+  initrd $initrd_file
+
+title $output_title (Failsafe mode)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param acpi=off irqpoll noapic noapm nodma nomce nolapic nosmp ip=frommedia nomodeset vga=normal nosplash
+  initrd $initrd_file
+
+BOOT_MENU_END
+
+if [ -e "$tmp_sys_files_path/$memtest_filename" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+# Note! *.bin is specially purpose for syslinux, 
+# Do NOT use memtest.bin, use memtest instead of memtest.bin
+title memtest
+  kernel $sys_files_dir/$memtest_filename
+
+BOOT_MENU_END
+fi
+
+# The following depends on the image exists or not 
+
+if [ -e "$tmp_sys_files_path/freedos.img" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+title FreeDOS
+  kernel memdisk
+  initrd $sys_files_dir/freedos.img
+
+BOOT_MENU_END
+fi
+if [ -e "$tmp_sys_files_path/eb.zli" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+title etherboot
+  kernel $sys_files_dir/eb.zli
+BOOT_MENU_END
+fi
+if [ -e "$tmp_sys_files_path/gpxe.lkn" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+title gPXE
+  kernel $sys_files_dir/gpxe.lkn
+BOOT_MENU_END
+fi
+if [ -e "$tmp_sys_files_path/ipxe.lkn" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+title iPXE
+  kernel $sys_files_dir/ipxe.lkn
+BOOT_MENU_END
+fi
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_modify_grub_config_if_necessary:"
+  echo "$msg_delimiter_star_line"
+  echo "root ($op_hd_dev_grub,$op_part_no_grub)"
+  echo "kernel $kernel_file root=$output_dev_grub ro $boot_param"
+  echo "$msg_delimiter_star_line"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+} # end of gen_config_grub_1
+#
+gen_config_grub_2_efi(){
+local grub_conf="$1"
+local bg_img output_file
+[ -z "$grub_conf" ] && grub_conf=grub.cfg
+bg_img="$(basename $bgimg_file)"
+output_file="$output_dir/$grub_conf"
+# the timeout is in unit 1/10 sec, convert to sec for grub
+timeout_sec="$(echo "scale=0; $timeout /10" | bc -l)"
+echo "Adding grub2 efi menus for $output_title..."
+cat <<-BOOT_MENU_END > $output_file
+#
+set prefix=/EFI/boot/
+set default="0"
+if loadfont \$prefix/unicode.pf2; then
+  set gfxmode=640x480
+  load_video
+fi
+terminal_output gfxterm
+set timeout="$timeout_sec"
+set hidden_timeout_quiet=false
+
+if background_image \$prefix/$bg_img; then
+  set color_normal=black/black
+  set color_highlight=magenta/black
+else
+  set color_normal=cyan/blue
+  set color_highlight=white/blue
+fi
+
+# Since no network setting in the squashfs image, therefore if ip=frommedia, the network is disabled.
+
+menuentry "$output_title (Default settings$vga_default_prompt)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param $vga_default_mode ip=frommedia $quiet_opt $splash_opt
+  initrd $initrd_file
+}
+BOOT_MENU_END
+if [ "$show_vga_mode" = "3" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+menuentry "$output_title (Default settings$vga_1024x768_prompt)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param $vga_mode_1024x768 ip=frommedia $quiet_opt $splash_opt
+  initrd $initrd_file
+}
+
+menuentry "$output_title (Default settings$vga_640x480_prompt)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param $vga_mode_640x480 ip=frommedia $quiet_opt $splash_opt
+  initrd $initrd_file
+}
+
+BOOT_MENU_END
+fi
+  cat <<-BOOT_MENU_END >> $output_file
+menuentry "$output_title (To RAM, boot media can be removed later)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param_toram $vga_default_mode toram=filesystem.squashfs ip=frommedia $quiet_opt $splash_opt
+  initrd $initrd_file
+}
+
+BOOT_MENU_END
+
+if [ -n "$lang_locale" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+menuentry "$output_title ($lang_locale, default settings$vga_default_prompt)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param $vga_default_mode locale=$lang_locale ip=frommedia $quiet_opt $splash_opt
+  initrd $initrd_file
+}
+
+BOOT_MENU_END
+if [ "$show_vga_mode" = "3" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+menuentry "$output_title ($lang_locale, default settings$vga_1024x768_prompt)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param $vga_mode_1024x768 locale=$lang_locale ip=frommedia $quiet_opt $splash_opt
+  initrd $initrd_file
+}
+
+menuentry "$output_title ($lang_locale, default settings$vga_640x480_prompt)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param $vga_mode_640x480 locale=$lang_locale ip=frommedia $quiet_opt $splash_opt
+  initrd $initrd_file
+}
+
+BOOT_MENU_END
+fi
+
+  cat <<-BOOT_MENU_END >> $output_file
+menuentry "$output_title ($lang_locale. To RAM. Boot media can be removed later)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param_toram $vga_default_mode locale=$lang_locale toram=filesystem.squashfs ip=frommedia $quiet_opt $splash_opt
+  initrd $initrd_file
+}
+
+BOOT_MENU_END
+fi
+
+  cat <<-BOOT_MENU_END >> $output_file
+menuentry "$output_title Safe graphic settings (vga=normal)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param ip=frommedia nomodeset vga=normal nosplash
+  initrd $initrd_file
+}
+
+menuentry "$output_title (Failsafe mode)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param acpi=off irqpoll noapic noapm nodma nomce nolapic nosmp ip=frommedia nomodeset vga=normal nosplash
+  initrd $initrd_file
+}
+
+BOOT_MENU_END
+
+# TODO: localboot
+
+if [ -e "$tmp_sys_files_path/$memtest_filename" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+#menuentry "memtest"{
+#  search --set -f $sys_files_dir/$memtest_filename
+#  fakebios
+#  linux16 $sys_files_dir/$memtest_filename
+#}
+
+BOOT_MENU_END
+fi
+
+# The following depends on the image exists or not 
+
+if [ -e "$tmp_sys_files_path/freedos.img" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+#menuentry "FreeDOS"{
+#  linux16 memdisk
+#  initrd $sys_files_dir/freedos.img
+#}
+
+BOOT_MENU_END
+fi
+if [ -e "$tmp_sys_files_path/eb.zli" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+#menuentry "etherboot"{
+#  search --set -f $sys_files_dir/eb.zli
+#  fakebios
+#  linux16 $sys_files_dir/eb.zli
+#}
+
+BOOT_MENU_END
+fi
+if [ -e "$tmp_sys_files_path/gpxe.lkn" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+#menuentry "gPXE"{
+#  search --set -f $sys_files_dir/gpxe.lkn
+#  fakebios
+#  linux16 $sys_files_dir/gpxe.lkn
+#}
+
+BOOT_MENU_END
+fi
+if [ -e "$tmp_sys_files_path/ipxe.lkn" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+#menuentry "iPXE"{
+#  search --set -f $sys_files_dir/ipxe.lkn
+#  fakebios
+#  linux16 $sys_files_dir/ipxe.lkn
+#}
+
+BOOT_MENU_END
+fi
+} # end of gen_config_grub_2_efi
+#
+# Default settings
+show_vga_mode="3"
+fb_mode="vesafb"
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l|--language)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              specified_lang="$1"
+              shift
+            fi
+	    [ -z "$specified_lang" ] && USAGE && exit 1
+            ;;
+    -b|--bg-mode)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              bg_mode="$1"
+              shift
+            fi
+	    [ -z "$bg_mode" ] && USAGE && exit 1
+            ;;
+    -d|--dark-bg)
+            shift
+            background_mode="dark"
+            ;;
+    -f|--framebuffer-mode)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              vga_mode="$1"
+              shift
+            fi
+	    [ -z "$vga_mode" ] && USAGE && exit 1
+            ;;
+    -t|--timeout)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              timeout="$1"
+              shift
+            fi
+	    [ -z "$timeout" ] && USAGE && exit 1
+            ;;
+    -g1|grub-hd-dev)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              op_hd_dev_grub="$1"
+              shift
+            fi
+	    [ -z "$op_hd_dev_grub" ] && USAGE && exit 1
+            ;;
+    -g2|grub-part-no)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              op_part_no_grub="$1"
+              shift
+            fi
+	    [ -z "$op_part_no_grub" ] && USAGE && exit 1
+            ;;
+    -g3|OS-root-dev)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              output_dev_grub="$1"
+              shift
+            fi
+	    [ -z "$output_dev_grub" ] && USAGE && exit 1
+            ;;
+    -k|--kernel-file)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              kernel_file="$1"
+              shift
+            fi
+	    [ -z "$kernel_file" ] && USAGE && exit 1
+            ;;
+    -i|--initrd-file)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              initrd_file="$1"
+              shift
+            fi
+	    [ -z "$initrd_file" ] && USAGE && exit 1
+            ;;
+    -n|--version-no)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              version_no="$1"
+              shift
+            fi
+	    [ -z "$version_no" ] && USAGE && exit 1
+            ;;
+    -p|--boot-param)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              boot_param="$1"
+              shift
+            fi
+	    [ -z "$boot_param" ] && USAGE && exit 1
+            ;;
+    -e|--title)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              output_title="$1"
+              shift
+            fi
+	    [ -z "$output_title" ] && USAGE && exit 1
+            ;;
+    -m|--bgimg)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              bgimg_file="$1"
+              shift
+            fi
+	    [ -z "$bgimg_file" ] && USAGE && exit 1
+            ;;
+    -s|--show-only-one-vga)
+            shift
+            show_vga_mode="1"
+            ;;
+    -u|--use-uvesafb)
+            shift
+            fb_mode="uvesafb"
+            ;;
+    -q|--quiet)
+            shift
+            quiet_opt="quiet"
+            ;;
+    -a|--splash)
+            shift
+            splash_opt="splash"
+            ;;
+    -z|--add-lang-menu)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              lang_locale="$1"
+              shift
+            fi
+	    [ -z "$lang_locale" ] && USAGE && exit 1
+            ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+output_format="$1"
+output_dir="$2"
+[ -z "$output_format" ] && USAGE && exit 1
+[ -z "$output_dir" ] && USAGE && exit 1
+[ -z "$vga_mode" ] && vga_mode=$VGA_MODE_DEF
+[ -z "$timeout" ] && timeout=$TIMEOUT_DEF
+[ -z "$kernel_file" ] && kernel_file="$KERNEL_FILE_DEFAULT"
+[ -z "$initrd_file" ] && initrd_file="$INITRD_FILE_DEFAULT"
+[ -z "$boot_param" ] && boot_param="$BOOT_PARAM_DEFAULT"
+[ -z "$op_hd_dev_grub" ] && op_hd_dev_grub="$OP_HD_DEV_GRUB_DEF"
+[ -z "$op_part_no_grub" ] && op_part_no_grub="$OP_PART_NO_GRUB_DEF"
+[ -z "$output_dev_grub" ] &&  output_dev_grub="$OUTPUT_DEV_GRUB_DEF"
+[ -z "$output_title" ] && output_title="$OUTPUT_TITLE_DEF"
+[ -z "$bgimg_file" ] && bgimg_file="$BGIMG_FILE_DEF"
+[ -z "$version_no" ] && version_no="Unknown/customized"
+
+# boot_param_toram is specially for "To RAM" menu. We will append noprompt if it does not containt that.
+if [ -z "$(echo $boot_param | grep -Ew "noprompt")" ]; then
+  boot_param_toram="$boot_param noprompt"
+else
+  boot_param_toram="$boot_param"
+fi
+#
+now_year="$(LC_ALL=C date +%Y)"
+if [ -n "$(echo $output_title | grep -i clonezilla)" ]; then
+  boot_menu_txt_say_pkg="Clonezilla, the OpenSource Clone System."
+  boot_menu_txt_say_org="NCHC Free Software Labs, Taiwan."
+  project_url="clonezilla.org, clonezilla.nchc.org.tw"
+  boot_menu_pkg_ver_cpright="* Clonezilla live version: $version_no. (C) 2003-${now_year}, NCHC, Taiwan"
+  boot_menu_pkg_disclaimer="* Disclaimer: Clonezilla comes with ABSOLUTELY NO WARRANTY"
+elif [ -n "$(echo $output_title | grep -i drbl)" ]; then
+  boot_menu_txt_say_pkg="DRBL (Diskless Remote Boot in Linux)."
+  boot_menu_txt_say_org="NCHC Free Software Labs, Taiwan."
+  project_url="drbl.sourceforge.net, drbl.nchc.org.tw"
+  boot_menu_pkg_ver_cpright="* DRBL live version: $version_no. (C) 2003-${now_year}, NCHC, Taiwan"
+  boot_menu_pkg_disclaimer="* Disclaimer: DRBL comes with ABSOLUTELY NO WARRANTY"
+elif [ -n "$(echo $output_title | grep -i gparted)" ]; then
+  boot_menu_txt_say_pkg="GParted."
+  boot_menu_txt_say_org="Gnome Partition Editor."
+  project_url="http://gparted.org"
+  boot_menu_pkg_ver_cpright="* GParted live version: $version_no. Live version maintainer: $GPARTED_LIVE_MAINTAINER"
+  boot_menu_pkg_disclaimer="* Disclaimer: GParted live comes with ABSOLUTELY NO WARRANTY"
+else
+  project_url="Welcome!"
+fi
+#
+# Now we put other boot image files, like etherboot, fdos and memtest in the same dir with kernel and initrd. Therefore using $sys_files_dir (Ex: /casper, /live). This is used for the config file of boot manager (grub, syslinux).
+sys_files_dir="$(dirname $kernel_file)"
+# This is the absolute path for the output dir.
+# $output_dir could be 1 layer of sub dir under tmp dir (e.g. $tmpdir/isolinux) or 2 layers of sub dirs (e.g. $tmpdir/EFI/boot)
+if [ -d "$output_dir/../$sys_files_dir" ]; then
+  tmp_sys_files_path="$output_dir/../$sys_files_dir"
+elif [ -d "$output_dir/../../$sys_files_dir" ]; then
+  tmp_sys_files_path="$output_dir/../../$sys_files_dir"
+fi
+ask_and_load_lang_set $specified_lang
+
+#
+case "$bg_mode" in 
+   txt|TXT|text|TEXT)
+      MENUC32="menu.c32"
+      mask="#"
+      ;;
+   *)
+      MENUC32="vesamenu.c32" ;;
+esac
+
+# get memtest filename
+# We no longer to use memtest_filename="$(basename $memtest86_file)", since if the filename is too long, if it's FAT (like in USB flash drive), it will go wrong.
+# We use memtest to overwrite the one comes from Debian live
+memtest_filename="memtest"
+
+#
+case "$fb_mode" in
+  vesafb) 
+           vga_mode_640x480="vga=785"
+           vga_mode_800x600="vga=788" 
+           vga_mode_1024x768="vga=791"
+	   ;;
+  uvesafb) 
+           vga_mode_640x480="video=uvesafb:mode_option=640x480-16"
+           vga_mode_800x600="video=uvesafb:mode_option=800x600-16" 
+           vga_mode_1024x768="video=uvesafb:mode_option=1024x768-32"
+	   ;;
+esac
+#
+case "$show_vga_mode" in
+  1) # For 1 mode, we respect the $vga_mode, and we do not show the resolution. Since if we show it in the distribution (e.g. DRBL live), user will be confused.
+     vga_640x480_prompt=""
+     vga_800x600_prompt=""
+     vga_1024x768_prompt=""
+     vga_default_prompt=""
+     case "$vga_mode" in
+      785) vga_default_mode="$vga_mode_640x480";;
+      788) vga_default_mode="$vga_mode_800x600";;
+      791) vga_default_mode="$vga_mode_1024x768";;
+      *) vga_default_mode="";
+     esac
+     ;;
+  *) # For 3 modes, we force to set default as 1024x768.
+     vga_640x480_prompt=", VGA 640x480"
+     vga_800x600_prompt=", VGA 800x600" 
+     vga_1024x768_prompt=", VGA 1024x768"
+     vga_default_prompt=", VGA 800x600"
+     vga_default_mode="$vga_mode_800x600"
+     ;;
+esac
+
+#
+case "$output_format" in 
+   isolinux|ISOLINUX)
+      gen_config_syslinux isolinux ;;
+   syslinux|SYSLINUX)
+      gen_config_syslinux syslinux ;;
+   grub|GRUB)
+      gen_config_grub_1 menu.lst ;;
+   grub2-efi|GRUB2-EFI|grub2-efi-ia32|GRUB2-EFI-IA32|grub2-efi-x64|GRUB2-EFI-X64)
+      # For grub2, no matter it's ia32 or x86-64, the config file is grub.cfg.
+      gen_config_grub_2_efi grub.cfg ;;
+esac

@@ -1,0 +1,255 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Program to create DRBL/Clonezilla server live. You'd better to have 2 or more NICs in the machine, and they are configured so the created Clonezilla server live has preset DRBL environment.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+# load drbl setting
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+# load config files
+. /live-hook-dir/ocs-live-hook.conf
+# load functions
+. /live-hook-dir/ocs-live-hook-functions 
+
+# locale_to_keep_for_X is loaded from ocs-live-hook.conf.
+locale_to_keep="$locale_to_keep_for_X"
+
+# Initial flag for updating initramfs
+update_initramfs_flag="no"
+
+#
+clean_udev_persistent_net_rules
+
+# create a dummy /etc/fstab in Live CD so that nis/yp won't complain
+touch /etc/fstab
+
+#
+download_grub_1_2_deb_for_later_use
+
+#
+install_debian_extra_modules
+
+# clean some locales
+set_localepurge
+localepurge
+
+# Generate the locales. We will use "nolocales" to avoid these to be wipped by live-initramfs.
+locales_gen
+
+# If kexec tools is installed, disable the service. We do not need that for Clonezilla
+disable_kexec
+
+# Disable the "tips and tricks" on the startup after login.
+disable_xfce_startup_tips_and_tricks
+
+# 2010/12/25 Steven Shiau commented this one. We let live-config to do this.
+# Ref: http://lists.debian.org/debian-live/2010/12/msg00191.html
+# Exclude live mount point in /etc/init.d/umountfs to avoid error messages when rebooting or halting.
+# exclude_umount_live_mnt_point_in_umountfs
+
+# append the module so that it will be loaded, then gparted can grow filesystem
+# Ref: http://gparted.sourceforge.net/features.php
+append_mod_in_etc_modules
+
+# set root passwd, I do not like root without passwd.
+set_root_passwd
+
+# Append the PATH in system.
+append_drbl_clonezilla_PATH_in_system
+
+#
+decide_if_use_xz_compression_for_initrd
+
+# We might need more /lib/udev/*_id than that initramfs-tools copies. E.g. for Live CD, we need cdrom_id, which udev (>= version 146 won't copy).
+copy_all_dev_id_prog_from_udev_lib
+
+# Put the DRBL live script in rcS.d
+cp_drbl_live_startup_to_rc.d
+
+# If mlterm is found with xfce installed, set default x-terminal-emulator as mlterm. Since xterm is not as good as mlterm in Traditional Chinese font.
+if LC_ALL=C dpkg -L xfce4 &>/dev/null && LC_ALL=C dpkg -L mlterm &>/dev/null; then
+  echo "Set mlterm as default x-terminal-emulator."
+  update-alternatives --set x-terminal-emulator /usr/bin/mlterm
+  # change the fg/bg color
+  LC_ALL=C perl -pi -e "s/^.*fg_color=.*/fg_color=white/g" /etc/mlterm/main
+  LC_ALL=C perl -pi -e "s/^.*bg_color=.*/bg_color=black/g" /etc/mlterm/main
+fi
+
+# We have to remove thunar-volman to avoid the partition is automatically mounted after a partition table is created. It will make Clonezilla fail due to partition busy.
+if LC_ALL=C dpkg -L thunar-volman &>/dev/null; then
+  apt-get -y --purge remove thunar-volman
+fi
+
+# preset some network setting
+guess_uplink_port="$(LC_ALL=C route -n | awk '/^0.0.0.0/ {print $8}' | sort | head -n 1)"
+case "$alias_eth0_for_drbl_clients" in
+  yes)
+    ethernet_drbl="eth0:1"
+    LC_ALL=C ifconfig $ethernet_drbl $alias_eth0_IP_addr netmask 255.255.255.0
+    ;;
+esac
+
+# Clear those automatically installed.
+if [ -n "$(LC_ALL=C apt-get --help 2>/dev/null | grep -i autoremove)" ]; then
+  apt-get -y autoremove
+fi
+
+# We need loopback device, just in case.
+cat <<-NET_END > /etc/network/interfaces
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+NET_END
+# Assign a default DNS
+# //NOTE// This won't work since live helper/build will remove /etc/resolv.conf.
+# The reason we change the nameserver to public one is we just do not want the DNS server (maybe private one) to be built-in in dhcpd.conf when running drblpush.
+assing_default_dns_server
+
+# we need real /sbin/start-stop-daemon. This has to be run before drblpush is run, since for clients they will use files in the dir /tftpboot/node_root/sbin/.
+remove_cdebootstrap-helper-diverts
+
+# Run drbl setup, we use DRBL SSI mode and clonezilla box mode
+if [ "$use_unfs" = "yes" ]; then
+  # (a) Since unfs3 does not allow client to lock file, according to Pascal Schmidt <pascal.schmidt _at_ ewetel net>, we have to put "nolock" in client's /etc/fstab
+  # (b) FORGET!
+  #     A workaround to avoid "stale nfs file handle" for unfs3: "noac" (not working) and "nofsc" (not working) <--- Forget! Actually this "stale nfs file handle" issue was caused by live-boot when mount aufs it adds "noxino" option, while "xino" is rquired by NFS (http://aufs.sourceforge.net/aufs.html#Exporting%20Aufs%20via%20NFS)
+  #     Ref: http://www.cyberciti.biz/tips/nfs-stale-file-handle-error-and-solution.html  (for noac)
+  #          http://lkml.org/lkml/2008/1/22/432 (for nofsc)
+  #     https://sourceforge.net/projects/drbl/forums/forum/675794/topic/3707138
+  # 3 places: (1) initrd (2) init (3) /etc/fstab
+
+  # (1) initrd
+  # The mount from busybox does not support "nofsc", therefore we do it in init with "mount -n -o remount,rw,nofsc /" in (2) part.
+  # perl -pi -e 's/^ROOT_NFS_OPT="(.*)"/ROOT_NFS_OPT="$1,nofsc"/g' /usr/lib/mkpxeinitrd-net/initrd-skel/sbin/udhcpc-post
+  # (2) init
+  #perl -pi -e 's/^RO_NFS_EXTRA_OPT="(.*)"/RO_NFS_EXTRA_OPT="$1,nofsc"  # Added for DRBL live, which is running unfs3/g' $DRBL_SCRIPT_PATH/setup/files/misc/init.drbl
+  #perl -pi -e 's/^RW_NFS_EXTRA_OPT="(.*)"/RW_NFS_EXTRA_OPT="$1,nofsc"  # Added for DRBL live, which is running unfs3/g' $DRBL_SCRIPT_PATH/setup/files/misc/init.drbl
+  #perl -pi -e 's/^mount -n -o remount,rw/mount -n -o remount,rw,nofsc/g' $DRBL_SCRIPT_PATH/setup/files/misc/init.drbl
+  # (3) /etc/fstab
+  perl -pi -e 's/^nfs_client_extra_opt=.*/nfs_client_extra_opt="nolock"  # Added for DRBL live, which is running unfs3/g' $DRBL_SCRIPT_PATH/conf/drbl.conf
+fi
+
+# Change the VOL_LIMIT_DEFAULT as 2000 since we have no idea if user will mount FAT as $ocsroot or not.
+
+perl -pi -e 's/^VOL_LIMIT_DEFAULT=.*/VOL_LIMIT_DEFAULT="2000"  # Modified when creating DRBL live/g' $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+
+# Get the installed kernel so that we can use drblsrv-offline directly.
+kernel_ver="$(LC_ALL=C unalias ls 2>/dev/null; ls /boot/vmlinuz-* | sort | tail -n 1)"
+kernel_ver="$(LC_ALL=C basename $kernel_ver | sed -e "s/vmlinuz-//g")"
+yes "" | LC_ALL=en_US.UTF-8 drblsrv-offline -c -s "$kernel_ver"
+
+# NOTE! All the setting about clients must be done before drblpush.
+# Run drblpush, now we use 1 for drbl client. The cient number is assigned in ocs-live-hook.conf and is applied to drbl-live.sh (it is run to start drbl service after the live cd is booted).
+# Before running drblpush, we have to create /dev/loop0 for drbl-ocs-live-prep (actually drbl-SL.sh) to use. It will mount an iso using loop and extract files.
+mknod -m 600 /dev/loop0 b 7 0
+# yes "" | LC_ALL=en_US.UTF-8 drblpush -i -r 1 -z 3 -t 3 -p 1 --not-add-start-drbl-srvi
+# The IP address 192.168.111.254 is an arbitrary one. It will be automatically updated when DRBL live is booted on the server machine.
+yes "" | LC_ALL=en_US.UTF-8 drblpush -i -r 1 -z 1 -p 1 --not-add-start-drbl-srvi --drbl-ocs-live-server 192.168.111.254
+rm -f /dev/loop0
+
+# post process
+# The /tftpboot/node_root/bin/hostname was renamed as hostname.orig by lh_chroot_hostname. Although later lh_chroot will deconfigure it, but we already copy them to /tftpboot/node_root/bin by drblpush. We have to move it back so that later drbl client can use the real hostname.
+mv -f $drbl_common_root/bin/hostname.orig $drbl_common_root/bin/hostname
+
+# stop all the services so that make-live can pack it.
+drbl-all-service stop
+
+# remove all the service in rc, we do not want all the services to automatically start at boot
+drbl-all-service del
+
+# we still have to add some modules in clients. We still have to do this although server's /etc/modules already has them, but drblpush will clean all to avoid some problem.
+for ih in $drblroot/*; do
+  for imod in $mod_loaded_at_startup; do
+    echo "$imod" >> $ih/etc/modules
+  done
+done
+
+# we clean the template node and tarballs: (1) save the space (2) if user uses different subnet for NIC, the template directory (Ex: /tftpboot/nodes/192.168.100.1) and tarball are useless. Since we will re-run drblpush in drbl-live.sh after drbl live boots. They will be created again.
+[ -d "$drblroot" -a -n "$drblroot" ] && rm -rf $drblroot/*
+[ -d "$drbl_common_root" -a -n "$drbl_common_root" ] && rm -rf $drbl_common_root/drbl_ssi/*.tgz
+
+# //NOTE// This is almost useless since squashfs will compress the file system, and the duplicated won't take too much space actully. Besides, without /tftpboot/node_root/{lib, usr}, DRBL will need more RAM (need by tmpfs) after running drblpush -i.
+# Remove /tftpboot/node_root/{lib, usr}, since when drblpush is run, they will be rebuild. Thanks to Orgad Shaneh for the inspiration. Ref: https://sourceforge.net/forum/forum.php?thread_id=3336278&forum_id=675794
+#[ -d "$drbl_common_root/lib" -a -n "$drbl_common_root" ] && rm -rf $drbl_common_root/lib
+#[ -d "$drbl_common_root/usr" -a -n "$drbl_common_root" ] && rm -rf $drbl_common_root/usr
+
+# Note! there is an issue about squashfs 3.1 + kernel nfs, we can use user space nfs instead:
+# http://lists.alioth.debian.org/pipermail/debian-live-devel/2006-September/000470.html 
+# This also has a benefit, the mounted /home/partimage is ready to be seen by client.
+# Before --purge nfs-kernel-server, we have to backup /etc/exports
+if [ "$use_unfs" = "yes" ]; then
+  cp -f /etc/exports /etc/exports.unfs3
+  apt-get --yes --purge remove nfs-kernel-server
+  apt-get --yes install unfs3
+  mv -f /etc/exports.unfs3 /etc/exports
+  # Same reason as "drbl-all-service del", we remove unfs3 and later when an user boot DRBL live, the script will add that if necessary
+  remove_service_in_system unfs3
+fi
+
+# do some dirty clean... no idea why "/etc/init.d/nfs-kernel-server stop" and "/"/etc/init.d/nfs-common stop" won't be able to release this:
+# nfsd on /proc/fs/nfsd type nfsd (rw)
+umount nfsd
+
+# get unifont.bgf for bterm/jfbterm, this is used in drbl live standard version.
+mkdir -p $DRBL_SCRIPT_PATH/lib/
+get_unifont_bgf $DRBL_SCRIPT_PATH/lib/
+
+# Turn off some services
+# For better security. This has to be after "drblsrv -i" and "drblpush -i" are run.
+# Turn off some services
+for i in $service_2_be_off_for_drbl_live; do
+  remove_service_in_system $i
+done
+
+# Put start script
+mkdir -p /etc/drbl/
+cp -ar $DRBL_SCRIPT_PATH/setup/files/ocs/drbl-live.d /etc/drbl/
+
+# Now we use S97start-drbl-live to do more, instead of just kbd config.
+# Put a service to config keyboard
+# cat <<-KBD_END > /etc/init.d/kbd-conf
+# #!/bin/bash
+# dpkg-reconfigure console-data
+# KBD_END
+# chmod 755 /etc/init.d/kbd-conf
+# update-rc.d kbd-conf start 97 S .
+
+# Put a service to config X
+# Since X 7.3 or later from Debian lenny, "dpkg-reconfigure xserver-xorg" only configure keyboard, no more VGA driver and resolution. We use grandr to let user to change the resolution. The problem will be if it fails to enter vesa mode, grander won't be able to run. 
+# Ref: http://forums.debian.net/viewtopic.php?t=26577
+#cp -a $drbl_setup_path/files/ocs/live-hook/Forcevideo-drbl-live /etc/init.d/
+#update-rc.d Forcevideo-drbl-live start 98 S .
+
+# Put a link for vol_id so that GParted can use it to read linux-swap labels
+if [ -e /lib/udev/vol_id ]; then
+  (cd /sbin; ln -fs /lib/udev/vol_id vol_id)
+fi
+
+# turn off alias IP address
+[ "$alias_eth0_for_drbl_clients" = "yes" ] && ifconfig eth0:1 down
+
+# Remove grpck option "-p". This is only a workaround since the issue has not been fixed in Debian
+# Ref: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=638263
+remove_grpck_opt_p
+
+# Disable the parallel startup (startpar), we need to make sure start-drbl-live is done before gdm. Otherwise if parallel startup is used, gdm login screen will be shown and overwrite the dialog screen of start-drbl-live.
+# Feb/27/2012 If startpar is disabled, /proc/cmdline won't be mounted before S01live-config, then live-config won't be run. Besides, even startpar is enabled, it seems gdm3 will be started afater start-drbl-live. Therefore it should be OK to skip this.
+# disable_parallel_start_during_booting
+
+# We have to run update-initramfs so that the new busybox/cdromid/... will be in initramfs. This should be after dirty_hacking_rm_files_for_ocs_live since some files which we do not want (e.g. plymouth) might be included in initrd.
+[ "$update_initramfs_flag" = "yes" ] && update-initramfs -u
+
+# ///Note/// This should be the last one after any apt-get.
+# clean unnecessary backup file to save space
+clean_unnecessary_backup_file_in_boot
+
+### THE END ###
+# DO NOT PUT ANY SCRIPT AFTHER THIS!!!
+# kill this program before creating squashfs filesystem.
+rm -rf /live-hook-dir

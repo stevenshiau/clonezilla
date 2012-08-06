@@ -1,0 +1,77 @@
+#!/bin/bash
+# Author: Steven Shiau (steven _at_ nchc org tw)
+# License: GPL
+# Description: A sample script to auto create the partition. It will create swap partition with 3 GB, and the rest of the disk is for 1st partition.
+# You can put it in $DRBL_SCRIPT_PATH/share/ocs/prerun/ and choose advanced param of clonezilla : -o0 (--run-prerun-dir) and -k -r, then this script will create the following partition for you.
+#
+#  /dev/[hsv]da1   /     (total hd_size - 3 GB)
+#  /dev/[hsv]da2   swap 3GB
+#
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# YOU HAVE BEEN WARNED!
+# This is a dangerous program! Do not run it as root in any machine unless you want to re-create the partition table as the followiing rules!
+# THIS PROGRAM WILL DELETE ALL THE DATA IN YOUR DISK!!!
+
+# Settings
+sfdisk_confirm="yes"
+chosen_hd="sda"
+# Unit: MB
+swap_size="3000000"
+
+#
+[ -z "$chosen_hd" ] && exit 1
+if [ ! -b "/dev/$chosen_hd" ]; then
+  echo "/dev/$chosen_hd not found!"
+  echo "Press Enter to continue..."
+  read
+  exit 1
+fi
+PT_TMP="$(mktemp /tmp/pt-tmp.XXXXXX)"
+
+#
+
+# boot device
+BOOTDEVICE="/dev/$chosen_hd"
+
+# partition
+hd_size="$(sfdisk -s /dev/$chosen_hd)"
+cylinders="$(sfdisk -g /dev/$chosen_hd | awk '{ print $2; }')"
+
+swap="$(echo "scale=0; $swap_size * $cylinders / $hd_size" | bc -l)"
+
+root="$(echo "scale=0; $cylinders - $swap" | bc -l)"
+
+  cat <<-EOF > $PT_TMP 
+0,$root,L,*
+,,S
+EOF
+
+if [ "$sfdisk_confirm" = "yes" ]; then
+  echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  echo "Are you sure you want to create the partition table in /dev/$chosen_hd ?"
+  echo "NOTE!!! If you continue, all the data in /dev/$chosen_hd will be gone! "
+  echo -n "[y/N] "
+  read sfdisk_ans
+  case "$sfdisk_ans" in
+    y|Y|[yY][eE][sS])
+       echo "OK, let's do it"
+       ;;
+    *)
+       echo "OK, skip it"
+       # clean temp file
+       [ -e "$PT_TMP" ] && rm -f $PT_TMP
+       exit 1
+       ;;
+  esac
+fi
+
+# create the partition
+sfdisk -f /dev/$chosen_hd < $PT_TMP
+
+# clean temp file
+[ -e "$PT_TMP" ] && rm -f $PT_TMP

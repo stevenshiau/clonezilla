@@ -1,0 +1,1208 @@
+#!/bin/bash
+#++++++++++++++++++++++++++++++++++++++++++++++++++++#
+#                                                    #
+#                 MC_HxEd  V 0.0.1-1                 #
+#                                                    #
+#        Copyright (C) 2008 CMDR 08-11-11(18)        #
+#                                                    #
+#        Hexadecimal Editor for Boot Records         #
+#            with "Xdialog" treeview menu,           #
+#         intended as Tool for "GpartedLive"         #
+#                                                    #
+#++++++++++++++++++++++++++++++++++++++++++++++++++++#
+#                                                    #
+#  W A R N I N G  :                                  #
+#  THIS SCRIPT MAY SEVERELY DAMAGE YOUR SYSTEM, IF   #
+#  YOU ARE  NOT QUITE SURE  ABOUT  THE CONSEQUENCES, #
+#  YOUR ACTIONS MAY HAVE. IN DOUBT, DO  N O T APPLY  #
+#  ANY CHANGES ! ASK FOR PROFESSIONAL SUPPORT.       # 
+#                                                    #
+#++++++++++++++++++++++++++++++++++++++++++++++++++++#
+#
+# You can get support from "GParted" Forum:
+# http://gparted-forum.surf4.info/
+#
+# Report bugs to : 
+# http://bugzilla.gnome.org/simple-bug-guide.cgi?product=gparted
+#
+#
+#     LL    II  CCCC  EEEE NN    N  CCCC  EEEE
+#     LL    II C      E    N N   N C      E   
+#     LL    II C      EEE  N  N  N C      EEE 
+#     LL    II C      E    N   N N C      E   
+#     LLLLL II  CCCC  EEEE N    NN  CCCC  EEEE
+#
+#     ========================================
+#
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# This program is free software; you can redistribute
+# it and/or modify it under the terms of the GNU
+# General Public License as published by the Free Soft-
+# ware Foundation; either version 2, or (at your option)
+# any later version.
+#
+# This program is distributed in the hope, that it will
+# be useful, but WITHOUT ANY WARRANTY; without even the
+# implied warranty of  MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE.  See the  GNU General Public 
+# License for more details.
+#
+# You should have received a copy of the GNU General
+# Public License along with this program; if not, write
+# to the
+#          Free Software Foundation, Inc.
+#          59 Temple Place, Suite 330
+#          Boston, MA 02111 USA.
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+clear
+#***** Check Resources *****
+# Load functions
+. /usr/share/gparted/bin/gl-functions
+get_gui_dialog
+
+tm="lxterminal"
+xm="xmessage"
+f1="/root/f1"
+f2="/root/f2"
+mc -V >/dev/null 2>&1
+[ $? != 0 ] && echo "Midnight Commander (/usr/bin/mc)" > ${f2}
+${tm} --version > /dev/null
+[ $? != 1 ] && echo "${tm} (/usr/bin/${tm})" >> ${f2}
+${xm} > /dev/null 2>&1
+[ $? != 1 ] && echo "${xm} (/usr/bin/${xm})" >> ${f2}
+${DIALOG} -v > /dev/null 2>&1
+[ $? != 0 ] && echo "${DIALOG} (/usr/bin/${DIALOG})" >> ${f2}
+if [ -e ${f2} ]
+   then echo "This script needs" > ${f1}
+        cat ${f2} >> ${f1}
+        echo "for proper function. Script aborted." >> ${f1}
+        echo >> ${f1}
+        echo "Hit any key ..." >> ${f1}
+        clear
+        cat ${f1}
+        for x in ${f1} ${f2}; do
+            rm $x
+        done
+        read -n 1
+        clear
+        exit
+fi
+
+
+#***** Common Variables *****
+ml=""
+p1=$0
+#Mountpoint for stick
+bpth="/mnt/usb"
+#Storage folder
+bup="${bpth}/BootRec"
+prog="MC_HxEd"
+vers="0.0.1-1"
+nohelp=0
+
+ctr=1
+s_cut=""
+s_rest=""
+
+#Device pattern for USB stick (always 1st partition),
+#multi-partitioned sticks allowed.
+ptrn="/dev/sd?1"
+nmnted=0
+#Progress bar 100% value
+rds=32
+#Xdialog variables
+item=""
+sz=""
+unit=""
+smp=""
+fsid=""
+extdflag=0
+extddrv=""
+pxtstart=""
+lbl=""
+fxctr=0
+remctr=0
+
+#DriveInfo variables
+prog1="DriveInfo"
+pth=""
+dvc=""
+pstrt=""
+pstrt1=""
+pend=""
+pend1=""
+psize=""
+psize1=""
+ctr2=0
+cyl=""
+head=""
+sec=""
+did=""
+cyl1=""
+head1=""
+sec1=""
+res=""
+blpc=""
+bypc=""
+fs=""
+fsn=""
+fsid=""
+fsall=""
+bf=""
+fle="/root/drvs.dat"
+fixctr1=0
+remctr1=0
+lbl0=""
+maxblk=0
+
+#********** End variables *********************
+
+
+#**************** Subroutines ******************
+#***********************************************
+#************* Help / Info *************
+
+help()
+{
+  #Show Help text
+  #Parameters : $1 (qwzx=hit any key; wqxz=hit x)
+  #Input : $tm=Terminal name; $p1=complete path to this program
+  #Output : Info text
+  ${tm} -s=false -b "lightyellow" -9 "lightyellow" -0 "lightyellow" -f "black" -g 65x32+0+80 -title "${prog}  Hexadecimal Editor Version ${vers}" -e $p1 $1
+  echo > /tmp/xxx
+}
+
+usage()
+{
+  #Create Info text with variable end, waiting for key stroke
+  #Parameters : $1 ( qwzx=hit any key; wqxz=hit key [x] )
+  #Input : $prog=Program name; $vers=Version
+  #Output : $ml=formatted Info text; file "/tmp/xxx" as exit flag
+  echo "$$" > /tmp/info.tmp
+  m1=${m1}"   Usage (e.g. /dev/sda /dev/sda1):"$'\n'
+  m1=${m1}"   ${prog}                  \"Xdialog\"-Treeview"$'\n' 
+  m1=${m1}"   ${prog} -[-]i[nfo]       Create DriveInfo file"$'\n'
+  m1=${m1}"   ${prog} [/dev/]sda       Show MBR in HexViewer"$'\n'
+  m1=${m1}"   ${prog} [/dev/]sda1      Show PBR in HexViewer"$'\n'
+  m1=${m1}"                            (= 1st primary partition)"$'\n'
+  m1=${m1}"   ${prog} [path/]sda1.PBR  Show stored PBR in Viewer"$'\n'
+  m1=${m1}"   ${prog} -[-]l[oc]=sda    Show selected Block on sda"$'\n'
+  m1=${m1}"   ${prog} -[-]d[id]=sda    Change Windows Drive ID"$'\n'
+  m1=${m1}"   ${prog} -[-]nohelp       Suppress help (1st arg.!)"$'\n'
+  m1=${m1}"   ${prog} -[-]h[elp]       Show this information"$'\n\n'
+  m1=${m1}"   Console:"$'\n'
+  m1=${m1}"   [F5]   Goto Byte (e.g 0x1b8 = Drive ID in MBR)"$'\n'
+  m1=${m1}"   [F2]   Open for Editing"$'\n'
+  m1=${m1}"   [F6]   Save changes to given file"$'\n'
+  m1=${m1}"   [TAB]  Toggle active cursor (ASCII<>HEX)"$'\n\n'
+  m1=${m1}"   Interesting addresses on MBR:"$'\n'
+  m1=${m1}"   0x1b8 (4 Bytes)    Drive ID (important for Windows)"$'\n'
+  m1=${m1}"   0x1be (16 Bytes)   Table of 1st primary partition"$'\n'
+  m1=${m1}"   (Values : 0x1be=Bootflag; 0x80/0x00=active/inactive"$'\n'
+  m1=${m1}"    0x1c2=Filesystem ID)"$'\n'
+  m1=${m1}"   0x1ce (16 Bytes); 0x1de (16 Bytes); 0x1ee (16 Bytes)"$'\n'
+  m1=${m1}"   (Tables of 2nd to 4th partition, if used)"$'\n\n'
+  m1=${m1}"   Preconfigured backup folder : ${bup}"$'\n'
+  m1=${m1}"   Filename : e.g. sda.MBR / sda1.PBR / sda5.XBR"$'\n'
+  m1=${m1}"             (File extensions are linked to HexViewer !)"$'\n\n'
+  if [ "${1}" != "" ]
+     then [ "${1}" = "qwzx" ] && m1=${m1}"   --> Hit any key to continue"$'\n'
+          [ "${1}" = "wqxz" ] && m1=${m1}"   --> Exit with [x]"$'\n'
+          clear
+          echo -n "${m1}"
+          if [ "${1}" = "qwzx" ]
+             then read -s -n 1
+          fi
+          if [ "${1}" = "wqxz" ]
+             then rpl=""
+                  while [ "${rpl}" != "x" ]; do
+                        read -n 1 rpl
+                        [ "${rpl}" = "X" ] && break
+                  done
+          fi
+          rm /tmp/info.tmp          
+  fi
+  echo > /tmp/xxx
+}
+
+show_fst()
+{
+  #Tricky display and backup of "fdisk"-FileSystemList
+  #Parameter : $1=Device
+  #Output : xmessage or fle
+  fsst="/home/fsID_table"
+  btn="Store as temporary file"
+  if [ -d ${bup} ]
+     then fsst="${bup}/fsID_table"
+          btn="Backup as file"
+  fi          
+  `echo "l"$'\n'"q" | fdisk /dev/${1} | sed -e 's/Command (m for help)://g' | ${xm} -center -geometry 730x430 -title "Known File system IDs" -buttons "${btn}":2,Close:1 -file - > /dev/null 2>&1`
+  [ "$?" = "2" ] && `echo "l"$'\n'"q" | fdisk /dev/${1} | sed -e 's/Command (m for help)://g' > ${fsst}`
+  clear
+}
+
+#********* Mounting Wizard *************
+stick_alive()
+{
+  #Detecting sticks and irregular conditions (e.g. removed mounted sticks)
+  #Parameter : none
+  #Input :  $ptrn=Device pattern; $bpth=Mountpoint backup device
+  #Output : $nmounted (0=no mounted devices with pattern $ptrn found;
+  #         1-99=number of available unmounted devices with fitting pattern;
+  #         100=device already mounted for backup
+  mnted1=`mount | grep ${bpth} | awk '{print $1}'`
+  [ "${mnted1}" != "" ] && mnted2=`echo ${ptrn} | grep ${mnted1} | awk '{printf $1}'`
+  #Stick removed without unmounting it
+  if [ "${mnted2}" = "" ]
+     then if [ "${mnted1}" != "" ]
+             then mtrue=`mount | grep $bpth | awk '{printf $3}'`
+                  [ "$mtrue" != "" ] && umount $bpth > /dev/null 2>&1
+          fi
+          nmnted=`echo ${ptrn} | wc -w`
+          #Correction for no stick
+          [ "`echo ${ptrn}`" = "${ptrn}" ] && nmnted=0
+          mnted1=`mount | grep ${bpth} | awk '{print $1}'`
+     else nmnted=100
+  fi
+}
+
+mount_stick()
+{
+  #Mounting routine detects and mounts first sd?1 device, if yet unmounted.
+  #Parameter : none
+  #Input : $nmnted=(0=no available unmounted devices; 1-99=number of available devices;
+  #                 100=device already mounted)
+  #        ${DIALOG}=Xdialog; $ctr1=counter; $rds=100% value for progress bar,
+  #        $ptrn=Device pattern; $bpth=Mountpoint backup device
+  #Output : periods for progress bar
+  #Actions : Seeking and mounting fitting device; error messages
+  stick_alive
+  [ "$nmnted" = "100" ] && return
+  mtrue=
+  echo -n .
+  while [ : ]; do
+        declare -i ctr1=2
+        while [ : ]; do
+              ctr1=$(( $ctr1 + 1 ))
+              echo -n .
+              if [ $ctr1 -eq $(( $rds + 1 )) ]
+                 then echo -n ${rds}
+              fi
+              if [ "`echo ${ptrn}`" != "${ptrn}" ]
+                 then mnted=`echo ${ptrn}`
+                      for m in ${mnted}; do
+                          if [ "${m}" != "" ]
+                             then  if  [ `mount | grep ${m} | wc -l` = 0 ]
+                                       then echo -n .
+                                       pd=`echo ${m} | awk -F"/" '{printf $3}' | cut -c -3`
+                                            [ "`cat /sys/block/${pd}/removable`" = "0" ] && continue
+                                            declare -i cnt=0
+                                            [ ! -d ${bpth} ] && mkdir ${bpth}
+                                            mtrue=""
+                                            while [ "${mtrue}" = "" ]; do
+                                                  mount ${m} ${bpth} > /dev/null 2>&1
+                                                  sleep 1
+                                                  echo -n .
+                                                  cnt=$(( $cnt + 1 ))
+                                                  mtrue=`mount | grep ${bpth} | awk '{printf $3}'`
+                                                  if [ "${mtrue}" = "" -a $cnt = 10 ]
+                                                     then echo $(( $rds +1 ))
+                                                          ${DIALOG} --title "Mount Stick" --msgbox "\n   Failure : USB Stick could not be mounted.   \n" 0 0
+                                                          echo > /tmp/xxx
+                                                  fi
+                                             done
+                                             ${DIALOG} --timeout 4 --title "Mount Stick" --msgbox "\n   USB Stick \"${m}\" successfully mounted on \"${mtrue}\".   \n" 0 0
+                                             stick_alive
+                                             echo > /tmp/success
+                                             return
+                                   fi
+                          fi
+                      done
+              fi
+              sleep 1
+              echo -n .
+        done
+  done
+}
+
+seekstick()
+{
+  #Loop for seeking USB Stick as often as user wants
+  #Parameters : none
+  #Input : ${DIALOG}=Xdialog; $rds=100% value for progress bar
+  #Output : return (0=end: 255=reset and continue)
+
+  #Progress Bar !
+  mount_stick | `${DIALOG} --title "Mount Stick" --progress "\n  Waiting for USB stick ...   \n" 0 0 ${rds}`
+  #Communication via file; variable not possible (child process)!
+  if [ -e /tmp/success ]
+     then rm /tmp/success
+          return 0
+  fi
+  ${DIALOG} --title "Mount Stick" --backtitle "Mounting Wizard" --yesno "No mountable USB stick detected.\
+  \n\nTry it again ?\n" 0 0
+  [ $? != 0 ] && return 0
+  #Reset
+  ctr1=2
+  rds=32
+  return 255
+}
+
+#******************* HexViewer ******************
+
+start_hex()
+{
+  #Prepares HexEditor's extension link file to start hex view
+  #Parameters : none
+  #Output : new "mc.ext" with linked .MBR, .PBR, .XPR, .BLK and
+  #         .JP(E)G" extension
+  #Note: You can confirm highlighted file and thus starting
+  #      the linked program (Sorry, mouse is not working !).
+  #      This function gets installed with the first use.
+
+  #MBR PBR XBR BLK
+  mcx="/etc/mc/mc"
+  mcext=${mcx}".ext"
+  #Configuration already run ?
+  [ `cat $mcext | grep -e '# MBR' | wc -w` != 0 ] && return 2
+  mcaa="${mcx}aa"
+  mcab="${mcx}ab"
+  mcadd="${mcx}add"
+  splt=`cat $mcext | grep -b -e '### Default ###' | awk -F ':' '{printf $1}'`
+  split -b $splt $mcext $mcx
+  echo "# MBR / PBR / XBR / BLK" > $mcadd
+  echo "regex/\.(MBR|PBR|XBR|BLK)$">> $mcadd
+  echo "	Open=%view{hex}" >> $mcadd
+  echo "	View=%view{hex}"$'\n' >> $mcadd
+  cat $mcadd >> $mcaa
+  sleep 0.5
+  cat $mcab >> $mcaa
+  sleep 0.5
+  sudo cp $mcaa $mcext
+  sleep 0.5
+
+  #JP(E)G for screenshots !
+  rxp1="type/\^JPEG"
+  lrxp=`echo "$rxp1" | wc -c`
+  lrxp=$(( $lrxp - 1 ))
+  splt=`cat $mcext | grep -b -e $rxp1 | awk -F ':' '{printf $1}'`
+  splt=$(( $splt + $lrxp ))
+  split -b $splt $mcext $mcx
+  echo "	Open=feh %d/%f" > $mcadd
+  echo "	View=feh %d/%f"$'\n' >> $mcadd
+  cat $mcadd >> $mcaa
+  sleep 0.5
+  cat $mcaa > $mcadd
+  sleep 0.5
+
+  #rxp2 may change in the future !
+  #Last part of the splitted file
+  rxp2="type/\^PC"
+  splt=`cat $mcext | grep -b -e $rxp2 | awk -F ':' '{printf $1}'`
+  split -b $splt $mcext $mcx
+  cat $mcab >> $mcadd
+  sleep 0.5
+  sudo cp $mcadd $mcext
+  sleep 0.5
+  for y in ${mcaa} ${mcab} ${mcadd}; do
+      [ -e $y ] && rm $y
+  done
+}
+
+show()
+{
+  #Start "Midnight Commander", show Boot record and detect changes.
+  #Parameters : $1=Boot record to show
+  #             $2=Backuped Boot record
+  #Input : $prog=Program name; $btr=Temporarily stored boot record;
+  #        $bup=Backup folder; $tm=Terminal name; $dev=Device to work on;
+  #        $fext=File extension; bpth=Mountpoint backup device
+  #  Action : Write changed Boot record to device, if backup exists, abortable.
+  #Output : Dialog and messages
+  if  [ "${1}" != "" -a "${2}" != "" ]
+      then shw=$1
+           bp=$2
+           s_loop "." ${bp}
+           fext=${s_cut}
+           s_loop "/" ${s_rest}
+           dev=${s_cut}
+           s_loop "." ${shw}
+           fext3=${s_cut}
+      else shw="$btr"
+           bp="${bup}/${dev}.${fext}" 
+  fi
+  start_hex
+  ${tm} -s=false -title ${prog} -g 80x24+200+200 -e /usr/bin/mc -v $shw
+  if [ "${fext3}" = "BLK" ] 
+     then ${DIALOG} --backtitle "H I N T" --title "Block Viewer" \
+          --msgbox "Block files (.BLK) are not stored permanently.\n   But you can do it manually with Midnight Commander.    \n" 0 0
+          return
+  fi          
+  if [ "`echo ${bpth}/*`" != "${bpth}/*" ]
+     then if [ -e ${shw} -a -e ${bp} ]
+             then diff ${shw} ${bp} > /dev/null 2>&1
+                  if [ $? != 0 ]
+                     then ${DIALOG} --backtitle "${fext} HAS BEEN CHANGED !" --title "Overwrite ${fext} on ${dev}" --defaultno \
+                     --yesno "   Do you really want to overwrite\n    ${fext} from \"/dev/${dev}\" ?" 0 0
+                     [ "$?" = "0" ] && dd if=${shw} of=/dev/${dev} bs=512 count=1 > /dev/null 2>&1
+                     return
+                  fi
+             else ${DIALOG} --backtitle "H I N T" --title "Overwrite ${fext} on ${dev}" \
+                  --msgbox "Boot record was not stored !\n\nOverwriting stays disabled,\n   unless you agree to store a backup !   \n" 0 0          
+          fi
+     else ${DIALOG} --backtitle "H I N T" --title "Overwrite ${fext} on ${dev}" \
+          --msgbox "Use the built-in Mounting Wizard,\n   if you want to store Boot Record files permanently.   \n\nAs long as there is no Backup possible,\noverwriting is disabled !" 0 0
+  fi
+}
+
+cpy()
+{
+  #Copy Boot record to USB stick
+  #Parameters : none
+  #Input : $bup=Backup folder
+  #        $dev=device
+  #        $fext=file extension of backup file
+  #        $btr=temporarily stored boot record
+  #Action : copy
+  if [ -e ${bup}/${dev}.${fext} ]
+     then ${DIALOG} --title "$prog" --backtitle "\nOverwrite existing Backup file" --defaultno --yesno "  Do you want to overwrite file  \n"\
+"${bup}/${dev}.${fext} ?\n\n" 0 0
+          [ $? != 0 ] && return
+          sudo rm ${bup}/${dev}.${fext}
+          sleep 2
+     else if [ -d ${bup} ]
+             then ${DIALOG} --title "$prog" --backtitle "\nStore Backup file" --defaultno --yesno "  Do you want to permanetly store file  \n"\
+"${dev}.${fext} on ${bup} ?\n\n" 0 0
+                  [ $? != 0 ] && return
+          fi 
+  fi
+  [ -d $bup ] && sudo cp ${btr} ${bup}
+}
+
+#********* Xdialog "treeview" ***************
+
+create_tree()
+{
+  #Create treeview
+  #Parameter: none
+  #Output : $item = everything that appears in the treeview of "Xdialog"
+  item=""
+  mdepth=1
+  fxctr=0
+  remctr=0
+  drvs="`fdisk -l | grep -e '^/dev' | awk '{printf $1" "}' | sed -e 's/\/dev\///g'`" 
+  ctr2=0
+  for d in ${drvs}; do
+      #Fixed/Removable Disks
+      if [ "$smp" != "`echo "$d" | cut -c -3`" ]
+         then  smp="`echo "$d" | cut -c -3`"
+               extdflag=0; extddrv=""
+               if [ "`cat /sys/block/$smp/removable`" = "0" ]
+                  then fxctr=$(( $fxctr + 1))
+                       item="${item}-info Fixed_Disk_${fxctr} off 2 "
+                       mdepth=3
+                       ctr2=$(( remctr + $fxctr ))
+                  else remctr=$(( remctr +1 ))
+                       item="${item}-info Removable_Disk_${remctr} off 1 "
+                       mdepth=2
+                       ctr2=$(( $fxctr + $remctr ))
+               fi
+               #Well, ... handling of the "treeview" seems to be very special.
+               #... and Regular Expressions and me, we are not just friends !
+               #Xdialog doesn't really like spaces.
+               dmodel="`cat /sys/block/$smp/device/model \
+               | sed -r -e 's/\s+/\_/g' | sed -e 's/\_$//g'`"
+               disk_size $smp
+               item="${item}$smp $smp($sz) off $mdepth "
+               mdepth=$(( $mdepth + 1 ))
+               item="${item}0 Model:$dmodel off $mdepth "
+               mdepth=$(( $mdepth + 1 ))
+               ctr2=$(( $ctr2 - 1 ))
+               drv_data       
+               parm $did
+               did="$res"
+               parm $cyl
+               cyl="$res"
+               parm $head
+               head="$res"
+               parm $sec
+               sec="$res"
+               if [ "$bf" = "*" ]
+                  then item="${item}-d=${smp} (Set)_DriveID:${did} off $mdepth "
+                  else item="${item}0 DriveID:${did} off $mdepth "
+               fi                  
+               item="${item}0 Cylinders:${cyl} off $mdepth "
+               item="${item}0 Heads:${head} off $mdepth "
+               item="${item}0 Sectors:${sec} off $mdepth "
+               maxblk=$(( $cyl * $head * $sec ))
+               item="${item}0 Blocks:${maxblk} off $mdepth "
+               item="${item}-loc=${smp} Show_Block(s) off $mdepth "
+               mdepth=3
+               disk_size $d
+               item="${item}$d $d($sz) off $mdepth "
+               pstart $d
+               mdepth=4
+               fsi="-f=${smp} "
+               item="${item}${fsi}Filesystem:${fsinfo} off $mdepth "
+               mdepth=3
+               continue
+      fi
+      disk_size $d
+      item="${item}$d $d($sz) off $mdepth "
+      pstart $d
+      mdepth=$(( $mdepth + 1 ))
+      [ "$extdflag" = "1" -a "$extddrv" != "$d" ] && item="${item}#${d} Ext.PBR off $mdepth "
+      fsi="-f=`echo "${d}" | cut -c -3` "
+      item="${item}${fsi}Filesystem:${fsinfo} off $mdepth "
+      mdepth=$(( $mdepth - 1 ))
+  done
+}
+
+disk_size()
+{
+  #Calculates Disk size of primary and extended partitions
+  #Parameters : $1 = Device name
+  #Output : $sz = $lbl_$size$unit_bf_mf
+  #         $lbl = Volume name
+  #         $size = Volume size
+  #         $unit = Size unit
+  #         $bf = bootflag; $mf = mountflag
+  ds1="$1"
+  sz=""
+  #Physical or Logical Drive ?
+  phys="`echo "$ds1" | cut -c -3`"
+  #Extended Drive ?
+  fsid="`fdisk -l -u | grep -e '^/dev/'${1} | awk '{printf $5}'`"
+  if [ "$fsid" = "f" ]
+     then pstrt=`cat /sys/block/$phys/$ds1/start`
+          pend="`fdisk -l -u | grep -e '^/dev/'${ds1} | awk '{printf $3}'`"
+          sz=$(( $pend - $pstrt +1 ))
+          disk_unit
+          sz="${sz}${unit}_Ext'd"
+          extdflag=1
+          extddrv="$ds1"
+          return
+  fi
+  if [ "$ds1" = "$phys" ]
+     then sz=`cat /sys/block/$ds1/size`
+     else sz=`cat /sys/block/$phys/$ds1/size`
+  fi
+  #Bootflag (*) ?
+  bf="`fdisk -l | grep -e '^/dev/'$ds1 | awk '{printf $2}' | cut -c -1`"
+  [ "$bf" != "*" ] && bf=""
+  #Mounted (<>) ?
+  if [ "`echo "$ds1" | grep -e [0-9]`" != "" ]
+     then mfa="`mount | sed -e 's/\/dev\///g' | grep -e $ds1 | awk '{printf $1" "}'`"
+          if [ "$mfa" = "$ds1 " ]
+             then mf="<>"
+             else mf=""
+          fi
+  fi
+  mfa=""
+  disk_unit
+  disk_lbl $ds1
+  sz="${lbl}${sz}${unit}$bf$mf"
+}
+
+disk_unit()
+{
+  #Calculates the disk size unit
+  #Parameters : $sz=Disk size in blocks
+  #Output : $unit= disk size unit (raw)
+  unit=""
+  unit0="KB MB GB TB PB"
+  #Disk size in Bytes
+  sz=$(( $sz * 512 ))
+  while [ : ]; do
+        ct=`echo "$sz" | wc -c`
+        [ $ct -le 5 ] && break
+        unit=`echo "$unit0" | awk '{printf $1}'`
+        unit0=`echo "$unit0" | cut -c 4-`
+        ct=$(( $ct - 4 ))
+        #Very simple division by 1,000
+        sz=`echo "$sz" | cut -c -$ct`
+  done
+}
+
+disk_lbl()
+{
+  #Seek Volume name (Disk label)
+  #Parameter: $1=device name
+  #Output: $lbl=volume name
+  lbl=""
+  lbl0=""
+  dlph="/dev/disk/by-label"
+  olddir=$PWD
+  #Cuts the path off !
+  cd $dlph
+  dlbls=`echo *`
+  for dl in $dlbls; do
+      devl=`dir -l $dlph/$dl | tail -c 5 `
+      if [ "$devl" = "$1" ]
+         then lbl0="${dl}"
+              lbl="${lbl0}_"
+              break
+      fi
+  done
+  cd $olddir
+}
+
+extd_view()
+{
+  #Calculates address of Extended Drive Record
+  #Parameter : $1=Device name of extended logical drive
+  #Output : $pxtstart = starting block
+  lw="$1"
+  lwp="`echo "$1" | cut -c -3`"
+  pxtstart=`cat /sys/block/$lwp/$lw/start `
+  pxtstart="$(( $pxtstart - 63 ))"
+}
+
+show_block()
+{
+  #Show selected block(s) / cylinder(s); hexadecimal input allowed;
+  #only dialog - no parameter steering !
+  #Parameter : none
+  #Input : Xdialog
+  #Output : HexViewer; (non-permanent) file
+  
+  ${DIALOG} --icon "/usr/share/pixmaps/gparted-live/gparted.xpm" --title ${prog}\
+  --backtitle "BLock Viewer\n- Block/Cylinder input (Drive \"${1}\") -"\
+  --inputbox "Type <starting block number>#<number of blocks> (default=1) or\n\
+  <heads> * <sectors> * <cylinders>#<number of blocks>\nCalculation is done by the program.\n\
+      (Numbering of cylinders / blocks starts with zero.   \n   Hexadecimal numbers, e.g. 0xf1bfc9, are allowed.)\n\n" 0 0 2> /tmp/answ0.tmp.$$
+  result1=`cat /tmp/answ0.tmp.$$`
+  rm /tmp/answ0.tmp.$$
+  if [ "$result1" = "" ]
+     then echo > /tmp/xxx
+          return
+  fi
+  if [ "`echo "$result1" | grep -e '#' | wc -c`" != "0" ]
+     then cnt=`echo "$result1" | awk -F '#' '{printf $2}'`
+          cnt=$(( $cnt ))
+          result1=`echo "$result1" | awk -F '#' '{printf $1}'`
+     else cnt=1
+  fi
+  
+  result1="$(( $result1 ))"
+  maxblk=$(( `cat /sys/block/${1}/size ` - 1 ))
+  [ $(( $result1 )) -le 0 ] && result1=0
+  [ $(( $result1 )) -gt ${maxblk} ] && result1=${maxblk}
+  dnam="/home/${1}_${result1}_${cnt}.BLK"
+  dd if=/dev/${1} of=${dnam} bs=512 skip=${result1} count=${cnt} > /dev/null 2>&1
+  if [ "$nohelp" = "1" ]
+     then show ${dnam} ${bup}
+     else help wqxz & show ${dnam} ${bup}
+  fi     
+  [ ! -e $bup ] && ${tm} --title "Midnight Commander" -e mc /root /home
+  [ -e $bup ] && ${tm} --title "Midnight Commander" -e mc $bup /home
+  end_info
+}
+
+set_drvid()
+{
+  #Set the Drive ID on the bootable MBR, if changed
+  #Parameter : $1= device name
+  #Output : new Drive ID
+  
+  dvc=$1
+  #Test, if bootable !
+  bf="`fdisk -l | grep -e '^/dev/'${dvc} | awk '{printf $2}' | cut -c -1`"
+  if [ "$bf" != "*" ]
+     then ${DIALOG} --icon "/usr/share/pixmaps/gparted-live/gparted.xpm" --title ${prog} --no-buttons --backtitle "Boot Record Editor" --infobox "\n   Drive \"${dvc}\" is not bootable !  \n   Maybe there is no Master Boot Record.   \n" 8 0 10000
+     return
+  fi     
+  ofile="/home/${dvc}_drvID_old.BLK"
+  nfile="/home/${dvc}_drvID_new.BLK"
+  adr=$(( 0x1b8 ))
+  #I'm sorry, but this is a "one-way" function (only download)
+  dd if=/dev/${dvc} of=${ofile} bs=1 skip=${adr} count=4 > /dev/null 2>&1
+  cp ${ofile} ${nfile}
+  if [ "$nohelp" = "1" ]
+     then start_hex &\
+          ${tm} -s=false -title "${prog} - Change Drive ID -" -g 80x24+200+200 -e /usr/bin/mc -v $nfile
+          diff ${nfile} ${ofile} > /dev/null 2>&1
+     else help wqxz & start_hex &\
+          ${tm} -s=false -title "${prog} - Change Drive ID -" -g 80x24+200+200 -e /usr/bin/mc -v $nfile
+          diff ${nfile} ${ofile} > /dev/null 2>&1
+  fi
+  if [ $? != 0 ]
+     then ${DIALOG} --backtitle "Drive ID HAS BEEN CHANGED !" --title "Set new Drive ID on ${dvc}" --defaultno \
+          --yesno "   Do you really want to overwrite\n    Drive ID on \"/dev/${dvc}\" ?" 0 0
+          if [ "$?" = "0" ]
+             then dd if=/dev/${dvc} of=/tmp/${dvc}.MBR bs=512 count=1 > /dev/null 2>&1
+                  split -b ${adr} /tmp/${dvc}.MBR /tmp/${dvc}
+                  `cat /tmp/${dvc}aa > /tmp/${dvc}.NEW`
+                  `cat ${nfile} >> /tmp/${dvc}.NEW` 
+                  adr=$(( $adr +4 ))
+                  split -b ${adr} /tmp/${dvc}.MBR /tmp/${dvc}
+                  `cat /tmp/${dvc}ab >> /tmp/${dvc}.NEW`
+                  dd if=/tmp/${dvc}.NEW of=/dev/${dvc} bs=512 count=1 > /dev/null 2>&1
+                  sleep 1
+                  rm /tmp/${dvc}*
+          fi
+          dvc=""
+  fi
+  rm ${nfile}
+  end_info
+}
+
+#***************** DriveInfo *******************
+#******* pstart() and drv_data() are also ******
+#************* used by the HexViewer ***********
+
+model()
+{
+  #Write categories and physical data of drives to a file,
+  #partition data excepted, see drv_info()
+  #Parameter : $1 = Device name
+  #Output : echo to file $fle(File name)
+
+  cd /dev/disk/by-id
+  pth="`echo *`"
+  for ppp in $pth; do
+      dvic="`dir -l $ppp | grep $1 | awk '{printf $8}'`"
+      if [ "${dvic}" != "" ]
+         then if [ "`cat /sys/block/$1/removable`" = "0" ]
+                 then fixctr1=$(( $fixctr1 + 1 ))
+                      echo >> $fle
+                      echo "	.==========================." >> $fle
+                      echo "	|    Fixed Disk ${fixctr1}: $1     |" >> $fle
+                 else remctr1=$(( $remctr1 + 1 ))
+                      echo >> $fle
+                      echo "	.==========================." >> $fle
+                      echo "	|  Removable Disk ${remctr1}: $1   |" >> $fle
+              fi
+              echo "	'=========================='" >> $fle
+              echo >> $fle
+              echo "	Model name : $dvic" >> $fle
+              parm $did
+              echo "	Disk ID = $res" >> $fle
+              echo >> $fle
+              pstrt1="0"
+              echo "	Start = "${pstrt1} >> $fle
+              psize1=`cat /sys/block/$1/size`
+              pend1=$(( $psize1 - 1 ))
+              echo "	End   = "${pend1} >> $fle
+              echo "	Total Size  = "${psize1}" (512 Byte blocks)" >> $fle
+              echo "	Total Size  = $(( $psize1 * 512 )) (Bytes)" >> $fle
+              echo >> $fle
+              parm $cyl
+              cyl1=$res
+              parm $head
+              head1=$res
+              parm $sec
+              sec1=$res
+              ctr2=$(( $ctr2 + 1 ))
+              echo "	   _______ " >> $fle
+              echo "	  |_==|==_|" >> $fle
+              echo "	  ~~~~~~~~~" >> $fle
+              echo "	Physical Data :" >> $fle
+              echo >> $fle
+              echo "	cylinders = $cyl1" >> $fle
+              echo "	heads     = $head1" >> $fle
+              echo "	sectors   = $sec1" >> $fle
+              blpc=$(( $head1 * $sec1 ))
+              echo "	blocks/cylinder = $blpc" >> $fle
+              bypc=$(( $blpc * 512 ))
+              echo "	bytes/cylinder  = $bypc" >> $fle
+              echo >> $fle
+              echo "	  ___  ___ " >> $fle
+              echo "	 /   \/   \\" >> $fle
+              echo "	 \___/\___/" >> $fle
+              echo "	Partition(s) :" >> $fle
+              echo >> $fle
+              return
+      fi
+  done
+}
+
+drv_info()
+{
+  #Create file output : logical drives
+  #Parameter : none
+  #Output : file $fle(File name)
+  echo > $fle
+  drv_data
+  drv="`fdisk -l | grep -e '^/dev' | awk '{printf $1" "}' | sed -e 's/\/dev\///g'`"
+
+  for dv in $drv; do
+      if [ "`echo $dv | grep -e '1' | wc -w`" = "1" ]
+         then if [ "${pend1}" != "" ]
+                 then echo "	Unallocated Slack = $(( $pend1 - $pend )) (512 Byte blocks)" >> $fle
+                      echo "	Unallocated Slack = $((  ( $pend1 - $pend ) * 512 )) (Bytes)" >> $fle
+              fi
+              model `echo $dv | cut -c -3`
+      fi
+      echo "	.------."  >> $fle
+      echo "	| "$dv" |" >> $fle
+      echo "	'------'" >> $fle
+      pstart $dv
+      echo "	Part.ID = $fsall" >> $fle
+      disk_lbl $dv
+      [ "$fsid" != "0x0f" ] && echo "	Volume Name = $lbl0" >> $fle
+      echo >> $fle
+      echo "	Start   = ${pstrt}" >> $fle
+      if [ "$fsid" = "0x0f" ]
+         then pend=`fdisk -l -u | grep -e '^/dev/'${dv} | awk '{printf $3}'`
+              psize=$(( $pend - $pstrt + 1 ))
+      fi
+      echo " 	End     = ${pend}" >> $fle
+      echo "	Size    = ${psize} (512 Byte blocks)" >> $fle
+      echo "	Size    = $(( $psize * 512 )) (Bytes)" >> $fle
+      echo >> $fle
+  done
+  echo "	Unallocated Slack = $(( $pend1 - $pend )) (512 Byte blocks)" >> $fle
+  echo "	Unallocated Slack = $(( ( $pend1 - $pend ) * 512 )) (Bytes)" >> $fle
+  fl=${fle}
+  if [ -d ${bup} ]
+     then s_loop "/" $fle
+          fl=${bup}/${s_cut}
+  fi          
+  sleep 0.5
+  lxterminal -t "$prog1 - Exit with \"q\" - ( File $fl )" --geometry=65x38 -e less $fle
+}
+
+pstart()
+{
+  #Seek and format data
+  #Parameters : $1 = Device name
+  #Output : $pstrt = start block
+  #         $psize = device size`
+  #         $pend = end block
+  #         $fsid = file system ID
+  #         $fsn = file system name
+  #	    $fsn1 = file system name without spaces
+  #         $fsall=$fsid $fsn
+
+  devp=${1}
+  devb=`echo $devp | cut -c -3`
+  if [ "$devb" != "$devp" ]
+     then devp="$devb/$devp"
+  fi
+  if [ "`fdisk -l | grep -e '^/dev/'${1} | awk '{printf $2}' | cut -c -1`" = "*" ]
+     then fs="`fdisk -l | grep -e '^/dev/'${1} | awk '{printf $6}{printf \"#\"}{printf $7}{printf \" \"}{printf $8}{printf \" \"}{printf $9}'`"
+     else fs="`fdisk -l | grep -e '^/dev/'${1} | awk '{printf $5}{printf \"#\"}{printf $6}{printf \" \"}{printf $7}{printf \" \"}{printf $8}{printf \" \"}{printf $9}'`"
+  fi
+  pstrt=`cat /sys/block/$devp/start`
+  psize=`cat /sys/block/$devp/size`
+  pend=$(( $pstrt + $psize - 1 ))
+  fsid="0"`echo "$fs" | awk -F'#' '{printf $1}'`
+  fsid="0x"`echo "$fsid" | tail -c 3`
+  fsn="`echo "$fs" | awk -F'#' '{printf $2}'`"
+  fsn1="`echo "${fsn}" | sed -r -e 's/\s+/\_/g' | sed -e 's/\_$//g'`"
+  fsinfo="ID_${fsid}_${fsn1}"
+  fsn="< ${fsn}>"
+  fsall="${fsid} ${fsn}"
+}
+
+drv_data()
+{
+  #Collection of Physical data of drive(s)
+  #Parameter : none
+  #Output : $head = number of drive heads
+  #         $sec = number of drive sectors
+  #         $cyl = number of drive cylindes
+  #         $did = drive ID in MBR
+  head=`fdisk -l | grep -e '^[0-9]' | awk '{printf $1" "}'`
+  sec=`fdisk -l | sed -e 's/sec.*//g' | grep -E '^[0-9]' | awk -F', ' '{printf $2}'`
+  cyl=`fdisk -l | sed -e 's/cyl.*//g' | grep -E '^[0-9]' | awk -F', ' '{printf $3}'`
+  did=`fdisk -l | grep -e 'ident' | awk -F':' '{print $2" "}'`
+}
+
+#******************* General subroutines **********************
+
+s_loop()
+{
+  #Search loop for single separator character
+  #Parameters : $1=separator; $2=string to examine
+  #Output :  $s_cut=part of string behind separator;
+  #          $s_rest=part of string in front of separator
+  #          if separator doesn't occur: $s_cut=$2; $s_rest=""
+  # Maybe there is a shorter solution with Regular Expressions!  
+  s_item=$1
+  s_str=$2
+  s_len=`echo $s_str | wc -c`
+  s_cut=""
+  s_rest=""
+  ctr=1
+
+  while [ : ]; do
+        s_cut="`echo $s_str | tail -c -$(( 1 + $ctr ))`"
+        [ "`echo $s_cut | cut -c -1`" = "${s_item}" ] && break
+        ctr=$(( $ctr + 1 ))
+        if [ $ctr -gt $s_len ]
+           then s_cut=$s_str
+                s_rest=""
+                return
+        fi
+  done
+  s_rest=`echo $s_str | cut -c -$(( $s_len - 1 - $ctr ))`
+  s_cut=`echo $s_cut | cut -c 2-`
+}
+
+parm()
+{
+  #Choose an element of a parameter collection
+  #Parameters : $1 = (next) parameter
+  #             $ctr2 = index
+  #Output : $res = content of indexed parameter
+  #This is a very nice, short solution !
+  
+  ct=$ctr2
+  while [ $ct -ge 0 ]; do
+   res=$1
+   [ "$ct" = "0" ] && break
+   shift
+   ct=$(( $ct - 1 ))
+  done
+}
+
+end_info()
+{
+  #Kill a child process by the parent
+  #Parameters : none
+  #Output : none 
+  if [ -e /tmp/info.tmp ]
+     then kinfo="`cat /tmp/info.tmp`"
+          rm /tmp/info.tmp
+          kill $kinfo > /dev/null 2>&1
+  fi
+}
+
+#********* End subroutines ****************
+
+#*********** Main program *****************
+#******************************************
+
+#***** Parameter -[-]h[elp] *****
+if [ `echo $1 | grep -e '\-\{1,2\}\(h\|h\(elp\)\)\{1,1\}\b' | wc -w` = 1 ]
+   then ${tm} -s=false -b "lightyellow" -9 "lightyellow" -0 "lightyellow" -f "black" -g 65x32+0+80 -title "${prog}  Hexadecimal Editor Version ${vers}" -e $p1 qwzx
+        echo > /tmp/xxx   
+        exit
+fi
+#Suppress help, must be the 1st argument !
+if [ "$1" = "--nohelp" -o "$1" = "-nohelp" ]
+   then shift
+        nohelp=1
+fi
+
+#*********** No options = Xdialog **********
+#********* Reentrance loop process *********
+#********** with "Busy"-indicator **********   
+if [ "$1" = "" ]
+   then ${DIALOG} --icon "/usr/share/pixmaps/gparted-live/gparted.xpm" --title ${prog} --no-buttons --backtitle "Boot Record Editor" --infobox "\n   Program busy ...   \n" 8 0 3000 & create_tree
+        ${DIALOG} --icon "/usr/share/pixmaps/gparted-live/gparted.xpm" --title ${prog} --backtitle "Boot Record Editor\n - Detected Drives -" --treeview "Select Drive to show Boot Record.\n( *=Boot; <>=mounted )" 30 65 30 -info "Storage Devices (Expand tree / Click for DriveInfo)" off 1 ${item} 2> /tmp/answ.tmp.$$
+        result=`cat /tmp/answ.tmp.$$`
+        rm /tmp/answ.tmp.$$
+        [ "$result" = "" ] && exit
+        if [ "$result" != "0" ]
+           then if [ "$nohelp" = "1" ]
+                   then $p1 -nohelp $result
+                   else $p1 $result
+                fi
+        fi
+        if [ "$nohelp" = "1" ]
+                   then $p1 -nohelp
+                   else $p1
+        fi
+        echo > /tmp/xxx
+fi
+
+#***** Known options (with one potential argument) *****
+#************ Prepared for further options *************
+found=0
+ctr3=0
+prm=0
+arg=""
+for ppp in info i location loc l did d fst f;do
+   [ "$ppp" = "" ] && break
+   ctr3=$(( $ctr3 + 1 ))
+   if [ `echo "$1" | grep -e -$ppp | wc -w` != 0 ]
+      then found=1
+           prm="\#$ctr3"
+           [ "`echo "$1" | grep -e '=' | wc -c`" != "0" ] && \
+           arg="`echo "$1" | sed -r -e s/-${ppp}\=//g`"
+           [ "$2" != "" ] && arg=$2        
+           break
+   fi
+done
+
+#***** Unknown option *****
+if [ `echo "$1" | grep -e '-' | wc -w` != 0  -a "$found" = 0 ]
+   then echo $'\n'usage : ${prog} -[-]h[elp]$'\n'
+        exit
+fi
+
+#***** "Internal" parameters for help subroutine*****
+[ "${1}" = "wqxz" ] && usage wqxz
+[ "${1}" = "qwzx" ] && usage qwzx
+if [ "${1}" = "wqxz" -o "${1}" = "qwzx" ]
+   then echo > /tmp/xxx
+        exit
+fi
+    
+#***** Actions on known parameters *****
+
+#INFO
+if [ "`echo "$prm" | grep -E '[12]{1,1}'`" ]
+   then ${DIALOG} --icon "/usr/share/pixmaps/gparted-live/gparted.xpm" --title ${prog} --no-buttons --backtitle "Boot Record Editor" --infobox "\n   Program busy ...   \n" 8 0 3000 & drv_info
+        [ -d ${bup} ] && sudo cp ${fle} ${bup}
+        echo > /tmp/xxx
+        exit
+fi
+
+#LOCATION
+if [ "`echo "$prm" | grep -E '[345]{1,1}'`" ]
+   then if [ "`echo "$arg" | grep -e [0-9] | wc -c`" != "0" ]
+           then ${DIALOG} --icon "/usr/share/pixmaps/gparted-live/gparted.xpm" --title ${prog} --no-buttons --backtitle "Boot Record Editor" --infobox "\n   Block editing of logical Drive \"${arg}\" is not supported  !  \n   You need a physical drive name (no numbers).   \n" 8 0 10000
+           else show_block $arg
+        fi
+        echo > /tmp/xxx   
+        exit
+fi
+
+#DID
+if [ "`echo "$prm" | grep -E '[67]{1,1}'`" ]
+   then if [ "`echo "$arg" | grep -e [0-9] | wc -c`" != "0" ]
+           then ${DIALOG} --icon "/usr/share/pixmaps/gparted-live/gparted.xpm" --title ${prog} --no-buttons --backtitle "Boot Record Editor" --infobox "\n   Drive \"${arg}\" is a logical drive !  \n   You need a physical drive name (no numbers).   \n" 8 0 10000
+           else set_drvid $arg
+        fi 
+        echo > /tmp/xxx   
+        exit
+fi
+
+#FST
+if [ "`echo "$prm" | grep -E '[89]{1,1}'`" ]
+   then if [ "$arg" = "" ]
+           then ${DIALOG} --icon "/usr/share/pixmaps/gparted-live/gparted.xpm" --title ${prog} --no-buttons --backtitle "Boot Record Editor" --infobox "\n   Parameter Drive is missing !  \nFunction aborted. \n" 8 0 10000
+           else show_fst $arg
+        fi 
+        echo > /tmp/xxx   
+        exit
+fi
+
+#***** "Reentrance" exit -- We work with ONE file for *****
+#*********** multiple functions; without this,  ***********
+#************  there would be much confusion ! ************
+if [ -e /tmp/xxx ]
+  then rm /tmp/xxx
+       [ "$1" = "" ] && exit
+fi
+
+#*************** HexViewer main part **************
+#***** Mount USB stick, if unmounted stick(s) *****
+#************* is (are) detected ******************
+dev=$1
+s_loop "/" $dev
+dev=$s_cut
+stick_alive
+if [ "$mnted1" = "" -o "$nmnted" = "0" ]
+   then ${DIALOG} --title ${prog} --backtitle "Mounting Wizard" --yesno "\n   Do you want to mount an USB stick   \nto store Boot Records as files ?\n" 0 0
+        if [ $? = 0 ]
+           then while [ : ]; do
+                      seekstick
+                      [ $? = 0 ] && break
+                done
+        fi
+fi
+
+if [ ! -e /dev/$dev ]
+   then if [ -e $dev ]
+           then s_loop "." $dev
+                fext1=$s_cut
+                #No specific fault messages, always Info text
+                #Missing or wrong filename extension
+                if [ "${fext1}" = "$dev" -o "${fext1}" != "MBR" -a "${fext1}" != "PBR" -a "${fext1}" != "XBR" ]
+                           then help qwzx
+                                exit
+                fi
+                dev=$s_rest
+                s_loop "/" $dev
+                dev=$s_cut
+                bup=$s_rest
+                #Unknown (filtered) device name
+                if [ ! -e /dev/${dev} ]
+                   then help qwzx
+                        exit
+                fi
+           else if [ -e ${bup}/$dev ]
+                   then s_loop "." $dev
+                        fext1=$s_cut
+                        dev=$s_rest
+                        #Missing filename extension on backup device
+                        if [ "${fext1}" = "$dev" -o "${fext1}" != "MBR" -a "${fext1}" != "PBR" -a "${fext1}" != "XBR" ]
+                           then help qwzx
+                                exit
+                        fi
+                fi
+        fi
+        #Allowed Filename extension / Device available ?
+        if [ "${fext1}" = "MBR" -o "${fext1}" = "PBR" -o "${fext1}" = "XBR" ]
+           then if [ -e /dev/$dev ]
+                   then btr=/home/${dev}.${fext1}
+                        if [ "$nohelp" = "1" ]
+                           then dd if=/dev/$dev of=$btr bs=512 count=1 > /dev/null 2>&1 & show ${bup}/${dev}.${fext1} $btr
+                           else dd if=/dev/$dev of=$btr bs=512 count=1 > /dev/null 2>&1 & help wqxz & show ${bup}/${dev}.${fext1} $btr
+                        fi   
+                        exit
+                fi
+           else if [ "${fext1}" != "" ]
+                   #Unknown Filename extension
+                   then ${DIALOG} --title $prog --msgbox "\n Filename Extension \".${fext1}\" not allowed !   \n" 0 0
+                        exit
+                fi
+                #Special treatment for Extended Partition Record (.XBR)
+                if [ "`echo "$dev" | cut -c -1`" = "#" ]
+                   then dev=`echo "$dev" | cut -c 2-`
+                   extd_view $dev
+                   fext1=XBR
+                   btr=/home/${dev}.${fext1}
+                   dv="`echo "$dev" | cut -c -3`"
+                   if [ "$nohelp" = "1" ]
+                           then dd if=/dev/$dv of=$btr bs=512 skip=$pxtstart count=1 > /dev/null 2>&1 & show $btr $bup/$dev.$fext1
+                           else dd if=/dev/$dv of=$btr bs=512 skip=$pxtstart count=1 > /dev/null 2>&1 & help wqxz & show $btr $bup/$dev.$fext1
+                   fi
+                   [ ! -e $bup ] && ${tm} --title "Midnight Commander" -e mc /root /home
+                   end_info
+                   exit
+                fi
+                #Device not attached or unknown
+                ${DIALOG} --title $prog --msgbox "\n   Device  \"/dev/$dev\" not available !   \n" 0 0
+                exit
+        fi
+fi
+
+#Backup Files do not (yet) exist
+if [ -e /dev/$dev ]
+   then fext=MBR
+        [ "`echo ${dev} | grep -E '([^0-9][1-9]{1,1}$|1[0-5]{1,1}$)' | wc -l`" != "0" ] && fext=PBR
+        #.XBR files are treated separately, see above.
+        #.BLK files are not permanently stored to avoid a possible source of faults :
+        # - Replacing a Boot Record by an ordinary storage block
+        sleep 0.5
+        #Duplicate occurrence, but who knows ?
+        if [ "`echo ${bpth}/*`" != "${bpth}/*" ]
+           then [ ! -e ${bup} ] && mkdir ${bup} > /dev/null 2>&1
+        fi
+        #Creating a temporary file with block content
+        btr=/home/${dev}.${fext}
+        dd if=/dev/$dev of=$btr bs=512 count=1 > /dev/null 2>&1
+        cpy        
+        
+        if [ "$nohelp" = "1" ]
+           then show
+           else help wqxz & show
+        fi
+          
+        [ -e $bup ] && ${tm} --title "Midnight Commander" -e mc $bup /home
+        #You also see your screenshot "gparted.jpeg" in "root" and can
+        #copy / rename it, to get it permanently.
+        [ ! -e $bup ] && ${tm} --title "Midnight Commander" -e mc /root /home
+        end_info
+fi
+exit
+}
+#****************************************************************
+#EOF

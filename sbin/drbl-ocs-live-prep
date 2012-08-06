@@ -1,0 +1,222 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: Download the Clonezilla live iso for Clonezilla SE environment.
+
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+# By default the mode is to install.
+mode="install"
+client_arch=""
+# The method for netboot's root file system. "fetch" means the client will download the filesystem.squashfs from tftpd server, "nfsroot" means client will mount the nfs server. By default we use "nfsroot" in Clonezilla SE.
+rootfs_location="nfsroot"
+client_arch_def="i486"
+clonezilla_iso_branch_def="stable"
+
+# Functions
+USAGE() {
+  echo "Prepare the Clonezilla SE (Server Edtion) to use Clonezilla live as the OS of client."
+  echo "Usage: $0 [OPTION]"
+  echo "OPTION:"
+  echo "-a, --client-arch ARCH:  Force to use the CPU arch for the client. E.g. if i686 is assigned, the i686 version of Clonezilla live will be downloaded and use for the clients. Available arch are: i486, i686, amd64. //NOTE// By using this, the original file name assigned in the option '-i' will be changed as appropriate file name."
+  echo "-b, --branch NAME: Force to use the Clonezilla live from branch NAME (stable, testing, alternative, alternative_testing). If not assigned, stable will be used."
+  echo "-s, --server-ip IP_ADDR:  Assign the tftp or NFS server's IP address to be used."
+  echo "-t, --use-fetch      By default the boot parameter to load the root file system (e.g. filesystem.squashfs) is nfsroot. With this option, fetch is used. //NOTE// This function only works for live-initramfs based system. E.g. Clonezilla live or GParted live."
+  echo "-i, --iso-url ISO_URL:  Use the ISO_URL (e.g. http://downloads.sourceforge.net/clonezilla/clonezilla-live-1.2.6-24-i686.iso) instead of the one assigned in drbl-ocs.conf. $0 will download clonezilla-live iso file from ISO_URL then use the as the OS of client when running Clonezilla job. //NOTE// Use iso file name only, not the zip one."
+  echo "-u, --uninstall:  Uninstall the Clonezilla-live based mode."
+  echo "Ex: To use http://downloads.sourceforge.net/clonezilla/clonezilla-live-1.2.6-24-i686.iso as the OS of client when running Clonezilla job, run:"
+  echo "    $0 -i http://downloads.sourceforge.net/clonezilla/clonezilla-live-1.2.6-24-i686.iso"
+}
+#
+download_clonezilla_live() {
+  local cz_ver arch_tag
+  # ocslive_tmp is global variable. The dir might be removed in function put_clonezilla_live
+  ocslive_tmp="$(mktemp -d /tmp/ocslive_tmp.XXXXXX)"
+
+  # If client_arch is assigned, we will switch to that iso
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "The CPU arch for client was assigned as: $client_arch"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  case "$client_arch" in
+   generic) arch_tag="" ;;
+      *)    arch_tag="-$client_arch" ;;
+  esac
+
+  # iso_url_for_pxe_ocs_live is from drbl-ocs.conf. e.g. 
+  # (1) http://downloads.sourceforge.net/clonezilla/clonezilla-live-1.2.6-24-i686.iso
+  # (2) http://sourceforge.net/projects/clonezilla/files/clonezilla_live_testing/clonezilla-live-1.2.6-24-i686.iso
+  if [ -z "$iso_url_for_pxe_ocs_live" ]; then
+    # First we try to see if iso_url_for_pxe_ocs_live_default is assigned in drbl-ocs.conf.
+    if [ -n "$iso_url_for_pxe_ocs_live_default" ]; then
+      iso_url_for_pxe_ocs_live="$iso_url_for_pxe_ocs_live_default"
+    fi
+    if [ -z "$iso_url_for_pxe_ocs_live" ]; then
+      # If not assigned in drbl-ocs.conf, try to find one.
+      echo "No Clonezilla live iso was assigned in drbl-ocs.conf or command line option."
+      echo "Trying to find the available Clonezilla live iso from sourceforge..."
+      cz_ver="$(LC_ALL=C get-latest-ocs-live-ver $clonezilla_iso_branch)"
+      iso_url_for_pxe_ocs_live="http://downloads.sourceforge.net/clonezilla/clonezilla-live-${cz_ver}${arch_tag}.iso"
+    fi
+  fi
+  if [ -z "$iso_url_for_pxe_ocs_live" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "iso_url_for_pxe_ocs_live _NOT_ found in drbl-ocs.conf, and can not be found from $default_iso_url_for_pxe_ocs_live!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop"
+    [ -d "$ocslive_tmp" -a -n "$(echo "$ocslive_tmp" | grep "ocslive")" ] && rm -rf $ocslive_tmp
+    exit 1
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Available Clonezilla live iso URL: $iso_url_for_pxe_ocs_live"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+
+  ocs_live_url_path="$(LC_ALL=C dirname $iso_url_for_pxe_ocs_live)"
+  ocs_live_iso="$(LC_ALL=C basename $iso_url_for_pxe_ocs_live)"
+
+  if [ "$ocs_live_url_path" = "." ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No local iso file $ocs_live_iso was found, and no correct URL was found!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Please make sure iso file $ocs_live_iso exists, or specify a correct URL so that $ocs_live_iso can be downloaded!"
+    echo "Run \"$0 --help\" to get more details"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+  
+  echo "Downloading the Clonezilla live iso from $ocs_live_url_path/$ocs_live_iso..."
+  wget -P "$ocslive_tmp" $ocs_live_url_path/$ocs_live_iso
+  rc="$?"
+  if [ "$rc" -ne 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to download Clonezilla live iso from $ocs_live_url_path/$ocs_live_iso!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop"
+    [ -d "$ocslive_tmp" -a -n "$(echo "$ocslive_tmp" | grep "ocslive")" ] && rm -rf $ocslive_tmp
+    exit 1
+  fi
+  ocs_live_iso_file="$ocslive_tmp/$ocs_live_iso"
+} # end of download_clonezilla_live
+#  
+put_clonezilla_live() {
+  if [ -e "$iso_url_for_pxe_ocs_live" ]; then
+    # local file
+    echo "Try to using the local Clonezilla live iso file..."
+    ocs_live_iso_file="$iso_url_for_pxe_ocs_live"
+  else
+    echo "Try to download Clonezilla live iso file from network..."
+    # Try to download the file. The download file will be in $ocs_live_iso_file
+    download_clonezilla_live
+  fi
+  # (1) Run drbl-SL.sh to put it on the system.
+  # For drbl-SL.sh, fetch is the default option due to the legacy reason.
+  case "$rootfs_location" in
+    "fetch") rootfs_location_opt="" ;;
+    "nfsroot") rootfs_location_opt="-f" ;;
+  esac
+  [ -n "$server_IP" ] && server_IP_opt="-s $server_IP"
+  echo "Put Clonezilla live in this DRBL server..."
+  drbl-SL.sh $rootfs_location_opt $server_IP_opt -b -n -i $ocs_live_iso_file
+  #
+  [ -d "$ocslive_tmp" -a -n "$(echo "$ocslive_tmp" | grep "ocslive")" ] && rm -rf $ocslive_tmp
+  # (2) Change drbl-ocs.conf as clonezilla-live based Clonezilla SE
+  echo "Modifying option diskless_client_os in drbl-ocs.conf..."
+  LC_ALL=C perl -pi -e 's/^[[:space:]]*diskless_client_os=.*/diskless_client_os="clonezilla-live"/gi' $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+} # end of put_clonezilla_live
+
+#
+remove_clonezilla_live() {
+  local lines begin_line end_line
+  # (1) Turn off the menu in pxelinux config only.
+  lines="$(get_pxecfg_image_block Clonezilla-live $pxecfg_pd/pxelinux.cfg/default)"
+  begin_line="$(echo $lines | awk -F" " '{print $1}')"
+  end_line="$(echo $lines | awk -F" " '{print $2}')"
+  if [ -n "$begin_line" -a -n "$end_line" ]; then
+    echo "Turn off the PXE Clonezilla live menu in this DRBL server..."
+    hide_reveal_pxe_img Clonezilla-live hide $pxecfg_pd/pxelinux.cfg/default
+  fi
+  #
+  # (2) Change drbl-ocs.conf as clonezilla-live based Clonezilla SE
+  echo "Modifying option diskless_client_os in drbl-ocs.conf..."
+  LC_ALL=C perl -pi -e 's/^[[:space:]]*diskless_client_os=.*/diskless_client_os="nfsroot"/gi' $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+} # end of remove_clonezilla_live
+
+#############
+###  MAIN ###
+#############
+#
+check_if_root
+
+#
+ask_and_load_lang_set
+
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -a|--client-arch)
+        shift;
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+          client_arch="$1"
+          [ -z "$client_arch" ] && USAGE && exit 1
+	  shift
+        fi
+	;;
+    -b|--branch)
+        shift;
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+          clonezilla_iso_branch="$1"
+          [ -z "$clonezilla_iso_branch" ] && USAGE && exit 1
+	  shift
+        fi
+	;;
+    -s|--server-ip)
+        shift;
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+          server_IP="$1"
+          [ -z "$server_IP" ] && USAGE && exit 1
+	  shift
+        fi
+	;;
+    -t|--use-fetch) shift; rootfs_location="fetch" ;;
+    -i|--iso-url)
+        shift; mode="install"
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+          iso_url_for_pxe_ocs_live="$1"
+          [ -z "$iso_url_for_pxe_ocs_live" ] && USAGE && exit 1
+	  shift
+        fi
+	;;
+    -u|--uninstall) shift; mode="uninstall" ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+# Use the default settings if not assigned.
+[ -z "$client_arch" ] && client_arch="$client_arch_def"
+[ -z "$clonezilla_iso_branch" ] && clonezilla_iso_branch="$clonezilla_iso_branch_def"
+
+# For Alternative Clonezilla live, only one arch.
+case "$clonezilla_iso_branch" in
+  # generic is only a tag, we won't use in the file name for ubuntu-based clonezill alive iso file.
+  alternative*) client_arch="generic" ;;
+esac
+
+#
+case "$mode" in 
+  install) put_clonezilla_live ;;
+  uninstall) remove_clonezilla_live;;
+  *) USAGE; exit 1;;
+esac

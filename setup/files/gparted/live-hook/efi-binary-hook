@@ -1,0 +1,19 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+
+# The working dir for the binary hook is the working dir, not in the chroot.
+# Put grub2 efi boot loader
+# The name server is deconfigured, we have to enable it so the apt-get will work in ocs-gen-grub2-efi-bldr.
+
+cp -a /etc/resolv.conf chroot/etc/resolv.conf
+chroot chroot mkdir -p /EFI/boot
+chroot chroot /bin/bash gl-gen-grub2-efi-bldr /EFI/boot
+rm -rf ./binary/EFI
+mv chroot/EFI ./binary/
+# After this, the chroot/etc/resolv.conf should not be deconfigured, we still need to keep it. Since after this binary hook, the live-build still need to use apt-get to download genisoimage and syslinux.
+# echo -n "" > chroot/etc/resolv.conf
+
+### THE END ###
+# DO NOT PUT ANY SCRIPT AFTHER THIS!!!
+rm -rf ./binary/live-binary-hook-dir/

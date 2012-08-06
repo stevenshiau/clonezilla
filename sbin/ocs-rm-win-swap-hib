@@ -1,0 +1,84 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+#
+# This script is used to remove the pagefile and hibernate file 
+# The file name: pagefile.sys and hiberfil.sys
+# Thanks to Kristof Vansant for this idea.
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+#
+check_if_root
+
+# Settings
+files_to_be_rm="pagefile.sys hiberfil.sys PAGEFILE.SYS HIBERFIL.SYS"
+
+# Functions
+USAGE() {
+  echo "To remove the page file or hibernation file in partition."
+  echo "Usage: $0 PARTITION_NAME"
+  echo "Ex: $0 /dev/hda1"
+}
+
+partition_list="$1"
+if [ -z "$partition_list" ]; then
+  echo "No partition is assigned!"	 
+  echo "Program terminated!!!"
+  exit 1
+fi
+
+hd_img="$(mktemp -d /tmp/hd_img.XXXXXX)"
+for part in $partition_list; do
+  # Check if it's busy.
+  # If the partition is not ntfs or fat, skip. Since normally M$ windows only uses ntfs or fat.
+  fs="$(ocs-get-part-info $part filesystem)"
+  [ -z "$(echo "$fs" | grep -iE "(ntfs|fat)")" ] && continue
+  case "$fs" in
+   ntfs)
+     if type ntfs-3g &>/dev/null; then
+       echo -n "Mounting $part... "
+       ntfs-3g $part $hd_img
+       mrc=$?
+       if [ "$mrc" -eq 0 ]; then
+         echo "done!"
+       else
+         echo "Fail to mount $part! Skip this partition."
+	 continue
+       fi
+     else
+       echo "ntfs-3g is not found! Skip this partition $part."
+       continue
+     fi
+     ;;
+   fat|vfat|fat16|fat32)
+     echo -n "Mounting $part... "
+     mount $part $hd_img >/dev/null 2>&1
+     mrc=$?
+     if [ "$mrc" -eq 0 ]; then
+       echo "done!"
+     else
+       echo "Fail to mount $part! Skip this partition."
+       continue
+     fi
+     ;;
+  esac
+  echo "Trying to remove page and hibernation files if they exist..."
+  for i in $files_to_be_rm; do
+    [ -f "$hd_img/$i" ] && rm -fv $hd_img/$i
+    sync;sync;sync
+  done
+  if [ "$mrc" -eq 0 ]; then 
+    unmount_wait_and_try $part
+    sleep 1
+    sync;sync;sync
+  fi
+done
+# //NOTE// Do not use "rm -rf" here, since if umount fails, all the files of that partition will be removed!
+[ -d "$hd_img" -a -n "$hd_img" ] && rmdir $hd_img
+echo "Done!"

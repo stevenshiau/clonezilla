@@ -1,0 +1,49 @@
+#!/bin/bash
+# Author: Steven Shiau (steven _at_ nchc org tw)
+# License: GPL
+# Description: A sample script to auto create the partition. It will create a single partition, the partition size is the entire of the disk.
+# You can put it in $DRBL_SCRIPT_PATH/share/ocs/prerun/ and choose advanced param of clonezilla : -o0 (--run-prerun-dir) and -k -r, then this script will create the following partition for you.
+#
+#  /dev/[hsv]da1   /     (total hd_size)
+#
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# YOU HAVE BEEN WARNED!
+# This is a dangerous program! Do not run it as root in any machine unless you want to re-create the partition table as the followiing rules!
+# THIS PROGRAM WILL DELETE ALL THE DATA IN YOUR DISK!!!
+
+# Settings
+sfdisk_confirm="yes"
+chosen_hd="sda"
+
+# Filesystem ID, 
+# 7: ntfs. 
+# 83: linux native.
+PT_ID="7"
+
+# In this command, size is blank, which means all.  Therefore this command will create a partition with size is all of the disk, ID=7 (HPFS/NTFS), and bootable.  For more info, run "man sfdisk" in you linux box. 
+# the parameters here are: Start, Size, ID, Bootable 
+if [ "$sfdisk_confirm" = "yes" ]; then
+  echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  echo "Are you sure you want to create the partition table in /dev/$chosen_hd ?"
+  echo "NOTE!!! If you continue, all the data in /dev/$chosen_hd will be gone!"
+  echo -n "[y/N] "
+  read sfdisk_ans
+  case "$sfdisk_ans" in
+    y|Y|[yY][eE][sS])
+       echo "OK, let's do it"
+       ;;
+    *)
+       echo "OK, skip it"
+       exit 1
+       ;;
+  esac
+fi
+
+# Create the partition
+# The parameters are: Start, Size, ID, Bootable 
+echo 1,,${PT_ID},* | sfdisk -f /dev/$chosen_hd

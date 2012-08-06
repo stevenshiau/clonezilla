@@ -1,0 +1,59 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# 
+[ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
+
+#
+if ! type X &>/dev/null; then
+  echo "X was not found! Skip configuring X."
+  exit 3
+fi
+
+# Since now the DRBL live startup service is in rc2.d, no need to use bterm anymore.
+## A workaround here... Since jfbterm exits with segfault in rcS.d in Debian booting, we force to use "bterm" here.
+fb_term=""
+get_fb_term
+#fb_term="bterm"
+[ "$fb_term" = "bterm" -a ! -e "$uni_font" ] && exit 1
+
+# ocs_lang is from ocs-live.conf
+[ -z "$ocs_lang" ] && ocs_lang=en_US.UTF-8
+export LANG="$ocs_lang"
+gen_locale_if_not_found en_US $ocs_lang
+
+if ! grep -qE "(drbl_live_batch|ocs_live_batch|drbl_live_noconfx)" /proc/cmdline; then
+  echo "*****************************************************"
+  # Bterm/jfbterm can only be used (it's better since Asian fonts can be shown) when:
+  # (1) If bterm and uni fonts or jfbterm are available
+  # (2) If it's not in serial console
+  # (3) frambebuffer device exists
+  if [ -n "$fb_term" -a -z "$(grep -E "console=.*ttyS.*" /proc/cmdline)" ] && \
+     ([ -e /dev/fb/0 ] || [ -e /dev/fb0 ]); then 
+    case "$fb_term" in
+      "bterm")
+         export TERM=bterm
+         set +e
+         # bterm need full path command even it's in the PATH already.
+         bterm -l $LANG -f $uni_font `which drbl-live-conf-X`
+         set -e
+         ;;
+      "jfbterm")
+         export TERM=jfbterm
+         set +e
+         jfbterm -q -e drbl-live-conf-X
+         set -e
+         ;;
+    esac
+  else
+    drbl-live-conf-X
+  fi
+fi

@@ -1,0 +1,300 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# A script to expand the partition table by disk size ratio.
+# ///NOTE/// This program only works for MBR partition table, not for GPT.
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+#
+cmd_name="$(basename $0)"
+#
+USAGE() {
+    echo "$cmd_name: To create a proportional MBR partition table (not GPT) in a disk based on a existing partition table (sfdisk format)"
+    echo "Usage:"
+    echo "  $cmd_name [OPTION] PARTITION_TABLE_FILE TARGET_DEVICE"
+    echo 
+    echo "OPTION:"
+    echo " -b, --batch     Run $cmd_name in batch mode, i.e. without any prompt or wait to press enter. VERY DANGEROUS!"
+    echo "$cmd_name will honor experimental variable EXTRA_SFDISK_OPT and use it as the option for sfdisk."
+    echo "Example:"
+    echo "  To create a proportional partition table on disk /dev/hda based on /home/partimag/IMAGE/hda-pt.sf, use:"
+    echo "$cmd_name /home/partimag/IMAGE/hda-pt.sf /dev/hda"
+}         
+          
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -b|--batch)
+            batch_mode="yes"
+	    shift;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+# Original sfdisk format file
+orig_sf=$1   # orig_sf is like: /home/partimag/IMAGE/hda-pt.sf
+target_disk=$2  # target_disk is like: /dev/hda
+
+#
+ask_and_load_lang_set $specified_lang
+
+#
+if [ -z "$orig_sf" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No source partition table file was assigned!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+if [ -z "$target_disk" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No target disk was assigned!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  USAGE
+  exit 1
+fi
+
+#
+if [ "$batch_mode" != "yes" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "This program will create a partition table in $target_disk"
+  echo "ALL THE DATA IN THE TARGET DEVICE WILL BE ERASED!!!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n "$msg_are_u_sure_u_want_to_continue ? (y/N) "
+  read continue_confirm_ans
+  case "$continue_confirm_ans" in
+       y|Y|[yY][eE][sS])
+          echo "$msg_ok_let_do_it!"
+          ;;
+       *)
+          echo "$msg_program_stop!"
+          exit 1
+  esac
+fi
+
+# No size info in hda-pt.sf, we have to use hda-pt.parted.
+orig_parted_tab="${orig_sf/.sf/.parted}"
+orig_parted_dir="$(dirname $orig_sf)"
+if [ ! -e "$orig_parted_tab" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$orig_parted_tab was not found! It is required so that we know the original disk size! Maybe your Clonezilla image is too old ? You can try to create such an file in your source machine by: \"parted -s /dev/$SOURCE_DEV unit s print > $orig_parted_tab\" (Replace $SOURCE_DEV with your device name)"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+
+# parted output format example:
+#  Disk /dev/hda: 16777215s
+#  Sector size (logical/physical): 512B/512B
+#  Partition Table: msdos
+#  
+#  Number  Start     End        Size       Type      File system  Flags
+#   1      63s       586844s    586782s    primary                boot 
+#   2      586845s   978074s    391230s    primary                     
+#   3      978075s   1955204s   977130s    primary                     
+#   4      1955205s  16776584s  14821380s  extended                    
+#   5      1955268s  2151764s   196497s    logical                     
+#   6      2151828s  2542994s   391167s    logical                     
+#   7      2543058s  16776584s  14233527s  logical                     
+
+ori_disk_size="$(LC_ALL=C grep -E "^Disk /dev" $orig_parted_tab | awk -F":" '{print $2}' | sed -e "s/s$//g")"
+# If nothing in target disk, parted will show like this:
+# sudo parted -s /dev/hda unit s print
+# Error: Unable to open /dev/hda - unrecognised disk label.
+
+if ! LC_ALL=C parted -s $target_disk unit s print &>/dev/null; then
+  # Try to create a partition table so that we can read the size via parted -s $dev unit s print
+  echo -n "No partition table exists in target disk $target_disk, try to initialize one so that we can get the disk size by parted... "
+  echo 1,,83 | sfdisk -f $target_disk &>/dev/null
+  echo "done!"
+fi
+tgt_disk_size="$(LC_ALL=C parted -s $target_disk unit s print | grep -E "^Disk /dev" | awk -F":" '{print $2}' | sed -e "s/s$//g")"
+
+
+#
+ratio=$(echo "scale=4; $tgt_disk_size / $ori_disk_size" | bc -l) || exit 1
+echo "The ratio for target disk size to original disk size is $ratio."
+if [ "$(LC_ALL=C echo "$ratio < 1" | bc -l)" = "1" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "The target disk (size=$tgt_disk_size sectors) is smaller than the source disk (size=$ori_disk_size sectors)!"
+  echo "Clonezilla won't be able to restore a partition image to smaller partition!" 
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+
+new_sf="$(mktemp /tmp/new_sf.XXXXXX)" || exit 1
+new_sf_tmp="$(mktemp /tmp/new_sf_tmp.XXXXXX)" || exit 1
+# Increase. Example for sfdisk format:
+#  # partition table of /dev/hda
+#  unit: sectors
+#  
+#  /dev/hda1 : start=       63, size=   586782, Id=83, bootable
+#  /dev/hda2 : start=   586845, size=   391230, Id=82
+#  /dev/hda3 : start=   978075, size=   977130, Id=83
+#  /dev/hda4 : start=  1955205, size= 14821380, Id= 5
+#  /dev/hda5 : start=  1955268, size=   196497, Id=83
+#  /dev/hda6 : start=  2151828, size=   391167, Id=83
+#  /dev/hda7 : start=  2543058, size= 14233527, Id=83
+#  
+# Or
+#  /dev/hda1 : start=       63, size=   196497, Id=83
+#  /dev/hda2 : start=   196560, size= 16580025, Id= 5
+#  /dev/hda3 : start=        0, size=        0, Id= 0
+#  /dev/hda4 : start=        0, size=        0, Id= 0
+#  /dev/hda5 : start=   196623, size= 16579962, Id=83
+
+# We only need those required info
+grep -E "^/dev" $orig_sf > $new_sf_tmp
+# Format the output, since something like "Id= 5" is not a good idea for us to parse
+perl -pi -e "s/Id=[[:space:]]+/Id=/g" $new_sf_tmp
+# start=291579750 or size=291563622 is not a good format for us to parse, we need a space between "=" and "number"
+# i.e. 
+# No good:
+# /dev/sda1 : start=       63, size=291563622, Id= 7, bootable
+# /dev/sda2 : start=291579750, size= 20980890, Id= 7
+# /dev/sda3 : start=        0, size=        0, Id= 0
+# /dev/sda4 : start=        0, size=        0, Id= 0
+# 
+# Good:
+# /dev/sda1 : start=       63, size= 291563622, Id= 7, bootable
+# /dev/sda2 : start= 291579750, size= 20980890, Id= 7
+# /dev/sda3 : start=        0, size=        0, Id= 0
+# /dev/sda4 : start=        0, size=        0, Id= 0
+
+# //NOTE// For partitions number >=10, it looks like:
+## partition table of /dev/sda
+#unit: sectors
+#
+#/dev/sda1 : start=       63, size=   976562, Id=83
+#/dev/sda2 : start=   976625, size=  1171875, Id=83
+#/dev/sda3 : start=  2148500, size=  1367187, Id=83
+#/dev/sda4 : start=  3515687, size= 13256173, Id= f
+#/dev/sda5 : start=  3515750, size=   195312, Id=83
+#/dev/sda6 : start=  3711063, size=   390624, Id=83
+#/dev/sda7 : start=  4101688, size=   585936, Id=83
+#/dev/sda8 : start=  4687625, size=   781249, Id=83
+#/dev/sda9 : start=  5468875, size=   976561, Id=83
+#/dev/sda10: start=  6445437, size=   976561, Id=83 <-- No space before ":"
+#/dev/sda11: start=  7421999, size=   976561, Id=83
+
+# Therefore we force to put a space no matter there is already space or not
+perl -pi -e "s/start=/start= /g" $new_sf_tmp
+perl -pi -e "s/size=/size= /g" $new_sf_tmp
+# Remove ":" in the temp file, since it's only for parsing, won't be used for sfdisk /dev/... < $new_sf_tmp ...
+perl -pi -e "s/://g" $new_sf_tmp
+
+#
+echo "unit: sectors" > $new_sf
+start_no_keep=""
+size_no_keep=""
+extended_part=""
+flag_1st_logic_drv="off"
+append_to_next="0"
+# Initial gap for the 1st partition. After this, it should be 0.
+logical_part_gap="2"
+while read dev start start_no size size_no id flag; do
+  if [ -n "$(echo $dev | grep -Ew "/dev/[hsv]d[a-z][1-4]")" ]; then
+   # primary/extended partitions
+    [ -z "$start_no_keep" ] && start_no_keep=${start_no/,/}  # The 1st one
+    [ -z "$size_no_keep" ] && size_no_keep=0
+    if [ "${size_no/,/}" -eq 0 ]; then
+      start_no=0
+      size_no=0
+    else
+      # If we found the partition is MS Windows (Vista, 7) "system reserved partition", i.e. size is about 100 MB (204800) or 200 MB (409600 sectors), and Id=7, and flag is bootable, not to expand it. i.e.:
+      # /dev/sda1 : start=     2048, size=   204800, Id= 7, bootable
+      # The files and dirs in MS Windows (Vista, 7) "system reserved partition"
+      # drwxrwxrwx  1 root root 4.0K 2011-07-20 06:22 Boot/
+      # -rwxrwxrwx  1 root root 375K 2009-07-14 01:38 bootmgr*
+      # -rwxrwxrwx  1 root root 8.0K 2011-07-20 06:22 BOOTSECT.BAK*
+      # drwxrwxrwx  1 root root    0 2011-07-20 06:31 System Volume Information/
+      # //NOTE// The above files and dirs will be shown after restoring, not the time when creating partition table. Therefore we can not mount the partition and parse them.
+      # Ref: http://windows7forums.com/windows-7-discussion/15629-hack-remove-100-mb-system-reserved-partition-when-installing-windows-7-a.html
+      expand="true"
+      if [ "${size_no/,/}" -eq "409600" -o "${size_no/,/}" -eq "204800" ]; then
+	if [ -n "$(echo $id | grep -iE "id=7")" -a \
+             -n "$(echo $flag | grep -iE "bootable")" ]; then
+          expand="false"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	  echo "MS Windows (Vista or 7) \"system reserved partition\" found. Not to expand this partition."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        fi
+      fi
+      # For newer Clonezilla (>=2.4.36-1drbl), a tag file (sda1.info) might exist
+      if [ -e "$orig_parted_dir/$(basename $dev).info" ]; then
+	. $orig_parted_dir/$(basename $dev).info
+	if [ "$PARTITION_TYPE" = "Win_boot_reserved" ]; then
+          expand="false"
+	fi
+      fi
+      if [ "$expand" = "true" ]; then
+        start_no="$(echo "scale=0; ($start_no_keep + $size_no_keep)/1" | bc -l)"
+        size_no="$(echo "scale=0; ${size_no/,/}*$ratio/1 + $append_to_next" | bc -l)"
+	# Reset the space append_to_next.
+	append_to_next="0"
+      else
+        start_no="$(echo "scale=0; ($start_no_keep + $size_no_keep)/1" | bc -l)"
+        size_no="${size_no/,/}"
+	# Since we do not expand this "system reserved partition", we append the space to the next partition.
+	append_to_next="$(echo "scale=0; ${size_no}*$ratio/1 - ${size_no}" | bc -l)"
+      fi
+    fi
+    if [ -n "$(echo $id | grep -iE "(id=5|id=f)")" ]; then
+      # keep the extended partition, we need it for logical partitions.
+      extended_part="$dev"
+      extended_start_no="$start_no"
+      extended_size_no="$size_no"
+    fi
+    echo $dev : $start $start_no, $size $size_no, $id $flag >> $new_sf
+    [ "$start_no" -ne 0 ] && start_no_keep="${start_no/,/}"
+    [ "$size_no" -ne 0 ] && size_no_keep="${size_no/,/}"
+  else
+    # logical partitions
+    if [ "$flag_1st_logic_drv" = "off" ]; then
+      start_no_keep="$((extended_start_no))"
+      size_no_keep="0"
+      flag_1st_logic_drv="on"
+    fi
+    if [ "${size_no/,/}" -eq 0 ]; then
+      start_no=0
+      size_no=0
+    else
+      start_no="$(echo "scale=0; ($start_no_keep+$size_no_keep+$logical_part_gap)/1" | bc -l)"
+      size_no="$(echo "scale=0; ${size_no/,/}*$ratio/1" | bc -l)"
+      logical_part_gap="0"
+    fi
+    echo $dev : $start $start_no, $size $size_no, $id $flag >> $new_sf
+    [ "$start_no" -ne 0 ] && start_no_keep="${start_no/,/}"
+    [ "$size_no" -ne 0 ] && size_no_keep="${size_no/,/}"
+  fi
+done < $new_sf_tmp
+
+echo "The partition table to write in $target_disk:"
+echo "*****************************************"
+cat $new_sf
+echo "*****************************************"
+
+# EXTRA_SFDISK_OPT is environment variable
+# If not --force, we force to append it since by default if sfdisk find some CHS it does not like, it won't do it without --force
+if [ -z "$(echo $EXTRA_SFDISK_OPT | grep -Ew -- "--force")" ]; then
+  EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT --force"
+fi
+echo "Running: sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf"
+LC_ALL=C sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf
+echo "Partition table was created by: sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf"
+
+[ -e "$new_sf" ] && rm -f $new_sf
+[ -e "$new_sf_tmp" ] && rm -f $new_sf_tmp

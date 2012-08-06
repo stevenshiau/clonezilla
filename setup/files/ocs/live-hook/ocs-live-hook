@@ -1,0 +1,237 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Program to create Clonezilla live.
+
+# Load config file
+. /live-hook-dir/drbl.conf
+. /live-hook-dir/drbl-ocs.conf
+. /live-hook-dir/ocs-live-hook.conf
+# Load functions
+. /live-hook-dir/ocs-live-hook-functions 
+# We need drbl PATH
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+
+# locale_to_keep_for_no_X is loaded from ocs-live-hook.conf.
+locale_to_keep="$locale_to_keep_for_no_X"
+
+# Initial flag for updating initramfs
+update_initramfs_flag="no"
+
+#
+download_grub_1_2_deb_for_later_use
+
+#
+install_debian_extra_modules
+
+# Prepare syslinux/isolinux and memtest files
+drbl-prepare-memtest
+drbl-prepare-pxelinux
+
+# preset lo network setting
+cat <<-NET_END > /etc/network/interfaces
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+NET_END
+
+#
+clean_udev_persistent_net_rules
+
+# Touch an empty /etc/fstab
+touch /etc/fstab
+
+# set root passwd (maybe none)
+set_root_passwd
+
+# Append the PATH in system.
+append_drbl_clonezilla_PATH_in_system
+
+# put the clonezilla live script in rcS.d
+cp_ocs_live_startup_to_rc.d
+
+# Turn off some services
+for i in $service_2_be_off_for_ocs_live; do
+  remove_service_in_system $i
+done
+
+# some required modules at startup
+append_mod_in_etc_modules
+
+# we need real /sbin/start-stop-daemon
+remove_cdebootstrap-helper-diverts
+
+# 2010/12/25 Steven Shiau commented this one. We let live-config to do this.
+# Ref: http://lists.debian.org/debian-live/2010/12/msg00191.html
+# Exclude live mount point in /etc/init.d/umountfs to avoid error messages when rebooting or halting.
+# exclude_umount_live_mnt_point_in_umountfs
+
+# run localepurge
+set_localepurge
+localepurge
+
+# Generate the locales. We will use "nolocales" to avoid these to be wipped by live-initramfs.
+locales_gen
+
+# Fix the bug about login prompt too early (Ref: https://bugs.launchpad.net/ubuntu/+source/upstart/+bug/65230)
+fix_ubuntu_upstart_tty1_6_distorted_if_necessary
+
+# If kexec tools is installed, disable the service. We do not need that for Clonezilla
+disable_kexec
+
+# Touch /etc/inittab to suppress the error of Ubuntu booting, since it uses upstart, and no /etc/inittab, but live-initramfs will try to do something about /etc/inittab and if not found, an error message will be shown
+touch /etc/inittab
+
+# Overwrite the rc-sysinit.conf in order to avoid this bug: https://bugs.launchpad.net/ubuntu/+source/upstart/+bug/405847. This is specially for Ubuntu 9.10 alpha/beta
+if grep -q -F 'DEFAULT_RUNLEVEL="$(sed -n -e "/^id:[0-9]*:initdefault:/{s/^id://;s/:.*//;p}" /etc/inittab || true)"' /etc/init/rc-sysinit.conf 2>/dev/null; then
+  echo "Patching /etc/init./rc-sysinit.conf for upstart 0.6.3 on Ubuntu 9.10..."
+  cp -af $drbl_setup_path/files/Ubuntu/9.10/rc-sysinit.conf /etc/init/rc-sysinit.conf
+fi
+
+# Disable the mountall service of upstart (0.6.3 or later)
+upstart_conf_2_be_commented="mountall-net.conf"
+for i in $upstart_conf_2_be_commented; do
+  if [ -e "/etc/init/$i" ]; then
+    perl -pi -e "s/^(start on.*)/# \$1 # Disabled by Clonezilla/g" /etc/init/$i
+  fi
+done
+
+#
+append_framebuffer_modules_if_necessary
+
+# If busybox-initramfs was found, replace it with the complete one. Since busybox-initramfs lacks some function, like tftp... We want the complete "busybox". 
+# This is specially for Ubuntu since Debian does not have package busybox-initramfs.
+if [ -e "/usr/lib/initramfs-tools/bin/busybox" ]; then
+  cp -af /bin/busybox /usr/lib/initramfs-tools/bin/busybox
+  update_initramfs_flag="yes"
+fi
+
+#
+decide_if_use_xz_compression_for_initrd
+
+# We might need more /lib/udev/*_id than that initramfs-tools copies. E.g. for Live CD, we need cdrom_id, which udev (>= version 146 won't copy).
+copy_all_dev_id_prog_from_udev_lib
+
+# Disable compcache, otherwise for Ubuntu-based Clonezilla live, compcahce might use too much RAM so in the case of PXE booting, it will show kernel panic.
+if [ -e "/usr/share/initramfs-tools/conf.d/compcache" ]; then
+  perl -pi -e 's/^COMPCACHE_SIZE=.*/COMPCACHE_SIZE="" # Disabled by Clonezilla live/g' /usr/share/initramfs-tools/conf.d/compcache
+  update_initramfs_flag="yes"
+fi
+
+# Append extra modules included in initramfs, since some NIC modules (e.g. atl2) will not be included in initramfs, those driver is required for PXE booting. 
+# Ref: https://sourceforge.net/tracker/?func=detail&atid=671650&aid=2854969&group_id=115473
+if [ -e "/etc/initramfs-tools/modules" ]; then
+  echo "# The following modules were added by Clonezilla" >> /etc/initramfs-tools/modules
+  for i in $extra_module_list_in_initramfs; do
+    echo "$i" >> /etc/initramfs-tools/modules
+  done 
+  update_initramfs_flag="yes"
+fi
+
+# Put font
+mkdir -p $DRBL_SCRIPT_PATH/lib/
+get_unifont_bgf $DRBL_SCRIPT_PATH/lib/
+
+# Put start script
+mkdir -p /etc/ocs/
+cp -ar $DRBL_SCRIPT_PATH/setup/files/ocs/ocs-live.d /etc/ocs/
+
+# Prepare the prerun/postrun dirs of clonezilla
+mkdir -p $OCS_PRERUN_DIR $OCS_POSTRUN_DIR
+
+# If upstart dir is found, copy ttyS*, we need that for serial console
+# Here we assume upstart <= 0.6.3, /etc/event.d/rc-default exists, and
+# upstart >= 0.6.3, /etc/init/rc-sysinit.conf exists
+# (1) For upstart <= 0.6.3
+if [ -e /etc/event.d/rc-default ]; then
+ for i in 0 1 2 3 4 5 6 7 8 9; do
+   if [ ! -e /etc/event.d/ttyS${i} ]; then
+    if [ -e $DRBL_SCRIPT_PATH/setup/files/ocs/live-hook/upstart/ttyS${i} ]; then
+     cp -af $DRBL_SCRIPT_PATH/setup/files/ocs/live-hook/upstart/ttyS${i} /etc/event.d/
+    fi
+   fi
+ done
+fi
+# (2) For upstart >= 0.6.3
+if [ -e /etc/init/rc-sysinit.conf ]; then
+ for i in 0 1 2 3 4 5 6 7 8 9; do
+   if [ ! -e /etc/init/ttyS${i}.conf ]; then
+    if [ -e $DRBL_SCRIPT_PATH/setup/files/ocs/live-hook/upstart/ttyS${i}.conf ]; then
+     cp -af $DRBL_SCRIPT_PATH/setup/files/ocs/live-hook/upstart/ttyS${i}.conf /etc/init/
+    fi
+   fi
+ done
+fi
+# Since we do not support booting crypted disk, here we disable crypto disk to avoid this issue: https://bugs.launchpad.net/puredyne-live/+bug/485858
+#if [ -e "/etc/default/cryptdisks" ]; then
+#  perl -pi -e "s/^CRYPTDISKS_ENABLE=.*/CRYPTDISKS_ENABLE=No  # Disabled by Clonezilla/g" /etc/default/cryptdisks	 
+#fi
+# It looks like only set CRYPTDISKS_ENABLE=No is not enough. We just remove the start services
+cryptdisk_related_files="cryptdisks-udev.conf cryptdisks-enable.conf"
+for i in $cryptdisk_related_files; do
+ [ ! -e /etc/init/$i ] && continue
+ mv -f /etc/init/$i /etc/init/$i.obsolete-by-ocs
+done
+
+# Generate a config file
+# Set ocs_live_keymap="" and ocs_lang="" so that when a general clonezilla live boot, it will ask for language and keymap.
+cat <<-OCS_CONF > /etc/ocs/ocs-live.conf
+# ocs_live_run is the main program to run in Clonezilla live to save or restore. or other command. Available program: ocs-live-general, ocs-live-restore or any command you write. Use the Absolute path in Clonezilla live.
+ocs_live_run="ocs-live-general"
+
+# ocs_live_extra_param will be used only when ocs_live_run=ocs-live-restore (not for ocs-live-general or any other), then it will be passed to ocs-sr. Therefore these parameters are actually those of ocs-sr.
+# Ex: ocs_live_extra_param="-b -c restoredisk sarge-r5 hda"
+ocs_live_extra_param=""
+
+# ocs_live_keymap is for keymap used in Clonezilla live. Man install-keymap for more details. Ex: 
+# ocs_live_keymap="NONE" (won't change the default layout)
+# ocs_live_keymap="/usr/share/keymaps/i386/azerty/fr-latin9.kmap.gz" (French keyboard)
+# //NOTE// ocs_live_keymap is deprecated. It's better to use the parameters live-config.keyboard-layouts or keyboard-layouts for live-config to configure the keyboard layout. Ref: http://live.debian.net/manual/html/live-manual.en.html#customizing-locale-and-language
+ocs_live_keymap=""
+
+# batch mode or not (yes/no), if no, will run interactively.
+ocs_live_batch="no"
+
+# ocs_lang is the language used in Clonezilla live. Available value: en_US.UTF-8, zh_TW.UTF-8... (see \$DRBL_SCRIPT_PATH/lang/bash/)
+ocs_lang=""
+
+# ocs_live_run_tty is the tty for the ocs_live_run. Default it will be "/dev/tty1"
+ocs_live_run_tty=""
+
+OCS_CONF
+
+# Dirty hacking: rm files
+if [ "$dirty_hacking_remove_files_for_ocs_live" = "yes" ]; then
+  dirty_hacking_rm_files_for_ocs_live
+fi
+
+# Put non-free firmware for Ubuntu-based Clonezilla live
+# //NOTE// This has to be after dirty_hacking_rm_files_for_ocs_live since we want to keep the non-free firmware doc (license files).
+get_non_free_net_firmware_for_ubuntu /
+
+# Remove grpck option "-p". This is only a workaround since the issue has not been fixed in Debian
+# Ref: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=638263
+remove_grpck_opt_p
+
+# Update the variable BUILD_SYSTEM in /etc/live.conf (This is special for live-initramfs, not for casper)
+update_build_system_in_etc_live_conf
+
+# We have to run update-initramfs so that the new busybox/cdromid will be in initramfs. This should be after dirty_hacking_rm_files_for_ocs_live since some files which we do not want (e.g. plymouth) might be included in initrd.
+[ "$update_initramfs_flag" = "yes" ] && update-initramfs -u
+
+# Create a list of all packages:
+dpkg --get-selections > /root/Clonezilla-live-packages.txt
+
+# ///Note/// This should be the last one after any apt-get.
+# clean unnecessary backup file to save space
+clean_unnecessary_backup_file_in_boot
+
+### THE END ###
+# DO NOT PUT ANY SCRIPT AFTHER THIS!!!
+# kill this program before creating squashfs filesystem.
+rm -rf /live-hook-dir

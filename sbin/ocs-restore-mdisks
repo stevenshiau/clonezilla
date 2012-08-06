@@ -1,0 +1,281 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+
+# This program is used to restore an image to multiple disks, especially many USB flash drives in a same machine by using Clonezilla live.
+# Thanks to T. C. Lin <tclin _at_ mail dfes tpc edu tw> for this idea and testing, and Alvin Su for debuging.
+
+# For more details, please refer to:
+# http://drbl.sourceforge.net/faq/fine-print.php?path=./2_System/98_one_image_to_multiple_disks.faq#98_one_image_to_multiple_disks.faq
+# and
+# http://drbl.sourceforge.net/screenshot/?in_path=/12_Alvin_Su_Taiwan
+
+# ///WARNING/// This program is really dangerous! You have to know what you are doing! Especially the destination disks!
+
+# Load functions and config file
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+batch_mode="false"
+# Option to separate fdisk action. See function separate_fdisk_in_another_step_first for more details.
+separate_fdisk="false"
+
+#
+USAGE() {
+    echo "$prog - To restore an image to multiple disks"
+    echo "Usage:"
+    echo "$prog [OPTION] IMAGE_NAME DEV"
+    echo "IMAGE_NAME  The image name, i.e. the image dir in $ocsroot/"
+    echo "DEV         The destination device name, e.g. sdc, sdd, sde..."
+    echo "OPTION:"
+    echo "-b, --batch-mode            Run in batch mode"
+    echo "-p, --ocs-sr-param PARAM    Assign the parameters to be used in ocs-sr program."
+    echo "-s, --separate-fdisk        Separate the fdisk action from the main program of restoring, i.e. run fdisk first for all the actions."
+    echo "-um, --user-mode [beginner|expert]      Specify the mode to use."
+    echo "Ex:"
+    echo "To restore the image \"usb-image\" to 3 USB flash drives sda, sdb, and sdc, you can run:"
+    echo "  $prog usb-image sda sdb sdc"
+    echo "To restore the image \"usb-image\" to 3 USB flash drives sda, sdb, and sdc in batch mode with the options "-g auto -e1 auto -e2 -c -r -j2 -p true" for ocs-sr, you can run:"
+    echo "  $prog -b -p "-g auto -e1 auto -e2 -c -r -j2 -p true" usb-image sda sdb"
+} # end of USAGE
+#
+separate_fdisk_in_another_step_first() {
+  # If -k option of ocs-sr is chosen, skip repartition. Otherwise, do it.
+  if [ -z "$(LC_ALL=C echo $OCS_OPTS | grep -Ew -- "-k")" ]; then
+    # Create partition table first. If we do not do this first, sfdisk will wait for the lock file to be released, so the 2nd clone won't start in any case.
+    for i in $tgt_dsks; do
+      if [ -z "$(grep -Ew "$i" /proc/partitions)" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Disk /dev/$i not found. Skip restoring it."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        continue
+      fi
+      tgt_hd_file="/dev/$i"
+      tgt_dir="$ocsroot/${image_name}_cnvt_${i}"
+      if [ -n "$(grep -iE "^Partition Table:" $tgt_dir/${i}-pt.parted 2>/dev/null | grep -iE "gpt")" ]; then
+        pt_type="gpt"
+      else
+        pt_type="mbr"
+      fi
+      echo "Creating the partition table for $i..."
+      case "$pt_type" in
+      mbr)
+        # If the partition table is tag as "gpt", change it as msdos
+        if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -iE "^Partition Table:" | grep -iE "gpt")" ]; then
+          echo "The partition table in $tgt_hd_file is for GPT, now make it for MBR."
+          LC_ALL=C parted -s $tgt_hd_file mklabel msdos
+        fi
+        sfdisk --force $tgt_hd_file < $tgt_dir/${i}-pt.sf
+        inform_kernel_partition_table_changed mbr $tgt_hd_file
+        ;;
+      gpt)
+        clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
+        create_gpt_table_if_no_table $tgt_hd_file
+        echo "Running: sgdisk -l $tgt_dir/${i}-gpt.gdisk $tgt_hd_file"
+        LC_ALL=C sgdisk -l $tgt_dir/${i}-gpt.gdisk $tgt_hd_file
+        sgdisk_rc=$?
+        if [ "$sgdisk_rc" -ne 0 ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "Failed to create partition table on $i."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        fi
+        echo "Informing kernel that the OS that partition table has changed..."
+        inform_kernel_partition_table_changed gpt $tgt_hd_file
+        ;;
+      esac
+    done
+  fi
+  
+  # Reset option -k* as -k since repartition has been done in the previous step.
+  if [ -z "$(LC_ALL=C echo $OCS_OPTS | grep -Ew -- "-k[[:digit:]]+")" ]; then
+    # -k* does not exist, append it.
+    OCS_OPTS="$OCS_OPTS -k"
+  else
+    # -k* exists
+    OCS_OPTS="$(echo $OCS_OPTS | sed -r -e "s/-k[[:digit:]]+/-k/g")"
+  fi
+} # end of separate_fdisk_in_another_step_first
+
+####################
+### Main Program ###
+####################
+prog="$(basename $0)"
+
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -b|--batch) batch_mode="true"; shift;;
+    -s|--separate-fdisk) separate_fdisk="true"; shift;;
+    -p|--ocs-sr-param)
+            shift
+            # Here we accept the -xx option, since they are used by ocs-sr
+	    # E.g. "-g auto -e1 auto -e2 -c -r -j2 -p true"
+	    # will be run as: ocs-sr -g auto -e1 auto -e2 -c -r -j2 -p true...
+            OCS_OPTS="$1"
+            shift
+            [ -z "$OCS_OPTS" ] && USAGE && exit 1
+	    ;;
+    -um|--user-mode)
+            shift
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              ocs_user_mode="$1"
+              shift
+            fi
+            [ -z "$ocs_user_mode" ] && USAGE && exit 1
+	    ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+#
+image_name="$1"
+shift
+tgt_dsks=$*
+
+check_if_root
+ask_and_load_lang_set
+# check DIA
+check_DIA_set_ESC $DIA
+#
+[ -z "$image_name" ] && image_name="ask_user"
+[ -z "$tgt_dsks" ] && tgt_dsks="ask_user"
+
+#
+if [ "$batch_mode" = "false" ]; then
+  echo $msg_delimiter_star_line
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_prompt_for_insert_USB_dev_as_destination_disks"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n "$msg_press_enter_to_continue..."
+  read
+  echo $msg_delimiter_star_line
+fi
+
+# If OCS_OPTS is assigned, no need to ask ocs_user_mode.
+if [ -z "$OCS_OPTS" ]; then
+  [ -z "$ocs_user_mode" ] && ask_if_beginner_or_expert_mode
+fi
+
+run_again_flag="false"
+if [ "$image_name" = "ask_user" ]; then
+  imagedir="$ocsroot"
+  ocs_mode_prompt="1-2-mdisks"
+  get_target_dir_name_when_restoring_disk  # get $target_dir
+  image_name="$target_dir"
+  run_again_flag="true"
+fi
+if [ "$tgt_dsks" = "ask_user" ]; then
+  # To get $target_hd
+  ocs_mode_prompt="1-2-mdisks"
+  get_target_hd_name_from_local_machine "$msg_choose_the_disks_to_restore \n$msg_linux_disk_naming $msg_press_space_to_mark_selection" checklist
+  tgt_dsks="$target_hd"
+  run_again_flag="true"
+fi
+
+#
+# Check inupt values
+# 1. image name
+check_input_target_image "$ocsroot/$image_name"
+# 2. destination disks
+check_input_hd $tgt_dsks
+
+if [ -z "$OCS_OPTS" ]; then
+  # Get the ocs-sr parameters
+  # ocs_mode_prompt is to be shown in the title of dialog menu later
+  ocs_sr_type="restoredisk"
+  ocs_mode_prompt="1-2-mdisks"
+  # ask if want to set ocs extra param
+  OCS_PARAM_TMP=`mktemp /tmp/ocs_sr_param_tmp.XXXXXX`
+  trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
+  set_ocs_sr_extra_param restore $OCS_PARAM_TMP $ocs_sr_type
+  # In interactive mode, we reset OCS_OPTS instead of appending it. Later wrap_up_opt will process more.
+  OCS_OPTS="$(cat $OCS_PARAM_TMP)"
+  OCS_OPTS="$(echo $OCS_OPTS)"  # make it in a line
+  [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
+  run_again_flag="true"
+fi
+
+# Run again prompt
+if [ "$run_again_flag" = "true" ]; then
+  run_again_fname="/tmp/ocs-mdisk-`date +%F-%H-%M`"
+  run_again_bfname="/tmp/ocs-mdisk-batch-`date +%F-%H-%M`"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+  echo "PS. $msg_run_drbl_ocs_again_cmd"
+  echo "$prog -p \"$OCS_OPTS\" $image_name $tgt_dsks" | tee $run_again_fname
+  echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
+  echo "$msg_if_you_want_to_run_in_unattended_mode"
+  echo "$prog -b -p \"$OCS_OPTS\" $image_name $tgt_dsks" | tee $run_again_bfname
+  echo "$msg_ocs_sr_again_command_saved_filename: $run_again_bfname"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
+  [ -e "$run_again_bfname" ] && chmod 755 $run_again_bfname
+fi
+
+# Give warnings. 
+echo $msg_delimiter_star_line
+if [ "$batch_mode" = "false" ]; then
+  get_dev_model_shown "$tgt_dsks" 
+  confirm_before_clone="yes"
+  countdown_or_confirm_before_restore "$ocsroot/$image_name" "$tgt_dsks"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_let_me_ask_you_again."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  countdown_or_confirm_before_restore "$ocsroot/$image_name" "$tgt_dsks"
+fi
+
+# Calculate the disk number
+disk_no="$(LC_ALL=C echo $tgt_dsks | wc -w)"
+
+# Find the original disk
+src_disk="$(LC_ALL=C cat $ocsroot/$image_name/disk)"
+src_disk_no="$(LC_ALL=C echo $src_disk | wc -w)"
+if [ "$src_disk_no" -ne 1 ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$msg_source_disks_more_than_1"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop"
+  exit 1
+fi
+
+# Prepare the temp images, we put them in the /tmp otherwise if the original repository might be readonly or FAT (no support for soft link).
+# From now on we switch the image repository to /tmp/.
+ocsroot="/tmp"
+for i in $tgt_dsks; do
+  create-ocs-tmp-img -t $ocsroot $image_name ${image_name}_cnvt_${i} $src_disk ${i}
+done
+
+if [ "$separate_fdisk" = "true" ]; then
+  separate_fdisk_in_another_step_first
+fi
+
+# Remove -c so it can be in batch mode.
+if [ -n "$(LC_ALL=C echo $OCS_OPTS | grep -Ew -- "-c")" ]; then
+  OCS_OPTS="$(echo $OCS_OPTS | sed -r -e "s/-c//g")"
+fi
+# Append -b option to run them in batch mode.
+if [ -z "$(LC_ALL=C echo $OCS_OPTS | grep -Ew -- "-b")" ]; then
+  OCS_OPTS="$OCS_OPTS -b"
+fi
+# Append -nogui option to run them in plain text mode.
+if [ -z "$(LC_ALL=C echo $OCS_OPTS | grep -Ew -- "-nogui")" ]; then
+  OCS_OPTS="$OCS_OPTS -nogui"
+fi
+for i in $tgt_dsks; do
+  # Clean the stale file
+  rm -f /tmp/${image_name}_cnvt_${i}.log
+  [ -z "$(grep -Ew "$i" /proc/partitions)" ] && continue
+  echo "Restoring image for disk $i..."
+  # use -k to skip sfdisk since we have done that in the previous step.
+  #ocs-sr -g auto -nogui -b -k -e1 auto -e2 -r -j2 -p true restoredisk "${image_name}_cnvt_${i}" "$i" &
+  ocs-sr --ocsroot $ocsroot $OCS_OPTS restoredisk "${image_name}_cnvt_${i}" "$i" 2>&1 | tee /tmp/${image_name}_cnvt_${i}.log &
+done
+
+# wait for all processes to finish before exit
+wait 

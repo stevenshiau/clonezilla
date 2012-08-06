@@ -1,0 +1,238 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# ///NOTE/// This program is just a testing program to create GPT partition table with the parted ouput format (Ex: parted -s /dev/sda print).
+# It will have some problems with partition name like this following (not finished but the function get_name is ready):
+  # Number  Start   End     Size    File system  Name                  Flags
+  #  1      20.5kB  210MB   210MB   fat32        EFI System Partition  boot 
+# ///NOTE/// This program is not used to "clone" the partition table of GPT in Mac OSX, since for GPT, the GUID is unique. Check http://developer.apple.com/technotes/tn2006/tn2166.html#SECCOPYINGCONCERNS for more details.
+
+export LC_ALL=C
+# part is like /dev/hda1
+# wanted is one of start, end, size, type, filesystem or flags.
+parted_table="$1"
+if [ -z "$parted_table" ]; then
+ echo "No input file! Program terminated!"
+ exit 1
+fi
+
+#
+check_col_idx() {
+  # DEV is like /dev/hda
+  # wanted is like "start", "end", "file" (since it's "file system" in SuSE 10.0, and filesystem in Redhat/FC)
+  # Example in FC5 with parted-1.7.1-15.fc5
+  #[root@fc5101 tmp]# LC_ALL=C parted -s /dev/hda p
+  #
+  #Disk /dev/hda: 4295MB
+  #Sector size (logical/physical): 512B/512B
+  #Partition Table: msdos
+  #
+  #Number  Start   End     Size    Type     File system  Flags
+  # 1      32.3kB  4285MB  4285MB  primary  ntfs         boot
+  #
+  # Different version of parted has different output format, that's why it's so complicated here.
+  # Updated 2008/Jan/20, the output layouts are different for gpt and mbr:
+  # GPT: Number  Start     End        Size       File system  Name     Flags  
+  # MBR: Number  Start   End     Size    Type      File system  Flags
+  # "Type <-> Name", and the order is different, too.
+  # GPT:
+  # Disk /dev/hda: 16777215s
+  # Sector size (logical/physical): 512B/512B
+  # Partition Table: gpt
+  # 
+  # Number  Start     End        Size       File system  Name     Flags  
+  #  1      34s       409640s    409607s    fat32        primary  msftres
+  #  2      409641s   4316406s   3906766s   ext2         primary         
+  #  3      4316407s  15625000s  11308594s  reiserfs     primary         
+
+  # MBR:
+  # Disk /dev/hda: 8590MB
+  # Sector size (logical/physical): 512B/512B
+  # Partition Table: msdos
+  # 
+  # Number  Start   End     Size    Type      File system  Flags
+  #  1      32.3kB  255MB   255MB   primary                boot 
+  #  2      255MB   8587MB  8332MB  extended                    
+  #  5      255MB   8587MB  8332MB  logical                lvm  
+
+  # More type of gpt: (Name is "EFI System Partition") ? How to parse it ?
+  # Disk /dev/sda: 80.0GB
+  # Sector size (logical/physical): 512B/512B
+  # Partition Table: gpt
+  #  
+  # Number  Start   End     Size    File system  Name                  Flags
+  #  1      20.5kB  210MB   210MB   fat32        EFI System Partition  boot 
+  #  2      210MB   79.9GB  79.7GB  hfs+         Untitled          
+
+  local DEV=$1
+  local wanted=$2
+  part_info_tmp=`mktemp /tmp/part_tmp.XXXXXX`
+  cp -f $parted_table $part_info_tmp
+  # force to change the output temp file, no space in "File system"
+  LC_ALL=C perl -pi -e "s/File system/Filesystem/g" $part_info_tmp
+  # The seq is put in the order of possibility in clonezilla, i.e. filesystem is most used one, then size.
+  for i in 6 4 5 3 2 1 7; do
+    col="$(grep -i flags $part_info_tmp | awk -F" " "{print \$$i}")"
+    if [ -n "$(echo $col | grep -i $wanted)" ]; then
+      col_idx=$i
+      break
+    fi
+  done
+  [ -f "$part_info_tmp" ] && rm -f $part_info_tmp
+  echo $col_idx
+} # end of check_col_idx
+
+get_name() {
+# Name is a special case, since it is possible to contain more than one space:
+#Disk /dev/sda: 156301487s
+#Sector size (logical/physical): 512B/512B
+#Partition Table: gpt
+#
+#Number  Start    End         Size        File system  Name                  Flags
+# 1      40s      409639s     409600s     fat32        EFI System Partition  boot 
+# 2      409640s  156039303s  155629664s  hfs+         Untitled 1                 
+  local start end nam
+  local no="$1"
+  [ -z "$no" ] && return
+  # Find the start and end column
+  start="$(grep -E "^Number.*Name" $parted_table | sed -e "s/Name.*//g" | wc -c)"
+  end="$(grep -E "^Number.*Flags" $parted_table | sed -e "s/Flags.*//g" | wc -c)"
+  end="$((end - 1))"
+  
+  nam="$(grep -E "^[[:space:]]*$no[[:space:]]*" $parted_table | cut -c ${start}-${end})"
+  echo "$nam"
+}
+
+get_from_parted() {
+  local part="$1"
+  local wanted="$2"
+  local target_hd part_index
+  p="$(basename $part)"
+  target_hd="/dev/${p:0:3}"
+  part_index="${p:3}"
+  
+  case "$wanted" in
+    start)
+       start_idx="$(check_col_idx $target_hd start)"
+       [ -z "$start_idx" ] && exit 1
+       part_start=$(grep -E "^[[:space:]]*$part_index\>" $parted_table | awk -F" " "{print \$$start_idx}")
+       echo "$part_start"
+       ;;
+    end)
+       end_idx="$(check_col_idx $target_hd end)"
+       [ -z "$end_idx" ] && exit 1
+       part_end=$(grep -E "^[[:space:]]*$part_index\>" $parted_table | awk -F" " "{print \$$end_idx}")
+       echo "$part_end"
+       ;;
+    size)
+       size_idx="$(check_col_idx $target_hd size)"
+       [ -z "$size_idx" ] && exit 1
+       part_size=$(grep -E "^[[:space:]]*$part_index\>" $parted_table | awk -F" " "{print \$$size_idx}")
+       echo "$part_size"
+       ;;
+    type)
+       type_idx="$(check_col_idx $target_hd type)"
+       [ -z "$type_idx" ] && exit 1
+       part_type=$(grep -E "^[[:space:]]*$part_index\>" $parted_table | awk -F" " "{print \$$type_idx}")
+       echo "$part_type"
+       ;;
+    name)
+       name_idx="$(check_col_idx $target_hd name)"
+       [ -z "$name_idx" ] && exit 1
+       part_name=$(grep -E "^[[:space:]]*$part_index\>" $parted_table | awk -F" " "{print \$$name_idx}")
+       echo "$part_name"
+       ;;
+    filesystem|fs)
+       filesystem_idx="$(check_col_idx $target_hd file)"
+       [ -z "$filesystem_idx" ] && exit 1
+       part_fs=$(grep -E "^[[:space:]]*$part_index\>" $parted_table | awk -F" " "{print \$$filesystem_idx}")
+       echo "$part_fs"
+       ;;
+    flags)
+       flags_idx="$(check_col_idx $target_hd flags)"
+       [ -z "$flags_idx" ] && exit 1
+       part_flags=$(grep -E "^[[:space:]]*$part_index\>" $parted_table | awk -F" " "{print \$$flags_idx}")
+       echo "$part_flags"
+       ;;
+  esac
+} # end of get_from_parted
+
+# Print warning:
+echo "///NOTE/// This program is just a testing program to create GPT partition table with the parted ouput format (Ex: parted -s /dev/sda print)."
+echo "It will have some problems with partition name like this following (not finished but the function get_name is ready):"
+echo Number  Start   End     Size    File system  Name                  Flags
+echo 1      20.5kB  210MB   210MB   fat32        EFI System Partition  boot 
+echo ///NOTE/// This program is not used to "clone" the partition table of GPT in Mac OSX, since for GPT, the GUID is unique. Check http://developer.apple.com/technotes/tn2006/tn2166.html#SECCOPYINGCONCERNS for more details.
+echo -n "Press Enter to continue... "
+read
+
+# Normal parted output (from "parted -s /dev/sda unit s print")
+# --------------------------------------------
+# Disk /dev/sda: 156301487s
+# Sector size (logical/physical): 512B/512B
+# Partition Table: gpt
+# 
+# Number  Start      End         Size       File system  Name     Flags  
+#  1      34s        409639s     409606s    fat32        primary  msftres
+#  2      409640s    67256360s   66846721s  hfs+         primary         
+#  3      67256361s  154348157s  87091797s  reiserfs     primary         
+# --------------------------------------------
+# 
+# Get disk name
+disk="$(grep -E "^Disk /dev/" $parted_table | awk -F" " '{print $2}' | sed -e "s/:$//g")"
+# Get Partition label name
+part_label="$(awk -F":" '/^Partition Table:/ {print $2}' $parted_table | sed -e "s/^[[:space:]]*//g")"
+avail_part_idx="$(grep -E "^[[:space:]]*[[:digit:]]+\>" $parted_table | awk -F" " '{print $1}')"
+echo "disk: $disk"
+echo "part label: $part_label"
+
+if [ "$part_label" = "gpt" ]; then
+  echo -n "Creating the GPT lable gpt... "
+  parted -s $disk mklabel $part_label
+  rc=$?
+  if [ "$rc" -gt 0 ]; then
+    echo "Failed to create GPT lable in $disk!"
+    echo "Program terminated!!!"
+    exit 1
+  fi
+  echo "done!"
+else
+  echo "This is not a GPT partition table!"
+  echo "Program terminated!"
+  exit 1
+fi
+
+for i in $avail_part_idx; do
+  echo "---------------------------------------"
+  part="${disk}$i"  # part is like /dev/sda1
+  start=""
+  end=""
+  name=""
+  flags=""
+  start="$(get_from_parted $part start)"
+  end="$(get_from_parted $part end)"
+  name="$(get_from_parted $part name)"
+  flags="$(get_from_parted $part flags)"
+  if [ -n "$start" -a -n "$end" ]; then
+    echo "Creating GPT partition by:"
+    echo "parted -s $disk unit s mkpart $name $start $end"
+    LC_ALL=C parted -s $disk unit s mkpart $name $start $end
+    rc=$?
+    if [ "$rc" -gt 0 ]; then
+      echo "Failed to create GPT partition table in $disk!"
+      echo "Program terminated!!!"
+      exit 1
+    fi
+  fi
+  if [ -n "$flags" ]; then
+    echo "Creating GPT partition flag by:"
+    echo "parted -s $disk set $i $flags on"
+    LC_ALL=C parted -s $disk set $i $flags on
+  fi
+done
+
+echo "---------------------------------------"
+echo "The GPT partition table now in $disk:"
+echo "************************************************"
+LC_ALL=C parted -s $disk unit s print
+echo "************************************************"

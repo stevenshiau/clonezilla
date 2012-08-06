@@ -1,0 +1,102 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Requirement: strings, mkfs.vfat, unzip, qemu-img
+# Description: Program to convert DRBL/Clonezilla live zip file to raw disk image or vmdk image.
+# To test the created raw image with qemu:
+# qemu -kernel-kqemu -m 256 -std-vga -boot c -hda $tgt_img 
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+
+# Target disk size ratio (target disk size / zip file size)
+disk_expand_ratio="1.5"
+#
+prog="$(basename $0)"
+#
+USAGE() {
+   echo "Usage: $prog [OPTION] zip_file"
+   echo "OPTION:"
+   echo "-n, --no-create-vmdk   Do NOT create vmdk format. By default this program will convert the zip file to raw image and vmdk image."
+   echo "Ex:" 
+   echo "To convert clonezilla-live-1.2.0-26.zip"
+   echo "  $prog clonezilla-live-1.2.0-26.zip"
+}
+
+#
+check_if_root
+
+##############
+#### main ####
+##############
+create_vmdk="yes"
+#
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n|--no-create-vmdk) 
+            create_vmdk="no"
+            ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+#
+zip_file="$1"
+if [ -z "$zip_file" -o ! -e "$zip_file" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo You must provide the zip file!
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  exit 1
+fi
+
+if [ -z "$(LC_ALL=C file $zip_file | awk -F":" '{print $2}' | grep -i zip)" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$zip_file is not zip format!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  exit 1
+fi
+
+# syslinux does not provide any option to find the version number.
+# Try to find the version of syslinux
+# Use strings to find the version, the output is like:
+# SYSLINUX 3.71 Debian-2008-08-04
+SYSLINUX_VER="$(strings `which syslinux` | grep -iE "^SYSLINUX.*[[:digit:]]+" | awk -F" " '{print $2}')"
+echo "SYSLINUX version on this system: $SYSLINUX_VER"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "///NOTE///"
+echo "1. You must make sure the syslinux $SYSLINUX_VER on this system meet the requirement to make Clonezilla live bootable! Check Clonezilla live website or release notes for more details."
+echo "2. The owner of the converted images file are root. Pay attention to the permission if you want to use it as a non-root user."
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+echo -n "Press Enter to continue..."
+read
+#
+tgt_img_prefix="$(echo $zip_file | sed -e "s|\.zip||g")"
+tgt_img="${tgt_img_prefix}.img"
+
+#
+mnttmp="$(mktemp -d /tmp/ocscvtmp.XXXXXX)"
+img_size="$(LC_ALL=C stat -c "%s" $zip_file)"
+img_size="$(LC_ALL=C echo "scale=0; $img_size * $disk_expand_ratio /1024/1024/1" | bc -l)"
+echo -n "Creating a disk image $tgt_img with size $img_size MB... "
+dd if=/dev/zero of=$tgt_img bs=1M count=$img_size
+echo "done!"
+mkfs.vfat $tgt_img 
+mount -o loop $tgt_img $mnttmp
+unzip $zip_file -d $mnttmp
+umount $mnttmp
+[ -d "$mnttmp" -a -n "$(echo $mnttmp | grep "ocscvtmp")" ] && rm -rf $mnttmp
+echo -n "Making $tgt_img bootable by syslinux... "
+syslinux -fs $tgt_img 
+echo "done!"
+echo "The bootable raw image file was converted: $tgt_img"
+
+if [ "$create_vmdk" = "yes" ]; then
+  qemu-img convert $tgt_img -O vmdk ${tgt_img_prefix}.vmdk
+  echo "The vmdk image file was converted: ${tgt_img_prefix}.vmdk"
+fi

@@ -1,0 +1,28 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: Program to start saving or restoring image in Clonezilla live.
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# load the setting for clonezilla live.
+[ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
+
+# Get the live media mount point.
+get_live_media_mnt_point
+
+# prepare the clonezilla live environment.
+ocs-live-env-prepare
+
+# Do not ask powerer/reboot/choose (-p) in ocs-sr,  just use "-p true". Since it might be in bterm, and Debian live "Press Enter" message when poweroff/shutdown might be covered by bterm and user will not have any idea what's happening after choose poweroff/reboot.
+# ocs_lang and ocs_live_extra_param are loaded from /etc/ocs/ocs-live.conf
+# "-n" was added since we will run show-general-ocs-live-prompt after command clonezilla
+LC_ALL=$ocs_lang clonezilla -p true -n $ocs_live_extra_param
+
+# Show prompt
+show-general-ocs-live-prompt

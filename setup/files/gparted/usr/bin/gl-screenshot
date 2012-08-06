@@ -1,0 +1,26 @@
+#!/bin/bash
+# Load functions
+. /usr/share/gparted/bin/gl-functions
+
+get_gui_dialog
+
+$DIALOG --title "SCREENSHOT" --yesno "If you want to take a screenshot,\n select the window you want when the cross-pointer appears." 10 90;
+
+if [ $? = 1  -o $? = 255 ];then
+  exit
+fi
+
+sleep 1
+
+[ -f ${HOME}/gpartedss ] && rm -f ${HOME}/gpartedss
+[ -f ${HOME}/gparted.jpeg ] && rm -f ${HOME}/gparted.jpeg
+
+xwd -out ${HOME}/gpartedss
+xwdtopnm < ${HOME}/gpartedss | pnmtojpeg > ${HOME}/gparted.jpeg
+
+[ -f ${HOME}/gpartedss ] && rm -f ${HOME}/gpartedss
+if [ -f ${HOME}/gparted.jpeg ]; then
+  feh -q -d --title "Preview -- Your full screen shot is ${HOME}/gparted.jpeg" -g 400x300 ${HOME}/gparted.jpeg & $DIALOG --title "GParted LiveCD" --msgbox "A screen shot named gparted.jpeg is located in ${HOME}" 10 60;
+else
+  $DIALOG --title "GParted LiveCD" --msgbox "Failed to get screen shot. :-/" 10 60;
+fi

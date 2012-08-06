@@ -1,0 +1,77 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: This file is used to be assign network configuration based on a data file. It is intended to put as a start up service or put it in the rc.local file.
+# The data file contains the list:
+# MAC address, IP address, netmask, gateway, DNS, ethetnet port, hostname name.
+# e.g.
+# 00:AA:BB:CC:DD:E1 192.168.1.1 255.255.255.0 168.95.100.254 168.95.1.1 eth0  mars1.domain
+# 00:AA:BB:CC:DD:E2 192.168.1.10 255.255.255.0 168.95.100.254 168.95.1.1 eth0 mars2.domain
+# 00:AA:BB:CC:DD:E3 10.110.1.1 255.255.255.0 168.95.100.254 168.95.1.1 eth0 mar3.domain
+
+# //NOTE// Now this file only works for RedHat-like Linux (Fedora, CentOS...)
+
+export LC_ALL=C
+mac_ip_list="mac-ip-list.txt"
+
+#
+gen_net_cfg_file() {
+  cp -f /etc/sysconfig/network-scripts/ifcfg-${ethx} /etc/sysconfig/network-scripts/ifcfg-${ethx}.bak
+  cp -f /etc/sysconfig/network /etc/sysconfig/network.bak
+  cp -f /etc/resolv.conf /etc/resolv.conf.bak
+  cat <<-NET_END > /etc/sysconfig/network-scripts/ifcfg-${ethx}
+DEVICE=$ethx
+BOOTPROTO=static
+ONBOOT=yes
+IPADDR=$ip
+NETMASK=$netmask
+NET_END
+  # Gateway
+  if [ "$gateway" != "none" ]; then
+    if [ -z "$(grep -iE "^[[:space:]]*GATEWAY[[:space:]]*=" /etc/sysconfig/network)" ]; then
+       echo "GATEWAY=$gateway" >> /etc/sysconfig/network
+    else
+       perl -pi -e "s/GATEWAY=.*/GATEWAY=$gateway/g" /etc/sysconfig/network
+    fi
+  fi
+  # DNS
+  if [ -z "$(grep -iE "^[[:space:]]*nameserver[[:space:]]+$nameserver" /etc/resolv.conf)" ]; then
+     echo "nameserver $nameserver" >> /etc/resolv.conf
+  fi
+  # hostname
+  if [ -n "$hostname" ] ; then
+    if [ -z "$(grep -iE "^[[:space:]]*HOSTNAME[[:space:]]*=" /etc/sysconfig/network)" ]; then
+       echo "HOSTNAME=$hostname" >> /etc/sysconfig/network
+    else
+       perl -pi -e "s/HOSTNAME=.*/HOSTNAME=$hostname/g" /etc/sysconfig/network
+    fi
+  fi
+}
+# Find the mac address
+macs=""
+NETDEVICES="$(cat /proc/net/dev | awk -F: '/eth.:|tr.:/{print $1}')"
+for DEVICE in $NETDEVICES; do
+  mac_tmp="$(ifconfig $DEVICE | grep -oE "HWaddr .*" | awk -F " " '{print $2}')"
+  if [ -n "$mac_tmp" ]; then
+    echo "Found MAC address $mac_tmp ([$DEVICE])."
+    macs="$macs $mac_tmp"
+  fi
+done
+echo "MAC address: $macs"
+# parse the ip address, netmask, gateway, dns based on MAC address.
+for i in $macs; do
+  ip="$(grep -iE "^[[:space:]]*$i[[:space:]]+" $mac_ip_list | awk -F" " '{print $2}' )"
+  netmask="$(grep -iE "^[[:space:]]*$i[[:space:]]+" $mac_ip_list | awk -F" " '{print $3}' )"
+  gateway="$(grep -iE "^[[:space:]]*$i[[:space:]]+" $mac_ip_list | awk -F" " '{print $4}' )"
+  dns="$(grep -iE "^[[:space:]]*$i[[:space:]]+" $mac_ip_list | awk -F" " '{print $5}' )"
+  ethx="$(grep -iE "^[[:space:]]*$i[[:space:]]+" $mac_ip_list | awk -F" " '{print $6}' )"
+  hostname="$(grep -iE "^[[:space:]]*$i[[:space:]]+" $mac_ip_list | awk -F" " '{print $7}' )"
+  if [ -n "$ip" ]; then
+    echo -n "Generating the network config for $ip, $netmask, $gateway, $dns, $ethx..."
+    gen_net_cfg_file
+    echo "done!"
+  fi
+done
+
+# restart network service
+/etc/init.d/network restart

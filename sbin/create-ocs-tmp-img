@@ -1,0 +1,168 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+#
+# Description: This script will create a Clonezilla image, all the partition/LV image files are linked. It is intended to be used to restore the image to other disk.
+
+set -e
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Ex.:
+# disk                      -> copied
+# etch-home.reiserfs-img.aa -> soft linked
+# etch-root.reiserfs-img.aa -> soft linked
+# hda1.ext3-img.aa          -> soft linked
+# hda-chs.sf                -> copied
+# hda-mbr                   -> copied
+# hda-pt.parted             -> copied
+# hda-pt.sf                 -> copied
+# lvm_etch.conf             -> copied
+# lvm_logv.list             -> copied
+# lvm_vg_dev.list           -> copied
+# parts                     -> copied
+# swappt-etch-swap_1.info   -> copied
+#
+# How ? First parse parts and lvm_logv.list, find the partition/LV image, link them. For the rest, copy them.
+
+#
+USAGE() {
+    echo This script will create a Clonezilla image based on an existing image in $ocsroot, all the partition or LV image files are linked, not copied. It is intended to be used to restore the image to other disk.
+    echo "Usage:"
+    echo "$0 [OPTION] EXISTING_IMAGE NEW_IMAGE ORIGINAL_DEV NEW_DEV   To create a new image NEW_IMAGE based on existing image EXISTING_IMAGE, the original dev is ORIGINAL_DEV, the new one is NEW_DEV"
+    echo "OPTION:"
+    echo "-t, --target-dir  DIR  Assign the created image will be put in DIR. If not assigned, the created image will be in /tmp."
+    echo "Ex: $0 image image-cnvt sda sdb"
+}
+
+#
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -t|--target-dir)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      new_imghome="$1"
+              shift
+            fi
+	    ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+imgname="$1"
+new_imgname="$2"
+src_dev="$3"
+tgt_dev="$4"
+
+if [ -z "$imgname" ]; then
+  echo "No EXISTING_IMAGE!"
+  echo "Program terminated!"
+  USAGE
+  exit 1
+fi
+
+if [ -z "$new_imgname" ]; then
+  echo "No NEW_IMAGE!"
+  echo "Program terminated!"
+  USAGE
+  exit 1
+fi
+
+if [ -z "$src_dev" ]; then
+  echo "No ORIGINAL_DEV!"
+  echo "Program terminated!"
+  USAGE
+  exit 1
+fi
+
+if [ -z "$tgt_dev" ]; then
+  echo "No NEW_DEV!"
+  echo "Program terminated!"
+  USAGE
+  exit 1
+fi
+
+# We put the new image in /tmp, since we need a filesystem can be symbolic linked. Otherwise it will fail, like CD (readonly) or samba server (FAT does not support symbolic link)
+[ -z "$new_imghome" ] && new_imghome="/tmp"
+# If the new image dir exists, only when the tag file converted-not-portable inside that we remove all the files. Otherwise it might happen to be the same dir name.
+if [ -d "$new_imghome/$new_imgname" -a -n "$new_imgname" -a \
+     -e "$new_imghome/$new_imgname/converted-not-portable" ]; then
+  rm -f $new_imghome/$new_imgname/*
+fi
+mkdir -p $new_imghome/$new_imgname
+
+echo "Creating a temporary image based on image $imgname..."
+# Find the file to be linked, not be copied.
+
+# Part 1: normal partition (hda1, sda1...)
+PARTIMG_LIST_TMP="$(cat $ocsroot/$imgname/parts)"
+pt_found=""
+for i in $PARTIMG_LIST_TMP; do
+  if [ -z "$(unalias ls 2>/dev/null; ls $ocsroot/$imgname/$i* 2>/dev/null)" ]; then
+    echo "$ocsroot/$imgname/$i* was not found! Skip this!"
+    continue
+  else
+    pt_found="$(unalias ls 2>/dev/null; ls $ocsroot/$imgname/*$i* 2>/dev/null | while read x; do basename $x; done | sort)"
+  fi
+  PARTIMG_LIST="$PARTIMG_LIST $pt_found"
+done
+
+# Part 2: LV
+LV_LIST=""
+LOGV_PARSE_CONF="$ocsroot/$imgname/lvm_logv.list"
+if [ -e "$LOGV_PARSE_CONF" ]; then
+  exec 3< $LOGV_PARSE_CONF
+  while read -u 3 lv fs; do
+    echo "lv fs: $lv $fs"
+    # Find the real data partition
+    # Ex:
+    # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
+    fn_found=""
+    fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
+    if [ -z "$(unalias ls 2>/dev/null; ls $ocsroot/$imgname/*$fn* 2>/dev/null)" ]; then
+      echo "$ocsroot/$imgname/$fn* was not found! Skip this!"
+      continue
+    else
+      fn_found="$(unalias ls 2>/dev/null; ls $ocsroot/$imgname/*$fn* 2>/dev/null | while read x; do basename $x; done | sort)"
+    fi
+    # For swap partition, skip
+    case "$fs" in 
+      *[Ss][Ww][Aa][Pp]*) continue ;;
+    esac
+    LV_LIST="$LV_LIST $fn_found"
+  done
+  exec 3<&-
+fi
+
+# Softlink them
+for i in $PARTIMG_LIST $LV_LIST; do
+  ( 
+    cd $new_imghome/$new_imgname || exit 1
+    ln -fs $ocsroot/$imgname/$i .
+  )
+done
+
+# Copy the others
+( 
+  cd $new_imghome/$new_imgname 
+  for i in $ocsroot/$imgname/*; do
+    j="$(basename $i)"
+    if [ -z "$(echo $PARTIMG_LIST $LV_LIST | grep -Ewo "$j")" ]; then
+    cp -a $ocsroot/$imgname/$j .
+  fi
+  done
+)
+
+# Put a tag file
+echo "This image was converted by $0 and it is not portable." > $new_imghome/$new_imgname/converted-not-portable
+#
+cnvt-ocs-dev -b -d $new_imghome $new_imgname $src_dev $tgt_dev
+echo "The created image is \"$new_imghome/$new_imgname\"."

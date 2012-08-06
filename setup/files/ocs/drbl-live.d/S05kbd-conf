@@ -1,0 +1,83 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load keymap if it exists
+[ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
+
+# Since now the DRBL live startup service is in rc2.d, no need to use bterm anymore.
+## A workaround here... Since jfbterm exits with segfault in rcS.d in Debian booting, we force to use "bterm" here.
+fb_term=""
+get_fb_term
+#fb_term="bterm"
+[ "$fb_term" = "bterm" -a ! -e "$uni_font" ] && exit 1
+
+export LANG="en_US.UTF-8"
+gen_locale_if_not_found en_US en_US.UTF-8
+
+echo "Configuring keyboard..."
+# ocs_live_keymap and live_keyboard_layouts are loaded from ocs-live.conf
+if [ -z "$ocs_live_keymap" -a -z "$live_keyboard_layouts" ]; then
+  # keymap not set in ocs-live.conf, use interactive dialog to set it.
+  # Bterm/jfbterm can only be used (it's better since Asian fonts can be shown) when:
+  # (1) If bterm and uni fonts or jfbterm are available
+  # (2) If it's not in serial console
+  # (3) frambebuffer device exists
+  if [ -n "$fb_term" -a -z "$(grep -E "console=.*ttyS.*" /proc/cmdline)" ] && \
+     ([ -e /dev/fb/0 ] || [ -e /dev/fb0 ]); then 
+    case "$fb_term" in
+      "bterm")
+         export TERM=bterm
+         set +e
+         # bterm need full path command even it's in the PATH already.
+         bterm -l $LANG -f $uni_font `which ocs-langkbdconf-bterm`
+         set -e
+         ;;
+      "jfbterm")
+         export TERM=jfbterm
+         set +e
+         jfbterm -q -e ocs-langkbdconf-bterm
+         set -e
+         ;;
+    esac
+  else
+    drbl-kbdchooser
+  fi
+elif [ -n "$ocs_live_keymap" ]; then
+  # http://live.debian.net/manual/html/live-manual.en.html#customizing-locale-and-language
+  # "$live-config.keyboard-model" and "$keyboard-model are processed by live-config during booting. Not hear.
+  if [ -e "$ocs_live_keymap" \
+       -o "$ocs_live_keymap" = "NONE" \
+       -o "$ocs_live_keymap" = "KERNEL" ]; then
+    install-keymap $ocs_live_keymap
+  else
+    echo "File $ocs_live_keymap NOT found!"
+    echo "Press Enter to exit..."
+    read
+    exit 1
+  fi
+fi
+
+# Varialble ocs_lang will be created in ocs-langkbdconf-bterm, and write to /etc/ocs/ocs-live.conf.
+# Load ocs_lang if it exists
+[ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
+if [ -n "${ocs_lang}" ]; then
+  echo "Setting locale in /etc/default/locale... "
+  cat <<-LOCALE_END > /etc/default/locale
+LC_ALL="${ocs_lang}"
+LANG="${ocs_lang}"
+LOCALE_END
+
+  echo "Setting locale in /etc/environment... "
+  cat <<-LOCALE_END > /etc/environment
+LC_ALL="${ocs_lang}"
+LANG="${ocs_lang}"
+LOCALE_END
+fi

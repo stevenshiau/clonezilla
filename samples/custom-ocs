@@ -1,0 +1,119 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Ref: http://sourceforge.net/forum/forum.php?thread_id=1759263&forum_id=394751
+# In this example, it will allow your user to use clonezilla live to choose 
+# (1) backup the image of /dev/hda1 (or /dev/sda1) to /dev/hda5 (or /dev/sda5)
+# (2) restore image in /dev/hda5 (or /dev/sda5) to /dev/hda1 (or /dev/sda1)
+
+# When this script is ready, you can run
+# /opt/drbl/sbin/ocs-iso -g en_US.UTF-8 -k NONE -s -m ./custom-ocs
+# to create the iso file for CD/DVD. or
+# /opt/drbl/sbin/ocs-live-dev -g en_US.UTF-8 -k NONE -s -c -m ./custom-ocs
+# to create the zip file for USB flash drive.
+
+# Begin of the scripts:
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# load the setting for clonezilla live.
+[ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
+# Load language files. For English, use "en_US.UTF-8".
+ask_and_load_lang_set en_US.UTF-8
+
+# The above is almost necessary, it is recommended to include them in your own custom-ocs.
+# From here, you can write your own scripts.
+
+# functions
+decide_sda_or_hda() {
+  if [ -n "$(grep -Ew sda1 /proc/partitions)" -a -n "$(grep -Ew sda5 /proc/partitions)" ]; then
+   disk=sda
+  elif [ -n "$(grep -Ew hda1 /proc/partitions)" -a -n "$(grep -Ew hda5 /proc/partitions)" ]; then
+   disk=hda
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "/dev/hda1 and /dev/hda5 do not exist or /dev/sda1 and /dev/sda5 do not exist!"
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  # src_part: hda1 or sda1, tgt_part: hda5 or sda5
+  src_part=${disk}1
+  tgt_part=${disk}5
+}
+action_backup() {
+  mkdir -p $ocsroot
+  part_fs="$(LANG=C ocs-get-part-info /dev/$tgt_part filesystem)"
+  case "$part_fs" in
+    ntfs) ntfs-3g /dev/$tgt_part $ocsroot 
+          RETV=$? ;;
+    *) mount /dev/$tgt_part $ocsroot
+       RETV=$? ;;
+  esac
+  if [ "$RETV" -eq 0 ]; then
+    # If you want to run it in batch mode, add option "-b" in the ocs-sr command
+    # For more options about ocs-sr, run "ocs-sr -h"
+    ocs-sr -q2 -c -j2 -z1p -i 2000 -p true saveparts "backup" "$src_part"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Fail to mount /dev/$tgt_part as $ocsroot!"
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  umount $ocsroot &>/dev/null
+}
+ 
+action_restore() {
+  mkdir -p $ocsroot
+  if ! mountpoint $ocsroot &>/dev/null; then
+    part_fs="$(LANG=C ocs-get-part-info /dev/$tgt_part filesystem)"
+    case "$part_fs" in
+      ntfs) ntfs-3g /dev/$tgt_part $ocsroot ;;
+      *) mount /dev/$tgt_part $ocsroot ;;
+    esac
+  fi
+  if mountpoint $ocsroot &>/dev/null; then
+    # If you want to run it in batch mode, add option "-b" in the ocs-sr command
+    # For more options about ocs-sr, run "ocs-sr -h"
+    ocs-sr -e1 auto -e2 -c -r --no-fdisk --no-restore-mbr -p true restoreparts "backup" "$src_part"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Fail to mount /dev/$tgt_part as $ocsroot!"
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  umount $ocsroot &>/dev/null
+} 
+
+##################
+###### MAIN ######
+##################
+# Find the device and partition
+decide_sda_or_hda
+
+TMP="$(mktemp /tmp/menu.XXXXXX)"
+trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+$DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+"$msg_nchc_clonezilla" --menu "$msg_choose_mode:" \
+0 0 0 \
+"Backup"  "Backup $src_part to $tgt_part" \
+"Restore" "Restore the image in $tgt_part to $src_part" \
+2> $TMP
+mode="$(cat $TMP)"
+[ -f "$TMP" ] && rm -f $TMP
+
+#
+case "$mode" in
+  Backup)
+    action_backup;;
+  Restore)
+    action_restore;;
+  *)
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Program terminated!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 1
+esac

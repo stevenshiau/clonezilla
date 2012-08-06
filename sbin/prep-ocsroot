@@ -1,0 +1,816 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# Description: Program to prepare Clonezilla live image home dir.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Default we will check if $ocsroot is a mountpoint after the mount action is done.
+chk_ocsroot_mountpont="yes"
+ntfs_mount_warning="no"
+# Ref: https://sourceforge.net/tracker/?func=detail&atid=671653&aid=2949613&group_id=115473
+# For cifs, noatime and nodiratime won't be honored, but cifs won't exit with error. It just ignores nodiratime.
+# For sshfs, nodiratime is not honored, and sshfs will exit with error.
+# For nfs, both noatime and nodiratime are honored.
+# Therefore we put noatime only, and add "nodiratime" for nfs, hfsplus and other fs.
+def_mount_opt="noatime" 
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /opt/drbl/conf/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+#
+check_if_root
+
+# functions
+USAGE() {
+    echo "Usage:"
+    echo "Prepare the clonezilla image dir"
+    echo "$0 [OPTION]"
+    language_help_prompt_by_idx_no
+    dialog_like_prog_help_prompt
+    echo "-s, --skip-ocsroot-mountpoint-chk   Skip checking if Clonezilla image $ocsroot is a mountpoint."
+    echo "-t, --ocsroot-resource-type  TYPE   Assign the Clonezilla image home type, available TYPE: local_dev, ssh_server, samba_server, nfs_server, enter_shell, skip" 
+    echo "Ex. $0 -l en_US.UTF-8"
+}
+prepare_mnt_point_ocsroot() {
+  if mountpoint $ocsroot &>/dev/null; then
+    echo "Umounting the existing $ocsroot..."
+    umount $ocsroot
+  fi
+  echo "Preparing the mount point $ocsroot..."
+  [ -L "$ocsroot" ] && rm -f $ocsroot
+  [ ! -d "$ocsroot" ] && mkdir -p $ocsroot
+  if [ ! -d "$ocsroot" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$ocsroot is NOT a directory! Failed to create directory $ocsroot! No mount point for $ocsroot!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+} # end of prepare_mnt_point_ocsroot
+#
+get_existing_dir() {
+   # show existing dir so that user can choose then return chosen to file ANS_TMP
+   local wk_dir="$1"
+   local ANS_TMP="$2"
+   local tgt_file= ans_=
+   local ASK_DIRNAME=1
+   local TMP=`mktemp /tmp/ocs.XXXXXX`
+   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+   numfiles=`ls $wk_dir 2> /dev/null | wc -l`
+   numfiles=`expr $numfiles + 0`
+   # list the previous saved images
+   # the list of images can be put in one page
+   filelist="/ $(rep_whspc_w_udrsc "$msg_top_directory_in_local_dev")"
+   numfiles=1
+   echo -n "Scanning dir $wk_dir."
+   for file in $wk_dir/*; do
+     echo -n "."
+     # Only directory ..., not file
+     [ ! -d "$file" ] && continue
+     # Exclude those special name dir, e.g. with space, or beginning with "-"
+     [ -n "$(echo $file | grep -E "[[:space:]]")" ] && continue
+     [ -n "$(echo "$(basename "$file")" | grep -E "^-+")" ] && continue
+     # Skip Clonezilla image dir
+     [ -e "$file/disk" -a -n "$(ls $file/[hsv]d*-pt.sf 2>/dev/null)" ] && continue
+     [ -e "$file/parts" -a -n "$(ls $file/[hsv]d*-pt.sf 2>/dev/null)" ] && continue
+     fileinfo="$(unalias ls 2>/dev/null; ls -ldh "$file" 2>/dev/null| awk '{ print $6"_"$7; }')"
+     filelist="$filelist $(basename "$file") $fileinfo"
+     numfiles=`expr $numfiles + 1`
+   done
+   echo " done!"
+
+   if [ $numfiles -gt 0 ]; then
+     if [ $numfiles -lt $MAX_DIALOG_HEIGHT ]; then
+       height="$numfiles"
+     else
+       height="$MAX_DIALOG_HEIGHT"
+     fi
+     while [ "$ASK_DIRNAME" -ne 0 ]; do
+       $DIA \
+         --backtitle "$msg_nchc_free_software_labs" \
+         --title "$msg_nchc_clonezilla" \
+         --menu "$msg_which_dir_as_clonezilla_img_home:" 0 $RESTORE_DIA_WIDTH \
+         $height $filelist 2> $TMP
+       tgt_file="$(cat $TMP)"
+       if [ -z "$tgt_file" ]; then
+         $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+        --yesno "$msg_you_must_input_filename!\n$msg_do_u_want_to_do_it_again!" 0 0 
+         ans_="$?"
+         case "$ans_" in
+           0) # yes is chosen
+              ASK_DIRNAME=1;;
+           1) # no is chosen
+              echo "$msg_program_stop!"
+              [ -f "$TMP" ] && rm -f $TMP
+	      if mountpoint $local_dev_mntpt &>/dev/null; then
+		umount $local_dev_mntpt
+	      fi
+              exit 1;;
+         esac
+       else
+         ASK_DIRNAME=0
+       fi
+     done
+   else
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "No disk image is found in $wk_dir.. Make sure you already saved an image! $msg_program_stop!!!"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     exit 1
+   fi
+   [ -f "$TMP" ] && rm -f $TMP
+   # return the valule
+   echo $tgt_file > $ANS_TMP
+} # end of get_existing_dir
+do_mount_local_dev() {
+   local target_part part_fs # target_part is like hda1, sda1...
+   local local_dev_mntpt sel_dir
+
+   prepare_mnt_point_ocsroot
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+   echo "$msg_prompt_for_insert_USB_dev_if_necessary"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   echo -n "$msg_press_enter_to_continue..."
+   read
+   echo "Mounting local dev as $ocsroot..."
+   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+   get_input_dev_name $ANS_TMP partition menu yes "$msg_device_to_mount_as_ocsroot_do_not_mount_target_dev. $msg_linux_parts_MS_mapping"
+   # we have to remove " (comes with checklist in dialog) so that for loop
+   # will work (Specially for FC3/4...)
+   target_part="$(cat $ANS_TMP | tr -d \")"
+   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+   [ -z "$target_part" ] && exit 1
+   check_input_partition $target_part
+   # check if $target_part is ntfs or others
+   part_fs="$(LANG=C ocs-get-part-info /dev/$target_part filesystem)"
+   echo "/dev/$target_part filesystem: $part_fs"
+   local_dev_mntpt="/tmp/local-dev"
+   mkdir -p $local_dev_mntpt
+   case "$part_fs" in 
+     ntfs) 
+           if [ "$ntfs_mount_warning" = "yes" ]; then
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+             echo "$msg_warning_mount_ntfs_writable"
+             echo "$msg_are_u_sure_u_want_to_continue ?"
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+             echo -n "[y/N] "
+             read continue_mount_ntfs_3g
+             case "$continue_mount_ntfs_3g" in
+               y|Y|[yY][eE][sS])
+                  echo "$msg_ok_let_do_it"
+                  ;;
+               *)
+                  echo "$msg_program_stop"
+                  exit 1
+                  ;;
+             esac
+           fi
+           echo ntfs-3g /dev/$target_part $local_dev_mntpt -o $def_mount_opt
+           ntfs-3g /dev/$target_part $local_dev_mntpt -o $def_mount_opt
+           if ! mountpoint $local_dev_mntpt &>/dev/null; then
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+             echo "Looks like $local_dev_mntpt is not mounted normally! Maybe the NTFS file system in /dev/$target_part was not unmounted normally. Do you want to try to mount it with option "-o force" ? ///NOTE/// This is a little dangerous!"
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+             echo -n "[y/N] "
+             read mount_ntfs_with_force
+             case "$mount_ntfs_with_force" in
+               y|Y|[yY][eE][sS])
+                  echo "$msg_ok_let_do_it"
+		  echo "Run ntfsfix on /dev/$target_part first..."
+		  ntfsfix /dev/$target_part
+		  echo "Run ntfs-3g /dev/$target_part $local_dev_mntpt -o force..."
+                  ntfs-3g /dev/$target_part $local_dev_mntpt -o force
+                  ;;
+             esac
+           fi
+	   ;;
+     hfsplus) 
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+           echo "$msg_warning_mount_hfsplus_writable"
+           echo "$msg_are_u_sure_u_want_to_continue ?"
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+           echo -n "[y/N] "
+           read continue_mount_hfsplus
+           case "$continue_mount_hfsplus" in
+             y|Y|[yY][eE][sS])
+                echo "$msg_ok_let_do_it"
+                ;;
+             *)
+                echo "$msg_program_stop"
+                exit 1
+                ;;
+           esac
+	   echo mount -t hfsplus -o force,$def_mount_opt,nodiratime /dev/$target_part $local_dev_mntpt
+	   LC_ALL=C mount -t hfsplus -o force,$def_mount_opt,nodiratime /dev/$target_part $local_dev_mntpt
+	   ;;
+     *)    echo mount -t auto -o $def_mount_opt,nodiratime /dev/$target_part $local_dev_mntpt
+           LC_ALL=C mount -t auto -o $def_mount_opt,nodiratime /dev/$target_part $local_dev_mntpt 
+	   ;;
+   esac
+   #[ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+   sel_dir="$(mktemp /tmp/sel_dir.XXXXXX)"
+   get_existing_dir $local_dev_mntpt $sel_dir
+   real_ocsroot="$(cat $sel_dir)"
+   [ -f "$sel_dir" -a -n "$sel_dir" ] &&  rm -f $sel_dir
+   mount --bind -o $def_mount_opt,nodiratime $local_dev_mntpt/$real_ocsroot $ocsroot
+   [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+} # end of do_mount_local_dev
+#
+do_mount_iscsi_server(){
+   # Now this function only supports iSCSI without authentication
+   local TMP srv_default iscsi_srv iscsi_target iscsi_account iscsi_password iscsi_port iscsi_port_def iscsi_extra_opt
+   # Default settings
+   iscsi_port_def="3260"
+   iscsi_extra_opt=""
+
+   network_config_if_necessary
+   prepare_mnt_point_ocsroot
+   echo "Mounting remote directory on iSCSI server as $ocsroot..."
+
+   TMP="$(mktemp /tmp/iscsi_tmp.XXXXXX)"
+   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+   # (1) iSCSI server IP address or FQDN
+   srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
+
+   while [ -z "$iscsi_srv" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount iSCSI" --inputbox "$msg_ip_address_or_FQDN_of_server:" \
+     0 0 $srv_default $DIA_ESC \
+     2> $TMP
+     iscsi_srv="$(cat $TMP)"
+   done
+   echo "iSCSI server is: $iscsi_srv"
+   # clean tmp file
+   echo "" > $TMP
+
+   # (1b) iscsi port
+   while [ -z "$iscsi_port" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount iSCSI" --inputbox "$msg_iscsi_port_on_server:" \
+     0 0 $iscsi_port_def $DIA_ESC \
+     2> $TMP
+     iscsi_port="$(cat $TMP)"
+   done
+   echo "iSCSI port on server is: $iscsi_port"
+   # clean tmp file
+   echo "" > $TMP
+
+   # (2a) account
+   while [ -z "$iscsi_account" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount iSCSI" --inputbox "$msg_account_in_server, $msg_ex john:" \
+     0 0 your_username $DIA_ESC \
+     2> $TMP
+     iscsi_account="$(cat $TMP)"
+   done
+   echo "iSCSI account in $iscsi_srv is: $iscsi_account"
+   # clean tmp file
+   echo "" > $TMP
+
+   # (2b) password
+   while [ -z "$iscsi_password" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount iSCSI" --inputbox "$msg_account_in_server:" \
+     0 0 your_password $DIA_ESC \
+     2> $TMP
+     iscsi_password="$(cat $TMP)"
+   done
+   echo "iSCSI password in $iscsi_srv is: $iscsi_password"
+   # clean tmp file
+   echo "" > $TMP
+
+   # get iscsi disk
+   iscsiadm -m discovery -t sendtargets -p $iscsi_srv | awk '{print $2}' | head -n 1 > $TMP
+   #iscsiadm -m discovery -t sendtargets -p $iscsi_srv | awk '{print $2}' > $TMP
+
+   iscsi_target="$(cat $TMP)"
+
+   # show discoveried targets
+   $DIA --backtitle "$msg_nchc_free_software_labs" --title "Mount iSCSI" \
+   --msgbox "The discover target(s) as following: $(cat $TMP)" 0 0 
+
+#   $DIA --backtitle "$msg_nchc_free_software_labs" --title "Mount sshfs" \
+#   --msgbox "$msg_now_you_have_to_enter_passwd: $ssh_account@$ssh_srv:$sshfs_dir ($msg_confirm_ssh_server_might_be_necessary)" 0 0 
+
+   # get iscsi disk
+   iscsiadm -m node -T $iscsi_target -p $iscsi_srv -l
+   iscsi_dev=$(dmesg |grep -A 1 IET  | tail -n 1 | awk -F"[" '{print $2}' | awk -F"]" '{print $1}')
+   if [ -z "$iscsi_dev" ]; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "iSCSI device was not found!"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     echo "$msg_program_stop!"
+     exit 1
+   fi
+
+   # delay 2 seconds to waiting iscsi device appear
+   sleep 2
+
+   [ -f "$TMP" ] && rm -f $TMP
+
+   if [ -e /dev/$iscsi_dev ]; then
+     echo "Mounting iSCSI device by:"
+     echo "mount /dev/$iscsi_dev $ocsroot"
+     LC_ALL=C mount /dev/$iscsi_dev $ocsroot
+     [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+   else
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "iSCSI device /dev/$iscsi_dev was not found!"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     echo "$msg_program_stop!"
+     exit 1
+   fi
+} # end of do_mount_iscsi_server
+#
+do_mount_ssh_server(){
+   local TMP srv_default ssh_srv ssh_account sshfs_dir ssh_port ssh_port_def sshfs_extra_opt
+   # Default settings
+   ssh_port_def="22"
+   sshfs_extra_opt="-o nonempty,$def_mount_opt"
+
+   network_config_if_necessary
+   prepare_mnt_point_ocsroot
+   echo "Mounting remote directory on ssh server as $ocsroot..."
+   # sshfs ACCOUNT@SSH_SERVER:/ABSOLUTE_PATH $ocsroot
+   TMP=$(mktemp /tmp/sshfs_tmp.XXXXXX)
+   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+   # (1) ssh server IP address or FQDN
+   srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
+   while [ -z "$ssh_srv" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount sshfs" --inputbox "$msg_ip_address_or_FQDN_of_server:" \
+     0 0 $srv_default $DIA_ESC \
+     2> $TMP
+     ssh_srv="$(cat $TMP)"
+   done
+   echo "SSH server is: $ssh_srv"
+   # clean tmp file
+   echo "" > $TMP
+   # (1b) ssh port
+   while [ -z "$ssh_port" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount sshfs" --inputbox "$msg_ssh_port_on_server:" \
+     0 0 $ssh_port_def $DIA_ESC \
+     2> $TMP
+     ssh_port="$(cat $TMP)"
+   done
+   echo "SSH port on server is: $ssh_port"
+   # clean tmp file
+   echo "" > $TMP
+   # (2) account
+   while [ -z "$ssh_account" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount sshfs" --inputbox "$msg_account_in_server, $msg_ex root:" \
+     0 0 root $DIA_ESC \
+     2> $TMP
+     ssh_account="$(cat $TMP)"
+   done
+   echo "SSH account in $ssh_srv is: $ssh_account"
+   # clean tmp file
+   echo "" > $TMP
+   # (3) absolute path 
+   while [ -z "$sshfs_dir" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount sshfs" --inputbox "$msg_sshfs_dir_path, $msg_ex $ocsroot" \
+     0 0 $ocsroot $DIA_ESC \
+     2> $TMP
+     sshfs_dir="$(cat $TMP)"
+   done
+   echo "sshfs dir in $sshfs_dir is: $sshfs_dir"
+   $DIA --backtitle "$msg_nchc_free_software_labs" --title "Mount sshfs" \
+   --msgbox "$msg_now_you_have_to_enter_passwd: $ssh_account@$ssh_srv:$sshfs_dir ($msg_confirm_ssh_server_might_be_necessary)" 0 0 
+   [ -f "$TMP" ] && rm -f $TMP
+   echo "Mounting sshfs by:"
+   echo "sshfs $sshfs_extra_opt -p $ssh_port \"$ssh_account\"@$ssh_srv:\"$sshfs_dir\" $ocsroot"
+   LC_ALL=C sshfs $sshfs_extra_opt -p $ssh_port "$ssh_account"@$ssh_srv:"$sshfs_dir" $ocsroot
+   [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+} # end of do_mount_ssh_server
+#
+do_mount_samba_server(){
+   local TMP srv_default smb_srv smb_account
+
+   network_config_if_necessary
+   prepare_mnt_point_ocsroot
+   echo "Mounting remote directory on Samba server as $ocsroot..."
+   # mount -t cifs -o username=your_user_name //192.168.200.254/images /home/partimag
+   TMP="$(mktemp /tmp/cifs_tmp.XXXXXX)"
+   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+   # (1) samba server IP address or FQDN
+   srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
+   while [ -z "$smb_srv" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount Samba server" --inputbox "$msg_ip_address_or_FQDN_of_server" \
+     0 0 $srv_default $DIA_ESC \
+     2> $TMP
+     smb_srv="$(cat $TMP)"
+   done
+   echo "Samba server is: $smb_srv"
+   # clean tmp file
+   echo "" > $TMP
+   # (2) domain
+   $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+   "Mount Samba server" --inputbox "$msg_smb_domain_in_server, $msg_if_no_smb_domain_skip_this" \
+   0 0 "" $DIA_ESC \
+   2> $TMP
+   smb_domain="$(cat $TMP)"
+   echo "Domain in $smb_srv is: $smb_domain"
+   # clean tmp file
+   echo "" > $TMP
+   # (3) account
+   while [ -z "$smb_account" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount Samba server" --inputbox "$msg_account_in_server, $msg_ex administrator" \
+     0 0 administrator $DIA_ESC \
+     2> $TMP
+     smb_account="$(cat $TMP)"
+   done
+   echo "Account in $smb_srv is: $smb_account"
+   # clean tmp file
+   echo "" > $TMP
+   # (4) absolute path 
+   while [ -z "$smbfs_dir" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount Samba server" --inputbox "$msg_ocs_img_dir_path, $msg_ex /images" \
+     0 0 /images $DIA_ESC \
+     2> $TMP
+     smbfs_dir="$(cat $TMP)"
+   done
+   echo "The path in samba server is: $smbfs_dir"
+   $DIA --backtitle "$msg_nchc_free_software_labs" --title "Mount Samba server" \
+   --msgbox "$msg_now_you_have_to_enter_passwd \"$smb_account\"@$smb_srv:$smbfs_dir" 0 0 
+   [ -f "$TMP" ] && rm -f $TMP
+   if [ -n "$smb_domain" ]; then
+     smb_domain_opt=",domain=$smb_domain"
+   fi
+   # Remove the / in the beging if it exists, since we will add it later
+   smbfs_dir="$(echo $smbfs_dir | sed -e "s|^/||g")"
+   if [ -z "$(LC_ALL=C lsmod | grep -Ew "^cifs")" ]; then
+     # In case cifs is not loaded
+     modprobe cifs
+   fi
+   echo "Mounting samba server by:"
+   echo "mount -t cifs -o user=\"${smb_account}${smb_domain_opt}\" \"//${smb_srv}/${smbfs_dir}\" $ocsroot" 
+   LC_ALL=C mount -t cifs -o user="${smb_account}${smb_domain_opt}" "//${smb_srv}/${smbfs_dir}" $ocsroot
+   [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+} # end of do_mount_samba_server
+#
+check_portmap_nfs_common_daemon() {
+  # This function is only for Clonezilla live (client environment), i.e. Debian. Since in DRBL environment, portmap and nfs-common should be running in client.
+  local pid pid_portmap pid_rpcbind pid_rpc_statd
+  # If not debian, do nothing. Since we are focusing this on Clonezilla live.
+  if ! is_boot_from_live; then
+    return 1
+  fi
+  if [ -z "$(LC_ALL=C lsmod | grep -Ew "^nfs")" ]; then
+    # An insurance to force to load nfs module. On Ubuntu karmic when mounting nfs4 server, failed due to nfs module not loaded.
+    # http://sourceforge.net/tracker/?func=detail&atid=671650&aid=2936441&group_id=115473
+    modprobe nfs
+  fi
+  pid_portmap="$(LC_ALL=C pidof portmap)"
+  pid_rpcbind="$(LC_ALL=C pidof rpcbind)"
+  if [ -z "$pid_portmap" -a -z "$pid_rpcbind" ]; then
+    echo "Service portmap or rpcbind is necesary for NFS client. Start it now..."
+    if [ -e "/etc/init.d/portmap" ]; then
+      /etc/init.d/portmap start
+    else
+      /etc/init.d/rpcbind start
+    fi
+  fi
+  # We assume nfs-common only runs rpc.statd (for NFS3), no rpc.lockd. This is true for modern kernel (>=2.4).
+  pid_rpc_statd="$(LC_ALL=C pidof rpc.statd)"
+  if [ -z "$pid_rpc_statd" ]; then
+    echo "nfs-common service is necesary for NFS client. Start it now..."
+    /etc/init.d/nfs-common start
+  fi
+} # end of check_portmap_nfs_common_daemon
+#
+do_mount_nfs_server(){
+   local TMP srv_default nfs_srv nfs_dir nfs_ver img_dir_eg nfsvers_opt
+
+   network_config_if_necessary
+   prepare_mnt_point_ocsroot
+   echo "Mounting remote directory on NFS (Ver 3) server as $ocsroot..."
+   # mount -t nfs 192.168.200.254:/work/exp /home/partimag
+   TMP="$(mktemp /tmp/nfs.XXXXXX)"
+   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+   # (0) NFS version
+   while [ -z "$nfs_ver" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "NFS version" --menu "$msg_ocs_live_mount_nfs_ser_ver" \
+     0 0 0 $DIA_ESC \
+     "nfs"    "NFS v2, v3" \
+     "nfs4"   "NFS v4" \
+     2> $TMP
+     nfs_ver="$(cat $TMP)"
+   done
+   # Decide the prompt image path example and the "nfsvers" option
+   case "$nfs_ver" in
+     nfs)  img_dir_eg="/home/partimag/"
+	   nfsvers_opt="nfsvers=3"
+	   ;;
+     nfs4) img_dir_eg="/partimag/"
+	   nfsvers_opt=""
+	   ;;
+   esac
+   # (1) nfs server IP address or FQDN
+   srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
+   while [ -z "$nfs_srv" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount NFS server" --inputbox "$msg_ip_address_or_FQDN_of_server:" \
+     0 0 $srv_default $DIA_ESC \
+     2> $TMP
+     nfs_srv="$(cat $TMP)"
+   done
+   echo "NFS server is: $nfs_srv"
+   # (2) absolute path 
+   while [ -z "$nfs_dir" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount NFS server" --inputbox "$msg_ocs_img_dir_path, $msg_ex $img_dir_eg:" \
+     0 0 $img_dir_eg $DIA_ESC \
+     2> $TMP
+     nfs_dir="$(cat $TMP)"
+   done
+   echo "The path in nfs server is: $nfs_dir"
+   [ -f "$TMP" ] && rm -f $TMP
+   canonical_hostname_prep $nfs_srv
+   check_portmap_nfs_common_daemon
+   echo "Mounting NFS server by:"
+   echo "mount -t $nfs_ver -o $def_mount_opt,nodiratime,$nfsvers_opt $nfs_srv:$nfs_dir $ocsroot" 
+   LC_ALL=C mount -t $nfs_ver -o $def_mount_opt,nodiratime,$nfsvers_opt $nfs_srv:$nfs_dir $ocsroot
+   [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+   if LC_ALL=C dpkg -L unfs3 &>/dev/null; then
+     # A workaround to make unfs3 service work well. It seems that after nfs-common is started, the rpcbind does not work with unfs3 which will be started later, therefore here we force to restart rpcbind
+     if [ -e "/etc/init.d/portmap" ]; then
+       /etc/init.d/portmap stop
+       sleep 1
+       /etc/init.d/portmap start
+     else
+       /etc/init.d/rpcbind stop
+       sleep 1
+       /etc/init.d/rpcbind start
+     fi
+   fi
+} # end of do_mount_nfs_server
+
+do_mount_ftp_server(){
+   # Use curlftpfs to mount ftp server
+   local TMP srv_default ftp_srv ftp_account ftpfs_dir
+
+   network_config_if_necessary
+   prepare_mnt_point_ocsroot
+   echo "Mounting remote directory on ftp server as $ocsroot..."
+   # ftpfs ACCOUNT@FTP_SERVER:/ABSOLUTE_PATH $ocsroot
+   TMP="$(mktemp /tmp/ftpfs_tmp.XXXXXX)"
+   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+   # (1) ftp server IP address or FQDN
+   srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
+   while [ -z "$ftp_srv" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount ftpfs" --inputbox "$msg_ip_address_or_FQDN_of_server:" \
+     0 0 $srv_default $DIA_ESC \
+     2> $TMP
+     ftp_srv="$(cat $TMP)"
+   done
+   echo "FTP server is: $ftp_srv"
+   # clean tmp file
+   echo "" > $TMP
+   # (2) account
+   while [ -z "$ftp_account" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount ftpfs" --inputbox "$msg_account_in_server, $msg_ex john:" \
+     0 0 $DIA_ESC \
+     2> $TMP
+     ftp_account="$(cat $TMP)"
+   done
+   echo "FTP account in $ftp_srv is: $ftp_account"
+   # clean tmp file
+   echo "" > $TMP
+   # (3) absolute path 
+   while [ -z "$ftpfs_dir" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount ftpfs" --inputbox "$msg_ftpfs_dir_path, $msg_ex /images" \
+     0 0 $DIA_ESC \
+     2> $TMP
+     # remove leading / since something like
+     # curlftpfs ftp://192.168.120.254//images /home/partimag -o direct_io,kernel_cache,nonempty,user=account
+     # will be denied. The error is like:
+     # Error connecting to ftp: Server denied you to change to the given directory
+     ftpfs_dir="$(cat $TMP | sed -e "s|^/*||g")"
+   done
+   echo "ftpfs dir in $ftpfs_dir is: $ftpfs_dir"
+   [ -f "$TMP" ] && rm -f $TMP
+   $DIA --backtitle "$msg_nchc_free_software_labs" --title "Mount FTP server" \
+   --msgbox "$msg_now_you_have_to_enter_passwd for the account $ftp_account on ftp://$ftp_srv/$ftpfs_dir" 0 0 
+   echo "Mounting ftpfs by:"
+   echo "curlftpfs -o direct_io,kernel_cache,nonempty,user=$ftp_account ftp://$ftp_srv/$ftpfs_dir $ocsroot ..." 
+   LC_ALL=C curlftpfs -o direct_io,kernel_cache,nonempty,user=$ftp_account ftp://$ftp_srv/$ftpfs_dir $ocsroot 
+   [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+} # end of do_mount_ftp_server
+
+do_mount_webdav_server(){
+   # ///NOTE/// This function will NOT work since davfs2 is not suitable for larger file transfer. The cache mechanism is the key problem (ref: https://sourceforge.net/forum/forum.php?thread_id=2248597&forum_id=82589).
+   # Here we keep this to avoid writting it again in the future.
+   # Use davfs2 to mount webdav server
+   local TMP srv_default url_default davfs_url
+   local default_dav_path_prompt="webdav"
+
+   network_config_if_necessary
+   prepare_mnt_point_ocsroot
+   echo "Mounting remote directory on webdav server as $ocsroot..."
+   # mount -t davfs -o noexec $WEBDAV_SERVER:/$PATH $ocsroot
+   TMP="$(mktemp /tmp/davfs_tmp.XXXXXX)"
+   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+   # (1) davfs server url 
+   srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
+   url_default="http://$srv_default/$default_dav_path_prompt"
+   while [ -z "$davfs_url" ]; do
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+     "Mount WebDAV fs" --inputbox "msg_url_of_davfs_server:" \
+     0 0 $url_default $DIA_ESC \
+     2> $TMP
+     davfs_url="$(cat $TMP)"
+   done
+   echo "WebDAV URL is: $davfs_url"
+   # clean tmp file
+   echo "" > $TMP
+   $DIA --backtitle "$msg_nchc_free_software_labs" --title "Mount WebDAV server" \
+   --msgbox "msg_now_you_might_have_to_enter_username_passwd $davfs_url" 0 0 
+   echo "Mounting davfs by:"
+   echo "mount -t davfs -o noexec $davfs_url $ocsroot ..." 
+   LC_ALL=C mount -t davfs -o noexec $davfs_url $ocsroot
+   [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+} # end of do_mount_webdav_server
+#
+find_ocsroot_dev_description(){
+  local ocsroot_parent filesystem writable rw_test_file
+  filesystem="$(get_dir_filesystem $ocsroot)"
+  rw_test_file="$(mktemp $ocsroot/rw_test.XXXXXX)"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    writable="yes"
+  else
+    writable="no"
+  fi
+  [ -f "$rw_test_file" ] && rm -f $rw_test_file
+  case "$filesystem" in
+    tmpfs) livemedia_des="$msg_writable_dev_ramdisk" ;;
+    nfs|smbfs|cifs) livemedia_des="$msg_writable_fs_ex_nfs_smbfs" ;;
+    rootfs)
+      # This is special case in Debian Live. 
+      # Check if / is using unionfs and tmpfs. In Debian Live, it's like:
+      # tmpfs /cow tmpfs rw 0 0
+      # unionfs / unionfs rw,dirs=/cow=rw:/filesystem.squashfs=ro,debug=4294967295,delete=whiteout 0 0
+      if [ -n "$(grep -E "^tmpfs /cow" /proc/mounts)" -a \
+           -n "$(grep -E "^unionfs / unionfs rw,dirs=/cow=rw:" /proc/mounts)" ]; then
+        livemedia_des="$msg_writable_dev_ramdisk"
+      fi
+      ;;
+    aufs|overlayfs)
+      # This is special case in Ubuntu Live or Debian Lenny live. 
+      # /proc/mounts is like:
+      # aufs on / type aufs (rw)
+      livemedia_des="$msg_writable_dev_ramdisk"
+      ;;
+    fuse)
+      # Fuse... maybe sshfs or ftpfs (not on yet)
+      if [ "$writable" = "yes" ]; then
+        livemedia_des="$msg_writable_dev_fuse"
+      else
+        livemedia_des="$msg_readonly_dev_fuse"
+      fi
+      ;;
+    *)
+      # not RAM disk,  
+      if [ "$writable" = "yes" ]; then
+        livemedia_des="$msg_writable_dev_ex_usb_stick"
+      else
+        livemedia_des="$msg_readonly_dev_ex_CD"
+      fi
+      ;;
+  esac
+  [ -z "$livemedia_des" ] && livemedia_des="$msg_unknown"
+} # end of find_ocsroot_dev_description
+#
+get_ocsroot_resource() {
+  find_ocsroot_dev_description
+  local TMP
+  #
+  if [ -z "$ocsroot_src" ]; then
+    TMP=$(mktemp /tmp/ocsrootmenu.XXXXXX)
+    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    "$msg_mount_ocsroot_img_hint_short_des" --menu "$msg_mount_ocsroo_img_hint_long_des\n$msg_choose_mode:" \
+    0 0 0 $DIA_ESC \
+    "local_dev"    "$msg_mount_local_dev" \
+    "ssh_server"   "$msg_mount_sshfs" \
+    "samba_server" "$msg_mount_smbfs" \
+    "nfs_server"   "$msg_mount_nfs" \
+    "enter_shell"  "$msg_enter_cml. $msg_do_it_manually" \
+    "skip"         "$msg_skip_this_use_existing_ocsroot ($livemedia_des)" \
+    2> $TMP
+    # Since curlftpfs is not stable with partimage/ntfsclone, skip that now. We will turn it on when it's stable.
+    #"ftp_server"   "$msg_mount_ftpfs ($msg_experimental, $msg_not_stable)" \
+    # Since iSCSI is not ready yet. comment this:
+    #"iscsi_server" "msg_mount_iscsi_server" \
+    # Since davfs is not ready yet. comment this:
+    #"webdav_server" "msg_mount_webdav_server" \
+    ocsroot_src="$(cat $TMP)"
+    echo "ocsroot device is $ocsroot_src"
+    [ -f "$TMP" ] && rm -f $TMP
+  fi
+  case "$ocsroot_src" in
+    "local_dev"|"ssh_server"|"samba_server"|"nfs_server"|"enter_shell"|"skip")
+       true;;
+    *)
+       echo "\"$ocsroot_src\" is an unknown or unsupported type! You have to specify a correct ocsroot_src (local_dev, ssh_server, samba_server, nfs_server, enter_shell, or skip)"
+       ;;
+  esac
+} # end of get_ocsroot_resource
+
+#
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l|--language)
+	shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+	  specified_lang="$1"
+	  shift
+        fi
+        [ -z "$specified_lang" ] && USAGE && exit 1
+	;;
+    -t|--ocsroot-resource-type)
+        shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+          ocsroot_src="$1"
+          shift
+        fi
+	[ -z "$ocsroot_src" ] && USAGE && exit 1
+        ;;
+    -s|--skip-ocsroot-mountpoint-chk) chk_ocsroot_mountpont="no"; shift;;
+    -d0|--dialog)   DIA="dialog"; shift;;
+    -d1|--Xdialog)  DIA="Xdialog"; shift;;
+    -d2|--whiptail) DIA="whiptail"; shift;;
+    -d3|--gdialog)  DIA="gdialog"; shift;;
+    -d4|--kdialog)  DIA="kdialog"; shift;;
+    -*) echo "${0}: ${1}: invalid option" >&2
+        USAGE >& 2
+        exit 2 ;;
+    *)  break ;;
+  esac
+done
+#
+ask_and_load_lang_set $specified_lang
+
+# check DIA
+check_DIA_set_ESC $DIA
+
+##############
+#### main ####
+##############
+
+#
+if [ -z "$ocsroot_src" ]; then
+  get_ocsroot_resource
+fi
+
+#
+case "$ocsroot_src" in
+  local_dev)    do_mount_local_dev;;
+  iscsi_server) do_mount_iscsi_server;;
+  ssh_server)   do_mount_ssh_server;;
+  samba_server) do_mount_samba_server;;
+  nfs_server)   do_mount_nfs_server;;
+  ftp_server)   do_mount_ftp_server;;
+  webdav_server)
+      # ///NOTE/// webdav_server will NOT work since davfs2 is not suitable for larger file transfer. The cache mechanism is the key problem (ref: https://sourceforge.net/forum/forum.php?thread_id=2248597&forum_id=82589).
+      do_mount_webdav_server;;
+  enter_shell) 
+      echo $msg_enter_another_shell_hint_with_netcfg_prompt
+      echo -n "$msg_press_enter_to_continue..."
+      read
+      /bin/bash
+      ;;
+  skip)
+      echo "$msg_existing_setting_is:"
+      echo $msg_delimiter_star_line
+      df -ah
+      echo $msg_delimiter_star_line
+      echo -n "$msg_press_enter_to_continue..."
+      read
+      ;;
+  *)
+      echo "Unknown type of Clonezilla image home type!"
+      echo "$msg_program_stop!"
+      exit 1
+      ;;
+esac
+
+echo "done!"
+exit 0

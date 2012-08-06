@@ -1,0 +1,427 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+
+#
+export LC_ALL=C
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+#
+prog="$(basename $0)"
+USAGE() {
+   echo "Usage: $prog [OPTION] PARTITION VALUE1 VALUE2..."
+   echo "PARTITION is the partition device name. e.g. /dev/sda1"
+   echo "VALUE is one of these value: start, end, size, type, filesystem or flags"
+   echo "OPTION:"
+   echo "-u, --unit UNIT     When the VALUE1, VALUE2... is about size, show the size with unit UNIT (s, kB, MB, GB... which parted accepts)."
+   echo "Ex:" 
+   echo "To list the /dev/sda1 size with unit sector"
+   echo "  $prog -u s /dev/sda1 size"
+}
+
+#
+check_col_idx() {
+  # DEV is like /dev/hda
+  # wanted is like "start", "end", "file" (since it's "file system" in SuSE 10.0, and filesystem in Redhat/FC)
+  # Example in FC5 with parted-1.7.1-15.fc5
+  #[root@fc5101 tmp]# LC_ALL=C parted -s /dev/hda p
+  #
+  #Disk /dev/hda: 4295MB
+  #Sector size (logical/physical): 512B/512B
+  #Partition Table: msdos
+  #
+  #Number  Start   End     Size    Type     File system  Flags
+  # 1      32.3kB  4285MB  4285MB  primary  ntfs         boot
+  #
+  #For Mac OS GPT:
+  #Model: ATA Hitachi HTS54168 (scsi)
+  #Disk /dev/sda: 80.0GB
+  #Sector size (logical/physical): 512B/512B
+  #Partition Table: gpt
+  #
+  #Number  Start   End     Size    File system  Name                  Flags
+  # 1      20.5kB  210MB   210MB   fat32        EFI System Partition  boot
+  # 2      210MB   38.3GB  38.1GB  hfs+         Untitled
+  # 3      38.4GB  41.6GB  3221MB  fat32        Untitled
+  #
+  # Different version of parted has different output format, that's why it's so complicated here.
+  local DEV=$1
+  local wanted=$2
+  local part_info_tmp
+  part_info_tmp="$(mktemp /tmp/part_tmp.XXXXXX)"
+  LC_ALL=C parted -s $DEV print > $part_info_tmp 2>/dev/null
+  # force to change the output temp file, no space in "File system"
+  LC_ALL=C perl -pi -e "s/File system/Filesystem/g" $part_info_tmp
+  # The seq is put in the order of possibility in clonezilla, i.e. filesystem is most used one, then size.
+  for i in 6 4 5 3 2 1 7; do
+    col="$(grep -i flags $part_info_tmp | awk -F" " "{print \$$i}")"
+    if [ -n "$(echo $col | grep -i $wanted)" ]; then
+      col_idx=$i
+      break
+    fi
+  done
+  [ -f "$part_info_tmp" ] && rm -f $part_info_tmp
+  echo $col_idx
+} # end of check_col_idx
+
+#
+get_from_parted() {
+  p="$(basename $part)"
+  target_hd="/dev/${p:0:3}"
+  part_index="${p:3}"
+  local part_info
+  
+  part_info="$(mktemp /tmp/part.XXXXXX)"
+  [ -n "$unit" ] && unit_opt="unit $unit"
+  LC_ALL=C parted -s $target_hd $unit_opt print > $part_info 2>/dev/null
+  
+  case "$wanted" in
+    start)
+       start_idx="$(check_col_idx $target_hd start)"
+       if [ -z "$start_idx" ]; then
+         [ -f "$part_info" ] && rm -f $part_info
+	 return 1
+       fi
+       part_start=$(LC_ALL=C grep -E "^[[:space:]]*$part_index\>" $part_info | awk -F" " "{print \$$start_idx}")
+       echo "$part_start"
+       ;;
+    end)
+       end_idx="$(check_col_idx $target_hd end)"
+       if [ -z "$end_idx" ]; then
+         [ -f "$part_info" ] && rm -f $part_info
+	 return 1
+       fi
+       part_end=$(LC_ALL=C grep -E "^[[:space:]]*$part_index\>" $part_info | awk -F" " "{print \$$end_idx}")
+       echo "$part_end"
+       ;;
+    size)
+       size_idx="$(check_col_idx $target_hd size)"
+       if [ -z "$size_idx" ]; then
+         [ -f "$part_info" ] && rm -f $part_info
+	 return 1
+       fi
+       part_size=$(LC_ALL=C grep -E "^[[:space:]]*$part_index\>" $part_info | awk -F" " "{print \$$size_idx}")
+       echo "$part_size"
+       ;;
+    type)
+       type_idx="$(check_col_idx $target_hd type)"
+       if [ -z "$type_idx" ]; then
+         [ -f "$part_info" ] && rm -f $part_info
+	 return 1
+       fi
+       part_type=$(LC_ALL=C grep -E "^[[:space:]]*$part_index\>" $part_info | awk -F" " "{print \$$type_idx}")
+       echo "$part_type"
+       ;;
+    filesystem|fs)
+       filesystem_idx="$(check_col_idx $target_hd file)"
+       if [ -z "$filesystem_idx" ]; then
+         [ -f "$part_info" ] && rm -f $part_info
+	 return 1
+       fi
+       part_fs=$(LC_ALL=C grep -E "^[[:space:]]*$part_index\>" $part_info | awk -F" " "{print \$$filesystem_idx}")
+       echo "$part_fs"
+       ;;
+    flags)
+       flags_idx="$(check_col_idx $target_hd flags)"
+       if [ -z "$flags_idx" ]; then
+         [ -f "$part_info" ] && rm -f $part_info
+	 return 1
+       fi
+       part_flags=$(LC_ALL=C grep -E "^[[:space:]]*$part_index\>" $part_info | awk -F" " "{print \$$flags_idx}")
+       echo "$part_flags"
+       ;;
+  esac
+  
+  [ -f "$part_info" ] && rm -f $part_info
+} # end of get_from_parted
+
+#
+get_fs_from_blkid() {
+  local part_="$1" 
+  local blkinfo TYPE hdtmp ptno pt_id ptype pt_info
+  if type blkid &>/dev/null; then
+    blkinfo="$(mktemp /tmp/blkinfo.XXXXXX)"
+    # blikd output example:
+    # /dev/sda1: LABEL="/boot" UUID="a9cb47b6-e3ff-4a26-80e2-3fa8d30702e8" SEC_TYPE="ext2" TYPE="ext3" 
+    # /dev/VolGroup00/LogVol00: UUID="110bc035-6920-4732-b117-5124843b93b9" SEC_TYPE="ext2" TYPE="ext3" 
+    # /dev/VolGroup00/LogVol01: TYPE="swap" UUID="af85b756-39fa-48f0-80e7-b2128d5c87ab"
+    # We want to filter to filter them as: TYPE="ext3" only
+    LC_ALL=C blkid -c /dev/null $part_ | grep -o -E '\<TYPE="[^[:space:]]*"($|[[:space:]]+)' > $blkinfo
+    TYPE=""
+    . $blkinfo
+    # If the result is vfat, it's too fuzzy, since there are fat12/fat16/fat32, and partimage does not support fat12.
+    if [ -n "$(echo $TYPE | grep -iE "vfat")" ]; then
+      if [ "$(file -Ls $part_ | grep -iw "fat" | grep -iw "12 bit")" ]; then
+        # Ex. for FAT12:
+	# /dev/sda1: x86 boot sector, mkdosfs boot message display, code offset 0x3c, OEM-ID " mkdosfs", sectors/cluster 16, root entries 512, sectors 63252 (volumes <=32 MB) , Media descriptor 0xf8, sectors/FAT 12, heads 255, serial number 0x487771fc, label: "           ", FAT (12 bit)
+       TYPE="fat12"
+      fi
+    fi
+    # UFS:
+    # For ufs, it might be false one, since if the Id=a5, it's FreeBSD slice
+    # E.g. The disk sdb has 3 slices (sdb1, sdb2, sdb3), and slice sdb1 contains partitions sdb5, sdb6, sdb7, slice sdb2 contains partitions sdb8, sdb9, sdb10, and sdb3 contains partitions sdb11, sdb12, sdb13. As shown in the following.
+    # Then blkid will show /dev/sdb1 as ufs, but it's only slice, we only have to save the first 16 sectors by "dd if=/dev/sdb1 of=slice1-table.dd bs=512 count=16"
+    # Therefore if blkid shows "ufs", we have to dig more.
+    #
+    # # sfdisk -l -uS /dev/sdb
+    # Disk /dev/sdb: 2219 cylinders, 255 heads, 63 sectors/track
+    # Units = sectors of 512 bytes, counting from 0
+    #
+    #    Device Boot    Start       End   #sectors  Id  System
+    #    /dev/sdb1   *        63  20479094   20479032  a5  FreeBSD
+    #    /dev/sdb2      20479095  24574724    4095630  a5  FreeBSD
+    #    /dev/sdb3      24574725  33554114    8979390  a5  FreeBSD
+    #    /dev/sdb4             0         -          0   0  Empty
+    #    /dev/sdb5            63  10479094   10479032
+    #    /dev/sdb6      10479095  20479094   10000000
+    #    /dev/sdb7      21574725  22574724    1000000
+    #    /dev/sdb8      20479095  21574724    1095630
+    #    /dev/sdb9      22574725  24574724    2000000
+    #    /dev/sdb10     24704115  25804114    1100000
+    #    /dev/sdb11     24574725  24704114     129390
+    #    /dev/sdb12     26304115  33554114    7250000
+    #    /dev/sdb13     25804115  26304114     500000
+    #
+    # # disktype /dev/sdb
+    # --- /dev/sdb
+    # Block device, size 17 GiB (18253611008 bytes)
+    # DOS/MBR partition map
+    # Partition 1: 9.765 GiB (10485264384 bytes, 20479032 sectors from 63, bootable)
+    #   Type 0xA5 (FreeBSD)
+    #   FreeBSD boot loader (i386 boot1 at sector 0)
+    #   FreeBSD boot loader (i386 boot2/BTX 1.02 at sector 2)
+    #   BSD disklabel (at sector 1), 8 partitions
+    #   Partition a: 4.997 GiB (5365264384 bytes, 10479032 sectors from 63)
+    #     Type 7 (4.2BSD fast file system)
+    #     Includes the disklabel and boot code
+    #     UFS2 file system, 64 KiB offset, little-endian
+    #       Last mounted at "/"
+    #   Partition b: 4.768 GiB (5120000000 bytes, 10000000 sectors from 10479095)
+    #     Type 1 (swap)
+    #     Blank disk/medium
+    #   Partition c: 9.765 GiB (10485264384 bytes, 20479032 sectors from 63)
+    #     Type 0 (Unused)
+    # Partition 2: 1.953 GiB (2096962560 bytes, 4095630 sectors from 20479095)
+    #   Type 0xA5 (FreeBSD)
+    #   FreeBSD boot loader (i386 boot1 at sector 0)
+    #   FreeBSD boot loader (i386 boot2/BTX 1.02 at sector 2)
+    #   BSD disklabel (at sector 1), 8 partitions
+    #   Partition b: 488.3 MiB (512000000 bytes, 1000000 sectors from 21574725)
+    #     Type 1 (swap)
+    #     Blank disk/medium
+    #   Partition c: 1.953 GiB (2096962560 bytes, 4095630 sectors from 20479095)
+    #     Type 0 (Unused)
+    #   Partition d: 535.0 MiB (560962560 bytes, 1095630 sectors from 20479095)
+    #     Type 7 (4.2BSD fast file system)
+    #     Includes the disklabel and boot code
+    #     UFS2 file system, 64 KiB offset, little-endian
+    #       Last mounted at "/home"
+    #   Partition e: 976.6 MiB (1024000000 bytes, 2000000 sectors from 22574725)
+    #     Type 1 (swap)
+    #     Blank disk/medium
+    # Partition 3: 4.282 GiB (4597447680 bytes, 8979390 sectors from 24574725)
+    #   Type 0xA5 (FreeBSD)
+    #   FreeBSD boot loader (i386 boot1 at sector 0)
+    #   FreeBSD boot loader (i386 boot2/BTX 1.02 at sector 2)
+    #   BSD disklabel (at sector 1), 8 partitions
+    #   Partition b: 537.1 MiB (563200000 bytes, 1100000 sectors from 24704115)
+    #     Type 1 (swap)
+    #     Blank disk/medium
+    #   Partition c: 4.282 GiB (4597447680 bytes, 8979390 sectors from 24574725)
+    #     Type 0 (Unused)
+    #   Partition d: 63.18 MiB (66247680 bytes, 129390 sectors from 24574725)
+    #     Type 7 (4.2BSD fast file system)
+    #     Includes the disklabel and boot code
+    #     UFS2 file system, 64 KiB offset, little-endian
+    #       Last mounted at "/opt"
+    #   Partition e: 3.457 GiB (3712000000 bytes, 7250000 sectors from 26304115)
+    #     Type 7 (4.2BSD fast file system)
+    #     UFS2 file system, 64 KiB offset, little-endian
+    #       Last mounted at "/home2"
+    #   Partition h: 244.1 MiB (256000000 bytes, 500000 sectors from 25804115)
+    #     Type 1 (swap)
+    #     Blank disk/medium
+    #
+    # # blkid
+    # /dev/sdb1: TYPE="ufs"
+    # /dev/sdb2: TYPE="ufs"
+    # /dev/sdb3: TYPE="ufs"
+    # /dev/sdb5: TYPE="ufs"
+    # /dev/sdb8: TYPE="ufs"
+    # /dev/sdb11: TYPE="ufs"
+    # /dev/sdb12: TYPE="ufs"
+    #
+    if [ -n "$(echo $TYPE | grep -iE "ufs")" ]; then
+      # (1) MBR
+      # The example for sfdisk command to get partition id:
+      # sfdisk --print-id /dev/sdb 1
+      # a5
+      # (2) GPT
+      # root@debian:~#  blkid
+      # /dev/sda2: TYPE="ufs"
+      # /dev/sda3: TYPE="ufs"
+      # /dev/sda4: TYPE="ufs"
+      # /dev/sda5: TYPE="ufs"
+      # /dev/loop0: TYPE="squashfs"
+      # 
+      # root@debian:~#  sgdisk -p /dev/sda
+      # Disk /dev/sda: 41943040 sectors, 20.0 GiB
+      # Logical sector size: 512 bytes
+      # Disk identifier (GUID): 0D3CC1B2-3DF6-11E1-AF1F-000C2976A9B0
+      # Partition table holds up to 128 entries
+      # First usable sector is 34, last usable sector is 41943006
+      # Partitions will be aligned on 2-sector boundaries
+      # Total free space is 1 sectors (512 bytes)
+      # 
+      # Number  Start (sector)    End (sector)  Size       Code  Name
+      #    1              34             161   64.0 KiB    A501
+      #    2             162         2097313   1024.0 MiB  A502
+      #    3         2097314        12583073   5.0 GiB     A503
+      #    4        12583074        16777377   2.0 GiB     A503
+      #    5        16777378        41943005   12.0 GiB    A503
+      # 
+      # root@debian:~#  sgdisk -i 1 /dev/sda
+      # Partition GUID code: 83BD6B9D-7F41-11DC-BE0B-001560B84F0F (FreeBSD boot)
+      # Partition unique GUID: 0D3D0C89-3DF6-11E1-AF1F-000C2976A9B0
+      # First sector: 34 (at 17.0 KiB)
+      # Last sector: 161 (at 80.5 KiB)
+      # Partition size: 128 sectors (64.0 KiB)
+      # Attribute flags: 0000000000000000
+      # Partition name: ''
+      # 
+      # root@debian:~#  sgdisk -i 2 /dev/sda
+      # Partition GUID code: 516E7CB5-6ECF-11D6-8FF8-00022D09712B (FreeBSD swap)
+      # Partition unique GUID: 39B6CECD-3DF6-11E1-AF1F-000C2976A9B0
+      # First sector: 162 (at 81.0 KiB)
+      # Last sector: 2097313 (at 1.0 GiB)
+      # Partition size: 2097152 sectors (1024.0 MiB)
+      # Attribute flags: 0000000000000000
+      # Partition name: ''
+      # 
+      # root@debian:~#  sgdisk -i 3 /dev/sda
+      # Partition GUID code: 516E7CB6-6ECF-11D6-8FF8-00022D09712B (FreeBSD UFS)
+      # Partition unique GUID: 436931F9-3DF6-11E1-AF1F-000C2976A9B0
+      # First sector: 2097314 (at 1.0 GiB)
+      # Last sector: 12583073 (at 6.0 GiB)
+      # Partition size: 10485760 sectors (5.0 GiB)
+      # Attribute flags: 0000000000000000
+      # Partition name: ''
+      # ===
+      # /dev/sda5 -> /dev/sda 5
+      hdtmp="${part_:0:8}"
+      ptno="${part_:8}"
+      ptype="$(get_partition_table_type_from_disk $hdtmp)"
+      case "$ptype" in
+      mbr)
+        pt_id="$(LC_ALL=C sfdisk --print-id $hdtmp $ptno 2>/dev/null)"
+        # Partition ID a5 (FreeBSD), a6 (OpenBSD), a9 (NetBSD) are slices
+        if [ "$(echo "$pt_id" | grep -Ewi "(a5|a6|a9)")" ]; then
+          TYPE="BSD_slice"
+        fi
+	;;
+      gpt)
+	pt_info="$(LC_ALL=C sgdisk -i $ptno $hdtmp 2>/dev/null | grep -Ei "^Partition GUID code:")"
+	if [ -n "$(echo $pt_info | grep -i "FreeBSD boot")" ]; then
+          TYPE="BSD_boot"
+	elif [ -n "$(echo $pt_info | grep -i "FreeBSD swap")" ]; then
+          # Do not use any word with "swap" in TYPE, otherwise it won't be saved by dd, since we do not good mechanism for BSD swap imaging/cloning.
+          TYPE="BSD_part"
+	fi
+	;;
+      esac
+    fi
+    echo "$TYPE"
+    [ -f "$blkinfo" ] && rm -f $blkinfo
+  fi
+} # end of get_fs_from_blkid
+#
+get_fs_from_partclone_fstype() {
+  local part_="$1" 
+  local fstypeinfo TYPE
+  if type partclone.fstype &>/dev/null; then
+    fstypeinfo="$(mktemp /tmp/fstypeinfo.XXXXXX)"
+    # partclone.fstype output example:
+    # partclone.fstype /dev/hda3 2>/dev/null
+    # TYPE="vmfs"
+    # We want to filter to filter them as: TYPE="vmfs" only
+    LC_ALL=C partclone.fstype $part_ 2>/dev/null| grep -o -E '\<TYPE="[^[:space:]]*"($|[[:space:]]+)' > $fstypeinfo
+    TYPE=""
+    . $fstypeinfo
+    echo "$TYPE"
+    [ -f "$fstypeinfo" ] && rm -f $fstypeinfo
+  fi
+} # end of get_fs_from_partclone_fstype
+
+# Some notes:
+# First priority is to use blkid to get filesystem, 2 reasons:
+# (1) Since parted seems to have problem with ntfs in some case:
+# LC_ALL=C parted -s /dev/hdb p
+# Model: VMware Virtual IDE Hard Drive (ide)
+# Disk /dev/hdb: 8590MB
+# Sector size (logical/physical): 512B/512B
+# Partition Table: msdos
+# 
+# Number  Start   End     Size    Type     File system  Flags
+#  1      32.3kB  8579MB  8579MB  primary  ntfs         boot
+# 
+# [root@drblrhvmnet101 ~]# LC_ALL=C parted -s /dev/hdb1 p
+# Error: Can't have a partition outside the disk!
+#
+# (2) Moreover, the method in get_from_parted does NOT work for LV in LVM... blkid can solve the problem. The weakness is blkid does not provide size info, but it's not so used very often in clonezilla, and normally size is not important when cloning.
+
+#
+##############
+#### MAIN ####
+##############
+#
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -u|--unit)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      unit="$1"
+              shift
+            fi
+            [ -z "$unit" ] && USAGE >&2 && exit 1
+	    ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+# part is like /dev/hda1
+# request is one of start, end, size, type, filesystem or flags.
+part="$1"
+shift
+request="$*"
+
+[ -z "$part" -o -z "$request" ] && exit 1
+
+#
+for wanted in $request; do
+  case "$wanted" in
+    filesystem|fs)
+       # We use partclone.fstype to tell vmfs3 and vmfs5 first, otherwise blkid will show them as VMFS_volume_member, which we can not tell it's vmfs3 or vmfs5.
+       fs="$(get_fs_from_partclone_fstype $part)"
+       if [ -z "$fs" ]; then
+         fs="$(get_fs_from_blkid $part)"
+       fi
+       if [ -z "$fs" ]; then
+         get_from_parted
+       else
+         echo "$fs"
+       fi
+       ;;
+    *)
+       get_from_parted
+       ;;
+  esac
+done

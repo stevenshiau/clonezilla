@@ -1,0 +1,683 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Program to create Clonezilla live.
+
+# functions
+set_localepurge(){
+  # Create en_US.UTF-8, the dialog in clonezilla need that in console.
+  # Otherwise dialog will be distorted.
+  if [ -z "$(localedef --list-archive | grep -iw "en_US.utf8")" ] && \
+     [ -z "$(unalias ls 2>/dev/null; ls /usr/lib/locale | grep -iw "en_US.utf8")" ] 
+  then
+    localedef -f UTF-8 -i en_US en_US.UTF-8
+  fi
+  # Keep some locales.
+  echo "Set nonepurge locales..."
+  debconf-communicate -fnoninteractive localepurge > /dev/null <<EOF
+set localepurge/dontbothernew false
+set localepurge/mandelete true
+set localepurge/none_selected false
+set localepurge/nopurge $locale_to_keep
+set localepurge/quickndirtycalc true
+set localepurge/remove_no false
+set localepurge/showfreedspace true
+set localepurge/verbose false
+
+fset localepurge/dontbothernew seen true
+fset localepurge/mandelete seen true
+fset localepurge/none_selected seen true
+fset localepurge/nopurge seen true
+fset localepurge/quickndirtycalc seen true
+fset localepurge/remove_no seen true
+fset localepurge/showfreedspace seen true
+fset localepurge/verbose seen true
+EOF
+  # apply it
+  echo "Purging locale files..."
+  LC_ALL=C dpkg-reconfigure --priority=low --unseen-only localepurge
+  echo "The content of /etc/locale.nopurge:"
+  cat /etc/locale.nopurge
+} # end of set_localepurge
+#
+locales_gen() {
+  local lang_gen_conf_file locale_pkg locale_to_keep_wo_comma
+  # First we put a copy of en_US locale setting in the prebuild environment, so that if "nolocales" is used in boot param, the basic environment will be ok.
+  # The settings can be overwritten by 14locales in live-initramfs if "nolocales" is not used in boot param. 
+  printf 'LANG="%s"\n' "en_US.UTF-8" >> /etc/default/locale
+  printf 'LANG="%s"\n' "en_US.UTF-8" >> /etc/environment
+  # The locale_to_keep is like: "C.UTF-8, en_US.UTF-8, zh_TW, zh_TW.UTF-8, fr_FR.UTF-8, ja_JP.UTF-8". We do not need "," here
+  locale_to_keep_wo_comma="$(echo $locale_to_keep | sed -e "s/,//g")"
+  # There are 2 locales package: 
+  # (1) locales 
+  # (2) belocs-locales-bin/belocs-locales-data (belocs.alioth.debian.org)
+  # Decide the config file
+  locale_pkg="$(LANG=C dpkg -S `which locale-gen`)"
+  if [ -n "$(echo $locale_pkg | grep -E "^belocs-locales")" ]; then
+    lang_gen_conf_file="/var/lib/locales/supported.d/local"
+  else
+    lang_gen_conf_file="/etc/locale.gen"
+  fi
+  for i in $locale_to_keep_wo_comma; do
+    # Skip those C, zh_TW..., we only deal with those with UTF-8
+    [ "$i" = "C.UTF-8" ] && continue
+    [ -z "$(echo $i | grep -iE "UTF-8")" ] && continue
+    if [ -z "$(grep -iE "^[[:space:]]*$i" $lang_gen_conf_file 2>/dev/null)" ]; then
+     echo -n "Appending $i to $lang_gen_conf_file... "
+     echo "$i UTF-8" >> $lang_gen_conf_file
+     echo "done!"
+    fi
+  done
+  # This is a workaround for Ubuntu jaunty, which changes back to use locales but still respect /var/lib/locales/supported.d/locale (without honoring /etc/locales.gen) for backward compatibility.
+  if [ -e /etc/locale.gen -a -d /var/lib/locales/supported.d ]; then
+    (cd /var/lib/locales/supported.d; ln -fs /etc/locale.gen local)
+  fi
+  locale-gen
+} # end of locales_gen
+
+# set root passwd, I do not like root without passwd.
+set_root_passwd() {
+  local passwd=""
+  case "$root_passwd_opt" in
+    "random")
+      # Note! Do not use -y (--symbols, Include at least one special character in the password) with pwgen, since it might contain ' or ", which will cause problem when run in shell and pipe to chpasswd
+      passwd="$(pwgen -s -c $random_passwd_length 1)"
+      echo "Using random password \"$passwd\" with length $random_passwd_length for account root..."
+      ;;
+    "none")
+      passwd=""
+      echo "No password for account root..."
+      ;;
+    *)
+      passwd="$root_passwd_def"
+      echo "Using password \"$passwd\" for account root..."
+      ;;
+  esac
+  if [ -n "$passwd" ]; then
+    echo "root:$passwd" | chpasswd
+  fi
+}
+
+#
+preseed_autologin_account() {
+  # add the account user with UID=1000 first, otherwise if we add accounts later, for example, when Debian live boots, scripts/casper-bottom/10adduser will kill casper account first (if it's not UID=1000, 10adduser can remove that successfully), then when it try to add it, it will fail. Then there is no casper account at all. This will result client's /sbin/casper-getty fails in /etc/inittab. Therefore we can not login in console 1-6.
+  # The password (live) of auto login (say casper) is creaetd runtime when Debian Live boots, 
+  # in /usr/share/initramfs-tools/scripts/casper-bottom/10adduser (casper) or
+  # /usr/share/initramfs-tools/scripts/live-bottom/10adduser (live-initramfs), 
+  # there is:
+  # user_crypted="8Ab05sVQ4LLps" # as in `echo "live" | mkpasswd -s`
+  # Therefore it's useless to assign password here. Skip setting password.
+  useradd -m -u $autologin_account_uid -s /bin/bash $autologin_account
+}
+
+# Put the clonezilla live script in rc2.d
+# In the past the reason we put start scripts in rcS.d instead of rc2.d is because the upstart in Ubuntu will enter command line prompt in rc2.d.
+# Now since there is no such problem, we put them in rc2.d.
+cp_ocs_live_startup_to_rc.d() {
+  if [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
+    # Ubuntu's upstart. We use the compatibility mode of sysv-init in upstart
+    cp -af /live-hook-dir/start-ocs-live /etc/rc2.d/S99start-ocs-live; chown root.root /etc/rc2.d/S99start-ocs-live
+    cp -af /live-hook-dir/stop-ocs-live /etc/rc0.d/K19stop-ocs-live; chown root.root /etc/rc0.d/K19stop-ocs-live
+    cp -af /live-hook-dir/stop-ocs-live /etc/rc6.d/K19stop-ocs-live; chown root.root /etc/rc6.d/K19stop-ocs-live
+  elif type insserv &>/dev/null; then
+    # This has to be 2nd (i.e. in elif, since ubuntu also has insserv, but it is not enabled)
+    install -o root -g root -m 755 /live-hook-dir/start-ocs-live /etc/init.d/
+    install -o root -g root -m 755 /live-hook-dir/stop-ocs-live /etc/init.d/
+    insserv start-ocs-live
+    insserv stop-ocs-live
+  else
+    cp -af /live-hook-dir/start-ocs-live /etc/rc2.d/S99start-ocs-live; chown root.root /etc/rc2.d/S99start-ocs-live
+    cp -af /live-hook-dir/stop-ocs-live /etc/rc0.d/K19stop-ocs-live; chown root.root /etc/rc0.d/K19stop-ocs-live
+    cp -af /live-hook-dir/stop-ocs-live /etc/rc6.d/K19stop-ocs-live; chown root.root /etc/rc6.d/K19stop-ocs-live
+  fi
+} # end of cp_ocs_live_startup_to_rc.d
+
+# Put the drbl live script in rcS.d
+# The reason we put in rcS.d instead of rc2.d is because it's easier to do so before gdm is started.
+cp_drbl_live_startup_to_rc.d() {
+  if [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
+    # Ubuntu's upstart. We use the compatibility mode of sysv-init in upstart
+    cp -af /live-hook-dir/start-drbl-live /etc/rcS.d/S97start-drbl-live; chown root.root /etc/rcS.d/S97start-drbl-live
+    cp -af /live-hook-dir/stop-drbl-live /etc/rc0.d/K19stop-drbl-live; chown root.root /etc/rc0.d/K19stop-drbl-live
+    cp -af /live-hook-dir/stop-drbl-live /etc/rc6.d/K19stop-drbl-live; chown root.root /etc/rc6.d/K19stop-drbl-live
+  elif type insserv &>/dev/null; then
+    # This has to be 2nd (i.e. in elif, since ubuntu also has insserv, but it is not enabled)
+    install -o root -g root -m 755 /live-hook-dir/start-drbl-live /etc/init.d/
+    install -o root -g root -m 755 /live-hook-dir/stop-drbl-live /etc/init.d/
+    insserv start-drbl-live
+    insserv stop-drbl-live
+  else
+    cp -af /live-hook-dir/start-drbl-live /etc/rcS.d/S97start-drbl-live; chown root.root /etc/rcS.d/S97start-drbl-live
+    cp -af /live-hook-dir/stop-drbl-live /etc/rc0.d/K19stop-drbl-live; chown root.root /etc/rc0.d/K19stop-drbl-live
+    cp -af /live-hook-dir/stop-drbl-live /etc/rc6.d/K19stop-drbl-live; chown root.root /etc/rc6.d/K19stop-drbl-live
+  fi
+}
+
+# clean unnecessary backup file to save space
+clean_unnecessary_backup_file_in_boot() {
+  local orphan_deb
+  # (1)
+  rm -f /boot/initrd*.bak
+  # (2)
+  orphan_deb="$(deborphan -n)"
+  orphan_deb="$(echo $orphan_deb)"  # put it in one line
+  if [ -n "$orphan_deb" ]; then
+    apt-get --yes --purge remove $orphan_deb
+  fi
+  # (3)
+  # Thess files in dir /var/lib/apt/lists/ are like:
+  # free.nchc.org.tw_debian_dists_etch_main_binary-i386_Packages
+  # free.nchc.org.tw_debian-security_dists_etch_updates_main_binary-i386_Packages
+  # free.nchc.org.tw_debian_dists_squeeze_main_i18n_Translation-zh
+  # free.nchc.org.tw_debian_dists_squeeze_main_binary-i386_Packages
+  # free.nchc.org.tw_debian_dists_squeeze_main_source_Sources
+  # free.nchc.org.tw_debian_dists_squeeze_non-free_binary-i386_Packages
+  # free.nchc.org.tw_debian_dists_squeeze_non-free_source_Sources
+  # free.nchc.org.tw_debian_dists_squeeze_Release
+  # free.nchc.org.tw_debian_dists_squeeze_Release.gpg
+  # free.nchc.org.tw_debian_dists_squeeze-updates_main_binary-i386_Packages
+  # free.nchc.org.tw_drbl-core_dists_drbl_stable_binary-i386_Packages
+  # free.nchc.org.tw_drbl-core_dists_drbl_testing_binary-i386_Packages
+  # free.nchc.org.tw_drbl-core_dists_drbl_unstable_binary-i386_Packages
+  rm -f /var/lib/apt/lists/*_Packages*
+  rm -f /var/lib/apt/lists/*_Source*
+  rm -f /var/lib/apt/lists/*_Release*
+  rm -f /var/lib/apt/lists/*_Translation*
+  # (4) lock file. Thanks to Louie Chen.
+  rm -f /var/lib/apt/lists/lock
+}
+
+# since ssh services is on, and account is known for the whole world, we have to block it.
+block_all_clients_by_tcpwrapper() {
+  echo 'ALL: ALL EXCEPT localhost' >> /etc/hosts.deny
+}
+
+# force to load fuse in live CD to avoid if sshfs is used, no /dev/fuse.
+append_mod_in_etc_modules() {
+  for imod in $mod_loaded_at_startup; do
+    echo "$imod" >> /etc/modules
+  done
+}
+
+#
+clean_ocs_hook_files_in_chroot() {
+  # all the file name including ocs and in the / in chroot will be removed.
+  echo "Removing DRBL/Clonezilla live related hook files in chroot..."
+  find ./ -maxdepth 1 -name "*ocs*" -type f -exec rm -fv {} \;
+  find ./ -maxdepth 1 -name "*-live-hook*" -type f -exec rm -fv {} \;
+  # drbl.conf is special, remove manually
+  [ -f /drbl.conf ] && rm -fv /drbl.conf
+}
+#
+append_start_clonezilla_in_user_bash_profile(){
+  local auto_login_id_home
+  auto_login_id_home="$(bash -c "echo ~$autologin_account")"
+  cat <<-PROFILE_END >> $auto_login_id_home/.bash_profile
+# added by Clonezilla live
+clear
+# start clonezilla
+sudo [ -x /opt/drbl/sbin/ocs-live-run-menu ] && sudo /opt/drbl/sbin/ocs-live-run-menu
+PROFILE_END
+  chown $autologin_account.$autologin_account $auto_login_id_home/.bash_profile
+}
+#
+remove_cdebootstrap-helper-diverts(){
+ # we have to use the real start-stop-daemon, therefore remove cdebootstrap-helper-diverts
+ # live:~# ls -alF /sbin/start-stop-daemon*
+ # -rwxr-xr-x 1 root root    10 2006-10-20 16:07 /sbin/start-stop-daemon*
+ # -rwxr-xr-x 1 root root 18504 2007-01-01 23:02 /sbin/start-stop-daemon.REAL*
+ # By doing apt-get --purge remove cdebootstrap-helper-diverts, it will
+ # Removing `diversion of /sbin/start-stop-daemon to /sbin/start-stop-daemon.REAL by cdebootstrap-helper-diverts'
+ # Removing `diversion of /usr/sbin/invoke-rc.d to /usr/sbin/invoke-rc.d.REAL by cdebootstrap-helper-diverts'
+ if [ -e /sbin/start-stop-daemon.REAL ]; then
+   apt-get -y --purge remove cdebootstrap-helper-diverts
+ fi
+ # For live-build, the file name is /sbin/start-stop-daemon.orig, and no more cdebootstrap-helper-diverts in lb_chroot_dpkg. We just restore it. Otherwise the file start-stop-daemon copied to /tftpboot/node_root/sbin/ will be the temp fake one.
+ if [ -e /sbin/start-stop-daemon.orig ]; then
+   mv -v /sbin/start-stop-daemon.orig /sbin/start-stop-daemon
+ fi
+}
+#
+remove_service_in_system() {
+  local srv="$1"
+  if [ -z "$srv" ]; then
+    echo "No service is assigned! Function remove_service_in_system terminated!"
+    return 1
+  fi
+  # Get the "$DISTRIB_ID"
+  [ -e /etc/lsb-release ] && . /etc/lsb-release
+  # For upstart (>0.6.3) service
+  if [ -e "/etc/init/$srv.conf" ]; then
+    echo "Disabling service $srv..."
+    mv -f /etc/init/$srv.conf /etc/init/$srv.conf.disabled
+  elif [ -e "/etc/init.d/$srv" ]; then
+  # For sysV service
+    if [ "$DISTRIB_ID" = "Ubuntu" ]; then
+      # Ubuntu
+      # For Ubuntu system (even 11.04), we keep using update-rc.d. Otherwise if we use insserv it will confuse upstart and init.d system. E.g. The "halt" in rc0.d might be S03, and others in S04, like:
+      # K01gpm            README                S03networking    S03umountroot
+      # K01live-config    S01cryptdisks-early  S03sendsigs      S04live-boot
+      # K01pcscd          S02cryptdisks        S03umountfs      S04urandom
+      # K19stop-ocs-live*  S03halt              S03umountnfs.sh
+      update-rc.d -f $srv remove
+    else
+      # Debian
+      echo "Removing service $srv..."
+      if type insserv &>/dev/null; then
+        insserv -r $srv
+      else
+        update-rc.d -f $srv remove
+      fi
+    fi
+  else
+    echo "Service $srv not found! Skip removing service $srv."
+  fi
+} # end of remove_service_in_system
+#
+fix_ubuntu_upstart_tty1_6_distorted_if_necessary() {
+  # Ref: https://bugs.launchpad.net/ubuntu/+source/upstart/+bug/65230
+  # For ubuntu 6.10-9.04 upstart problem (upstart < 0.6.3, for >=0.6.3, no such bug).
+  # Change the contents of /etc/event.d/tty[1-6] from:
+  # start on runlevel 2
+  # ->
+  # start on stopped rc2
+  # Here we assume upstart <= 0.6.3, /etc/event.d/rc-default exists, and
+  # upstart >= 0.6.3, /etc/init/rc-sysinit.conf exists
+  [ ! -e /etc/event.d/rc-default ] && return 9
+  for i in /etc/event.d/tty[0-9]; do
+    perl -pi -e "s/^start on runlevel /start on stopped rc/g" $i
+  done
+}
+#
+copy_all_dev_id_prog_from_udev_lib() {
+  # This function is for newer Ubuntu or Debian (udev > version 146), which does not copy cdrom_id, i.e. the update-initramfs udev hook doesn not copy all /live/udev/*_id. For live CD, We need cdrom_id.
+  # Ref: https://bugs.launchpad.net/ubuntu/+source/live-initramfs/+bug/254360
+  # update_initramfs_flag is global variable
+  if ! grep -Eq "^for program in /lib/udev/\*_id; do" /usr/share/initramfs-tools/hooks/udev; then
+    cat <<-UDEV_END >> /usr/share/initramfs-tools/hooks/udev
+  
+# Appended by Clonezilla live
+# Ref: https://bugs.launchpad.net/ubuntu/+source/live-initramfs/+bug/254360
+for program in /lib/udev/*_id; do
+  copy_exec \$program /lib/udev
+done
+UDEV_END
+    update_initramfs_flag="yes"
+  fi
+}
+#
+append_framebuffer_modules_if_necessary() {
+  # For Ubuntu 7.10 using live-initramfs, if no fbcon and vesafb modules, the /scripts/init-top/framebuffer will fail to modprobe them and during the booting, the screen will be blank if vga=xxx is assigned in kernel param.
+  [ -e /etc/lsb-release ] && . /etc/lsb-release
+  if [ "$DISTRIB_ID" = "Ubuntu" -a "$DISTRIB_RELEASE" = "7.10" ]; then
+    if [ -f "/etc/initramfs-tools/modules" ]; then
+      echo "# The following framebuffer related modules are added by Clonezilla:" >> /etc/initramfs-tools/modules
+      mod_2_be_inserted="fbcon vesafb uvesafb"
+      for i in $mod_2_be_inserted; do
+        echo "$i" >> /etc/initramfs-tools/modules
+      done
+    fi
+  fi
+  # A workaround to fix the framebuffer not working in Ubuntu 7.10, i.e.
+  # Do not let vesafb in the blacklist-framebuffer, otherwise /script/init-top/framebuffer won't be able to modprobe it because it uses "modprobe -Qb vesafb" (-b will honor /etc/modprobe.d/blacklist-framebuffer, and if vesafb is in the list, it won't load it)
+  # Ref: https://bugs.launchpad.net/ubuntu/+source/initramfs-tools/+bug/129910
+  if [ -e "/etc/modprobe.d/blacklist-framebuffer" ]; then
+    perl -pi -e "s|^blacklist vesafb|# blacklist vesafb # Commented by Clonezilla|g" /etc/modprobe.d/blacklist-framebuffer
+  fi
+  # A workaround to fix the uvesafb module not working in Ubuntu 10.04 (alpha1). i.e. vga16fb is always loaded. We want uvesafb, not vga16fb.
+  # Ref: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/494062
+  if [ -e "/etc/modprobe.d/blacklist-framebuffer.conf" ]; then
+    if [ -z "$(grep -iE "^blacklist vga16fb" /etc/modprobe.d/blacklist-framebuffer.conf)" ]; then
+     echo "blacklist vga16fb" >> /etc/modprobe.d/blacklist-framebuffer.conf
+    fi
+  fi
+
+  # It's better to run update-initramfs here. However, actually live helper will run it after hook scripts are run.
+}
+#
+update_build_system_in_etc_live_conf() {
+  local SYSTEM
+  [ ! /etc/live.conf ] && return 1
+  [ -e /etc/lsb-release ] && . /etc/lsb-release
+  if [ "$DISTRIB_ID" = "Ubuntu" ]; then
+    SYSTEM="Ubuntu"
+  else
+    SYSTEM="Debian"
+  fi
+  if grep -q "^[[:space:]]*BUILD_SYSTEM=" /etc/live.conf 2>/dev/null; then
+    perl -pi -e "s/BUILD_SYSTEM=.*/BUILD_SYSTEM=$SYSTEM/g" /etc/live.conf
+  else
+    echo "BUILD_SYSTEM=$SYSTEM" >> /etc/live.conf
+  fi
+} # end of update_build_system_in_etc_live_conf
+#
+remove_lib32_on_amd64_live() {
+  if [ "$(LC_ALL=C uname -m)" = "x86_64" ] && \
+     [ -d /lib32 ] && \
+     [ -d /usr/lib32 ]; then
+     rm -rf /lib32 /usr/lib32
+  fi
+} # end of remove_lib32_on_amd64_live
+#
+dirty_hacking_rm_files_for_ocs_live() {
+  local unnecessary_packages unnecessary_x_packages
+  # This is dirty hacking...
+  echo "Starting dirty hacking to remove files..."
+  unnecessary_packages="man-db manpages info"
+  echo "Force to remove some packages ($unnecessary_packages) if installed..."
+  for i in $unnecessary_packages; do
+   if dpkg -L $i &>/dev/null; then	   
+     echo "Force to remove $i..."
+     apt-get --yes --force-yes --purge remove $i
+   fi
+  done
+
+  # Clean package by autoremove
+  if LANG=C apt-get --help 2>&1 | grep -q -- autoremove; then
+    apt-get -y autoremove
+  fi
+
+  # About jfbterm depends program, especially for Lenny. Since in Etch, jfbterm requires unifont, and unifont does not depend on any. In Lenny, jfbterm requires unifont, and unifonts depends on xfonts-unifont, which depends on some big X programs. We remove them, only keep /usr/share/fonts/X11/misc/unifont.pcf.gz. jfbterm only need /usr/share/fonts/X11/misc/unifont.pcf.gz.
+  # /usr/share/fonts/X11/misc/unifont.pcf.gz is in package unifont in Etch, but it is in package xfonts-unifont in Lenny.
+  # 10/20/2010 x11-common was not removed since startpar will try to start it, but it will failed and show error message. Therefore we keep it.
+  echo -n "Removing unnecessary X programs except unifont.pcf.gz which is required for jfbterm... Now try to clean if exists: "
+  unnecessary_x_packages="defoma libfontenc1 libxfont1 ttf-unifont unifont xfonts-encodings xfonts-unifont xfonts-utils libcairo2 ttf-dejavu-core plymouth"
+  for i in $unnecessary_x_packages; do
+    echo -n "$i... " 
+    for j in `dpkg -L $i 2>/dev/null`; do
+      [ "$(basename $j)" = "unifont.pcf.gz" ] && continue
+      [ -d "$j" ] && continue
+      rm -f $j
+    done
+  done
+  echo
+
+  # List for the file or dir to be removed:
+  # /usr/share/
+  share_dir_2_be_rm="info man doc-base doc"
+  # Keep the parameters.txt, avoid it to be removed later.
+  # live-initramfs want to copy parameters.txt to live cd
+  [ -e /usr/share/doc/live-initramfs/parameters.txt ] && {
+     cp -p /usr/share/doc/live-initramfs/parameters.txt /
+  }
+  # Remove them
+  for i in $share_dir_2_be_rm; do
+    # Here we remove files only, but keep dirs so that later if user want to install packages, postrun won't exit because no /usr/share/man/man1, for example.
+    # rm -rf /usr/share/$i/*
+    find /usr/share/$i/ -type f -exec rm -f {} \;
+  done
+  # put it back
+  [ -e /parameters.txt ] && {
+    mkdir -p /usr/share/doc/live-initramfs/
+    mv -f /parameters.txt /usr/share/doc/live-initramfs/
+  }
+
+  # Just clean them
+  # Log, clean them, but keep the file name. i.e. make the size 0, otherwise if we clean them, some daemon will complain.
+  find /var/log/ -type f | xargs -I % bash -c "echo -n '' > %"
+  # CPP
+  [ -d /usr/lib/gcc ] && find /usr/lib/gcc/ -name "cc1" -exec rm {} \;
+  find /usr/bin/ -name "cpp*" -exec rm {} \;
+  # Forget about removing zoneinfo.... This might break live-config.
+  # if [ -e /usr/share/zoneinfo/UTC ]; then
+  #  rm -f /etc/localtime # The original is a soft link file to UTC
+  #  cp -af /usr/share/zoneinfo/UTC /etc/localtime
+  #  rm -rf /usr/share/zoneinfo/*
+  #  # Restore UTC only to avoind live-initramfs giving error
+  #  cp -af /etc/localtime /usr/share/zoneinfo/UTC 
+  # fi
+  # We'd better not to remove /usr/lib/gconv/ since if we want to create debian live from this generated ISO/ZIP, In /usr/bin/lh_binary_syslinux it will run: iconv -f utf-8 -t latin1. Without /usr/lib/gconv/ lh_binary_syslinux will fail.
+  # [ -d /usr/lib/gconv/ ] && rm -rf /usr/lib/gconv/*
+  [ -d /var/backups ] && rm -rf /var/backups/*
+  # For amd64 version, we just need a pure x86-64 env to make the generated file smaller. Therefore remove those lib32 lib (smaller about 30 MB in filesystem.squashfs for Debian Squeeze.
+  remove_lib32_on_amd64_live
+  # For Ubuntu 10.04, some update motd programs to avoid lsb-release not found error. (If we install lsb-release package, 5 more MB will be added in the created filesystem.squashfs since python and more are required.)
+  [ -d /etc/update-motd.d ] && rm -f /etc/update-motd.d/*
+} # end of dirty_hacking_rm_files_for_ocs_live
+#
+append_numlock_on_setting() {
+  # //NOTE// We do not use this function for clonezilla live any more, but do use this function for drbl live and gparted live (maybe in the future). For clonezilla live, The numlock or capslock now are processed in S03prep-drbl-clonezilla with command setleds.
+  local kbd_cfg=$1
+  # /etc/console-tools/config (for console-tools) or /etc/kbd/config (for kbd)
+  [ -z "$kbd_cfg" ] && echo "No kbd_cfg!!!" && exit 1
+  echo "Appending numlock on setting in $kbd_cfg..."
+  cat <<-NUMLOCK_END >> $kbd_cfg
+
+# Turn on numlock by default by DRBL/Clonezilla/GParted.
+LEDS=+num
+NUMLOCK_END
+} # end of append_numlock_on_setting
+#
+turn_on_numlock_in_booting(){
+  # Here we force to append setting for console-tools AND kbd, since sometimes if console-tools is installed first, and then kbd is installed again, the setting of console-tools might still exist (i.e. packkage is removed, but setting still remains).
+  if [ -e "/etc/console-tools/config" ]; then
+    # for console-tools
+    append_numlock_on_setting /etc/console-tools/config
+  fi
+  if [ -e "/etc/kbd/config" ]; then
+    # for kbd
+    append_numlock_on_setting /etc/kbd/config
+  fi
+} # end of turn_on_numlock_in_booting
+#
+exclude_umount_live_mnt_point_in_umountfs() {
+  # 2010/12/25 Steven Shiau: This function is obsolete. We let live-config to do this.
+  # Ref: http://lists.debian.org/debian-live/2010/12/msg00191.html
+  # Since now we support only live helper, no more live package, so only exclude /live/*.
+  perl -pi -e 's@(/sys\|/lib/init/rw)@$1|/live|/live/image|/live/cow|/cow|/filesystem.squashfs|/sys/fs/fuse/connections\) # Modified by Clonezilla@' /etc/init.d/umountfs
+}
+#
+append_drbl_clonezilla_PATH_in_system() {
+  echo "export PATH=$DRBL_SCRIPT_PATH/sbin:$DRBL_SCRIPT_PATH/bin:\$PATH" >> /etc/profile
+  echo "export PATH=$DRBL_SCRIPT_PATH/sbin:$DRBL_SCRIPT_PATH/bin:\$PATH" >> /etc/bash.bashrc
+} # end of append_drbl_clonezilla_PATH_in_system
+#
+install_debian_extra_modules() {
+  local ker_list pkg_list
+  # extra_module_list is from ocs-live-hook.conf
+  ker_list=''
+  for i in /boot/vmlinuz-*; do
+     ker_list="$(LC_ALL=C basename "$i" | sed -e 's/vmlinuz-//g')"
+  done
+  pkg_list=''
+  for i in $ker_list; do
+    for j in $extra_module_list; do
+     if apt-cache show ${j}-modules-${i} &>/dev/null; then
+       pkg_list="$pkg_list ${j}-modules-${i}"
+     fi
+    done
+  done
+  echo "Installing available Debian extra modules: $pkg_list"
+  LC_ALL=C apt-get -y install $pkg_list
+} # end of install_debian_extra_modules
+#
+clean_udev_persistent_net_rules() {
+  # Although live helper will do it, but we here force to do it just in case.
+  rm -f /etc/udev/rules.d/*persistent-net.rules
+} # end of clean_udev_persistent_net_rules
+#
+disable_kexec() {
+  local kexec_cfg="/etc/default/kexec"
+  if [ -e "$kexec_cfg" ]; then
+    perl -pi -e "s/^LOAD_KEXEC=.*/LOAD_KEXEC=false/g" $kexec_cfg
+  fi
+} # end of disable_kexec
+#
+disable_xfce_startup_tips_and_tricks() {
+  local tip_auto_cfg="/etc/xdg/autostart/xfce4-tips-autostart.desktop"
+  if [ -e "$tip_auto_cfg" ]; then
+    perl -pi -e "s/^Hidden=.*/Hidden=true/g" $tip_auto_cfg
+  fi
+} # end of disable_xfce_startup_tips_and_tricks
+#
+download_grub_1_2_deb_for_later_use() {
+  local grub1_pkg_name dest_dir pkg_name
+  local grub_common_pkg grub2_common_pkg grub_pc_bin
+  # grub-common is required by grub-legacy and grub2, which grub2-common is only required for grub2.
+  # Ref: http://packages.debian.org/sid/grub-common
+  # and  http://packages.debian.org/sid/grub2-common
+  # grub-common: GRand Unified Bootloader (common files)
+  # This package contains common files shared by the distinct flavours of GRUB. It is shared between GRUB Legacy and GRUB 2, although a number of files specific to GRUB 2 are here as long as they do not break GRUB Legacy.
+  # grub2-common: GRand Unified Bootloader (common files for version 2)
+  # This package contains common files shared by the distinct flavours of GRUB. The files in this package are specific to GRUB 2, and would break GRUB Legacy if installed on the same system. 
+  if [ "$LIVE_CREATING_MODE" = "gparted" ]; then
+    # For GParted, we put the grub debs in /root/
+    dest_dir=/root/
+  else
+    # By default we put in $DRBL_SCRIPT_PATH, this is for drbl and clonezilla cases.
+    dest_dir=$DRBL_SCRIPT_PATH
+  fi
+
+  # First we decide the grub 1 package name. Since in Debian Sid, grub1 is grub-legacy, while in ubuntu 9.10, grub1 is grub.
+  if [ -n "$(LC_ALL=C apt-cache show grub-legacy | grep -iE "^Version:")" ]; then
+   grub1_pkg_name="grub-legacy"
+  else
+   grub1_pkg_name="grub"
+  fi
+  # If grub-common exists, download it, too.
+  if [ -n "$(LC_ALL=C apt-cache show grub-common | grep -iE "^Version:")" ]; then
+    grub_common_pkg="grub-common"
+  fi
+  apt-get clean
+  LC_ALL=C apt-get -d --reinstall -y install ${grub1_pkg_name} $grub_common_pkg
+  # E.g.: Filename: pool/main/g/grub/grub-legacy_0.97-59_i386.deb
+  # full_grub1_pkg_name="$(LC_ALL=C apt-cache show grub-legacy | grep -iE "^Filename:" | awk -F":" '{print $2}' | xargs basename)"
+  mkdir -p $dest_dir/pkg/grub/grub1/
+  mv /var/cache/apt/archives/grub*.deb $dest_dir/pkg/grub/grub1/
+  rm -f $dest_dir/pkg/grub/grub1-pkgs-list.txt
+  for i in $dest_dir/pkg/grub/grub1/grub*.deb; do
+   pkg_name=""
+   if [ -f "$i" ]; then
+     pkg_name="$(LC_ALL=C dpkg --info $i | grep -E "^ Package:" | awk -F":" '{print $2}' | sed -r -e "s/^[[:space:]]*//g")"
+     echo "$pkg_name: $(basename $i)" >> $dest_dir/pkg/grub/grub1-pkgs-list.txt
+   fi
+  done
+
+  # Grub 2
+  # If grub-common and grub-pc-bin exist, download them, too.
+  if [ -n "$(LC_ALL=C apt-cache show grub2-common | grep -iE "^Version:")" ]; then
+    grub2_common_pkg="grub2-common"
+  fi
+  if [ -n "$(LC_ALL=C apt-cache show grub-pc-bin | grep -iE "^Version:")" ]; then
+    grub_pc_bin="grub-pc-bin"
+  fi
+  # grub2 package name is grub-pc for debian sid and ubuntu 9.10.
+  apt-get clean
+  # //NOTE// grub-common is also required by grub2
+  LC_ALL=C apt-get -d --reinstall -y install grub-pc $grub2_common_pkg $grub_pc_bin $grub_common_pkg
+  mkdir -p $dest_dir/pkg/grub/grub2/
+  mv /var/cache/apt/archives/grub*.deb $dest_dir/pkg/grub/grub2/
+  rm -f $dest_dir/pkg/grub/grub2-pkgs-list.txt
+  for i in $dest_dir/pkg/grub/grub2/grub*.deb; do
+   pkg_name=""
+   if [ -f "$i" ]; then 
+     pkg_name="$(LC_ALL=C dpkg --info $i | grep -E "^ Package:" | awk -F":" '{print $2}' | sed -r -e "s/^[[:space:]]*//g")"
+     echo "$pkg_name: $(basename $i)" >> $dest_dir/pkg/grub/grub2-pkgs-list.txt
+   fi
+  done
+} # end of download_grub_1_2_deb_for_later_use
+#
+assing_default_dns_server() {
+  cat <<-RESOLV_END > /etc/resolv.conf
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+RESOLV_END
+} # end of assing_default_dns_server
+#
+disable_parallel_start_during_booting() {
+  LC_ALL=C perl -pi -e "s|^CONCURRENCY=.*|CONCURRENCY=none # Modified by DRBL|g" /etc/init.d/rc
+} # end of disable_parallel_start_during_booting
+#
+get_unifont_bgf() {
+  # Ref: http://apt.bzzware.org/debian-edu/html/BuildMirror.html
+  # $mirror_url and $debian_dist are from hook
+  local target_dir="$1"
+  local tmp_wd bterm_unifont_udeb
+  [ -z "$target_dir" ] && return 1
+  tmp_wd="$(mktemp -d /tmp/unifont.XXXXXX)"
+  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-i386/Packages.bz2
+  bterm_unifont_udeb="$(LC_ALL=C bzcat $tmp_wd/Packages.bz2 | sed -ne 's/^Filename: //p' | grep -Ew bterm-unifont)"
+  # result like: pool/main/b/bterm-unifont/bterm-unifont_1.2_i386.udeb
+  wget -P $tmp_wd $mirror_url/$bterm_unifont_udeb
+  dpkg-deb --extract $tmp_wd/$(basename $bterm_unifont_udeb) $tmp_wd
+  find $tmp_wd -name "unifont.bgf" -exec cp -a {} $target_dir \;
+  if [ -d "$tmp_wd" -a -n "$(echo $tmp_wd | grep -E unifont)" ]; then
+    rm -rf $tmp_wd
+  fi
+} # end of get_unifont_bgf
+#
+decide_if_use_xz_compression_for_initrd() {
+  # If kernel support XZ initrd, and xz command exists, use xz to compress the initrd. We'd like to have smaller Clonezilla live.
+  # update_initramfs_flag is gloable variable.
+  local ker_list
+  ker_list=''
+  for i in /boot/vmlinuz-*; do
+     ker_list="$(LC_ALL=C basename "$i" | sed -e 's/vmlinuz-//g')"
+  done
+  for i in $ker_list; do
+    if [ -n "$(LC_ALL=C grep -E "^CONFIG_RD_XZ=y" /boot/config-${i})" ]; then
+      if type xz &>/dev/null; then
+        perl -pi -e "s/^COMPRESS=.*/COMPRESS=xz/g" /etc/initramfs-tools/initramfs.conf
+        update_initramfs_flag="yes"
+      fi
+    fi
+  done
+} # end of decide_if_use_xz_compression_for_initrd
+#
+disable_apt_lang_translation() {
+  cat <<-APT_END > /etc/apt/apt.conf.d/99lang
+Acquire
+{
+  Retries "0";
+        Languages "none";
+        Translation "none";
+};
+APT_END
+} # end of disable_apt_lang_translation
+#
+remove_grpck_opt_p() {
+  # This function is a workaround to remove the "shadowconfig on" error because the debian maintainer hasn't fix it for more than 2 months.
+  # Ref: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=638263
+  perl -pi -e 's/^([[:space:]]*)grpck -p/$1grpck/g' /sbin/shadowconfig
+} # end of remove_grpck_opt_p
+#
+get_non_free_net_firmware_for_ubuntu() {
+  # This function is used to get non-free network firmware from ubuntu.
+  # The reason we do not use the package "linux-firmware" is because it's too large. For Ubuntu 12.04, it's about 27 MB. While we only need part of them. Thererefor nic-firmware udeb is a better one.
+  # //NOTE// "linux-firmware" only exists on Ubuntu, while for Debian there are separate packages for those non-free firmware, e.g.
+  # firmware-atheros, firmware-brcm80211, firmware-bnx2, firmware-bnx2x, firmware-ipw2x00, firmware-ipw3945, firmware-iwlwifi
+  # $mirror_url and $debian_dist are from hook
+  local target_dir="$1"
+  local tmp_wd nic_firmware_udeb firmware_doc
+  if [ -z "$target_dir" ]; then
+    echo "XXXXXXXXX! No target_dir in function get_non_free_net_firmware!"
+    return 1
+  fi
+  if [ -z "$(echo $mirror_url | grep -i "ubuntu")" ]; then
+    echo "No need to download non-free firmware for non-ubuntu distribution."
+    return 0
+  fi
+  tmp_wd="$(mktemp -d /tmp/nic_firmware.XXXXXX)"
+  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-i386/Packages.bz2
+  # Find the firmware binary files.
+  nic_firmware_udeb="$(LC_ALL=C bzcat $tmp_wd/Packages.bz2 | sed -ne 's/^Filename: //p' | grep -Ew "nic-firmware_.")"
+  # result like: pool/main/l/linux-firmware/nic-firmware_1.78_all.udeb
+  wget -P $tmp_wd $mirror_url/$nic_firmware_udeb
+  echo "Extracting non-free firmware and puting it in Clonezilla live..."
+  mkdir -p $target_dir
+  dpkg-deb --extract $tmp_wd/$(basename $nic_firmware_udeb) $target_dir
+
+  # Find the license doc and put it. They are from linux-firmware.
+  apt-get -d --reinstall install linux-firmware
+  echo "Extracting non-free firmware doc and puting it in Clonezilla live..."
+  mkdir -p $tmp_wd/doc_tmp/
+  dpkg --extract /var/cache/apt/archives/linux-firmware_*.deb $tmp_wd/doc_tmp/
+  mkdir -p $target_dir/usr/share/doc/linux-firmware/
+  cp -a $tmp_wd/doc_tmp/usr/share/doc/linux-firmware/* $target_dir/usr/share/doc/linux-firmware/
+
+  # Clean unnecessary files
+  apt-get clean
+  if [ -d "$tmp_wd" -a -n "$(echo $tmp_wd | grep -E nic_firmware)" ]; then
+    rm -rf $tmp_wd
+  fi
+} # end of get_non_free_net_firmware_for_ubuntu

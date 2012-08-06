@@ -1,0 +1,2272 @@
+#!/bin/bash
+#
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL 
+# Description:
+# This is only for "disk to disk" or "partition to partition" clone.
+
+# it is important to run partimage in save mode with volume=0 so that we
+# can send the data to stdout
+# This is the basic idea for partimage:
+# (partimage -z0 -o -d --volume=0 -B gui=no save /dev/hda1 stdout |
+#  partimage -M -f3 -b restore /dev/hdc1 stdin)
+# Similar idea for ntfsclone and dd.
+# partclone has a better function, i.e. option "-b" allows to do local partition to partition clone without having piping.
+ocs="$(basename $0)"
+VOL_ZERO="0"
+#create image volumes with a size of X, 
+# ignore the MBR by using -M, we will ignore the error caused by devfs style
+# in /proc/partitions
+DEFAULT_STDOUT_PARTIMAGE_SAVE_OPT="-M -z0 -o -d -b -c -B gui=no --volume=$VOL_ZERO"
+DEFAULT_STDIN_PARTIMAGE_RESTORE_OPT="-M -f3 -b"
+# port for netcat
+NC_PORT_DEFAULT="9000"
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /opt/drbl/conf/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Local functions:
+# check if the user input /dev/hda, /dev/hdb...
+check_input_param() {
+  # return code 3 = disk, return code 5 = partition
+  local input_src="$1"
+  local recode
+  case "$input_src" in
+       [hsv]d[a-z])
+         recode=3
+         ;;
+       [hsv]d[a-z][0-9]*)
+         recode=5
+         ;;
+       *)
+        echo "\"$input_src\" $msg_is_unknown_HD... $msg_program_stop!"
+	echo -n "$msg_press_enter_to_continue"
+        read
+        exit 1
+  esac
+  return $recode
+} # end of check_input_param
+#
+check_pt_then_run_create_part_table() {
+  local dsk_chk_tmp
+  local to_seek gdisk_tmp
+  local src_disk_size_sec src_disk_size_GB tgt_disk_size_sec tgt_disk_size_GB 
+  echo "$msg_creating_partition_in_target"
+  if [ ! -f "$tgt_parted_info" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$msg_fail_to_create_partition_table_in_target_dev: /dev/$tgt_dev! $msg_program_stop!!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!!"
+    exit 1
+  fi
+  echo "$msg_let_me_ask_you_again."
+  echo $msg_delimiter_star_line
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo -e "$dev_model_shown"
+  #LC_ALL=C parted -s /dev/$target_hd print
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo $msg_delimiter_star_line
+
+  if [ "$batch_mode" = "on" ]; then
+    fdisk_ans="yes"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
+    echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten: $target_hd"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    confirm_continue_no_default_answer "clean_tmp_dirs"
+    # If not pass here, it already quits.
+    fdisk_ans="yes"
+  fi
+
+  # Do not use parted here since if no partition table on disk, it shows no disk size info.
+  #tgt_disk_size_sec="$(LC_ALL=C parted -s /dev/$target_hd unit s print | grep -E "^Disk /dev/" | awk -F":" '{print $2}' | sed -e "s/s$//g" -e "s/^[[:space:]]*//g")"
+  src_disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $tgt_parted_info | awk -F":" '{print $2}' | sed -r -e "s/s$//g" -e "s/^[[:space:]]*//g")"
+  src_disk_size_GB="$(LC_ALL=C echo "scale=1; $src_disk_size_sec*512/1000.0^3" | bc -l)"
+  tgt_disk_size_sec="$(LC_ALL=C cat /sys/block/$target_hd/size)"
+  tgt_disk_size_GB="$(LC_ALL=C echo "scale=1; $tgt_disk_size_sec*512/1000.0^3" | bc -l)"
+  if [ "$chk_tgt_disk_size_bf_mk_pt" = "yes" ]; then
+    if [ "$src_disk_size_sec" -gt "$tgt_disk_size_sec" ]; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo $msg_delimiter_star_line
+     echo "$msg_destination_disk_too_small"
+     echo "$msg_destination_disk_size: $tgt_disk_size_sec sectors ($tgt_disk_size_GB GB)"
+     echo "$msg_src_disk_size_from_image: $src_disk_size_sec sectors ($src_disk_size_GB GB)"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     echo "$msg_program_stop!"
+     exit 1
+    fi
+  fi
+
+  case "$fdisk_ans" in
+    [yY]|[yY][eE][sS])
+       # Turn off swap and LVM2, unlock the busy partitions.
+       turn_off_swap_and_LVM2
+
+       # Clean the MBR and GPT partition table on the destination disk first
+       if type sgdisk &>/dev/null; then
+         echo "Trying to clean the MBR and GPT partition table on the destination disk first: /dev/$target_hd"
+         LC_ALL=C sgdisk --zap-all /dev/$target_hd &>/dev/null
+       fi
+
+       # From the output file of parted, we can decide if the partition is gpt or mbr
+       if [ -n "$(grep -iE "^Partition Table:" $tgt_parted_info 2>/dev/null | grep -iE "gpt")" ]; then
+         # The type is GPT
+         if [ -e "$tgt_gpt_gdisk" ]; then
+           # Use sgdisk to create that.
+           create_gpt_table_if_no_table /dev/$target_hd
+           gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
+           echo "Running: sgdisk -l $tgt_gpt_gdisk /dev/$target_hd"
+           LC_ALL=C sgdisk -l $tgt_gpt_gdisk /dev/$target_hd
+           sgdisk_rc=$?
+           if [ "$sgdisk_rc" -eq 0 ]; then
+             # There is a bug about sgdisk 0.6.14, i.e.
+             # sgdisk -l /home/partimag/2011-02-27-02-img-hfsplus-gdisk/sda-gpt.gdisk /dev/sdb
+             # Warning! Current disk size doesn't match that of the backup!
+             # Adjusting sizes to match, but subsequent problems are possible!
+             # The justLooking flag is set. This probably means you can't write to the disk.
+             # Aborting write of new partition table.
+             # However, its return code is still 0. Therefore we can not use return code to judge that.
+             if [ -n "$(LC_ALL=C grep -iE "Aborting write of new partition table" $gdisk_tmp)" ]; then
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+               echo "Failed to use sgdisk to restore the GPT partition table. Will use dd to restore the GPT partition table."
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+               do_gpt_dd="yes"
+             else
+               do_gpt_dd="no"
+             fi
+           else
+             do_gpt_dd="yes"
+           fi
+
+           # Somehow "sgdisk -l" (<= version 0.8.4) does not create protective MBR, either. Therefore we have to use the following workaround to write it again.
+           if [ -n "$(LC_ALL=C parted -s /dev/$target_hd print | grep -i "it does not have a valid fake msdos partition table" )" ]; then
+             # FixME. In the future if sgdisk supports an option to do this, we should swith to use sgdisk instead of gdisk+expect.
+	     sleep 1
+             LC_ALL=C echo "spawn gdisk /dev/$target_hd; expect Command; send wq\r; expect \"Do you want to proceed? (Y/N)\"; send Y\r; expect eof" | expect -f -
+           fi
+           [ -e "$gdisk_tmp" ] && rm -f $gdisk_tmp
+         else
+           # For old style of image, there is no ${tgt_hd_name}-gpt.gdisk. We have to use dd to create the GPT partition table.
+           do_gpt_dd="yes"
+         fi
+         if [ "$do_gpt_dd" = "yes" ]; then
+           # Use dd to create that.
+           echo "Creating primary GPT info on /dev/$target_hd..."
+           LC_ALL=C dd if=$tgt_1st_gpt of=/dev/$target_hd bs=512 count=34 &>/dev/null
+           # 2nd GPT
+           echo "Creating the secondary GPT to /dev/$target_hd..."
+           to_seek="$((${tgt_disk_size_sec}-33+1))"
+           LC_ALL=C dd if=$tgt_2nd_gpt of=/dev/$target_hd seek=${to_seek} bs=512 count=33 &>/dev/null
+         fi
+
+         #
+         echo "Informing the OS that partition table has changed..."
+         partprobe /dev/$target_hd
+         sfdisk -R /dev/$target_hd
+         sleep 2
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+         echo "$msg_the_partition_in_the_system_now:"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo $msg_delimiter_star_line
+         LC_ALL=C parted -s /dev/$target_hd print
+         echo $msg_delimiter_star_line
+       else
+         # The type is MBR
+         echo "Creating MBR type's partition table..."
+         case "$create_part_type" in
+          "proportion")
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Create the proportional partition table based on $tgt_pt_tmp and the size of /dev/$target_hd..."
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+            # We use environmental variable EXTRA_SFDISK_OPT so it can be used in ocs-expand-mbr-pt
+            EXTRA_SFDISK_OPT=""
+            [ -n "$sfdisk_opt" ] && EXTRA_SFDISK_OPT="$sfdisk_opt"
+            EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-mbr-pt --batch $tgt_pt_tmp /dev/$target_hd
+            ;;
+          "manual")
+            echo "$msg_enter_another_shell_for_fdisk"
+             echo -n "$msg_press_enter_to_continue..."
+             read
+             /bin/bash
+            ;;
+           *)
+             # Create partition table by sfdisk and [hsv]d[a-z]-pt.sf
+             echo "sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp"
+             LC_ALL=C sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp
+             RETVAL="$?"
+             echo "This is done by \"sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp\""
+             #
+             echo "Informing the OS that partition table has changed..."
+             partprobe /dev/$target_hd
+             sfdisk -R /dev/$target_hd
+             sleep 2
+             # Add another checking mechanism by parted, since sfdisk with -f won't return correct code.
+             echo "Checking the integrity of partition table in the disk /dev/$target_hd... "
+             dsk_chk_tmp="$(mktemp /tmp/ocs_dskchk_tmp.XXXXXX)"
+             LC_ALL=C parted -s /dev/$target_hd print &> $dsk_chk_tmp
+             rc=$?
+             if [ "$rc" -gt 0 ]; then
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+               echo "$msg_the_partition_table_in_disk_is_illegal: /dev/$target_hd"
+               echo "$msg_is_this_disk_too_small ?"
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+               if [ -e "$dsk_chk_tmp" ]; then
+                 echo "$msg_error_messages_from_parted_are:"
+                 echo $msg_delimiter_star_line
+                 cat $dsk_chk_tmp
+                 echo $msg_delimiter_star_line
+                 rm -f $dsk_chk_tmp
+               fi
+               [ -e "$dsk_chk_tmp" -a -n "$(echo $dsk_chk_tmp | grep "ocs_dskchk_tmp")" ] && rm -f $dsk_chk_tmp
+               echo "$msg_program_stop!"
+               exit 1
+             fi
+             [ -e "$dsk_chk_tmp" -a -n "$(echo $dsk_chk_tmp | grep "ocs_dskchk_tmp")" ] && rm -f $dsk_chk_tmp
+            ;;
+         esac
+       fi
+       ;;
+    *)
+       if [ "$partition_table_exist_in_target" = "no" ]; then
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "No partition table exists in /dev/$target_hd, and you choose not to create partition table in /dev/$target_hd! We can not go on without partition table in /dev/$target_hd!!!"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo "$msg_program_stop!"
+         exit 1
+       fi
+       echo "$msg_ok_we_will_keep_old_partition_table"
+       ;;
+  esac
+  echo 'done!'
+} # end of check_pt_then_run_create_part_table
+#
+nc_lp_check() {
+  NC_LOCAL_PORT_OPT=
+  nc_tmp="$(mktemp /tmp/nc_tmp.XXXXXX)"
+  # check if command is nc or netcat
+  if which nc &>/dev/null; then
+     NC_CMD="nc"
+  elif which netcat &>/dev/null; then
+     NC_CMD="netcat"
+  else
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "Unable to find command netcat or nc!!! Program terminated!"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     exit 1
+  fi
+
+  LC_ALL=C $NC_CMD -h 2> $nc_tmp
+  if [ -n "$(grep -Ei "^[[:space:]]*-p port[[:space:]]+local port number" $nc_tmp)" ]; then
+     # This is the version Hobbit wrote (http://www.vulnwatch.org/netcat/)
+     # The reason we want to add -q 0 for Hobbit version is that:
+     # in Debian, if -q 0 is not set, it will wait forever... nc will not quit.
+     # However, in FC3 or ealier version, there is no -q option. nc will quit
+     # when EOF.
+     [ -n "$(grep "\-q secs" $nc_tmp 2>/dev/null)" ] && NC_QUIT_OPT="-q 0"
+     NC_LOCAL_PORT_OPT="$NC_QUIT_OPT -p"
+  elif [ -n "$(grep -Ei "^[[:space:]]*-p port[[:space:]]+Specify local port for remote connects" $nc_tmp)" ]; then
+     # This is the version Eric Jackson wrote (http://www.monkey.org/~shinobi)
+     NC_LOCAL_PORT_OPT=""
+  fi
+  if [ -n "$(grep -Ei "^[[:space:]]*-d[[:space:]]+Detach from stdin" $nc_tmp)" ]; then
+     # if -d is not assigned, it will try to read stdin data, which will cause some problem like this, since it's in the while loop, and while read something from stdin, and nc will also get that if -d is not added:
+     # while read logv filesystem; do
+     #   nc 192.168.120.2 9006 | lzop -dc | partimage -M -f3 -b -B gui=no restore $logv stdin
+     # done < $logv_pse_con
+     NC_CLIENT_EXTRA_OPT="-d"
+  fi
+  [ -f "$nc_tmp" ] && rm -f $nc_tmp
+  echo "Using \"-l $NC_LOCAL_PORT_OPT port\" when it's netcat listen mode."
+} # end of nc_lp_check
+
+#
+kill_clone_prog_nc_process() {
+  local i
+  echo "Terminate partimage and $NC_CMD processs if they exist..."
+  for i in partclone partimage ntfsclone dd $NC_CMD; do
+    echo "pkill -u root $i"  && pkill -u root $i
+  done
+} # end of kill_clone_prog_nc_process
+#
+clone_boot_loader_in_target() {
+echo "$msg_delimiter_star_line"
+if [ "$CLONE_BOOT_LOADER" = "yes" ] && [ "$source_type" = "disk" ] && [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then
+  if [ "$batch_mode" = "on" ]; then
+    mbr_ans="y"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_do_you_want_to_clone_the_boot_loader_to: $tgt_dev ?"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo -n "[Y/n] "
+    read mbr_ans
+  fi
+  case "$mbr_ans" in
+    n|N|[nN][oO])
+       echo "OK, $msg_skip_clone_boot_loader."
+       ;;
+    *)
+       if [ "$mode" = "local" ]; then
+         echo "Cloning the boot loader (executable code area) from \"$source_hd\" to \"$target_hd\"..."
+         # boot loader is the first 446 Bytes, the rest part is partition table.
+         dd if=/dev/$source_hd of=/dev/$target_hd bs=446 count=1 &> /dev/null
+         ret=$?
+       elif [ "$STATUS" = "clone_client" ]; then
+         echo "Cloning the boot loader (executable code area) from that in $SOURCE_IP to \"$target_hd\"..."
+         # boot loader is the first 446 Bytes, the rest part is partition table.
+         dd if=$hd_tgt_tmp/src-mbr of=/dev/$target_hd bs=446 count=1 &> /dev/null
+         ret=$?
+       fi
+       if [ "$ret" -ge 1 ]; then
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "$msg_failed_to_clone_the_boot_loader: \"$target_hd\"!!!"
+         echo "$msg_program_stop!!"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         exit 1
+       fi
+       ;;
+  esac
+fi
+} # end of clone_boot_loader_in_target
+#
+create_partition_table_in_target(){
+if [ "$create_part" != "no" ]; then
+  echo "$msg_delimiter_star_line"
+  if [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then 
+    # try to see if the partition table exists in the target 
+    #if [ -n "$(LC_ALL=C fdisk -l /dev/$target_hd 2>/dev/null | grep -E "/dev/[sh]d[a-z][0-9]+")" ] ; then
+    if [ -n "$(LC_ALL=C grep -Eo "$target_hd[[:digit:]]+" /proc/partitions)" ]; then
+      partition_table_exist_in_target="yes"
+    else
+      partition_table_exist_in_target="no"
+    fi
+    check_pt_then_run_create_part_table
+    # After partition table is created, we can dump the hidden data which is between MBR and 1st partition.
+    # Exclude GPT type of disk. We only deal with MBR for this hidden data
+    if [ -z "$(LC_ALL=C parted -s /dev/$target_hd print | grep -iE "^Partition Table:" | grep -iE "gpt")" ]; then 
+      echo "$msg_delimiter_star_line"
+      if [ "$clone_hidden_data" = "yes" ]; then
+        restore_hidden_data_after_MBR $target_hd $tgt_hidden_img
+      fi
+      echo "$msg_delimiter_star_line"
+    fi
+  fi
+fi
+} # end of create_partition_table_in_target
+#
+confirm_do_it_in_target_dev() {
+  local DEV_MODEL machine_name
+  if [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then
+    # From target_hd, we can get the partitions list
+    # We need the partition table to conver the selected HD to partitions.
+    tgt_parts=""
+    for idisk in $target_hd; do
+      # Since sfdisk does not work with EFI/GPT, we no more use sfdisk to get the partition list. Instead, we use /proc/partitions from kenrel to list them. Thanks to Justin Fitzhugh from mozilla.com.
+      # pt_tmp="$(mktemp /tmp/pt_tmp.XXXXXX)"
+      # sfdisk -d /dev/$idisk > $pt_tmp
+      # # find the available partitions
+      # for partition in `get_known_partition_sf_format $pt_tmp`; do
+      #   tgt_parts="$tgt_parts $partition"
+      # done
+      # for partition in `get_swap_partition_sf_format $pt_tmp`; do
+      #   target_swap_parts="$target_swap_parts $partition"
+      # done
+      # [ -f "$pt_tmp" ] && rm -f $pt_tmp
+      BACKUP_DEVS=""
+      echo "Searching for data partition(s)..."
+      get_known_partition_proc_format $idisk data
+      tgt_parts="$tgt_parts $BACKUP_DEVS"
+    done
+    # get_dev_model_shown will give $dev_model_shown
+    get_dev_model_shown "$target_hd $tgt_parts"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
+    echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten: $tgt_dev"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo $msg_delimiter_star_line
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo -e "$dev_model_shown"
+    #LC_ALL=C parted -s /dev/$target_hd print
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo $msg_delimiter_star_line
+
+    if [ "$batch_mode" != "on" ]; then
+      confirm_continue_no_default_answer "clean_tmp_dirs"
+    fi
+  fi
+} # end of confirm_do_it_in_target_dev
+#
+local_lvm_clone_warning() {
+  if [ "$part_fs" = "lvm" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Local LVM clone is not well supported, since in the same system, no two same PV UUID can co-exist. Use dd to do sector-to-sector copy. On the other hand, a workaround is available. You can use network clone using two separate machines in clonezilla to avoid this problem. For more details, check http://clonezilla.org for more details. "
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+} # end of local_lvm_clone_warning
+#
+prepare_local_clone_dev_info() {
+  local_tmp="$(mktemp -d /tmp/ocs_onthefly_local.XXXXXX)"
+  local pt_type src_disk_size_sec src_to_skip
+  # since it's local, target tmp dir is the same one with local_tmp
+  hd_src_tmp="$local_tmp"
+  hd_tgt_tmp="$local_tmp"
+  # For source disk
+  src_pt_tmp="$hd_src_tmp/src_pt.sf"
+  src_dsk_mbr="$hd_src_tmp/src-mbr"
+  src_dsk_chs="$hd_src_tmp/src-chs.sf"
+  src_pt_info="$hd_src_tmp/source_partition.info"
+  src_parted_info="$hd_src_tmp/src_pt.parted"
+  src_1st_gpt="$hd_src_tmp/src-gpt-1st.img"
+  src_2nd_gpt="$hd_src_tmp/src-gpt-2nd.img"
+  src_gpt_gdisk="$hd_src_tmp/src-gpt.gdisk"
+  # hidden data is between mbr and 1st partition.
+  src_hidden_img="$hd_src_tmp/src-hidden-data.img"  
+  # For target disk
+  tgt_pt_tmp="$hd_tgt_tmp/tgt_pt.sf"
+  tgt_dsk_mbr="$hd_tgt_tmp/${target_hd}-mbr"
+  tgt_dsk_chs="$hd_tgt_tmp/${target_hd}-chs.sf"
+  tgt_pt_info="$hd_tgt_tmp/target_partition.info"
+  tgt_parted_info="$hd_tgt_tmp/tgt_pt.parted"
+  tgt_1st_gpt="$hd_tgt_tmp/tgt-gpt-1st.img"
+  tgt_2nd_gpt="$hd_tgt_tmp/tgt-gpt-2nd.img"
+  tgt_gpt_gdisk="$hd_tgt_tmp/tgt-gpt.gdisk"
+  # hidden data is between mbr and 1st partition.
+  tgt_hidden_img="$hd_tgt_tmp/tgt-hidden-data.img"
+
+  local part_in_hd swap_in_hd
+
+  # Note! In Ubuntu 6.10, sfdisk output abnormal format for >= 10 partitions, like
+  #...
+  #/dev/hda9 : start=  1277703, size=   196497, Id=83
+  #/dev/hda10: start=  1474263, size=   196497, Id=83
+  #/dev/hda11: start=  1670823, size=   196497, Id=83
+  #/dev/hda12: start=  1867383, size= 14909202, Id=83
+  # Therefor later we have to use  "sed -e "s/:$//g" to clean that.
+  #
+  # Here we want to output the filesystem of partition to be refered by client.
+  # Ex:
+  # /dev/hda1 reiserfs
+  # /dev/hda2 ext3
+
+  check_mbr_gpt_partition_table $source_hd
+  
+  LC_ALL=C parted -s /dev/$source_hd unit s print > $src_parted_info
+
+  # From the output file of parted, we can decide if the partition is gpt or mbr
+  if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $src_parted_info 2>/dev/null | grep -iE "gpt")" ]; then
+    pt_type="gpt"
+  else
+    pt_type="mbr"
+  fi
+
+  # No matter it's MBR or GPT, we use sfdisk to dump partition table since if dual boot (Mac OS, Linux) on Mac book, this partition table is required for Linux normally.
+  # MBR
+  LC_ALL=C dd if=/dev/$source_hd of=$src_dsk_mbr count=1 bs=512 &> /dev/null
+  LC_ALL=C sfdisk -d /dev/$source_hd > $src_pt_tmp 2>/dev/null
+
+  # The output of CHS is ${source_hd}-chs.sf
+  output_HD_CHS $source_hd $hd_tgt_tmp/ 2>/dev/null
+  mv -f $hd_tgt_tmp/${source_hd}-chs.sf $src_dsk_chs
+  if [ "$pt_type" = "mbr" ]; then
+    # If it's not GPT, we save the hidden data after MBR and before 1st partition for later use.
+    if [ "$clone_hidden_data" = "yes" ]; then
+      save_hidden_data_after_MBR $source_hd $src_hidden_img
+    fi
+  fi
+
+  # GPT
+  if [ "$pt_type" = "gpt" ]; then
+    echo "Saving the GPT of /dev/$source_hd as $src_gpt_gdisk by sgdisk..."
+    LC_ALL=C sgdisk -b $src_gpt_gdisk /dev/$source_hd
+
+    echo "Saving the primary GPT of /dev/$source_hd as $src_1st_gpt by dd..."
+    LC_ALL=C dd if=/dev/$source_hd of=$src_1st_gpt bs=512 count=34
+    echo "Saving the secondary GPT of /dev/$source_hd as $src_2nd_gpt by dd..."
+    src_disk_size_sec="$(LC_ALL=C parted -s /dev/$source_hd unit s print | grep -E "^Disk /dev/" | awk -F":" '{print $2}' | sed -e "s/s$//g")"
+    src_to_skip="$((${src_disk_size_sec}-33+1))"
+    LC_ALL=C dd if=/dev/$source_hd of=$src_2nd_gpt skip=${src_to_skip} bs=512 count=33
+  fi
+
+  echo $msg_delimiter_star_line
+  # Here we should use /proc/partitions instead of partition table since GPT won't be in the output of sfdisk
+  # major minor  #blocks  name
+  #
+  #   8     0  156290904 sda
+  #   8     1   92526336 sda1
+  #   8     2    9767520 sda2
+  #   8     3    1951897 sda3
+  #   8     4          1 sda4
+  #   8     5   52042536 sda5
+  #   8    16  244198584 sdb
+  #   8    17  244196001 sdb1
+  #for part in `grep -i "Id=" $pt_tmp | cut -d" " -f1 | sed -e "s/:$//g"`; do
+  part_in_hd="$(LC_ALL=C grep -Eo "$source_hd[[:digit:]]+" /proc/partitions)"
+  for part in $part_in_hd; do
+    echo "Collecting partition /dev/$part info..."
+    filesystem="$(LC_ALL=C ocs-get-part-info /dev/$part filesystem)"
+    pt_size="$(LC_ALL=C ocs-get-part-info /dev/$part size)"
+    if [ -n "$filesystem" ]; then
+      # If filesystem is empty (e.g. Extended partitoin, parted will show it as empty), skip this.
+      echo "/dev/$part $filesystem $pt_size" >> $src_pt_info
+    fi
+    # Tag the partition info. This is special for NTFS boot reserved partiition
+    rc_boot_reserve=""
+    check_if_windows_boot_reserve_part /dev/$part
+    rc_boot_reserve="$?"
+    if [ "$rc_boot_reserve" -eq 0 ]; then
+      target_part_info="$(echo ${part}.info | sed -e "s|[hsv]d[a-z]|$target_hd|g")"
+      echo "PARTITION_TYPE=Win_boot_reserved" > $local_tmp/$target_part_info
+    fi
+  done
+  # SWAP partition info, maybe more than 1
+  #for partition in `cat $pt_tmp | grep "Id=82" | cut -d" " -f1 | sed -e 's/\/dev\///g'`
+  swap_in_hd="$(awk -F" " '/swap/ {print $1}' $src_pt_info | sed -e 's|/dev/||g')"
+  for partition in $swap_in_hd; do
+    echo "Outputing swap UUID/LABEL of $partition..."
+    # change the target swap partition, like hda2 -> hdb2
+    target_swap_part_info="$(echo swappt-${partition}.info | sed -e "s|[hsv]d[a-z]|$target_hd|g")"
+    output_swap_partition_uuid_label /dev/$partition $local_tmp/$target_swap_part_info
+  done
+  # change the dev to target in the $pt_tmp and $pt_info
+  [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
+  [ -f "$src_parted_info" ] && cp -f $src_parted_info $tgt_parted_info
+  [ -f "$src_pt_info" ] && cp -f $src_pt_info $tgt_pt_info
+  [ -f "$src_1st_gpt" ] && cp -f $src_1st_gpt $tgt_1st_gpt
+  [ -f "$src_2nd_gpt" ] && cp -f $src_2nd_gpt $tgt_2nd_gpt
+  [ -f "$src_gpt_gdisk" ] && cp -f $src_gpt_gdisk $tgt_gpt_gdisk
+  [ -f "$src_hidden_img" ] && cp -f $src_hidden_img $tgt_hidden_img
+  [ -f "$src_dsk_mbr" ] && cp -f $src_dsk_mbr $tgt_dsk_mbr
+  [ -f "$src_dsk_chs" ] && cp -f $src_dsk_chs $tgt_dsk_chs
+  [ -e "$tgt_pt_tmp" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_tmp
+  [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_parted_info
+  [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_info
+
+  # Decide use_HD_CHS_from_EDD
+  # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
+  if [ "$use_HD_CHS_from_EDD_pref" = "yes" ]; then
+    if [ -z "$(LC_ALL=C strings $hd_tgt_tmp/${target_hd}-mbr | grep -i "grub")" ]
+    then 
+      # It's not grub boot loader, set use_HD_CHS_from_EDD as yes
+      echo "Non-grub boot loader found on $hd_tgt_tmp/${target_hd}-mbr..."
+      echo "The CHS value of hard drive from EDD will be used for sfdisk."
+      use_HD_CHS_from_EDD="yes"
+    fi
+  fi
+  # get sfdisk_opt if load_HD_CHS_from_img is yes
+  if [ "$use_HD_CHS_from_EDD" = "yes" ]; then
+    rawhead=""
+    rawsector=""
+    rawcylinder=""
+    get_RawCHS_of_HD_from_EDD /dev/$target_hd
+    if [ -n "$rawhead" -a -n "$rawsector" -a -n "$rawcylinder" ]; then
+      sfdisk_opt="$sfdisk_opt -C $rawcylinder -H $rawhead -S $rawsector"
+    else
+      echo "No CHS value was found from EDD info for disk /dev/$target_hd."
+    fi
+  elif [ "$load_HD_CHS_from_img" = "yes" ]; then
+    # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
+    load_HD_geometry_opt_from_image $hd_tgt_tmp/ $target_hd
+  fi
+} # end of prepare_local_clone_dev_info
+#
+prepare_network_clone_dev_info() {
+  # This function is for server and client both. It depends on $STATUS is clone_server or clone_client
+  local DEV VG UUID LOGV
+  local part_in_hd swap_in_hd s_swpname t_swpname
+  #
+  if [ "$STATUS" = "clone_server" ]; then
+    hd_src_tmp="$(mktemp -d /tmp/ocs_onthefly_src.XXXXXX)"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_this_is_for_source_machine."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "source_type=$source_type" > $hd_src_tmp/target_type.ocs_onthefly
+    cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &
+    NC_PORT=$((NC_PORT + 2))
+  elif [ "$STATUS" = "clone_client" ]; then
+    hd_tgt_tmp="$(mktemp -d /tmp/ocs_onthefly_tgt.XXXXXX)"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_this_is_for_target_machine"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    $NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT > $hd_tgt_tmp/target_type.ocs_onthefly
+    NC_PORT=$((NC_PORT + 2))
+    . $hd_tgt_tmp/target_type.ocs_onthefly
+    source_type=$source_type
+  fi
+  # Check now, just in case
+  if [ "$STATUS" = "clone_server" ]; then
+    if [ "$source_type" = "disk" -a -z "$source_hd" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Source type is disk, but source disk name (Ex. hda) can NOT be found!"
+      echo "$msg_program_stop!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo -n "$msg_press_enter_to_continue"
+      read
+      clean_tmp_dirs
+      exit 1
+    fi
+  elif [ "$STATUS" = "clone_client" ]; then
+    if [ "$target_type" = "disk" -a -z "$target_hd" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Target type is disk, but target disk name (Ex. hdb) can NOT be found!"
+      echo "$msg_program_stop!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo -n "$msg_press_enter_to_continue"
+      read
+      clean_tmp_dirs
+      exit 1
+    fi
+  fi
+  if [ "$STATUS" = "clone_server" ]; then
+    src_pt_tmp="$hd_src_tmp/src_pt.sf"
+    src_dsk_mbr="$hd_src_tmp/src-mbr"
+    src_dsk_chs="$hd_src_tmp/src-chs.sf"
+    src_pt_info="$hd_src_tmp/src_partition.info"
+    src_parted_info="$hd_src_tmp/src_pt.parted"
+    src_1st_gpt="$hd_src_tmp/src-gpt-1st.img"
+    src_2nd_gpt="$hd_src_tmp/src-gpt-2nd.img"
+    src_gpt_gdisk="$hd_src_tmp/src-gpt.gdisk"
+    src_hidden_img="$hd_src_tmp/src_hidden-data.img"
+
+    # partition table
+    # Note! In Ubuntu 6.10, sfdisk output abnormal format for >= 10 partitions, like
+    #...
+    #/dev/hda9 : start=  1277703, size=   196497, Id=83
+    #/dev/hda10: start=  1474263, size=   196497, Id=83
+    #/dev/hda11: start=  1670823, size=   196497, Id=83
+    #/dev/hda12: start=  1867383, size= 14909202, Id=83
+    # Therefor later we have to use  "sed -e "s/:$//g" to clean that.
+    LC_ALL=C parted -s /dev/$source_hd unit s print > $src_parted_info
+
+    # From the output file of parted, we can decide if the partition is gpt or mbr
+    if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $src_parted_info 2>/dev/null | grep -iE "gpt")" ]; then
+      pt_type="gpt"
+    else
+      pt_type="mbr"
+    fi
+
+    # No matter it's MBR or GPT, we use sfdisk to dump partition table since if dual boot (Mac OS, Linux) on Mac book, this partition table is required for Linux normally.
+    # MBR
+    LC_ALL=C dd if=/dev/$source_hd of=$src_dsk_mbr count=1 bs=512 &> /dev/null
+    LC_ALL=C sfdisk -d /dev/$source_hd > $src_pt_tmp 2>/dev/null
+
+    # The output of CHS is ${source_hd}-chs.sf
+    output_HD_CHS $source_hd $hd_src_tmp/
+    mv -f $hd_src_tmp/${source_hd}-chs.sf $src_dsk_chs
+    # If it's not GPT, we save the hidden data after MBR and before 1st partition for later use.
+    if [ "$pt_type" = "mbr" ]; then
+      if [ "$clone_hidden_data" = "yes" ]; then
+        save_hidden_data_after_MBR $source_hd $src_hidden_img
+      fi
+    fi
+
+    # GPT
+    if [ "$pt_type" = "gpt" ]; then
+      echo "Saving the GPT of /dev/$source_hd as $src_gpt_gdisk by sgdisk..."
+      LC_ALL=C sgdisk -b $src_gpt_gdisk /dev/$source_hd
+
+      echo "Saving the primary GPT of /dev/$source_hd as $src_1st_gpt by dd..."
+      LC_ALL=C dd if=/dev/$source_hd of=$src_1st_gpt bs=512 count=34
+      echo "Saving the secondary GPT of /dev/$source_hd as $src_2nd_gpt by dd..."
+      src_disk_size_sec="$(LC_ALL=C parted -s /dev/$source_hd unit s print | grep -E "^Disk /dev/" | awk -F":" '{print $2}' | sed -e "s/s$//g")"
+      src_to_skip="$((${src_disk_size_sec}-33+1))"
+      LC_ALL=C dd if=/dev/$source_hd of=$src_2nd_gpt skip=${src_to_skip} bs=512 count=33
+    fi
+
+
+    echo $msg_delimiter_star_line
+    # output the filesystem of partition to be refered by client. Ex:
+    # /dev/hda1 reiserfs
+    # /dev/hda2 ext3
+    # Here we should use /proc/partitions instead of partition table since GPT won't be in the output of sfdisk
+    # major minor  #blocks  name
+    #
+    #   8     0  156290904 sda
+    #   8     1   92526336 sda1
+    #   8     2    9767520 sda2
+    #   8     3    1951897 sda3
+    #   8     4          1 sda4
+    #   8     5   52042536 sda5
+    #   8    16  244198584 sdb
+    #   8    17  244196001 sdb1
+    #for part in `grep -i "Id=" $pt_tmp | cut -d" " -f1 | sed -e "s/:$//g"`; do
+    part_in_hd="$(LC_ALL=C grep -Eo "$source_hd[[:digit:]]+" /proc/partitions)"
+    for part in $part_in_hd; do
+      echo "Collecting partition /dev/$part info..."
+      filesystem="$(LC_ALL=C ocs-get-part-info /dev/$part filesystem)"
+      pt_size="$(LC_ALL=C ocs-get-part-info /dev/$part size)"
+      echo "/dev/$part $filesystem $size" >> $hd_src_tmp/src_partition.info
+    done
+    # SWAP partition info, maybe more than 1
+    #for partition in `cat $pt_tmp | grep "Id=82" | cut -d" " -f1 | sed -e 's/\/dev\///g'`
+    swap_in_hd="$(awk -F" " '/swap/ {print $1}' $hd_src_tmp/src_partition.info | sed -e 's|/dev/||g')"
+    for partition in $swap_in_hd; do
+      echo "Outputing swap UUID/LABEL..."
+      output_swap_partition_uuid_label /dev/$partition $hd_src_tmp/swappt-${partition}.info
+    done
+    # LVM
+    PV_PARSE_CONF="$hd_src_tmp/lvm_vg_dev.list"
+    LOGV_PARSE_CONF="$hd_src_tmp/lvm_logv.list"
+    ocs-lvm2-start
+    echo "Parsing LVM layout..."
+    pvscan | grep lvm2 | while read LINE; do
+      DEV=`echo $LINE | tr -s ' ' | cut -d' ' -f2`
+      VG=`echo $LINE | tr -s ' ' | cut -d' ' -f4`
+      # DEV is like /dev/hda2
+      # We just want to keep the chosen source dev
+      # The results in $PV_PARSE_CONF is like:
+      # ----------------------------------------------------
+      # vg /dev/hda2 qdlt6U-M4bo-xExy-XG9Q-U7pg-bOXN-n54i5Y
+      # ----------------------------------------------------
+      # Ex: target: hda1 hda2 hda3, DEV maybe: /dev/hda2
+      if [ -n "$(echo "$DEV" | grep -E "$source_hd")" ]; then
+        UUID="$(pvdisplay $DEV | grep "PV UUID" | awk -F" " '{print $3}')"
+        echo "$VG $DEV $UUID" | tee -a $PV_PARSE_CONF
+      fi
+    done
+    
+    if [ -e "$PV_PARSE_CONF" ]; then
+      # We just want the LV in chosen target
+      echo "Parsing logical volumes..."
+      # lvscan results are like:
+      # ACTIVE            '/dev/vg3/lvol0' [1.20 GB] inherit
+      # ACTIVE            '/dev/vg3/lvol1' [648.00 MB] inherit
+      # ACTIVE            '/dev/vg/lvol0' [1.50 GB] inherit
+      # ACTIVE            '/dev/vg/lvol1' [500.00 MB] inherit
+      #                         ^^ The VG
+      
+      # find LV for chosen PV.
+      lvscan | grep "/.*/" | while read LINE; do
+        LOGV=`echo $LINE |tr -s ' ' | cut -d' ' -f2 | tr -d "'"`
+        # LOGV is like: /dev/vg3/lvol0
+        while read vg dev uuid; do
+         # only keep LOGV is in the chosen vg
+         if [ -n "$(echo $LOGV | grep -E "/dev/$vg/" 2>/dev/null)" ]; then
+          file_system="$(LC_ALL=C ocs-get-part-info $LOGV filesystem)"
+          echo "$LOGV $file_system" | tee -a $LOGV_PARSE_CONF
+	  # if it's swap, output the labe and uuid only.
+	  case "$file_system" in 
+            *[Ss][Ww][Aa][Pp]*)
+              fn="$(echo $LOGV | sed -e "s|^/dev/||" -e "s|/|-|g")"
+              output_swap_partition_uuid_label $LOGV $hd_src_tmp/swappt-${fn}.info
+              continue ;;
+            *extended*) 
+              continue ;;
+          esac
+          break
+         fi 
+        done < $PV_PARSE_CONF
+      done
+      
+      # Backup the vg conf
+      echo "Saving the VG config... "
+      while read vg dev uuid; do
+        vgcfgbackup -f $hd_src_tmp/lvm_$vg.conf $vg 2>/dev/null
+      done < $PV_PARSE_CONF
+      echo "done!"
+    fi
+    cat <<-ADVAN_PARAM_END > $hd_src_tmp/advanced_param.conf
+source_hd="$source_hd"
+batch_mode="$batch_mode" 
+install_grub="$install_grub"
+grub_partition="$grub_partition" 
+change_ntfs_boot_chs="$change_ntfs_boot_chs"
+ntfs_boot_partition="$ntfs_boot_partition"
+use_HD_CHS_from_EDD_pref="$use_HD_CHS_from_EDD_pref"
+create_part="$create_part" 
+create_part_type="$create_part_type"
+CLONE_BOOT_LOADER="$CLONE_BOOT_LOADER" 
+resize_partition="$resize_partition" 
+load_HD_CHS_from_img="$load_HD_CHS_from_img" 
+nogui="$nogui" 
+verbose="$verbose" 
+clone_hidden_data="$clone_hidden_data"
+ADVAN_PARAM_END
+    ocs-lvm2-stop
+    # pack all the info files
+    ( 
+      cd $hd_src_tmp/
+      tar czf ocs-onthefly-info.tgz *
+    )
+    # wait for client to download it
+    cat $hd_src_tmp/ocs-onthefly-info.tgz | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &
+    NC_PORT=$((NC_PORT + 2))
+  elif [ "$STATUS" = "clone_client" ]; then
+    # partition table and info
+    # For source dik
+    src_pt_tmp="$hd_tgt_tmp/src_pt.sf"
+    src_pt_info="$hd_tgt_tmp/src_partition.info"
+    src_parted_info="$hd_tgt_tmp/src_pt.parted"
+    src_1st_gpt="$hd_tgt_tmp/src-gpt-1st.img"
+    src_2nd_gpt="$hd_tgt_tmp/src-gpt-2nd.img"
+    src_gpt_gdisk="$hd_tgt_tmp/src-gpt.gdisk"
+    src_hidden_img="$hd_tgt_tmp/src_hidden-data.img"
+    src_dsk_mbr="$hd_tgt_tmp/src-mbr"
+    src_dsk_chs="$hd_tgt_tmp/src-chs.sf"
+    # For target dik
+    tgt_pt_tmp="$hd_tgt_tmp/tgt_pt.sf"
+    tgt_pt_info="$hd_tgt_tmp/tgt_partition.info"
+    tgt_parted_info="$hd_tgt_tmp/tgt_pt.parted"
+    tgt_1st_gpt="$hd_tgt_tmp/tgt-gpt-1st.img"
+    tgt_2nd_gpt="$hd_tgt_tmp/tgt-gpt-2nd.img"
+    tgt_gpt_gdisk="$hd_tgt_tmp/tgt-gpt.gdisk"
+    tgt_hidden_img="$hd_tgt_tmp/tgt_hidden-data.img"
+    tgt_dsk_mbr="$hd_tgt_tmp/${target_hd}-mbr"
+    tgt_dsk_chs="$hd_tgt_tmp/${target_hd}-chs.sf"
+
+    # Get the pt and mbr... from server
+    $NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT > $hd_tgt_tmp/ocs-onthefly-info.tgz
+    NC_PORT=$((NC_PORT + 2))
+    if [ ! -f "$hd_tgt_tmp/ocs-onthefly-info.tgz" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "The partition table, MBR infomation is not received from another machine (IP address $SOURCE_IP)!"
+      echo "$msg_program_stop"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      exit 1
+    fi
+    ( 
+      cd $hd_tgt_tmp/
+      tar -xzf ocs-onthefly-info.tgz
+    )
+    # read advanced param passed from server
+    . $hd_tgt_tmp/advanced_param.conf
+
+    # swap partition info
+    for iswap in $hd_tgt_tmp/swappt-*.info; do
+      # $hd_tgt_tmp/swappt-${partition}.info
+      s_swpname="$(basename $iswap)"
+      if [ "$target_hd" != "$source_hd" ]; then
+        t_swpname="$(echo $s_swpname | sed -e "s|-[hsv]d[a-z]|-$target_hd|g")"
+        cp -f $hd_tgt_tmp/$s_swpname $hd_tgt_tmp/$t_swpname
+      fi
+    done
+
+    # change the dev to target in the $pt_tmp nd $pt_info
+    [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
+    [ -f "$src_parted_info" ] && cp -f $src_parted_info $tgt_parted_info
+    [ -f "$src_pt_info" ] && cp -f $src_pt_info $tgt_pt_info
+    [ -f "$src_1st_gpt" ] && cp -f $src_1st_gpt $tgt_1st_gpt
+    [ -f "$src_2nd_gpt" ] && cp -f $src_2nd_gpt $tgt_2nd_gpt
+    [ -f "$src_gpt_gdisk" ] && cp -f $src_gpt_gdisk $tgt_gpt_gdisk
+    [ -f "$src_hidden_img" ] && cp -f $src_hidden_img $tgt_hidden_img
+    [ -f "$src_dsk_mbr" ] && cp -f $src_dsk_mbr $tgt_dsk_mbr
+    [ -f "$src_dsk_chs" ] && cp -f $src_dsk_chs $tgt_dsk_chs
+    [ -e "$tgt_pt_tmp" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_tmp
+    [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_info
+    [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_parted_info
+
+    # Decide use_HD_CHS_from_EDD
+    # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
+    if [ "$use_HD_CHS_from_EDD_pref" = "yes" ]; then
+      if [ -z "$(LC_ALL=C strings $hd_tgt_tmp/${target_hd}-mbr | grep -i "grub")" ]
+      then
+        # It's not grub boot loader, set use_HD_CHS_from_EDD as yes
+        echo "Non-grub boot loader found on $hd_tgt_tmp/${target_hd}-mbr..."
+        echo "The CHS value of hard drive from EDD will be used for sfdisk."
+	use_HD_CHS_from_EDD="yes"
+      fi
+    fi
+    # get sfdisk_opt if load_HD_CHS_from_img is yes
+    if [ "$use_HD_CHS_from_EDD" = "yes" ]; then
+      rawhead=""
+      rawsector=""
+      rawcylinder=""
+      get_RawCHS_of_HD_from_EDD /dev/$target_hd
+      if [ -n "$rawhead" -a -n "$rawsector" -a -n "$rawcylinder" ]; then
+        sfdisk_opt="$sfdisk_opt -C $rawcylinder -H $rawhead -S $rawsector"
+      else
+        echo "No CHS value was found from EDD info for disk /dev/$target_hd."
+      fi
+    elif [ "$load_HD_CHS_from_img" = "yes" ]; then
+      # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
+      load_HD_geometry_opt_from_image $hd_tgt_tmp/ $target_hd
+    fi
+  fi
+} # end of prepare_network_clone_dev_info
+#
+force_to_dd_clone_local_part() {
+  case "$S2S_CLONE_PROG_IN_OCS_ONTHEFLY" in 
+   dd)
+    echo "Filesystem in $src_p is not well supported. Use dd to clone..."  
+    dd_img_info_tmp="$(mktemp /tmp/dd_info.XXXXXX)"
+    pt_size="$(LC_ALL=C ocs-get-part-info $tgt_p size)"
+    trigger_dd_status_report $tgt_p $pt_size &
+    dd_report_sig_pid=$!
+    start_time="$(date +%s%N)"
+    LC_ALL=C dd bs=1M if=$src_p of=$tgt_p 2>&1 | tee $dd_img_info_tmp
+    ret=$?
+    end_time="$(date +%s%N)"
+    kill -9 $dd_report_sig_pid &>/dev/null
+    get_dd_image_info $dd_img_info_tmp $start_time $end_time
+    [ -f "$dd_img_info_tmp" ] && rm -f $dd_img_info_tmp
+    ;;
+   partclone)
+    echo "Using partclone to clone the file system sector by sector..."  
+    partclone.dd $PARTCLONE_RESTORE_ONTHEFLY_OPT -b -s $src_p -O $tgt_p
+    ret=$?
+    ;;
+  esac
+}
+#
+local_partition_to_partiton_clone() {
+  local pt_fs="$1"
+  local src_p="$2"  # src_p is like /dev/hda1
+  local tgt_p="$3"  # tgt_p is like /dev/hdb1
+  local pt_size ret dd_img_info_tmp dd_report_sig_pid start_time end_time partition
+  if [ -z "$pt_fs" -o -z "$src_p" -o -z "$tgt_p" ]; then
+    echo "Wrong options in local_partition_to_partiton_clone!!!"
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Source partition file system is $pt_fs..."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+  echo "Cloning the $src_p to $tgt_p..."
+  clean_filesystem_header_in_partition $tgt_p
+  # From partimage 0.6.6, batch mode won't stop if checkInodeForDevice is not run. Therefore comment it.
+  # checkInodeForDevice $tgt_p
+  # Before we start to clone, check if kernel can find /dev/$partition
+  partition="$(basename $tgt_p)"
+  if [ -z "$(grep -Ew "$partition" /proc/partitions 2>/dev/null)" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$msg_failed_to_find_this_partition: /dev/$partition"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo $msg_delimiter_star_line
+    echo "The /proc/partitions in this system:"
+    cat /proc/partitions
+    echo $msg_delimiter_star_line
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_the_partition_table_does_not_exist_option"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo -n "$msg_press_enter_to_continue..."
+    read
+    continue
+  fi
+  echo "$msg_delimiter_star_line"
+  if [ "$FORCE_TO_USE_DD" = "yes" ]; then
+    force_to_dd_clone_local_part
+  elif [ "$USE_NTFSCLONE_IN_OCS_ONTHEFLY" = "yes" ] && [ "$pt_fs" = "ntfs" ]; then
+    echo "Using ntfsclone to clone..."  
+    check_ntfs_partition_integrity $src_p
+    ntfsclone --save-image --output - $src_p 2>/dev/null | \
+    ntfsclone $ntfsclone_progress_option --restore-image --overwrite $tgt_p -
+    ret=$?
+  elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
+    # Ex: partclone.reiserfs -b -s /dev/hda3 -O /dev/hdc1
+    echo "Using partclone to clone..."  
+    partclone.${pt_fs} $PARTCLONE_RESTORE_ONTHEFLY_OPT -b -s $src_p -O $tgt_p
+    ret=$?
+  elif `is_partimage_support_fs $pt_fs`; then
+    echo "Using partimage to clone..."  
+    partimage $DEFAULT_STDOUT_PARTIMAGE_SAVE_OPT save $src_p stdout 2> /dev/null | \
+    partimage $DEFAULT_STDIN_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_ONTHEFLY_OPT restore $tgt_p stdin
+    ret=$?
+  else
+    local_lvm_clone_warning
+    # Unknown file system, use dd or partclone.dd	   
+    force_to_dd_clone_local_part
+  fi
+  echo "$msg_delimiter_star_line"
+  if [ "$ret" -ge 1 ]; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "Failed to clone $src_p to $tgt_p!!! $msg_press_enter_to_continue..."
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     read
+  fi
+  return $ret
+} # end of local_partition_to_partiton_clone
+#
+local_dev_clone() {
+  # TODO!
+  # local LVM clone not yet. The difficulty is in the same system, VG can not use the same UUID. If we clone hda to hdb, VG in hda will have same UUID with that in hdb. Therefore in this function, dd is the last choice temporarily.
+  case "$source_type" in
+    partition)
+       part_fs="$(grep -Ew "/dev/$src_dev" $src_pt_info | awk -F" " '{print $2}')"
+       if [ -z "$part_fs" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	  echo "No file system was found in /dev/$src_dev!"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          local_partition_to_partiton_clone unknown /dev/$src_dev /dev/$tgt_dev
+       else
+          local_partition_to_partiton_clone $part_fs /dev/$src_dev /dev/$tgt_dev
+       fi
+       ;;
+    disk)
+       echo $msg_delimiter_star_line
+       BACKUP_DEVS=""
+       echo "Searching for data partition(s) in source disk: $source_hd ..."
+       get_known_partition_proc_format $source_hd data
+       echo $msg_delimiter_star_line
+       target_part_list="$(echo $BACKUP_DEVS | sed -e "s/$source_hd/$target_hd/g")"
+       #for target_part in `get_known_partition_sf_format $pt_tmp`; do
+       for target_part in $target_part_list; do
+         # we need to know the source partition, so replace it, ex. hdc1 -> hda1
+         # Ex: target_part: hdc1, hddev: hdc, part_no: 1, src_part: hda1
+         hddev=${target_part:0:3}
+         part_no=${target_part:3}
+         src_part=$( echo $target_part | sed -e "s/$hddev/$source_hd/g" )
+         part_fs="$(grep -Ew "/dev/$target_part" $tgt_pt_info | awk -F" " '{print $2}')"
+         if [ -z "$part_fs" ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "No file system was found in /dev/$src_part!"
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+            local_partition_to_partiton_clone unknown /dev/$src_part /dev/$target_part
+         else
+            local_partition_to_partiton_clone $part_fs /dev/$src_part /dev/$target_part
+         fi
+       done
+       ;;
+  esac
+} # end of local_dev_clone
+#
+feed_dev_in_server() {
+  local pt_fs="$1"
+  local src_p="$2"  # src_p is like /dev/hda1
+  local ret
+  echo "Feeding partition $src_p in listen mode with port $NC_PORT..."
+  if [ "$USE_NTFSCLONE_IN_OCS_ONTHEFLY" = "yes" ] && [ "$pt_fs" = "ntfs" ]; then
+    echo "Using ntfsclone to clone..."  
+    check_ntfs_partition_integrity $src_p
+    ntfsclone --save-image --output - $src_p 2>/dev/null | \
+    $filter_comp | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &
+    ret=$?
+  elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
+    # Ex: partclone.reiserfs -c -s /dev/hda3 -o -
+    echo "Using partclone to clone..."  
+    partclone.${pt_fs} -c -s $src_p -o - 2>/dev/null | \
+    $filter_comp | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &
+    ret=$?
+  elif `is_partimage_support_fs $pt_fs`; then
+    echo "Using partimage to clone..."  
+    [ "$verbose" = "on" ] && echo "partimage $DEFAULT_STDOUT_PARTIMAGE_SAVE_OPT save $src_p stdout 2> /dev/null | $filter_comp | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &"
+    partimage $DEFAULT_STDOUT_PARTIMAGE_SAVE_OPT save $src_p stdout 2> /dev/null | \
+    $filter_comp | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &
+    ret=$?
+  else
+    case "$S2S_CLONE_PROG_IN_OCS_ONTHEFLY" in 
+     dd)
+      echo "Filesystem in $src_p is not well supported. Use dd to clone..."  
+      LC_ALL=C dd bs=1M if=$src_p | \
+      $filter_comp | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &
+      ret=$?
+      ;;
+     partclone)
+      echo "Filesystem in $src_p is not well supported. Use partclone.dd to clone..."  
+      # Ex: partclone.reiserfs -c -s /dev/hda3 -o -
+      echo "Using partclone to clone..."  
+      partclone.dd -c -s $src_p -o - 2>/dev/null | \
+      $filter_comp | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &
+      ret=$?
+      ;;
+    esac
+  fi
+  echo "$msg_delimiter_star_line"
+  if [ "$ret" -ge 1 ]; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "Failed to feeding partition $src_p in this server!!! $msg_press_enter_to_continue..."
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     read
+  fi
+  return $ret
+} # end of feed_dev_in_server
+#
+receive_partition_from_server_then_write() {
+  local	pt_fs="$1"
+  local tgt_p="$2"  # tgt_p is like /dev/hda1
+  local ret pt_size
+  echo "$msg_delimiter_star_line"
+  echo "Restoring $tgt_p from $SOURCE_IP:$NC_PORT..."
+  clean_filesystem_header_in_partition $tgt_p
+  # From partimage 0.6.6, batch mode won't stop if checkInodeForDevice is not run. Therefore comment it.
+  # checkInodeForDevice $tgt_p
+  echo "$msg_delimiter_star_line"
+  if [ "$USE_NTFSCLONE_IN_OCS_ONTHEFLY" = "yes" ] && [ "$pt_fs" = "ntfs" ]; then
+    echo "Using ntfsclone to clone..."  
+    $NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT | $filter_decomp | \
+    ntfsclone $ntfsclone_progress_option --restore-image --overwrite $tgt_p -
+    ret=$?
+  elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
+    # Ex: partclone.reiserfs -s - -o /dev/hdc1
+    echo "Using partclone.restore to clone..."  
+    $NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT | $filter_decomp | \
+    partclone.restore $PARTCLONE_RESTORE_ONTHEFLY_OPT -s - -o $tgt_p
+    ret=$?
+  elif `is_partimage_support_fs $pt_fs`; then
+    echo "Using partimage to clone..."  
+    [ "$verbose" = "on" ] && echo "$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT | $filter_decomp | partimage $DEFAULT_STDIN_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_ONTHEFLY_OPT restore $tgt_p stdin"
+    $NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT | $filter_decomp | \
+    partimage $DEFAULT_STDIN_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_ONTHEFLY_OPT restore $tgt_p stdin
+    ret=$?
+  else
+    # Unknown file system, use dd or partclone.restore  
+    case "$S2S_CLONE_PROG_IN_OCS_ONTHEFLY" in 
+     dd)
+      echo "Filesystem in $src_p is not well supported. Use dd to clone..."  
+      pt_size="$(grep -Ew "$tgt_p" $tgt_pt_info | awk -F" " '{print $3}')"
+      trigger_dd_status_report $tgt_p $pt_size &
+      $NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT | $filter_decomp | \
+      LC_ALL=C dd bs=1M of=$tgt_p
+      ret=$?
+      ;;
+     partclone)
+      echo "Using partclone.restore to do sector-by-sector clone..."  
+      $NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT | $filter_decomp | \
+      partclone.restore $PARTCLONE_RESTORE_ONTHEFLY_OPT -s - -o $tgt_p
+      ret=$?
+      ;;
+    esac
+  fi
+  if [ "$ret" -ge 1 ]; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "Failed to clone remote image to $tgt_p!!! $msg_press_enter_to_continue..."
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     read
+  fi
+  return $ret
+} # end of receive_partition_from_server_then_write
+#
+feed_partition_or_lv_in_server() {
+  local pt_fs="$1"
+  local src_p="$2" # src_p is like hda1
+  local lv volg is_in_chosen_partition fs
+  # $NC_PORT & $LOGV_PARSE_CONF are global variables.
+  [ -z "$pt_fs" ] && echo "pt_fs not found in function feed_partition_or_lv_in_server!" && exit 1
+  [ -z "$src_p" ] && echo "src_p not found in function feed_partition_or_lv_in_server!" && exit 1
+  if [ -z "$(echo "$pt_fs" | grep -i lvm)" ]; then
+    feed_dev_in_server $pt_fs /dev/$src_p
+    # use the next port to avoid being occupied.
+    NC_PORT=$((NC_PORT + 2))
+  else
+    ocs-lvm2-start
+    # To avoid the stdin/stdout with ntfsclone/partimage/partclone (feed_dev_in_server $fs $lv) conflicting with "while read", here we must use different file descriptor (3)
+    exec 3< $LOGV_PARSE_CONF
+    while read -u 3 lv fs; do
+     # Process the real data partition, only those in the chosen partitions
+     # Ex:
+     # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
+     # Then lvol0 is belong to VG vg3
+     volg="$(echo "$lv" | awk -F"/" '{print $3}')"
+     # Find if the LV is in the chosen partition (via VG, we can determine that)
+     # EX: tgt_parts: hda1, hda3, hda5...
+     #     vg3 /dev/hda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
+     is_in_chosen_partition="no"
+     for ipt in $src_p; do
+       if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
+         # Found the chosen partitions is in the VG
+         is_in_chosen_partition="yes"
+         break
+       fi
+     done
+     [ "$is_in_chosen_partition" = "no" ] && continue
+     # if it's swap, output the labe and uuid only.
+     case "$fs" in 
+       *[Ss][Ww][Aa][Pp]*|*extended*)
+         continue ;;
+     esac
+     feed_dev_in_server $fs $lv
+     # use the next port to avoid being occupied.
+     NC_PORT=$((NC_PORT + 2))
+    done
+    exec 3<&-
+  fi
+} # end of feed_partition_or_lv_in_server() {
+#
+receive_partition_or_lv_in_client() {
+ local pt_fs="$1"
+ local tgt_p="$2" # tgt_p is like hda1
+ local vg dev uuid lv fs fn uuid_opt label_opt pv_pse_con logv_pse_con lvm_tmp
+ # $NC_PORT & $hd_tgt_tmp are global variables.
+ if [ -z "$(echo "$pt_fs" | grep -i lvm)" ]; then
+   receive_partition_from_server_then_write $pt_fs /dev/$tgt_p
+   # use the next port to avoid being occupied.
+   NC_PORT=$((NC_PORT + 2))
+ else
+   pv_pse_con="$hd_tgt_tmp/lvm_vg_dev.list"
+   logv_pse_con="$hd_tgt_tmp/lvm_logv.list"
+   [ ! -f "$pv_pse_con" ] && echo "$pv_pse_con NOT found!" && exit 1
+   [ ! -f "$logv_pse_con" ] && echo "$logv_pse_con NOT found!" && exit 1
+   ocs-lvm2-stop
+
+   # Clean the filesystem header in partition where PV exists
+   # This is an insurance, since later when we use partimage/ntfsclone to clone, it will not overwrite file header in that partition, it will only overwrite the data in LV. Then parted, blkid will give wrong info.
+   while read lv fs; do
+    # Process the real data partition, only those in the chosen partitions
+    # Ex:
+    # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
+    # Then lvol0 is belong to VG vg3
+    volg="$(echo "$lv" | awk -F"/" '{print $3}')"
+    # Find if the LV is in the chosen partition (via VG, we can determine that)
+    # EX: tgt_parts: hda1, hda3, hda5...
+    #     vg3 /dev/hda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
+    is_in_chosen_partition="no"
+    for ipt in $tgt_p; do
+      if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $pv_pse_con | grep -E "\<$volg\>")" ]; then
+        # Found the chosen partitions is in the VG
+        clean_filesystem_header_in_partition /dev/$ipt
+      fi
+    done
+   done < $logv_pse_con
+
+   lvm_tmp="$(mktemp -d /tmp/ocs_lvm_tmp.XXXXXX)"
+   # create PV first
+   echo "Creating the PV... "
+   while read vg dev uuid; do
+     cp -f $hd_tgt_tmp/lvm_$vg.conf $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
+     #pvcreate -ff --yes --uuid $uuid $dev
+     pvcreate -ff --yes --uuid $uuid --zero y --restorefile $lvm_tmp/lvm_$vg.conf $dev
+     rm -f $lvm_tmp/lvm_$vg.conf
+   done < $pv_pse_con
+   echo "done!"
+
+   # Restore the vg conf
+   echo "Restoring the VG config... "
+   while read vg dev uuid; do
+     cp -f $hd_tgt_tmp/lvm_$vg.conf $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
+     # vgcfgrestore -f $hd_tgt_tmp/lvm_$vg.conf $vg 2>/dev/null
+     vgcfgrestore -f $lvm_tmp/lvm_$vg.conf $vg 2>/dev/null
+     rm -f $lvm_tmp/lvm_$vg.conf
+   done < $pv_pse_con
+   [ -d "$lvm_tmp" -a -n "$(echo $lvm_tmp | grep "ocs_lvm_tmp")" ] && rm -rf $lvm_tmp
+   echo "done!"
+
+   ocs-lvm2-start
+   # To avoid the stdin/stdout with ntfsclone/partimage/partclone (feed_dev_in_server $fs $lv) conflicting with "while read", here we must use different file descriptor (4)
+   exec 4< $logv_pse_con
+   while read -u 4 lv fs; do
+    # Process the real data partition, only those in the chosen partitions
+    # Ex:
+    # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
+    # Then lvol0 is belong to VG vg3
+    volg="$(echo "$lv" | awk -F"/" '{print $3}')"
+    # Find if the LV is in the chosen partition (via VG, we can determine that)
+    # EX: tgt_parts: hda1, hda3, hda5...
+    #     vg3 /dev/hda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
+    is_in_chosen_partition="no"
+    for ipt in $tgt_p; do
+      if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $pv_pse_con | grep -E "\<$volg\>")" ]; then
+        # Found the chosen partitions is in the VG
+        is_in_chosen_partition="yes"
+        break
+      fi
+    done
+    [ "$is_in_chosen_partition" = "no" ] && continue
+
+    # Only when the target_type is disk we will create swap partition, other we might make a mistake to format the existing partition as swap partition.
+    if [ "$target_type" = "disk" ]; then
+      # if it's swap, output the labe and uuid only.
+      case "$fs" in 
+        *[Ss][Ww][Aa][Pp]*)
+          fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
+          echo "Found the swap partition $lv, create it by:"
+          # read LABEL, UUID info for $partition if swappt-${fn}.info exists
+          uuid_opt=""
+          label_opt=""
+          if [ -e "$hd_tgt_tmp/swappt-${fn}.info" ]; then
+            UUID=""
+            LABEL=""
+            . "$hd_tgt_tmp/swappt-${fn}.info"
+            [ -n "$UUID" ] && uuid_opt="-U $UUID"
+            [ -n "$LABEL" ] && label_opt="-L $LABEL"
+          fi
+          get_mkswap_uuid_cmd
+          echo "${MKSWAP_UUID} $label_opt $uuid_opt $lv"
+          ${MKSWAP_UUID} $label_opt $uuid_opt $lv
+          echo $msg_delimiter_star_line
+          continue ;;
+        *extended*) 
+          continue ;;
+      esac
+    fi
+    receive_partition_from_server_then_write $fs $lv
+    # use the next port to avoid being occupied.
+    NC_PORT=$((NC_PORT + 2))
+   done
+   exec 4<&-
+ fi
+} # end of receive_partition_or_lv_in_client
+#
+clone_over_net() {
+  local fn example_target ipart part_fs size
+  # try to get the client's type
+  case "$source_type" in
+    partition)
+       if [ "$STATUS" = "clone_server" ]; then
+         echo "Running the clone server for $src_dev in port $NC_PORT..."
+         part_fs="$(grep -Ew "/dev/$src_dev" $src_pt_info | awk -F" " '{print $2}')"
+         if [ -z "$part_fs" ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "No file system was found in /dev/$src_dev!"
+            echo "Skip feeding $src_dev..."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         else
+	    feed_partition_or_lv_in_server $part_fs $src_dev
+         fi
+       elif [ "$STATUS" = "clone_client" ]; then
+         echo "Restoring $tgt_dev from $SOURCE_IP:$NC_PORT..."
+         part_fs="$(grep -Ew "/dev/$tgt_dev" $tgt_pt_info | awk -F" " '{print $2}')"
+         if [ -z "$part_fs" ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "No file system was found in /dev/$tgt_dev!"
+            echo "Skip receiving data for $tgt_dev..."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         else
+	    receive_partition_or_lv_in_client $part_fs $tgt_dev
+         fi
+       fi
+       example_target="hda1 or hda2 or sda1 or..."
+       ;;
+    disk)
+       if [ "$STATUS" = "clone_server" ]; then
+        # $src_pt_info:
+        # "/dev/$part $filesystem $pt_size" 
+        exec 5< $src_pt_info
+        while read -u 5 ipart part_fs size; do
+          spart="$(basename $ipart)"
+          if [ -z "$part_fs" ]; then
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+             echo "No file system was found in /dev/$spart!"
+             echo "Skip feeding partition /dev/$spart"
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          elif [ -n "$(echo $part_fs | grep -Ei "(swap|extended)")" ]; then
+             echo "Skip feeding partition $spart since it is $part_fs..."
+          else
+             feed_partition_or_lv_in_server $part_fs $spart
+          fi
+        done
+        exec 5<&-
+       elif [ "$STATUS" = "clone_client" ]; then
+        # $tgt_pt_info:
+        # "/dev/$part $filesystem $pt_size" 
+        exec 6< $tgt_pt_info
+        while read -u 6 ipart part_fs size; do
+          t_part="$(basename $ipart)"
+          if [ -z "$part_fs" ]; then
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+             echo "No file system was found in /dev/$t_part!"
+             echo "Skip receiving data for /dev/$t_part"
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          elif [ -n "$(echo $part_fs | grep -Ei "(swap|extended)")" ]; then
+             echo "Skip feeding partition /dev/$t_part since it is $part_fs..."
+          else
+             receive_partition_or_lv_in_client $part_fs $t_part
+          fi
+        done
+        exec 6<&-
+       fi
+       example_target="hda or hdb or sda or..."
+       ;;
+  esac
+  echo "$msg_delimiter_star_line"
+  [ -n "$filter" ] && filter_opt="-i $filter"
+  if [ "$STATUS" = "clone_server" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_now_run_this_cmd_in_target_machine:"
+    echo "sudo su -"
+    echo "ocs-live-netcfg ($msg_setup_network_first)"
+    echo "$ocs $filter_opt -s $my_ips -t [TARGET_DEV]"
+    echo "TARGET_DEV example: $example_target"
+    case "$source_type" in
+      partition)
+      echo "$msg_if_clone_the_partition_to_hda1_in_target_machine:"
+      echo "$ocs $filter_opt -s $my_ips -t hda1"
+      ;;
+    disk)
+      echo "$msg_if_clone_the_disk_to_hda_in_target_machine:"
+      echo "$ocs $filter_opt -s $my_ips -t hda"
+      ;;
+    esac
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+} # end of clone_over_net
+#
+post_process_in_target_dev() {
+  local tgt_disk_select_opt target_parts
+  # create swap partition, resize partition, clean the temp partition table, and re-install grub
+  if [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then
+    echo "$msg_delimiter_star_line"
+    # Find the target_parts for later use in resize and partclone.ntfsfixboot
+    if [ "$resize_partition" = "on" -o "$change_ntfs_boot_chs" = "on" ]; then
+      case "$source_type" in
+        partition) target_parts="$tgt_dev" ;;
+        disk) 
+          #target_parts="$(get_known_partition_sf_format $pt_tmp)" ;;
+          BACKUP_DEVS=""
+          echo "Searching for data partition(s) in target disk for post process: $target_hd..."
+          get_known_partition_proc_format $target_hd data
+          target_parts="$BACKUP_DEVS"
+          ;;
+      esac
+    fi
+    echo $msg_delimiter_star_line
+    if [ "$resize_partition" = "on" ]; then
+     for partition in $target_parts; do
+       # hda1 -> hd_tmp, part_no_tmp ,i.e => hda, 1 
+       hd_tmp="${partition:0:3}"
+       part_no_tmp="${partition:3}"
+       echo "Now resize the partition for $hd_tmp$part_no_tmp"
+       ocs-resize-part --batch $hd_tmp $part_no_tmp
+       echo $msg_delimiter_star_line
+     done
+    fi
+
+    # Only when the target_type is disk we will create swap partition, other we might make a mistake to format the existing partition as swap partition.
+    if [ "$target_type" = "disk" ]; then
+      echo "Creating the swap partition if exists..."
+      # swap partition
+      # TODO: Shall we use better method instead of grep Id=82 ?
+      for partition in `get_swap_partition_sf_format $tgt_pt_tmp`; do
+        echo "Found the swap partition /dev/$partition, create it by:"
+        # read LABEL, UUID info for $partition if swappt-$partition.info exists
+        uuid_opt=""
+        label_opt=""
+        if [ -e "$hd_tgt_tmp/swappt-$partition.info" ]; then
+          UUID=""
+          LABEL=""
+          . "$hd_tgt_tmp/swappt-$partition.info"
+          [ -n "$UUID" ] && uuid_opt="-U $UUID"
+          [ -n "$LABEL" ] && label_opt="-L $LABEL"
+        fi
+        get_mkswap_uuid_cmd
+        echo "${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition"
+        ${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition
+      done
+    fi
+    echo "$msg_delimiter_star_line"
+    # clean the tmp file
+    [ -f "$tgt_pt_tmp" ] && rm -f $tgt_pt_tmp
+
+    # Remove the udev MAC address records on the restored GNU/Linux
+    if [ "$do_rm_hardware_record" = "yes" ]; then
+      ocs-tux-postprocess $target_hd
+      echo $msg_delimiter_star_line
+    fi
+
+    if [ "$install_grub" = "on" ]; then
+      # Since it's local clone, we must assign the target hardisk, otherwise it might find the source hardisk. For example, hda -> hdc local clone, if no "-s $target_hd" is assigned, it will find hda as grub target.
+      tgt_disk_select_opt="-s $target_hd"
+      echo "Run grub install on disk $target_hd..."
+      install_grub_hd $tgt_disk_select_opt $grub_partition
+    fi
+    echo "$msg_delimiter_star_line"
+    if [ "$change_ntfs_boot_chs" = "on" ]; then
+      echo "Try to run partclone.ntfsfixboot for NTFS boot partition if it exists. Scanning partition(s): $target_parts..."
+      run_ntfsreloc_part -p "$target_parts" $ntfs_boot_partition
+    fi
+    echo "$msg_delimiter_star_line"
+  fi
+} # end of post_process_in_target_dev
+#
+set_filter_program() {
+case "$filter" in
+  bzip|bzip2)
+       if which bzip2 &>/dev/null; then
+         filter_comp="bzip2 -c"
+         filter_decomp="bzip2 -cd"
+       else
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "bzip2 is NOT found! Program terminated!!!"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	 exit 1
+       fi
+       ;;
+   lzop)
+       if which lzop &>/dev/null; then
+         filter_comp="lzop -c"
+         filter_decomp="lzop -cd"
+       else
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "lzop is NOT found! Program terminated!!!"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	 exit 1
+       fi
+       ;;
+   cat)
+       filter_comp="cat"
+       filter_decomp="cat"
+       ;;
+   *)
+       if which gzip &>/dev/null; then
+         filter_comp="gzip -c $extra_gzip_opt"
+         filter_decomp="gzip -cd"
+       else
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "gzip is NOT found! Program terminated!!!"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	 exit 1
+       fi
+       ;;
+esac
+} # end of set_filter_program
+#
+pre_checking() {
+# Check if it runs in DRBL server and it's not DRBL/Clonezilla live. If true, warn user!
+# Get the live media mount point.
+get_live_media_mnt_point
+
+if [ -d "$pxecfg_pd" -a ! -d "/$LIVE_MEDIA" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_Warning!!! $msg_should_not_run_ocs_onthefly_in_server"
+  echo "$msg_are_u_sure_u_want_to_continue ?"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "[y/N]"
+  read clone_ans
+  case "$clone_ans" in
+	  [y|Y][eE][sS])
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+	  echo "$msg_really_dangerous_then_continue"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	  echo -n "$msg_press_enter_to_continue"
+	  read
+	  ;;
+	  *)
+	  exit 0
+	  ;;
+  esac
+fi
+
+# check grub_partition if we want to install grub
+if [ "$install_grub" = "on" ]; then
+  if [ -z "`echo $grub_partition | grep "/dev/[sh]d[a-z][1-9]*"`" -a "$grub_partition" != "auto" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "\"$grub_partition\" $msg_is_not_valid_grub_root! $msg_program_stop!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 1
+  fi
+fi
+
+#
+if [ "$mode" = "local" ]; then
+  # check if source and target are the same one if it's local clone!!!
+  # we do not accept hda -> hda or hda2 -> hda2, however, hda2 -> hda3 is ok.
+  if [ "$tgt_dev" = "$src_dev" ]; then
+    echo "$msg_src_target_r_same_dev ($src_dev -> $tgt_dev) $msg_program_stop"
+    exit 1
+  fi
+fi
+} # end of pre_checking
+
+#
+USAGE() {
+    echo "Usage:"
+    echo "To run clonezilla on-the-fly:"
+    echo "$ocs [OPTION]"
+    echo "Option"
+    echo "-b, -batch, --batch, --batch-mode   (DANGEROUS!) Run program in batch mode, i.e. without any prompt or wait for pressing enter key. //NOTE// You have to use '-batch' instead of '-b' when you want to use it in the boot parameters. Otherwise the program init on system will honor '-b', too."
+    echo "-e, --load-geometry  Force to use the saved CHS (cylinders, heads, sectors) when using sfdisk"
+    echo "-e1, --change-geometry NTFS-BOOT-PARTITION  Force to change the CHS (cylinders, heads, sectors) value of NTFS boot partitoin after image is restored. NTFS-BOOT-PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the NTFS boot partition automatically)"
+    echo "-e2, --load-geometry-from-edd  Force to use the CHS (cylinders, heads, sectors) from EDD (Enhanced Disk Device) when creating partition table by sfdisk"
+    echo "-r, --resize-partition   Resize the target disk in target machine (To solve the small partition image restored to larger partition problem.)"
+    echo "-f, --source DEV         Specify the source device as DEV (sda, sda1...)"
+    echo "-g, --grub-install GRUB_PARTITION     Install grub in the MBR of the disk containing partition GRUB_PARTITION with root grub directory in the same GRUB_PARTITION when restoration finishs, GRUB_PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the grub root partition automatically). If \"auto\" is assigned, it will work if grub partition and root partition are not in the same partition."
+    echo "-i, --filter PROGRAM     Use the PROGRAM (gzip/lzop/bzip2/cat) before sending partition data to netcat (only in network clone mode). The default action is gzip. Use \"cat\" if you do not want to compress (Good for fast internode network)."
+    echo "-nogui, --nogui          Do NOT show GUI of partimage, use text only"
+    echo "-rescue, --rescue        Turn on rescue mode, i.e. try to skip bad sectors."
+    echo "-irhr, --irhr            Skip removing the Linux udev hardware records on the restored GNU/Linux."
+    echo "-ius, --ius              Skip updating syslinux-related files on the restored GNU/Linux."
+    echo "-icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
+    echo "-k, --no-sfdisk          Do NOT create partition table in boot sector in target machine"
+    echo "-k1,                     Create partition table in the target disk proportionally."
+    echo "-k2,                     Enter command line prompt to create partition table manually before restoring image."
+    echo "-j2, --clone-hidden-data  Use dd to clone the image of the data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool."
+    echo "-m, --no-boot-loader-clone  Do NOT clone boot loader"
+    echo "-o, --load-geometry      Force to use the saved CHS (cylinders, heads, sectors) when using sfdisk in restoring."
+    echo "-q1, --force-to-use-dd   Force to use sector-by-sector copy (supports all filesystem, but inefficient). By default we will use partclone to clone a partition."
+    echo "-p, --port PORT          Specify the netcat port (Only in network clone mode)"
+    echo "-pa, --postaction [choose|poweroff|reboot|command|CMD]  When cloning job finishs, the action to be run, e.g. poweroff, reboot, enter command line prompt or run CMD you assign"
+    echo "-a, --server             Specify the running machine is in network clone server."
+    echo "-s, --source-IP IP       Specify the source IP address (used in target client machine)."
+    echo "-t, --target DEV         Specify the target device as DEV (sda, sda1...)"
+    echo "-v, --verbose            Prints verbose information"
+    echo "-x, --interactive        Interactive mode."
+    echo "Ex:"
+    echo "1. To clone local sda to local sdb, run"
+    echo "   $ocs -f sda -t sdb"
+    echo "2. To clone sda (in machine A with IP 192.168.100.1) to sda (in machine B) via network,"
+    echo "   In machine A, boot it into DRBL client mode, then run"
+    echo "   $ocs -a -f sda"
+    echo "   Then in machine B, boot it into DRBL client mode, too. Then run"
+    echo "   $ocs --source-IP 192.168.100.1 -t sda"
+    echo
+}
+#
+ask_disk_to_local_disk() {
+   local available_harddisk_no ANS_TMP
+   # src_dev, tgt_dev is like hda, sda...
+   available_harddisk_no="$(LC_ALL=C get_harddisk_list | wc -w)"
+   if [ "$available_harddisk_no" -lt 2 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "To do local disk to disk clone, there must be at least 2 harddisks in the machine! Only $available_harddisk_no disk is found!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop"
+      echo -n "$msg_press_enter_to_continue"
+      read
+      exit 1
+   fi
+   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+   get_input_dev_name $ANS_TMP harddisk menu yes "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
+   # we have to remove " (comes with checklist in dialog) so that for loop
+   # will work (Specially for FC3/4...)
+   src_dev="$(cat $ANS_TMP | tr -d \")"
+   [ -z "$src_dev" ] && exit 1
+   check_input_hd $src_dev
+
+   get_input_dev_name $ANS_TMP harddisk menu yes "$msg_local_target_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection" "$src_dev"
+   # we have to remove " (comes with checklist in dialog) so that for loop
+   # will work (Specially for FC3/4...)
+   tgt_dev="$(cat $ANS_TMP | tr -d \")"
+   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+   [ -z "$tgt_dev" ] && exit 1
+   check_input_hd $tgt_dev
+} # end of ask_disk_to_local_disk
+ask_disk_to_remote_disk() {
+   local ANS_TMP
+   # tgt_dev is like hda, sda...
+   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+   get_input_dev_name $ANS_TMP harddisk menu yes "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
+   # we have to remove " (comes with checklist in dialog) so that for loop
+   # will work (Specially for FC3/4...)
+   src_dev="$(cat $ANS_TMP | tr -d \")"
+   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+   [ -z "$src_dev" ] && exit 1
+   check_input_hd $src_dev
+}
+ask_part_to_local_part() {
+   local available_partition_no ANS_TMP
+   #  src_dev, tgt_dev is like hda1, sda1...
+   available_partition_no="$(get_partition_list | wc -w)"
+   if [ "$available_partition_no" -lt 2 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "To do local disk to disk clone, there must be at least 2 partitions in the machine! Only $available_partition_no disk is found!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop"
+      echo -n "$msg_press_enter_to_continue"
+      read
+      exit 1
+   fi
+   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+
+   get_input_dev_name $ANS_TMP partition menu yes "$msg_local_source_part \n$msg_linux_parts_MS_mapping"
+   # we have to remove " (comes with checklist in dialog) so that for loop
+   # will work (Specially for FC3/4...)
+   src_dev="$(cat $ANS_TMP | tr -d \")"
+   [ -z "$src_dev" ] && exit 1
+   check_input_partition $src_dev
+
+   get_input_dev_name $ANS_TMP partition menu yes "$msg_local_target_part \n$msg_linux_parts_MS_mapping" "$src_dev"
+   # we have to remove " (comes with checklist in dialog) so that for loop
+   # will work (Specially for FC3/4...)
+   tgt_dev="$(cat $ANS_TMP | tr -d \")"
+   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+   [ -z "$tgt_dev" ] && exit 1
+   check_input_partition $tgt_dev
+} # end of ask_part_to_local_part
+ask_part_to_remote_part() {
+   local ANS_TMP
+   # src_dev is like hda1, sda1...
+   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+   get_input_dev_name $ANS_TMP partition menu yes "$msg_local_source_part \n$msg_linux_parts_MS_mapping"
+   # we have to remove " (comes with checklist in dialog) so that for loop
+   # will work (Specially for FC3/4...)
+   src_dev="$(cat $ANS_TMP | tr -d \")"
+   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+   [ -z "$src_dev" ] && exit 1
+   check_input_partition $src_dev
+} # end of ask_part_to_remote_part
+
+#
+get_onthefly_input_param() {
+  local TMP ASK_OCS_ONTHEFLY_TYPE ocs_otf_type
+  # (1) disk to local disk
+  # (2) disk to remote disk
+  # (3) partiiton to local partition
+  # (4) partiiton to remote partition
+  TMP="$(mktemp /tmp/ontheflymenu.XXXXXX)"
+  ASK_OCS_ONTHEFLY_TYPE=1
+  while [ "$ASK_OCS_ONTHEFLY_TYPE" -ne 0 ]; do
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    "$msg_nchc_clonezilla" --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_overwrite_data_on_disk_when_cloning\n$msg_choose_mode:" \
+    0 0 0 \
+    disk_to_local_disk  "$msg_disk_to_local_disk" \
+    disk_to_remote_disk "$msg_disk_to_remote_disk" \
+    part_to_local_part "$msg_part_to_local_part" \
+    part_to_remote_part "$msg_part_to_remote_part" \
+    "exit"           "$msg_exit. $msg_enter_cml" \
+    2> $TMP
+    ocs_otf_type="$(cat $TMP)"
+    if [ -z "$ocs_otf_type" ]; then
+      ASK_OCS_ONTHEFLY_TYPE=1
+    else
+      ASK_OCS_ONTHEFLY_TYPE=0
+    fi
+  done
+  [ -f "$TMP" ] && rm -f $TMP
+  [ -z "$ocs_otf_type" ] && echo "You must specify the action! Program terminated!!!" && exit 1
+  # ocs_mode_prompt is to be shown in the title of dialog menu later
+  ocs_mode_prompt="$ocs_otf_type"
+  case "$ocs_otf_type" in
+    disk_to_local_disk)	ask_disk_to_local_disk;;
+    disk_to_remote_disk) 
+                        STATUS="clone_server"
+                        network_config_if_necessary
+                        ask_disk_to_remote_disk;;
+    part_to_local_part) ask_part_to_local_part;;
+    part_to_remote_part) 
+                        STATUS="clone_server"
+                        network_config_if_necessary
+                        ask_part_to_remote_part;;
+    exit) exit 0;;
+  esac
+} # end of get_onthefly_input_param
+set_ocs_onthefly_extra_param() {
+  local fdisk_opt
+  # This function is used to be called inside ocs-onthefly, not from other program.
+  local OCS_PARAM_TMP="$(mktemp /tmp/onthefly-extramenu.XXXXXX)"
+  if [ "$ocs_user_mode" = "expert" ]; then
+    $DIA --separate-output --backtitle "$msg_nchc_free_software_labs" --title  \
+    "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --checklist "$msg_choose_param_to_set:" \
+    0 0 0 $DIA_ESC \
+    "-g auto "  "$msg_ocs_onthefly_param_g" on \
+    "-e1 auto " "$msg_ocs_onthefly_param_e1" on \
+    "-e2 "      "$msg_ocs_onthefly_param_e2" on \
+    "-j2 "      "$msg_ocs_onthefly_param_j2" on \
+    "-r "       "$msg_ocs_onthefly_param_e" on \
+    "-q1 "      "$msg_ocs_onthefly_param_q1" off \
+    "-nogui "   "$msg_ocs_onthefly_param_nogui" off \
+    "-m "       "$msg_ocs_onthefly_param_m" off \
+    "-rescue "  "$msg_ocs_onthefly_param_rescue" off \
+    "-irhr "    "$msg_ocs_onthefly_param_irhr" off \
+    "-ius "     "$msg_ocs_onthefly_param_ius" off \
+    "-icds "    "$msg_ocs_onthefly_param_icds" off \
+    "-fsck-src-part "   "$msg_ocs_onthefly_param_fsck_src_part" off \
+    "-fsck-src-part-y " "$msg_ocs_onthefly_param_fsck_src_part_yes" off \
+    "-o "       "$msg_ocs_onthefly_param_o" off \
+    "-batch "   "$msg_ocs_onthefly_param_b" off \
+    "-v "       "$msg_ocs_onthefly_param_v" off \
+    2> $OCS_PARAM_TMP
+  else
+    echo "-g auto" "-e1 auto" "-e2" "-r" "-j2" > $OCS_PARAM_TMP
+  fi
+
+  # Question about fsck the source partition
+  $DIA --separate-output --backtitle "$msg_nchc_free_software_labs" --title  \
+  "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set:" \
+  0 0 0 $DIA_ESC \
+  " "     "$msg_skip_check_source_fs" \
+  "-fsck-src-part "   "$msg_ocs_onthefly_param_fsck_src_part" \
+  "-fsck-src-part-y " "$msg_ocs_onthefly_param_fsck_src_part_yes" \
+  2>> $OCS_PARAM_TMP
+
+  # force to strip the unnecessary quotation ', this is specially for dialog (from cdialog) in Mandriva. Otherwise it will cause -p reboot become (containing space) '-p reboot', which is wrong option in dcs.
+  LC_ALL=C perl -pi -e "s/\'//g" $OCS_PARAM_TMP
+
+  # About partition table
+  case "$source_type" in
+    partition) 
+    # Partition restore only. default NOT to create partition table
+    if [ "$ocs_user_mode" = "expert" ]; then
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+      "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set_single_choice $msg_hint_for_fdisk:" \
+      0 0 0 $DIA_ESC \
+      "-k "      "$msg_ocs_onthefly_param_n"  \
+      "-k1 "     "$msg_ocs_param_k1"  \
+      "-k2 "     "$msg_ocs_param_k2"  \
+      " "        "$msg_use_the_part_table_from_sourcedisk"  \
+      "exit "    "$msg_exit" \
+      2>> $OCS_PARAM_TMP
+    else
+      echo "-k " >> $OCS_PARAM_TMP
+    fi
+    ;;
+    *)
+    # Disk restore, default to create partition table
+    if [ "$ocs_user_mode" = "expert" ]; then
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+      "$msg_clonezilla_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set_single_choice $msg_hint_for_fdisk:" \
+      0 0 0 $DIA_ESC \
+      " "        "$msg_use_the_part_table_from_sourcedisk"  \
+      "-k "      "$msg_ocs_onthefly_param_n"  \
+      "-k1 "     "$msg_ocs_param_k1"  \
+      "-k2 "     "$msg_ocs_param_k2"  \
+      "exit "    "$msg_exit" \
+      2>> $OCS_PARAM_TMP
+    else
+      echo " " >> $OCS_PARAM_TMP
+    fi
+    ;;
+  esac
+  if grep -Ew "exit" $OCS_PARAM_TMP &>/dev/null; then
+    echo "$msg_program_stop"
+    exit 1
+  fi
+  if grep -Ew "(-k1|k2)" $OCS_PARAM_TMP &>/dev/null; then
+    # k1-2 is different partition size, turn on -r by default
+    if [ -z "$(grep -w "\-r" $OCS_PARAM_TMP)" ]; then
+      echo "Since the mode you choose might resize partition size, we turn on file system resize funtion automatically (-r)..."
+      echo " -r " >> $OCS_PARAM_TMP
+    fi
+  fi
+  # parse them
+  ocs_onthefly_adv_param="$(cat $OCS_PARAM_TMP)"
+  ocs_onthefly_adv_param="$(echo $ocs_onthefly_adv_param)"  # make it one line
+  parse_ocs_onthefly_cmd_options $ocs_onthefly_adv_param
+  [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
+} # end of set_ocs_onthefly_extra_param
+#
+check_source_and_target_type() {
+# check source and target type
+  if [ -n "$src_dev" ]; then
+    check_input_param $src_dev
+    ret=$?
+    case "$ret" in
+       3)
+    	source_type="disk"
+    	;;
+       5)
+    	source_type="partition"
+    	;;
+    esac
+  fi
+  if [ -n "$tgt_dev" ]; then
+    check_input_param $tgt_dev
+    ret=$?
+    case "$ret" in
+       3)
+    	target_type="disk"
+    	;;
+       5)
+    	target_type="partition"
+    	;;
+    esac
+  fi
+} # check_source_and_target_type
+#
+parse_ocs_onthefly_cmd_options() {
+# Parse command-line options
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -b|-batch|--batch|--batch-mode) shift; batch_mode="on" ;;
+      -e1|--change-geometry)  
+              change_ntfs_boot_chs="on"
+              shift
+              # skip the -xx option, in case 
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                ntfs_boot_partition=$1
+                shift
+              fi
+              [ -z "$ntfs_boot_partition" ] && USAGE && exit 1
+              ;;
+      -e2|--load-geometry-from-edd)
+  	    shift; use_HD_CHS_from_EDD_pref="yes" ;;
+      -l|--language)
+  	    shift
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+  	      specified_lang="$1"
+  	      shift
+              fi
+              [ -z "$specified_lang" ] && USAGE && exit 1
+  	    ;;
+      -g|--grub-install)  
+              install_grub="on"
+              shift
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+                grub_partition=$1
+                shift
+              fi
+              [ -z "$grub_partition" ] && USAGE && exit 1
+              ;;
+      -n)     shift; create_part="no"
+  	      echo "Option -n is deprecated! Please use -k in the future!"
+  	      ;;
+      -k|--no-sfdisk) shift; create_part="no" ;;
+      -k1|--fdisk-proportion)  
+              shift
+              create_part="yes"
+              create_part_type="proportion"
+              ;;
+      -k2|--fdisk-manual)  
+              shift
+              create_part="yes"
+              create_part_type="manual"
+              ;;
+      -m|--no-boot-loader-clone) shift; CLONE_BOOT_LOADER="no" ;;
+      -s|--source-IP)
+              shift
+  	      STATUS="clone_client"
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+                SOURCE_IP=$1
+                shift
+              fi
+              [ -z "$SOURCE_IP" ] && USAGE && exit 1
+              ;;
+      -f|--source)
+              shift
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+                src_dev=$1
+                shift
+              fi
+              [ -z "$src_dev" ] && USAGE && exit 1
+              ;;
+      -t|--target)
+              shift
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+                tgt_dev=$1
+                shift
+              fi
+              [ -z "$tgt_dev" ] && USAGE && exit 1
+              ;;
+      -p|--port)
+              shift
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+                NC_PORT=$1
+                shift
+              fi
+              [ -z "$NC_PORT" ] && USAGE && exit 1
+              ;;
+      -pa|--postaction)  
+              shift
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+                postrun="$1"
+                shift
+              fi
+              [ -z "$postrun" ] && USAGE && exit 1
+              ;;
+      -q1|--force-to-use-dd) FORCE_TO_USE_DD="yes"; shift ;;
+      -i|--filter)
+              shift
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+  	      filter=$1
+                shift
+              fi
+  	    [ -z "$filter" ] && USAGE && exit 1
+  	    ;;
+      -um|--user-mode)
+              shift
+              # skip the -xx option, in case 
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                ocs_user_mode="$1"
+                shift
+              fi
+              [ -z "$ocs_user_mode" ] && USAGE && exit 1
+  	    ;;
+      -a|--server) shift; STATUS="clone_server" ;;
+      -r|--resize-partition) shift; resize_partition="on";;
+      -o|--load-geometry) shift; load_HD_CHS_from_img="yes";;
+      -nogui|--nogui) shift; nogui="on";;
+      -x|--interactive) shift; ocs_onthefly_mode="interactive";; 
+      -j2|--clone-hidden-data) shift; clone_hidden_data="yes";;
+      -rescue|--rescue) shift; rescue_mode="on";;
+      -irhr|--irhr) shift; do_rm_hardware_record="no";;
+      -ius|--ius) shift; do_update_syslinux="no";;
+      -icds|--ignore-chk-dsk-size-pt) shift; chk_tgt_disk_size_bf_mk_pt="no";;
+      -fsck-src-part|--fsck-src-part) shift; fsck_src_part_intr="yes";;
+      -fsck-src-part-y|--fsck-src-part-y) shift; fsck_src_part_auto="yes";;
+      -v|--verbose) shift; verbose="on" ;;
+      -*)     echo "${0}: ${1}: invalid option" >&2
+              USAGE >& 2
+              exit 2 ;;
+      *)      break ;;
+    esac
+  done
+} # End of parse_ocs_onthefly_cmd_options
+#
+clean_tmp_dirs() {
+  if [ "$STATUS" = "clone_server" ]; then
+    [ -d "$hd_src_tmp" -a -n "$(echo $hd_src_tmp | grep "ocs_onthefly")" ] && rm -rf $hd_src_tmp
+  elif [ "$STATUS" = "clone_client" ]; then
+    [ -d "$hd_tgt_tmp" -a -n "$(echo $hd_tgt_tmp | grep "ocs_onthefly")" ] && rm -rf $hd_tgt_tmp
+  fi
+  [ -d "$local_tmp" -a -n "$(echo $local_tmp | grep "ocs_onthefly")" ] && rm -rf $local_tmp
+} # end of clean_tmp_dirs
+#
+do_fsck_in_source_dev_if_assigned() {
+  local fsck_extra_opt
+  if [ "$mode" = "local" -o "$STATUS" = "clone_server" ]; then
+    if [ "$fsck_src_part_auto" = "yes" ]; then
+      # It's auto (actually say "yes" to all), so we add "-y" for fsck.
+      fsck_extra_opt="-y"
+    fi
+    if [ "$fsck_src_part_intr" = "yes" -o \
+	 "$fsck_src_part_auto" = "yes" ]; then
+     case "$source_type" in
+      partition)
+         part_fs="$(grep -Ew "/dev/$src_dev" $src_pt_info | awk -F" " '{print $2}')"
+         if [ -z "$part_fs" ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  	  echo "No file system was found in /dev/$src_dev! Skip fsck."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         else
+	    fsck_partition $part_fs /dev/$src_dev $fsck_extra_opt
+         fi
+         ;;
+      disk)
+         echo $msg_delimiter_star_line
+         BACKUP_DEVS=""
+         echo "Searching for data partition(s) in source disk: $source_hd ..."
+         get_known_partition_proc_format $source_hd data
+         echo $msg_delimiter_star_line
+         target_part_list="$(echo $BACKUP_DEVS | sed -e "s/$source_hd/$target_hd/g")"
+         #for target_part in `get_known_partition_sf_format $pt_tmp`; do
+         for target_part in $target_part_list; do
+           # we need to know the source partition, so replace it, ex. hdc1 -> hda1
+           # Ex: target_part: hdc1, hddev: hdc, part_no: 1, src_part: hda1
+           hddev=${target_part:0:3}
+           part_no=${target_part:3}
+           src_part=$( echo $target_part | sed -e "s/$hddev/$source_hd/g" )
+           part_fs="$(grep -Ew "/dev/$target_part" $tgt_pt_info | awk -F" " '{print $2}')"
+           if [ -z "$part_fs" ]; then
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+              echo "No file system was found in /dev/$src_part! Skip fsck."
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+           else
+	      fsck_partition $part_fs /dev/$src_part $fsck_extra_opt
+           fi
+         done
+         ;;
+     esac
+    fi
+  fi
+} # end of do_fsck_in_source_dev_if_assigned
+
+
+########################
+##### MAIN PROGRAM #####
+########################
+# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
+# otherwise setterm will complain.
+[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
+echo "Setting the TERM as $TERM"
+export TERM="$TERM"
+
+#
+check_if_root
+
+# PARTIMAGE_RESTORE_OPT & PARTIMAGE_SAVE_OPT will put into partimage command options
+PARTIMAGE_RESTORE_OPT=
+PARTIMAGE_SAVE_OPT=
+STATUS=
+ocs_onthefly_mode=""
+# Some default setting.
+batch_mode="off"
+install_grub="off"
+grub_partition="auto" 
+change_ntfs_boot_chs="off"
+ntfs_boot_partition="auto"
+use_HD_CHS_from_EDD_pref="no"
+create_part="yes" 
+CLONE_BOOT_LOADER="yes" 
+resize_partition="off" 
+load_HD_CHS_from_img="no" 
+nogui="off" 
+verbose="off" 
+clone_hidden_data="no"
+sfdisk_opt="--force"
+# Default to remove the udev MAC address records on the restored GNU/Linux
+do_rm_hardware_record="yes"
+# Default to run ocs-update-syslinux to update the syslinux files (ldlinux.sys, *.c32 and *.bin)
+do_update_syslinux="yes"
+# Flag to check target disk size before creating partition table
+chk_tgt_disk_size_bf_mk_pt="yes"
+
+#
+parse_ocs_onthefly_cmd_options $*
+
+ask_and_load_lang_set $specified_lang
+
+# check DIA
+check_DIA_set_ESC $DIA
+
+# Turn off swap and LVM2, unlock the busy partitions.
+turn_off_swap_and_LVM2
+
+#
+get_ntfsclone_progress_opt
+
+#
+if [ "$ocs_onthefly_mode" = "interactive" ]; then
+  [ -z "$ocs_user_mode" ] && ask_if_beginner_or_expert_mode
+  get_onthefly_input_param      # get src_dev, tgt_dev, for example.
+  check_source_and_target_type
+  set_ocs_onthefly_extra_param  # get OCS_PARAM_TMP
+  [ -n "$tgt_dev" ] && tgt_dev_opt="-t $tgt_dev"
+  [ "$STATUS" = "clone_server" ] && net_clone_opt="-a"
+  run_again_fname="/tmp/ocs-onthefly-`date +%F-%H-%M`"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+  echo PS. $msg_run_drbl_ocs_again_cmd 
+  echo "$0 $ocs_onthefly_adv_param $net_clone_opt -f $src_dev $tgt_dev_opt" | tee $run_again_fname
+  echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
+  if [ "$batch_mode" != "on" ]; then
+    echo -n "$msg_press_enter_to_continue "
+    read
+  fi
+else
+  check_source_and_target_type
+fi
+#
+if [ -n "$STATUS" ]; then
+  # It's in network clone mode
+  if [ "$STATUS" = "clone_server" ]; then
+    [ -z "$src_dev" ] && clean_tmp_dirs && USAGE && exit 1
+  elif [ "$STATUS" = "clone_client" ]; then
+    [ -z "$tgt_dev" -o -z "$SOURCE_IP" ] && clean_tmp_dirs && USAGE && exit 1
+  fi
+  #
+  echo "$msg_delimiter_star_line"
+  mode="network"
+  my_ips="$(LC_ALL=C get-all-nic-ip -r)"
+  echo "$msg_my_IP_in_drbl_env: $my_ips"
+  [ -z "$NC_PORT" ] && NC_PORT=$NC_PORT_DEFAULT
+  # The NC port for target machine to notify the server
+  JOB_NOTIFY_PORT=$((NC_PORT +1))
+  # Get the source port option of nc is "-p" or none.
+  nc_lp_check
+else
+  # It's in local clone mode
+  if [ -z "$src_dev" -o -z "$tgt_dev" ]; then 
+    clean_tmp_dirs
+    USAGE 
+    exit 1
+  fi
+  #
+  echo "$msg_delimiter_star_line"
+  mode="local"
+fi
+
+#
+set_filter_program
+
+pre_checking
+
+case "$mode" in
+  local)
+    if [ "$source_type" != "$target_type" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$msg_different_type_of_input_devs ($src_dev to $tgt_dev)! $msg_program_stop!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      clean_tmp_dirs
+      exit 1
+    fi
+    ;;
+  network)
+    # clean the stalled partimage and netcat process
+    kill_clone_prog_nc_process
+    ;;
+esac
+
+
+# convert partition to disk (Ex. hda1 -> hda), even if it's partition, the sed action is still OK, i.e. won't affect if it's partition already.
+[ -n "$src_dev" ] && source_hd=$(echo $src_dev | sed -e "s/[0-9]*//g")
+[ -n "$tgt_dev" ] && target_hd=$(echo $tgt_dev | sed -e "s/[0-9]*//g")
+
+echo "$msg_delimiter_star_line"
+# turn on DMA and turn off swap/LVM.
+screen_not_blank
+[ -n "$target_hd" ] && turn_on_hd_dma /dev/$target_hd
+
+echo "$msg_delimiter_star_line"
+
+# prepare the partition table and MBR (if necessary)
+case "$mode" in
+  local)   prepare_local_clone_dev_info ;;
+  network) prepare_network_clone_dev_info ;;
+esac
+
+#
+if [ "$nogui" = "on" ]; then
+  PARTIMAGE_RESTORE_ONTHEFLY_OPT="-B gui=no"
+fi
+if [ "$nogui" = "off" ]; then
+  # TUI is on.
+  # Use the TUI mode for partclone (i.e. run with -N, otherwise by default partclone runs only text output)
+  # //NOTE// Even if -N is set for partclone in save mode, it's useless, since we will stdout to another program to compress.
+  PARTCLONE_RESTORE_ONTHEFLY_OPT="-N"
+fi
+
+if [ "$rescue_mode" = "on" ]; then
+  PARTCLONE_RESTORE_ONTHEFLY_OPT="$PARTCLONE_RESTORE_ONTHEFLY_OPT --rescue"
+fi
+
+if [ "$verbose" = "on" ]; then
+  echo "PARTIMAGE_RESTORE_OPT: $PARTIMAGE_RESTORE_OPT"
+  echo "PARTIMAGE_SAVE_OPT: $PARTIMAGE_SAVE_OPT"
+  echo "PARTCLONE_RESTORE_ONTHEFLY_OPT: $PARTCLONE_RESTORE_ONTHEFLY_OPT"
+  echo "SOURCE: $src_dev"
+  echo "TARGET: $tgt_dev"
+  echo "PORT for netcat: $NC_PORT"
+fi
+
+# confirm first
+confirm_do_it_in_target_dev
+
+# Run fsck on the source partition
+do_fsck_in_source_dev_if_assigned
+
+# partition table
+create_partition_table_in_target
+
+# process the boot loader
+if [ -z "$(LC_ALL=C grep -iE "^Partition Table:" $src_parted_info 2>/dev/null | grep -iE "gpt")" ]; then
+  # Not GPT, then ask if clone boot loader
+  clone_boot_loader_in_target
+fi
+
+#
+echo "$msg_delimiter_star_line"
+# start cloning
+if [ "$batch_mode" != "on" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_start_to_clone_data_to_target_machine"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  confirm_continue_no_default_answer "clean_tmp_dirs"
+fi
+#
+case "$mode" in
+  local) local_dev_clone ;;
+  network) clone_over_net ;;
+esac
+
+# create swap partition, resize partition, clean the temp partition table, and re-install grub
+post_process_in_target_dev
+
+if [ "$STATUS" = "clone_server" ]; then
+  echo "$msg_delimiter_star_line"
+  echo -n "Waiting for the target machine to connect... "
+  $NC_CMD -l $NC_LOCAL_PORT_OPT $JOB_NOTIFY_PORT
+elif [ "$STATUS" = "clone_client" ]; then
+  echo "$msg_delimiter_star_line"
+  echo -n "Notifying the source machine that my job is done... "
+  echo 'done!' | $NC_CMD $NC_QUIT_OPT $SOURCE_IP $JOB_NOTIFY_PORT
+  echo 'done!'
+fi
+
+# reboot/poweroff/choose...
+if [ -n "$postrun" ]; then
+  echo "Now syncing - flush filesystem buffers..." 
+  sync;sync;sync
+  run_post_cmd_when_clone_end "$postrun"
+fi
+
+# Clean tmp dir
+clean_tmp_dirs
+
+exit 0

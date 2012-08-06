@@ -1,0 +1,414 @@
+#!/bin/bash
+# netcardconfig - A very light-weight text-based network configuration tool.
+# (C) Klaus Knopper Nov 2002
+# License: GPL
+# This program was modified by B2D team (http://ftp3.tnc.edu.tw/b2d/netcardconfig/netcardconfig).
+# 2007/09/18 Modified by Steven Shiau to be used in clonezilla live.
+
+# Settings
+DIA="whiptail"
+LANG_FILE_PATH="/usr/share/gparted/lang"
+
+# Load GParted live functions
+. /usr/share/gparted/bin/gl-functions
+
+#
+check_if_root
+
+# Functions
+bailout(){
+  rm -f "$TMP"
+  exit $1
+}
+USAGE() {
+   echo "Usage: $0 [OPTION] MODE [MODE2]"
+   echo "OPTION"
+   dialog_like_prog_help_prompt
+   echo " -i, --ip-add  IP_ADD    Assign the IP address shown in the dialog as IP_ADD."
+   echo " -n, --netmask NETMASK   Assign the netmask shown in the dialog as NETMASK."
+   echo " -g, --gateway GATEWAY   Assign the gateway shown in the dialog as GATEWAY."
+   echo " -s, --dns     DNS       Assign the domain name server shown in the dialog as DNS."
+   echo  " --ignore-gw            Do not set default gateway."
+   echo  " --ignore-dns           Do not set domain name server."
+   echo  " -r, --ignore-dv  DV    Do not config network device DV, such as 'eth1 eth2'."
+}
+#
+cfg_by_dhcp(){
+  local dhclient_verbose_opt
+  # Before using dhclient, we create /etc/resolv.conf to suppress the warning! Since /etc/resolv.conf is removed when Debian Live is created by live package.
+  touch /etc/resolv.conf
+  echo "$msg_send_dhcp_request_from $DV"
+  # Test if "-v" is supported by dhclient
+  # For version 4,
+  # Usage: dhclient [-4|-6] [-SNTP1dvrx] [-nw] [-p <port>] [-s server]
+  #                 [-cf config-file] [-lf lease-file][-pf pid-file] [-e VAR=val]
+  #      	    [-sf script-file] [interface]
+  # For version 3,
+  # Usage: dhclient [-1dqrx] [-nw] [-p <port>] [-s server]
+  #                 [-cf config-file] [-lf lease-file][-pf pid-file] [-e VAR=val]
+  #       	    [-sf script-file] [interface]
+  # 
+  if [ -n "$(LC_ALL=C dhclient --help 2>&1 | grep -Ewo -- "-[[:alnum:]]*v[[:alnum:]]*")" ]; then
+   dhclient_verbose_opt="-v"
+  fi
+  dhclient $dhclient_verbose_opt $DV
+  rc="$?"
+  if [ "$rc" != "0" ]; then
+    echo "$msg_failed"
+    echo -n "$msg_press_enter_to_exit "
+    read a
+  else
+    echo -n "OK. Now writing the setting to network config file... "
+    # Debian: Add dhcp broadcast entry
+    if [ -w /etc/network/interfaces ]; then
+      # we need loopback device, otherwise portmap & nfs-common will fail
+      if ! egrep -q -e "^auto[[:space:]]+lo" /etc/network/interfaces; then
+        cat >/etc/network/interfaces <<EOF
+# The loopback network interface
+auto lo
+iface lo inet loopback
+EOF
+        # turn it on now.
+        ifconfig lo up
+      fi
+      rm -f "$TMP"
+      awk '/iface/{if(/'"$DV"'/){found=1}else{found=0}}
+           {if(!found){print}}
+           END{print "\niface '"$DV"' inet dhcp\n\n"}' \
+           /etc/network/interfaces >"$TMP"
+      # Add an "auto" entry
+      if egrep -q -e "^auto[ 	]+.*$DV" /etc/network/interfaces; then
+        cat "$TMP" >/etc/network/interfaces
+      else
+        awk '{if(/^auto/){print $0 " '"$DV"'"}else{print}}' "$TMP" > /etc/network/interfaces
+      fi
+      rm -f "$TMP"
+    fi
+    echo "Done!"
+  fi
+  return $rc
+} # end of cfg_by_dhcp
+#
+cfg_static_ip() {
+# RedHat
+if [ -f "/etc/sysconfig/network-scripts/ifcfg-$DV" ]
+  then
+  . "/etc/sysconfig/network-scripts/ifcfg-$DV"
+  IP="$IPADDR"
+  NM="$NETMASK"
+fi
+
+# RedHat
+if [ -f "/etc/sysconfig/network" ]; then
+  . "/etc/sysconfig/network"
+  DG="$GATEWAY"
+fi
+
+# Debian
+if [ -f /etc/network/interfaces ]; then
+  awk '/iface/{if(/'"$DV"'/){found=1}else{found=0}} 
+       /address/{if(found){address=$NF}}
+       /netmask/{if(found){netmask=$NF}}
+       /gateway/{if(found){gateway=$NF}}
+     END{print address" "netmask" "broadcast" "gateway}' /etc/network/interfaces >"$TMP"
+  read IP NM DG <"$TMP"
+  rm -f "$TMP"
+fi
+
+#
+if [ -f "/etc/resolv.conf" ]; then
+  NS="$(awk '/^nameserver/{printf "%s ",$2}' /etc/resolv.conf)"
+fi
+
+# if IP address is assigned as a parameter
+[ -n "$ip_add_prompt" ] && IP="$ip_add_prompt"
+[ -n "$netmask_prompt" ] && NM="$netmask_prompt"
+[ -n "$gateway_prompt" ] && DG="$gateway_prompt"
+[ -n "$dns_prompt" ] && NS="$dns_prompt"
+
+$DIA --inputbox "$msg_enter_IP_add_for_this_nic $DV" 10 45 "${IP:-$default_IP}" 2>"$TMP" || bailout 1
+read IP <"$TMP" ; rm -f "$TMP"
+
+$DIA --inputbox "$msg_enter_netmask_for_this_nic $DV" 10 45 "${NM:-$default_NM}" 2>"$TMP" || bailout 1
+read NM <"$TMP" ; rm -f "$TMP"
+
+# Steven commented this one. System can get broadcast from IP address and netmask. Therefore it's not necessary to ask.
+#$DIA --inputbox "$MESSAGE8 $DV" 10 45 "${BC:-${IP%.*}.255}" 2>"$TMP" || bailout 1
+#read BC <"$TMP" ; rm -f "$TMP"
+
+if [ "$config_gw" = "yes" ]; then
+  $DIA --inputbox "$msg_enter_default_gateway" 10 45 "${DG:-${IP%.*}.254}" 2>"$TMP"
+  read DG <"$TMP" ; rm -f "$TMP"
+else
+  DG=""
+fi
+
+if [ "$config_dns" = "yes" ]; then
+  $DIA --inputbox "$msg_enter_dns_server" 10 45 "${NS:-${IP%.*}.254}" 2>"$TMP"
+  read NS <"$TMP" ; rm -f "$TMP"
+else
+  NS=""
+fi
+
+CMD="ifconfig $DV $IP netmask $NM up"
+echo "$CMD"
+$CMD
+
+# Add entry for Redhat init scripts
+if [ -d /etc/sysconfig/network-scripts ]; then
+  cat >/etc/sysconfig/network-scripts/ifcfg-$DV <<EOF
+DEVICE=$DV
+IPADDR=$IP
+NETMASK=$NM
+ONBOOT=yes
+EOF
+  chmod 755 /etc/sysconfig/network-scripts/ifcfg-$DV
+fi
+
+if [ -n "$DG" ]; then
+  CMD="route add default gw $DG"
+  echo "$CMD"
+  $CMD
+  # Add entry to /etc/sysconfig/network
+  if [ -w /etc/sysconfig/network ]; then
+    grep -v ^GATEWAY /etc/sysconfig/network >"$TMP"
+    cat >"$TMP" <<EOF
+GATEWAY=$DG
+GATEWAYDEV=$DV
+EOF
+    cat "$TMP" > /etc/sysconfig/network
+    rm -f "$TMP"
+  fi
+fi
+
+# Debian
+if [ -w /etc/network/interfaces ]; then
+  # we need loopback device, otherwise portmap & nfs-common will fail
+  if ! egrep -q -e "^auto[[:space:]]+lo" /etc/network/interfaces; then
+    cat >/etc/network/interfaces <<EOF
+# The loopback network interface
+auto lo
+iface lo inet loopback
+EOF
+    # turn it on now.
+    ifconfig lo up
+  fi
+
+  awk '/iface/{if(/'"$DV"'/){found=1}else{found=0}}
+       {if(!found){print}}
+       END{print "\niface '"$DV"' inet static\n\taddress '"$IP"'\n\tnetmask '"$NM"'\n\t";if("'"$DG"'"!=""){print "\tgateway '"$DG"'"};print "\n"}' \
+       /etc/network/interfaces >"$TMP"
+  # Add an "auto" entry
+  if egrep -q -e "^auto[ 	]+.*$DV" /etc/network/interfaces; then
+    cat "$TMP" >/etc/network/interfaces
+  else
+    awk '{if(/^auto/){print $0 " '"$DV"'"}else{print}}' "$TMP" > /etc/network/interfaces
+  fi
+fi
+
+if [ -n "$NS" ]; then
+  more=""
+  for i in $NS; do
+    if [ -z "$more" ]; then
+      more=yes
+      echo "$msg_put_dnsserver_to_resolv_conf $i"
+      echo "nameserver $i" >/etc/resolv.conf
+      else
+      echo "$msg_append_dnsserver_to_resolv_conf $i"
+      echo "nameserver $i" >>/etc/resolv.conf
+    fi
+  done
+fi
+
+# Steven commented this. Not ready for wifi.
+#egrep -q "$DV" /proc/net/wireless 2>/dev/null && wlcardconfig "$DV"
+
+echo "Done."
+sleep 0.5
+} # end of cfg_static_ip
+#
+cfg_pppoe(){
+   pppoeconf
+}
+
+
+# Default settings
+default_IP="192.168.120.1"
+default_NM="255.255.255.0"
+config_gw="yes"
+config_dns="yes"
+#
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l|--language)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      specified_lang="$1"
+              shift
+            fi
+	    ;;
+    -d0|--dialog)  
+	    DIA="dialog" 
+	    shift;;
+    -d1|--Xdialog)  
+	    DIA="Xdialog" 
+	    shift;;
+    -d2|--whiptail)  
+	    DIA="whiptail" 
+	    shift;;
+    -d3|--gdialog)  
+	    DIA="gdialog" 
+	    shift;;
+    -d4|--kdialog)  
+	    DIA="kdialog" 
+	    shift;;
+    -i|--ip-add)
+	shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+	  ip_add_prompt="$1"
+	  shift
+        fi
+	;;
+    -n|--netmask)
+	shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+	  netmask_prompt="$1"
+	  shift
+        fi
+	;;
+    -g|--gateway)
+	shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+	  gateway_prompt="$1"
+	  shift
+        fi
+	;;
+    -s|--dns)
+	shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+	  dns_prompt="$1"
+	  shift
+        fi
+	;;
+    --ignore-gw)
+            config_gw="no"
+	    shift;;
+    --ignore-dns)
+            config_dns="no"
+	    shift;;
+    -r|--ignore-dv)
+	shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+          skip_nic_dv="$1"
+	  shift
+        fi
+	;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+#
+#
+ask_and_load_lang_set $specified_lang
+
+# check DIA
+check_DIA_set_ESC $DIA
+
+##############
+#### main ####
+##############
+
+TMP="$(mktemp /tmp/netmenu.XXXXXX)"
+trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+
+NETDEVICES="$(cat /proc/net/dev | awk -F: '/eth.:|tr.:|wlan.:/{print $1}' | sort)"
+# make it in a single line
+NETDEVICES="$(echo $NETDEVICES)"
+
+if [ -n "$skip_nic_dv" ]; then
+  for i in $skip_nic_dv; do
+    # remove those we do not want to config.
+    NETDEVICES="$(echo $NETDEVICES | sed -e "s/\<$i\>//g")"
+  done
+fi
+
+if [ -z "$NETDEVICES" ]; then
+  $DIA --msgbox "$msg_no_nic_is_found" 0 0
+  bailout
+else
+  # We have to up the network card first so that ethtool can detect if it's linked or not.
+  echo -n "Try to up "
+  for DEVICE in $NETDEVICES; do
+    if [ -z "$(gl-get-ipadd $DEVICE)" ]; then
+      echo -n "$DEVICE... "
+      ifconfig $DEVICE 0.0.0.0
+    fi
+  done
+  echo
+fi
+
+count="$(echo "$NETDEVICES" | wc -w)"
+
+if [ "$count" -gt 1 ]; then
+  hw_scan_tmp="$(mktemp /tmp/hw_scan.XXXXXX)"
+  if type lshw &>/dev/null; then
+    echo -n "Collecting the info of network devices... "
+    lshw -businfo -class network 2>/dev/null > $hw_scan_tmp
+    echo "done!"
+  fi
+  DEVICELIST=""
+  dev_model=""
+  link_status=""
+  for DEVICE in $NETDEVICES; do
+    dev_model="$(grep "^.*$DEVICE\>" $hw_scan_tmp | sed -e "s/^.*$DEVICE[[:space:]]*network[[:space:]]*//g" | sed -e "s/ /_/g")"
+    [ -z "$dev_model" ] && dev_model="Unknown_NIC"
+    # only first 26 characters.
+    dev_model="${dev_model:0:25}..."
+    link_status="$(ethtool $DEVICE | grep -i "Link detected:" | cut -d":" -f2 | sed -e "s/ //g")"
+    DEVICELIST="$DEVICELIST ${DEVICE} $(rep_whspc_w_udrsc "$msg_link_detected"):${link_status}(${dev_model})"
+  done
+  rm -f "$TMP"
+  [ -f "$hw_scan_tmp" -a -n "$hw_scan_tmp" ] && rm -f $hw_scan_tmp
+  $DIA --menu "$msg_choose_nic ?" 0 0 0 $DEVICELIST 2>"$TMP" || bailout
+  read DV <"$TMP" ; rm -f "$TMP"
+else
+  # Remove additional spaces
+  DV="$(echo $NETDEVICES)"
+fi
+
+#
+$DIA  --title  \
+"$msg_Network_config" --menu "$msg_choose_mode_to_setup_net: $DV" \
+0 0 0 $DIA_ESC \
+"dhcp"  "$msg_use_dhcp_broadcast" \
+"static" "$msg_use_static_ip" \
+"pppoe" "$msg_use_pppoe_conf" \
+"enter_shell"  "$msg_enter_cml. $msg_do_it_manually" \
+2> $TMP
+net_setup_mode="$(cat $TMP)"
+[ -f "$TMP" ] && rm -f $TMP
+
+case "$net_setup_mode" in
+  dhcp) cfg_by_dhcp;;
+  static) cfg_static_ip;;
+  pppoe) cfg_pppoe;;
+  enter_shell) 
+      echo $msg_enter_another_shell_hint_wo_netcfg_prompt
+      echo -n "$msg_press_enter_to_continue..."
+      read
+      /bin/bash
+      ;;
+esac
+rc=$?
+
+echo -n "$msg_press_enter_to_continue..."
+read
+exit $rc

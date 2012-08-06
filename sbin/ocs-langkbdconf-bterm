@@ -1,0 +1,37 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# This program is used in Debian and run in bterm or jfbterm
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+
+#
+get_fb_term
+[ "$fb_term" = "bterm" -a ! -e "$uni_font" ] && exit 1
+
+#
+ask_language_if_supported_with_bterm
+[ -z "$ocs_lang" ] && ocs_lang=en_US.UTF-8
+
+# put the language setting so that later program can reuse
+if [ -z "$(grep -E "^[[:space:]]*ocs_lang=" /etc/ocs/ocs-live.conf 2>/dev/null)" ]; then
+  # append it
+  echo "ocs_lang=$ocs_lang" >> /etc/ocs/ocs-live.conf
+else
+  # modify it
+  perl -pi -e "s|^[[:space:]]*ocs_lang=.*|ocs_lang=\"$ocs_lang\"|g" /etc/ocs/ocs-live.conf
+fi
+
+#
+locale_region="$(echo "$ocs_lang" | sed -e "s|\..*||g")"
+gen_locale_if_not_found $locale_region $ocs_lang
+
+#
+export LANG="$ocs_lang"
+drbl-kbdchooser

@@ -1,0 +1,159 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ nchc org tw>, Thomas Tsai <thomas _at_ nchc org tw>.
+# Description: Program to clean some hardware record, e.g. NIC MAC address.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+#
+USAGE() {
+    echo "$ocs - To remove the Linux udev persistent files"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] [DISK]"
+    echo "Options:"
+    echo "-c, --cd-only    Remove Linux udev persistent CD file only."
+    echo "-n, --net-only   Remove Linux udev persistent net file only."
+    echo "DISK is the disk device name, e.g. sda, sdb... If it's not assigned, all the disks on the system will be searched."
+    echo "By default both CD and net persistent files will be removed."
+    echo "Ex:"
+    echo "To remove both CD and net persistent files in disk sda, run"
+    echo "   $ocs sda"
+    echo
+} # end of USAGE
+
+# check available partitions
+rm_udev_persistent_record() {
+  local select_disk="$*"  # select_disk is like hda or sda
+  local partition_list=""
+  local fs target_p sort_V_opt
+  gen_proc_partitions_map_file
+  partition_list=""
+  get_sort_V_opt  # Get option $sort_V_opt
+  if [ -n "$select_disk" ]; then
+    # Search only on the select_disk
+    for i in $select_disk; do
+      if [ -n "$i" ]; then
+        # we have target disk, parsing it.
+	# (1) For partitions. From partitions list we choose the partition based on disk, e.g.
+	# "sda1 sda2 sdb1 sdb5" with "sda" -> "sda1 sda2"
+        partition_list="$partition_list $(LC_ALL=C awk "/${i}[0-9]+/ { print \$4; }" $partition_table | sort $sort_V_opt)"
+	# (2) For LVM, the output of "pvs -o+lv_name" is like:
+	# $ pvs -o+lv_name
+	#  PV         VG           Fmt  Attr PSize PFree  LV
+	#  /dev/sda5  lucid-server lvm2 a-   7.76g 32.00m root
+	#  /dev/sda5  lucid-server lvm2 a-   7.76g 32.00m swap_1
+	#  /dev/sda5  lucid-server lvm2 a-   7.76g 32.00m
+	#  /dev/sdb5  squeeze      lvm2 a-   7.76g     0  root
+	#  /dev/sdb5  squeeze      lvm2 a-   7.76g     0  swap_1
+	#  /dev/sdb5  squeeze      lvm2 a-   7.76g     0  home
+	# We want the output as like "/lucid-server/root/" (/dev will be added later). Here we do not use something like "/dev/dm-0" since the output of pvs is not that style.
+	partition_list="$partition_list $(LC_ALL=C pvs -o+lv_name | grep -E "/dev/${i}[0-9]+" | awk -F" " '{print $2"/"$7}')"
+      fi
+    done
+  else
+    # Search whole system, not only hda, sda, vda, but also dm-0, dm-1 (LVM).
+    # For LVM here we use something like /dev/dm-0 (not /dev/squeeze/root) since it's directly from /proc/partitions. This is easier.
+    partition_list="$(LC_ALL=C awk '/([hsv]d[a-z][0-9]+|dm-[0-9]+)/ { print $4; }' $partition_table | sort $sort_V_opt)"
+  fi
+  # Make them in 1 line
+  partition_list="$(echo $partition_list)"
+  echo "Trying to remove udev persistent files. Searching in devices: $partition_list... "
+  for ipartition in $partition_list; do
+    target_p="/dev/$ipartition"
+    # Skip swap, FAT, NTFS, HFS+ partition...
+    fs="$(LC_ALL=C ocs-get-part-info $target_p filesystem)"
+    case "$fs" in
+      fat*|vfat*|FAT*|VFAT*|ntfs|hfs|hfs+|hfsplus|ufs|vmfs|swap|"")
+        [ -z "$fs" ] && fs="No file system. Extended partition?"
+	echo "Skip $target_p ($fs)."
+	;;
+      *)
+        echo "$target_p..."
+        hd_img="$(mktemp -d /tmp/hd_img.XXXXXX)"
+        mount $target_p $hd_img >/dev/null 2>&1
+        mrc=$?
+	if [ "$mrc" -gt 0 ]; then
+          [ -d "$hd_img" -a -n "$hd_img" ] && rmdir $hd_img
+	  continue
+        fi
+	for inet in `get-nic-devs`; do
+          # If MAC address is not found in 70-persistent-net.rules, it means the image is not restored to the same machine, therefore remove it. Even just one does not match.
+          imac="$(LC_ALL=C drbl-get-macadd $inet)"
+          if [ -e "$hd_img/etc/udev/rules.d/70-persistent-net.rules" -a \
+          	"$remove_udev_nic" = "true" ]; then
+             if ! grep -q -Ei "^SUBSYSTEM.*${imac}" $hd_img/etc/udev/rules.d/70-persistent-net.rules 2>/dev/null; then
+               echo "MAC address $imac of $inet was not found in $hd_img/etc/udev/rules.d/70-persistent-net.rules. This persistent net file does not fit the hardware. Remove it."
+               LC_ALL=C rm -fv $hd_img/etc/udev/rules.d/70-persistent-net.rules
+	       break
+             fi
+          fi
+        done
+	for inet in `get-nic-devs`; do
+          # If MAC address is not found in /etc/sysconfig/network-scripts/ifcfg-eth*, it means the image is not restored to the same machine, therefore remove it. Even just one does not match.
+          imac="$(LC_ALL=C drbl-get-macadd $inet)"
+	  if ! grep -q -Ei "^HWADDR=$imac" $hd_img/etc/sysconfig/network-scripts/ifcfg-eth* 2>/dev/null; then
+            if ls $hd_img/etc/sysconfig/network-scripts/ifcfg-eth* &>/dev/null; then
+              echo "MAC address $imac of $inet was not found in $hd_img/etc/sysconfig/network-scripts/ifcfg-eth*. This MAC data does not fit the hardware. Comment it."
+              LC_ALL=C perl -pi -e 's/(^HWADDR=.*)/#$1 # Commented by Clonezilla/g' $hd_img/etc/sysconfig/network-scripts/ifcfg-eth*
+	      break
+            fi
+          fi
+        done
+        if [ -e "$hd_img/etc/udev/rules.d/70-persistent-cd.rules" -a \
+		"$remove_udev_cd" = "true" ]; then
+          rm -fv $hd_img/etc/udev/rules.d/70-persistent-cd.rules
+        fi
+        [ "$mrc" -eq 0 ] && unmount_wait_and_try $target_p
+        [ -d "$hd_img" -a -n "$hd_img" ] && rmdir $hd_img
+	;;
+    esac
+  done
+  echo "done!"
+  [ -f "$partition_table" ] && rm -f $partition_table
+} # end of rm_udev_persistent_record
+#
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+
+# Default settings
+remove_udev_cd="true"
+remove_udev_nic="true"
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -c|--cd-only) remove_udev_cd="true"
+                 remove_udev_nic="false"
+	         shift;;
+   -n|--nic-only) 
+	         remove_udev_cd="false"
+                 remove_udev_nic="true"
+	         shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+ocs_hw_record_dev="$*"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+#
+echo "Trying to remove udev hardware record in the restored OS..."
+if [ -n "$ocs_hw_record_dev" ]; then
+  echo "The specific destination disk is: $ocs_hw_record_dev"
+fi
+rm_udev_persistent_record $ocs_hw_record_dev

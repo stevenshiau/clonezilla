@@ -1,0 +1,102 @@
+#!/bin/bash
+# This program is used on Clonezilla live to collect some disk info for bug or problem report.
+
+# Load DRBL/Clonezill setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the options from config file
+[ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
+
+#
+check_if_root
+
+#
+export LC_ALL=C
+
+# Get the live media mount point.
+get_live_media_mnt_point
+
+if [ -z "$LIVE_MEDIA" -o ! -d "/$LIVE_MEDIA" ]; then
+  echo "$0 is run in Clonezilla Live! This environment is not Clonezilla live."
+  echo "Program terminated!"
+  exit 1
+fi
+
+# Settings
+# PKG_FROM_DRBL is loaded from drbl.conf, we append "drbl"
+PKG_FROM_DRBL="drbl $PKG_FROM_DRBL"
+
+# output the results:
+time_now="$(date +%Y%m%d-%H%M)"
+output_filename="CLONEZILLA-LIVE-BUG-RPT-${time_now}.txt"
+
+echo -n "Acquiring some info about the system."
+
+for ipkg in $PKG_FROM_DRBL; do
+  ipkg_ver=""
+  ipkg_ver="$(dpkg -l $ipkg 2>/dev/null | tail -n 1 | awk -F" " '{print $2"-"$3}')"
+  [ -n $ipkg_ver ] && installed_pkgs="$installed_pkgs $ipkg_ver"
+done
+echo -n .
+
+# dump it
+  cat <<-REP_END > $output_filename
+To report the bug or problem, fill the contents in the following table, then send it to Clonezilla live mailing list or post it on the Clonezilla live forum."
+-------CUT BEGIN HERE--------------------------------------------
+Description of problem:
+
+How reproducible:
+
+Steps to Reproduce:
+
+Actual results:
+
+Expected results:
+
+
+Some info about the Clonezilla live environment (PLEASE DO NOT EDIT THEM!):
+===
+REP_END
+
+echo -n .
+(
+  echo "*********************************************************"
+  echo The contents of /live/image/Clonezilla-Live-Version:
+  cat /live/image/Clonezilla-Live-Version
+  echo "*********************************************************"
+  echo "Installed DRBL/Clonezilla related packages: $installed_pkgs"
+  echo "*********************************************************"
+  echo "/proc/partitions:"
+  cat /proc/partitions
+  echo "*********************************************************"
+  echo "Partition lists on the system:"
+  gen_proc_partitions_map_file
+  disk_list="$(LC_ALL=C awk '/[hsv]d[a-z]($| )/ { print $4; }' $partition_table)"
+  for i in $disk_list; do
+    LC_ALL=C parted -s /dev/$i print
+  done
+  echo "*********************************************************"
+  echo "The info from blkid:"
+  LC_ALL=C blkid -c /dev/null
+  echo "*********************************************************"
+  filesystem="$(get_dir_filesystem $ocsroot)"
+  echo "Clonezilla image repository dir $ocsroot is $filesystem"
+  echo "*********************************************************"
+) >> $output_filename
+
+echo -n .
+#
+  cat <<-REP_END >> $output_filename
+===
+-------CUT END HERE----------------------------------------------
+REP_END
+echo
+
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "The results are in file $output_filename"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+echo "To report the bug or problem, fill the contents in the file $output_filename, then send it to Clonezilla live mailing list or post it on the Clonezilla live forum."

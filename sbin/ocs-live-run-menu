@@ -1,0 +1,133 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+
+# We need to know ocsroot.
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+
+# Load the options from config file
+[ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
+
+# Set initial value if not set
+[ -z "$ocs_live_run" ] && ocs_live_run="ocs-live-general"
+[ -z "$ocs_live_keymap" ] && ocs_live_keymap="NONE"
+[ -z "$ocs_live_batch" ] && ocs_live_batch="no"
+[ -z "$ocs_lang" ] && ocs_lang="en_US.UTF-8"
+
+#
+if [ -z "$ocs_live_run" ]; then
+  echo "No \$ocs_live_run was assigned (Either from /etc/ocs/ocs-live.conf or command kernel parameters). Skip Clonezilla-related action."
+  exit 3
+fi
+
+# Get the live media mount point.
+get_live_media_mnt_point
+
+if [ -z "$LIVE_MEDIA" -o ! -d "/$LIVE_MEDIA" ]; then
+  echo "$0 is run in Clonezilla Live!"
+  echo "Program terminated!"
+  exit 1
+fi
+
+#
+get_fb_term
+[ "$fb_term" = "bterm" -a ! -e "$uni_font" ] && exit 1
+
+use_bterm=""
+# Ex. zh_TW.UTF-8 -> zh_TW
+locale_region="$(echo "$ocs_lang" | sed -e "s|\..*||g")"
+if `locale_required_bterm_or_not "$locale_region"` && \
+   [ -n "$fb_term" ] && \
+   ([ -e /dev/fb/0 ] || [ -e /dev/fb0 ]); then 
+   use_bterm="yes"
+else
+   use_bterm="no"
+fi
+
+#
+gen_locale_if_not_found $locale_region $ocs_lang
+
+# export these variables so that they can be passed to $ocs_live_run in bterm
+export LANG="$ocs_lang"
+export CURRENT_TTY="$(tty)"  # e.g. /dev/tty1
+
+# By default we will run $ocs_live_run in /dev/tty1 if ocs_live_run_tty is not specified.
+if [ -n "$ocs_live_run_tty" ]; then
+  # tty is specified. Check if it the current tty
+  [ "$CURRENT_TTY" != "$ocs_live_run_tty" ] && exit 3
+else
+  # No tty is specified to run $ocs_live_run_tty. Default to run only on /dev/tty1 (no more ttyS0). If you want to use ttyS0, add live-getty and console=ttyS0,38400n81 in the boot parameter 
+  # If it's not in /dev/tty1, just exit.
+  [ "$CURRENT_TTY" != "/dev/tty1" ] && exit 3
+fi
+
+# Waiting for the jobs in /etc/ocs/ocs-live.d are finished.
+to_wait=""
+while [ -z "$to_wait" ]; do
+  if [ -e /var/lib/live/clonezilla/ocs-live.d ]; then
+    echo "The jobs in /etc/ocs/ocs-live.d/ are finished. Start \"$ocs_live_run\" now."
+    to_wait="no"
+  else
+    sleep 0.2
+  fi
+done
+
+# Pre run
+ocs-live-pre-run
+
+# Do not ask powerer/reboot/choose (-p) in $ocs_live_run (ocs-live-save/ocs-live-restore), just use "-p true" in $ocs_live_run (ocs-live-save/ocs-live-restore). Since it might be in bterm, and Debian live "Press Enter" message when poweroff/shutdown might be coverd by bterm and user will not have any idea what's happening after choose poweroff/reboot. We will ask it when bterm is done, i.e. in the end of this program.
+if [ "$use_bterm" = "yes" ];then
+  case "$fb_term" in
+   "bterm")
+       # Since bterm can only use one parameter (i.e. not working if we run 'bterm -l zh_TW.UTF-8 -f $uni_font ls -alF /etc/', i.e. only ls will be respected. There is no such issue for jfbterm). Here we use a workaround to make it work for bterm, i.e. use a tmp file to run it.
+       ocs_live_run_tmp="$(mktemp /tmp/ocs_live_run_tmp.XXXXXX)"
+       echo "$ocs_live_run" > $ocs_live_run_tmp
+       chmod 755 $ocs_live_run_tmp
+       export TERM=bterm
+       set +e
+       # bterm need full path command even it's in the PATH already.
+       bterm -l $LANG -f $uni_font $ocs_live_run_tmp
+       EXIT=$?
+       [ -e "$ocs_live_run_tmp" ] && rm -f $ocs_live_run_tmp
+       ;;
+  "jfbterm")
+       export TERM=jfbterm
+       set +e
+       jfbterm -q -e $ocs_live_run
+       EXIT=$?
+       ;;
+  esac
+else
+  $ocs_live_run
+fi
+echo "\"$ocs_live_run\" is finished."
+
+# Post run
+ocs-live-post-run
+
+# Post actions
+# Case 1: Clonezilla SE's client: comment the execution to avoid it's run twice (since all the commands are from /proc/cmdline, and if user inputs "exit" in the shell, the job will be started again in batch mode without stop. While in Clonezilla live interactive mode, it won't be run in batch mode.)
+# Case 2: Clonezilla live interactive mode: ask if want to reboot, shutdown or in command line...
+if [ -n "$(LC_ALL=C grep -iE "ocs_server" /proc/cmdline)" ]; then
+  # Case 1: Clonezilla SE's client 
+  # Once the job is done, and if it's started by Clonezilla Server (ocs_server found in /proc/cmdline), we have to comment the autologin account's ~/.bash_profile
+  # The job is started by Clonezilla SE, comment the line "sudo -i ocs-live-run-menu"
+  get_live_autologin_account
+  if [ -z "$live_autologin_account" ]; then
+     echo "No account with NOPASSWD sudo privilege was found!"
+     echo "Program terminated!"
+     exit 1
+  fi
+  get_live_auto_login_id_home
+  LANG=C perl -pi -e 's|(^[^#][[:space:]]*)(sudo -i ocs-live-run-menu)|$1 true # $2 # commented after clonezilla job is done.|g' $live_auto_login_id_home/.bash_profile
+else
+  # Case 2: Clonezilla live interactive mode
+  # At this point, it's not in bterm/jfbterm, only text console. Use English. 
+  ask_and_load_lang_set en_US.UTF-8
+  run_post_cmd_when_clonezilla_live_end
+fi

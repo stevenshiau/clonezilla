@@ -1,0 +1,234 @@
+# colorful messages
+[ -z "$SETCOLOR_SUCCESS" ] && SETCOLOR_SUCCESS="echo -en \\033[1;32m"
+[ -z "$SETCOLOR_FAILURE" ] && SETCOLOR_FAILURE="echo -en \\033[1;31m"
+[ -z "$SETCOLOR_WARNING" ] && SETCOLOR_WARNING="echo -en \\033[1;33m"
+[ -z "$SETCOLOR_NORMAL"  ] && SETCOLOR_NORMAL="echo -en \\033[0;39m"
+
+# Turn on color flag
+BOOTUP="color"
+
+#
+parse_cmdline_option() {
+  # The reason we have this function is some boot parameter is like xxx="-k -x", therefore we can not just use 
+  # case $param in
+  # xxx=*) ...
+  # method, since it won't catch the right xxx. It will just catch xxx="-k.
+  # //NOTE// This function won't work for those boot parameter can not be a varialble, e.g. live-boot-media (with -, it's not a legal variable), since if we assign it by ". live-boot-media=/live-hd", it will failed.
+  local param_ parse_tmp cmdl_file
+  #
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -c|--cmdline-file)
+         shift
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+           cmdl_file="$1"
+           shift
+         fi
+         [ -z "$cmdl_file" ] && echo "-c is used, but no cmdl_file assigned." && exit 1
+         ;;
+      -*) echo "${0}: ${1}: invalid option" >&2
+          exit 2 ;;
+      *)  break ;;
+    esac
+  done
+  param_="$1"
+  parse_tmp="$(mktemp /tmp/cmdtmp.XXXXXX)"
+
+  [ -z "$cmdl_file" ] && cmdl_file="/proc/cmdline"
+  if [ ! -e "$cmdl_file" ]; then
+    echo "cmdl_file ($cmdl_file) does _NOT_ exist!"
+    exit 1
+  fi
+
+  for ik in $param_; do
+    # The parameter maybe like: xxx=xyz, xxx="xyz", xxx="-k -x", or "xxx=-k -x" (see below)
+    ###
+    # The 1st 3 are cases xxx="-k -x", xxx="xyz" or "xxx=a b c", it allows spaces between " "
+    # Possible complicated commands:
+    # ocs_prerun="sshfs -o nonempty -p 22 root@myhost.mymachine:/home/partimag/ /home/partimag"
+    # ocs_prerun="mount -t cifs -o username=user,password=pass //127.0.0.1/test /home/partimag"
+    # ocs_prerun="sudo mount -t cifs -o user=ghost,password=ghost123 //192.168.1.1/tftpboot$/images/clonezilla /home/partimag" # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/4589215, for samba share with hidden share, a "$" is in the end of dir name.
+    # Therefore we have to add "/" ":" "=" "," "@", "\\$"
+    #
+    # For gurb2 1.99, although \" is put in boot parameter, it will be shown.
+    # 3 cases:
+    # Boot parameters           /proc/cmdline
+    # ocs_prerun="sleep 5"      "ocs_prerun=sleep 5" (Yes, with " in the beginning and in the end.
+    # ocs_prerun='sleep 5'      "ocs_prerun=sleep 5"
+    # ocs_prerun=\"sleep 5\"    ocs_prerun=\"sleep 5\"
+    # So far for syslinux (4.04), no such problem. Just use ocs_prerun="sleep 5".
+    # ///NOTE/// We can not make it in _one_ case like this:
+    # LC_ALL=C grep -oE -- "(\"|)*$ik=(\\\\\"|\")*([[:space:]]|[[:alnum:]]|_|-|\.|\/|:|=|,|@|\\$|>|\^|\*)*(\\\\\"|\")*([[:space:]]|$)+" $cmdl_file | sed -r -e "s|=\\\\\"|=\"|g" -e "s@\\\\\"([[:space:]]|$)+@\"@g" | sed -r -e 's|^\"(.*)=|\1=\"|g' > $parse_tmp
+    # Since it might get wrong parsing like this:
+    # root@debian:~# cat /proc/cmdline 
+    # initrd=/live/initrd.img boot=live config  noswap nolocales edd=on nomodeset ocs_live_run="ocs-live-general" ocs_live_extra_param="" ocs_live_keymap="" ocs_live_batch="no" ocs_lang="" vga=788 ip=frommedia  nosplash BOOT_IMAGE=/live/vmlinuz 
+    # root@debian:~# grep -oE -- '("|)*ocs_lang=(\\"|")*([[:space:]]|[[:alnum:]]|_|-|\.|\/|:|=|,|@|\$|>|\^|\*)*(\\"|")*([[:space:]]|$)+' /proc/cmdline
+    # ocs_lang="" vga=788 ip=frommedia  nosplash BOOT_IMAGE=/live/vmlinuz <- WRONG RESULT. We just want ocs_lang=""
+    if LC_ALL=C grep -Eq "($ik=\"|$ik=\\\\\")" $cmdl_file; then
+      # For case like: ocs_prerun="sleep 5" or ocs_prerun=\"sleep 5\"
+      LC_ALL=C grep -oE -- "$ik=(\"|\\\\\")([[:space:]]|[[:alnum:]]|_|-|\.|\/|:|=|,|@|\\$|>|\^|\*)*(\"|\\\\\")([[:space:]]|$)+" $cmdl_file | sed -r -e "s|=\\\\\"|=\"|g" -e "s@\\\\\"([[:space:]]|$)+@\"@g" | sed -r -e 's|^\"(.*)=|\1=\"|g' > $parse_tmp
+    elif LC_ALL=C grep -Eq "\"$ik=" $cmdl_file; then
+      # For case like: "ocs_prerun=sleep 5"
+      LC_ALL=C grep -oE -- "\"$ik=([[:space:]]|[[:alnum:]]|_|-|\.|\/|:|=|,|@|\\$|>|\^|\*)*\"([[:space:]]|$)+" $cmdl_file | sed -r -e "s|=\\\\\"|=\"|g" -e "s@\\\\\"([[:space:]]|$)+@\"@g" | sed -r -e 's|^\"(.*)=|\1=\"|g' > $parse_tmp
+    else
+      # This is for case xxx=xyz, no space in its assignment
+      LC_ALL=C grep -oE -- "$ik=([[:alnum:]]|_|-|\.|\/|:)*([[:space:]]|$)+" $cmdl_file > $parse_tmp
+    fi
+    # now we can get the variables
+    . $parse_tmp
+  done
+  [ -f "$parse_tmp" ] && rm -f $parse_tmp
+} # parse_cmdline_option
+#
+get_gui_dialog() {
+  if type gdialog &>/dev/null; then
+    DIALOG=gdialog
+  elif type Xdialog &>/dev/null; then
+    DIALOG=Xdialog
+  else
+    echo "No gdialog or Xdialog was found!"
+    echo "Program terminated!!!"
+    exit 1
+  fi
+} # end of get_gui_dialog
+#
+get_live_autologin_account(){
+  # This function is only for used in Clonezilla live.
+  # Find the account with NOPASSWD in sudoers:
+  # e.g.  user  ALL=(ALL) NOPASSWD: ALL
+  # As of Debian version 1.7.2p1-1, the default /etc/sudoers file created on
+  # installation of the package now includes the directive:
+  #       #includedir /etc/sudoers.d
+  live_autologin_account=""
+  for i in /etc/sudoers /etc/sudoers.d/*; do
+    [ ! -e $i ] && continue
+    live_autologin_account="$(LC_ALL=C grep -iE "^[^#].*ALL=\(ALL\)[[:space:]]*NOPASSWD:[[:space:]]*ALL" $i | awk -F" " '{print $1}')"
+    [ -n "$live_autologin_account" ] && break
+  done
+} # end of get_live_autologin_account
+#
+get_live_auto_login_id_home() {
+  # This function is only for used in Clonezilla live.
+  live_auto_login_id_home="$(LC_ALL=C bash -c "echo ~$live_autologin_account")"
+} # end of get_live_auto_login_id_home
+# Check if root or not
+check_if_root() {
+   if [ ! "$UID" = "0" ]; then
+     echo
+     echo "[$LOGNAME] You need to run this script \"`basename $0`\" as root."
+     echo
+     exit 1
+   fi
+} # end of check_if_root
+check_DIA_set_ESC(){
+  # function to check dialog/Xdialog/whiptail
+  # DIA_ESC is global variable, 
+  # man dialog:
+  # A "--" by itself is used as an escape, i.e., the next token on the com-
+  # mand-line is not treated as an option.
+  # dialog --title -- --Not an option
+  # 3 cases if those Not an option is like (-g auto, -x...):
+  # (1) dialog can go with or without --
+  # (2) Xdialog can NOT go with --
+  # (3) whiptail can go only with --
+  local dia_="$1"
+  # check DIA
+  if ! type $dia_ &>/dev/null; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "$dia_: command not found!"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     echo "Program terminated!!!"
+     exit 1
+  fi
+  case "$dia_" in
+    dialog|[Xgk]dialog) DIA_ESC="" ;;
+    whiptail) DIA_ESC="--" ;;
+  esac
+} # end of check_DIA_set_ESC
+rep_whspc_w_udrsc() {
+  # Function to replace white space as "_", so in dialog we won't make it as 2 or more tags or items.
+  local inp_txt="$1"
+  local out_txt
+  out_txt="$(echo ${inp_txt} | sed -r -e "s/[[:space:]]/_/g")"
+  echo "$out_txt"
+} # end of rep_whspc_w_udrsc
+dialog_like_prog_help_prompt() {
+   echo " -d0, --dialog         Use dialog"
+   echo " -d1, --Xdialog        Use Xdialog"
+   echo " -d2, --whiptail       Use whiptail"
+   echo " -d3, --gdialog        Use gdialog"
+   echo " -d4, --kdialog        Use kdialog"
+}
+#
+ask_lang_set() {
+  local language_opt="$1"
+  local chosen_lang_var
+  # lang will be the global variable
+  # get the language
+  if [ -z "$language_opt" ]; then
+    # Try the Environment variable "LC_ALL", then "LANG"
+    if [ -n "$LC_ALL" ]; then
+      chosen_lang_var="$LC_ALL"
+    elif [ -n "$LANG" ]; then
+      chosen_lang_var="$LANG"
+    fi
+    # Normally we use the locale format like: en_US.UTF-8, however, it's possible it is en_US.utf8. Therefore here we format it to be *.UTF-8.
+    chosen_lang_var="$(LC_ALL=C echo $chosen_lang_var | sed -e "s/\.utf8/.UTF-8/g")"
+    if [ -n "$chosen_lang_var" -a -e "$LANG_FILE_PATH/$chosen_lang_var" ] ; then
+      lang_answer="$chosen_lang_var"
+    else
+      lang_answer="en_US.UTF-8"
+    fi
+  else
+    lang_answer="$language_opt"
+  fi
+} # end of ask_lang_set
+
+load_lang_set() {
+  lang_answer=$1
+  # The language files are en, tw.BIG5 and tw.UTF-8, we have to format the input parameter.
+  if [ -n "$lang_answer" -a -e "$LANG_FILE_PATH/$lang_answer" ] ; then
+    lang="$lang_answer"
+  else
+    lang="en_US.UTF-8"
+  fi
+  
+  # get the l10n message
+  if [ -n "$lang" -a -e "$LANG_FILE_PATH/$lang" ] ; then
+    . $LANG_FILE_PATH/$lang
+  else
+    echo "Not such language option!!!"
+    exit 1
+  fi
+} # end of load_lang_set
+ask_and_load_lang_set() {
+  local language_opt="$1"
+  ask_lang_set $language_opt
+  load_lang_set $lang_answer
+} # end of ask_and_load_lang_set
+#
+show_deprecated_gl_lang_and_keymap() {
+  # This function is especially for GParted live boot parameters. To the deprecated gl_lang, gl_kbd and keyb.
+  if [ -n "$gl_lang" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Boot parameter \"gl_lang\" is deprecated! Please use \"locales\" from live-config." 
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "For more info, please refer to http://live.debian.net/manual/html/live-manual.en.html#customizing-locale-and-language"
+    sleep 1
+  fi
+  if [ -n "$gl_kbd" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Boot parameter \"gl_kbd\" is deprecated! Please use \"keyboard-layouts\" from live-config." 
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "For more info, please refer to http://live.debian.net/manual/html/live-manual.en.html#customizing-locale-and-language"
+    sleep 1
+  fi
+  if [ -n "$keyb" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Boot parameter \"keyb\" is deprecated! Please use \"keyboard-layouts\" from live-config." 
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "For more info, please refer to http://live.debian.net/manual/html/live-manual.en.html#customizing-locale-and-language"
+    sleep 1
+  fi
+} # end of show_deprecated_gl_lang_and_keymap

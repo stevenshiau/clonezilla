@@ -1,0 +1,51 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Description: Program to start saving image in Clonezilla live.
+
+# set the flag to show color output
+BOOTUP=color
+# some parameters for color output.
+[ -z "$SETCOLOR_SUCCESS" ] && SETCOLOR_SUCCESS="echo -en \\033[1;32m"
+[ -z "$SETCOLOR_FAILURE" ] && SETCOLOR_FAILURE="echo -en \\033[1;31m"
+[ -z "$SETCOLOR_WARNING" ] && SETCOLOR_WARNING="echo -en \\033[1;33m"
+[ -z "$SETCOLOR_NORMAL"  ] && SETCOLOR_NORMAL="echo -en \\033[0;39m"
+
+# We need to know ocsroot and functions in ocs-functions and some variables from drbl-ocs.conf.
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Append the PATH in system.
+echo "export PATH=/opt/drbl/sbin:/opt/drbl/bin:\$PATH" >> /etc/profile
+echo "export PATH=/opt/drbl/sbin:/opt/drbl/bin:\$PATH" >> /etc/bash.bashrc
+# Clean /etc/motd to avoid the following message is missing.
+echo -n "" > /etc/motd
+
+# Get the live media mount point.
+get_live_media_mnt_point
+
+# Try to force to remount /$LIVE_MEDIA as rw, since it's rw device, like USB disk, we can try to save clonezilla image.
+mount -o remount,rw /$LIVE_MEDIA
+
+# Prepare default ocsroot.
+if mkdir -p /$LIVE_MEDIA/$ocsroot 2>/dev/null; then
+  mkdir -p `dirname $ocsroot`
+  ln -fs /$LIVE_MEDIA/$ocsroot $ocsroot
+else
+  # mkdir a mount point to be used later.
+  mkdir -p $ocsroot
+fi
+ask_language_if_supported_with_bterm
+[ -z "$ocs_lang" ] && ocs_lang=en
+ask_and_load_lang_set $ocs_lang
+
+# run the main program
+check_if_tty1_and_continue
+
+# Do not ask powerer/reboot/choose (-p) in ocs-sr,  just use "-p true". Since it might be in bterm, and Debian live "Press Enter" message when poweroff/shutdown might be coverd by bterm and user will not have any idea what's happening after choose poweroff/reboot.
+ocs-live -p true
+# Show prompt
+show-general-ocs-live-prompt
