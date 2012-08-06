@@ -30,7 +30,7 @@ image_name="myusbimg"
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
 
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
-. $DRBL_SCRIPT_PATH/conf/drbl-ocs.conf
+. /etc/drbl/drbl-ocs.conf
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
 # Create partition table first. If we do not do this first, sfdisk will wait for the lock file to be released, so the 2nd clone won't start in any case.
