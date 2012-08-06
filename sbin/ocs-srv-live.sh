@@ -7,7 +7,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
 
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
 
-# Load the config in ocs-live.conf. This is specially for DRBL/Clonezilla live. It will overwrite some settings of /opt/drbl/conf/drbl-ocs.conf, such as $DIA...
+# Load the config in ocs-live.conf. This is specially for DRBL/Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
 # Settings
