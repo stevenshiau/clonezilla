@@ -15,7 +15,7 @@ line_eng="$(wc -l $SPEC_FILE | awk -F" " '{print $1}')"
 lines=$(($line_eng - $line_begin))
 cat <<EOF > doc/ChangeLog.txt
 Clonezilla, the opensource clone system
-Author: Steven Shiau <steven _at_ nchc org tw>, Blake, Kuo-Lien Huang (klhaung _at_ gmail com), H. T. Wang (c00wht00 _at_ nchc org tw), Ceasar Sun (ceasar _at_ nchc org tw), Jazz Wang (jazz _at_ nchc org tw) and Thomas Tsai (thomas _at_ nchc org tw)
+Author: Steven Shiau <steven _at_ nchc org tw>, Blake, Kuo-Lien Huang (klhaung _at_ gmail com), Ceasar Sun (ceasar _at_ nchc org tw), Jazz Wang (jazz _at_ nchc org tw) and Thomas Tsai (thomas _at_ nchc org tw)
 License: GPL
 http://clonezilla.org
 http://clonezilla.nchc.org.tw
@@ -35,7 +35,8 @@ td="$PKG-$VER"
 # Clean stale files in debian
 rm -rf $PKG/debian/{drbl,tmp}
 mkdir -p $td
-rsync -a --exclude CVS --exclude split-ocs --exclude with-udp-cast --exclude old --exclude testing --exclude checkInodeForDevice --exclude hd-info --exclude obsolete --exclude utils $PKG/* $td
+rsync -a Makefile clonezilla.spec conf doc samples sbin bin scripts setup $td/
+
 tar cvjf $td.tar.bz2 --owner=root --group=root $td
 rm -rf $td
 [ -f $TARBALL ] || exit 0
