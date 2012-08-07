@@ -12,7 +12,8 @@ VER=`grep ^Version $SPEC_FILE |sed -e "s/\t/ /g" -e "s/ \+/ /g" |cut  -d":" -f2 
 echo "VER: $VER"
 
 #
-TARBALL=$PKG-$VER.tar.bz2
+TARBALL=${PKG}-${VER}.tar.bz2
+TARBALL_ORIG=${PKG}_${VER}.orig.tar.bz2
 
 # check
 [ ! -f "$TARBALL" ] && echo "Can NOT find file $TARBALL! Did you forget to update the rdate in file $PKG.spec ? Program Stop!!!" && exit 1
@@ -20,7 +21,9 @@ TARBALL=$PKG-$VER.tar.bz2
 # mkdir for build
 rm -rf debforge
 mkdir debforge
+(cd debforge; ln -fs ../$TARBALL $TARBALL_ORIG)
 tar -xvjf $TARBALL -C debforge/
 cp -a debian debforge/$PKG-$VER/
 cd debforge/$PKG-$VER
 debuild --no-tgz-check --no-lintian
+rm -f $TARBALL_ORIG
