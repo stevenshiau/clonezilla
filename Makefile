@@ -26,7 +26,9 @@ install:
 	cp -a setup $(DESTDIR)/$(SHAREDIR)/
 
 	# install other shared files
-	cp -a doc samples prerun postrun scripts/sbin $(DESTDIR)/$(SHAREDIR)/
+	cp -a samples prerun postrun scripts/sbin $(DESTDIR)/$(SHAREDIR)/
+	install -d $(DESTDIR)/usr/share/clonezilla/
+	cp -a doc $(DESTDIR)/usr/share/clonezilla/
 
 	# install config files
 	install -d $(DESTDIR)/etc/drbl/
