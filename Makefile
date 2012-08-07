@@ -26,8 +26,7 @@ install:
 	cp -a setup $(DESTDIR)/$(SHAREDIR)/
 
 	# install other shared files
-	cp -a doc samples prerun postrun $(DESTDIR)/$(SHAREDIR)/
-	cp -a scripts/sbin scripts/bin $(DESTDIR)/$(SHAREDIR)/
+	cp -a doc samples prerun postrun scripts/sbin $(DESTDIR)/$(SHAREDIR)/
 
 	# install config files
 	install -d $(DESTDIR)/etc/drbl/
