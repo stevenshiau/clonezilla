@@ -1,14 +1,14 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	2.6.21
-Release:	1drbl
+Version:	3.0.0
+Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 1.12.19, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.50, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.0.0, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.50, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install prefix=$RPM_BUILD_ROOT/
 /opt/drbl/samples/*
 
 %changelog
+* Tue Aug 07 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.0-drbl1
+- Clonezilla version 3. New files arch so it's easier to be packaged in Debian.
+
 * Thu Aug 02 2012 Steven Shiau <steven _at_ nchc org tw> 2.6.21-1drbl
 - The function get_live_autologin_account of gl-functions will now search the files in /etc/sudoers.d/, too.
 
