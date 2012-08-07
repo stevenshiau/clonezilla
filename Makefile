@@ -1,22 +1,34 @@
+# Makefile
+#
 # License: GPL
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY, to the extent permitted by law; without
 # even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 # PARTICULAR PURPOSE.
 #
-SHELL := /bin/bash
-prefix = /${DESTDIR}
-maindir = /opt/drbl/
+SHELL := bash -e
+DESTDIR =
+SHAREDIR = /usr/share/drbl/
 
-all:
+all: 
 	@echo "No need to compile..."
 
+build:
+	@echo "Nothing to build."
+
 install:
-	install -d ${prefix}/$(maindir)/{bin,sbin,conf,samples}
-	install -d ${prefix}/$(maindir)/setup/files/{ocs,gparted}
-	install scripts/* ${prefix}/$(maindir)/sbin/
-	install bin/* ${prefix}/$(maindir)/bin/
-	cp -ar files/ocs/* ${prefix}/$(maindir)/setup/files/ocs/
-	cp -ar files/gparted/* ${prefix}/$(maindir)/setup/files/gparted/
-	install -m 644 conf/drbl-ocs.conf ${prefix}/$(maindir)/conf/
-	install samples/* ${prefix}/$(maindir)/samples
+	# install exec files
+	install -d ${DESTDIR}/usr/
+	cp -a sbin bin ${DESTDIR}/usr/
+
+	# install setup dir
+	install -d $(DESTDIR)/$(SHAREDIR)/
+	cp -a setup $(DESTDIR)/$(SHAREDIR)/
+
+	# install other shared files
+	cp -a doc samples prerun postrun $(DESTDIR)/$(SHAREDIR)/
+	cp -a scripts/sbin scripts/bin $(DESTDIR)/$(SHAREDIR)/
+
+	# install config files
+	install -d $(DESTDIR)/etc/drbl/
+	cp -a conf/* $(DESTDIR)/etc/drbl/

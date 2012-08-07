@@ -35,7 +35,7 @@ td="$PKG-$VER"
 # Clean stale files in debian
 rm -rf $PKG/debian/{drbl,tmp}
 mkdir -p $td
-rsync -a Makefile clonezilla.spec conf doc samples sbin bin scripts setup prerun postrun $td/
+cp -ar Makefile clonezilla.spec conf doc samples sbin bin scripts setup prerun postrun $td/
 
 tar cvjf $td.tar.bz2 --owner=root --group=root $td
 rm -rf $td
