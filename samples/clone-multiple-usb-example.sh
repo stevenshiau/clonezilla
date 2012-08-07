@@ -27,7 +27,7 @@ grub_part_no="4"  # e.g. The grub partition, /dev/sdc4
 image_name="myusbimg"
 
 # Load functions and config file
-DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/opt/drbl/}"
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl/}"
 
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
 . /etc/drbl/drbl-ocs.conf
