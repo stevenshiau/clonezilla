@@ -1,5 +1,5 @@
 #!/bin/sh -x
 rm -rf debforge RPMS.drbl-test
-./packit.sh
-./make-rpm.sh
-./make-deb.sh
+toolbox/packit.sh
+toolbox/make-rpm.sh
+toolbox/make-deb.sh
