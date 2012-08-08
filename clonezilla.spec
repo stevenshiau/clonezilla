@@ -21,7 +21,7 @@ For more info, check http://clonezilla.org, http://clonezilla.nchc.org.tw.
 make all
 
 %install
-make install prefix=$RPM_BUILD_ROOT/
+make install DESTDIR=$RPM_BUILD_ROOT/
 
 %clean
 [ -d "$RPM_BUILD_ROOT" ] && rm -rf $RPM_BUILD_ROOT
@@ -30,11 +30,11 @@ make install prefix=$RPM_BUILD_ROOT/
 
 %files
 %defattr(-,root,root)
-/opt/drbl/bin/*
-/opt/drbl/sbin/*
-/opt/drbl/conf/*
-/opt/drbl/setup/*
-/opt/drbl/samples/*
+/usr/sbin/*
+/usr/bin/*
+/usr/share/drbl/*
+/usr/share/clonezilla/*
+/etc/drbl/*
 
 %changelog
 * Tue Aug 07 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.0-drbl1
