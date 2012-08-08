@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.0.0
+Version:	3.0.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Aug 08 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.1-drbl1
+- Adding experimental branch option in create-*-live, and remove unnecessary branch list.
+
 * Tue Aug 07 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.0-drbl1
 - Clonezilla version 3. New files arch so it's easier to be packaged in Debian.
 
