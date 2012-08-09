@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.0.3
+Version:	3.0.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Aug 09 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.4-drbl1
+- Bug fixed: system PATH in live CD should include /sbin and /usr/sbin
+
 * Thu Aug 09 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.3-drbl1
 - Using file GPL instead of COPYING in live CD root dir.
 
