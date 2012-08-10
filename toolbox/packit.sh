@@ -30,7 +30,6 @@ td="${PKG}-${VER}"
 [ -d "$td" ] && rm -rf $td
 mkdir -p $td
 # Clean stale files in debian
-rm -rf debian/{drbl,tmp}
 cp -ar $FILES_DIRS $td/
 
 echo $VER > $td/doc/VERSION
