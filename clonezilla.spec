@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Using /usr/share/drbl instead of /usr/share/drbl/ so that no "//" in the PATH.
+
 * Thu Aug 09 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.4-drbl1
 - Bug fixed: system PATH in live CD should include /sbin and /usr/sbin
 
