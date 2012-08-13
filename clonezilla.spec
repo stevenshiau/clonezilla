@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Comments about isohybriding template iso and clonezilla/drbl/gparted iso were added.
+
 * Sun Aug 12 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.5-drbl1
 - Using /usr/share/drbl instead of /usr/share/drbl/ so that no "//" in the PATH.
 
