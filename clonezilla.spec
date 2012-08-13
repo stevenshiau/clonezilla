@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.0.5
+Version:	3.0.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Aug 13 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.6-drbl1
 - Comments about isohybriding template iso and clonezilla/drbl/gparted iso were added.
 
 * Sun Aug 12 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.5-drbl1
