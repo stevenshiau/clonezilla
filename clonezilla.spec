@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.0.7
+Version:	3.0.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Aug 15 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.8-drbl1
 - Boot parameter "ocs_lang" in Clonezilla live is now replaced by "locales" from live-config.
 - Boot parameter "ocs_live_keymap" Clonezilla live is now replaced by "keyboard-layouts" from live-config.
 - Boot parameters "echo_ocs_prerun" and "echo_ocs_postrun" were added. This can be used to disable echoing the ocs_prerun and ocs_postrun command.
