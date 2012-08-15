@@ -39,6 +39,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 %changelog
 - Boot parameter "ocs_lang" in Clonezilla live is now replaced by "locales" from live-config.
 - Boot parameter "ocs_live_keymap" Clonezilla live is now replaced by "keyboard-layouts" from live-config.
+- Boot parameters "echo_ocs_prerun" and "echo_ocs_postrun" were added. This can be used to disable echoing the ocs_prerun and ocs_postrun command.
 
 * Wed Aug 15 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.7-drbl1
 - Bug fixed: The description using space key to mark the selection for disk to disk clone is not required. Thanks to sabrehagen (https://sourceforge.net/tracker/?func=detail&atid=671650&aid=3552271&group_id=115473).
