@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Tidy the boot parameters of Clonezilla live.
+
 * Wed Aug 15 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.8-drbl1
 - Boot parameter "ocs_lang" in Clonezilla live is now replaced by "locales" from live-config.
 - Boot parameter "ocs_live_keymap" Clonezilla live is now replaced by "keyboard-layouts" from live-config.
