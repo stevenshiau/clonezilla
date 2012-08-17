@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Boot parameter "nolocales" was removed from Clonezilla live since now "locales=" is used by default.
+
 * Fri Aug 17 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.9-drbl1
 - Tidy the boot parameters of Clonezilla live by modifying ocs-iso and ocs-live-dev.
 
