@@ -74,7 +74,7 @@ case "$switch" in
          echo "Directory $ocsroot is not a mount point. Will try to mount $ocsroot..."
          prepare_ocsroot_opt="--prepare-ocsroot"
        fi	        
-       drbl-live.sh $prepare_ocsroot_opt --skip-pause-in-the-end --no-prompt-drbl-live start
+       drbl-live $prepare_ocsroot_opt --skip-pause-in-the-end --no-prompt-drbl-live start
      fi
 
      echo "$msg_delimiter_star_line"

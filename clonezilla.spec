@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Using drbl-sl instead of calling drbl-SL.sh now.
+- Using drbl-live.sh instead of calling drbl-live now. 
+ 
 * Mon Aug 20 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.10-drbl1
 - Boot parameter "nolocales" was removed from Clonezilla live since now "locales=" is used by default.
 - Prompt msg_client_job_are_logged_in was updated. Thanks to René Mérou for asking.
