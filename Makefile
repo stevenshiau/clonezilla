@@ -29,6 +29,8 @@ install:
 	cp -a samples prerun postrun scripts/sbin $(DESTDIR)/$(SHAREDIR)/
 	install -d $(DESTDIR)/usr/share/clonezilla/
 	cp -a doc $(DESTDIR)/usr/share/clonezilla/
+	# erase an extra COPYING
+	rm -f $(DESTDIR)/clonezilla/doc/COPYING
 
 	# install config files
 	install -d $(DESTDIR)/etc/drbl/
