@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.0.10
+Version:	3.1.0
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.0.11, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.51, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.1.0, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.51, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,8 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Aug 25 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.0-drbl1
 - Using drbl-sl instead of calling drbl-SL.sh now.
-- Using drbl-live.sh instead of calling drbl-live now. 
+- Using drbl-live instead of calling drbl-live.sh now. 
+- File ocs-srv-live.sh was renamed as ocs-srv-live.
+- Adding the interpreter's magic number for ocs-functions, and ocs-chnthn-functions to avoid lintian's warning.
+- Bug fixed: an extra "{" in the end of MC_HxEd was removed.
  
 * Mon Aug 20 2012 Steven Shiau <steven _at_ nchc org tw> 3.0.10-drbl1
 - Boot parameter "nolocales" was removed from Clonezilla live since now "locales=" is used by default.

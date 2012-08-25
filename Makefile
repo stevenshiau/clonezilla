@@ -30,7 +30,7 @@ install:
 	install -d $(DESTDIR)/usr/share/clonezilla/
 	cp -a doc $(DESTDIR)/usr/share/clonezilla/
 	# erase an extra COPYING
-	rm -f $(DESTDIR)/clonezilla/doc/COPYING
+	rm -f $(DESTDIR)/usr/share/clonezilla/doc/COPYING
 
 	# install config files
 	install -d $(DESTDIR)/etc/drbl/

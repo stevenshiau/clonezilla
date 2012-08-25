@@ -25,5 +25,5 @@ mkdir debforge
 tar -xvjf $TARBALL -C debforge/
 cp -a debian debforge/$PKG-$VER/
 cd debforge/$PKG-$VER
-debuild --no-tgz-check --no-lintian
+debuild
 rm -f $TARBALL_ORIG
