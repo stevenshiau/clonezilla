@@ -504,7 +504,7 @@ get_dev_model_shown() {
   dev_model_shown=""
 
   # Shown the machine product name
-  machine_name="$(dmidecode -s system-product-name 2>/dev/null | head -n 1)"
+  machine_name="$(LC_ALL=C dmidecode -s system-product-name 2>/dev/null | head -n 1)"
   if [ -z "$machine_name" -o "$machine_name" = "To Be Filled By O.E.M." ]; then
     dev_model_shown="Machine: Unknown product name\n"
   else
@@ -522,6 +522,26 @@ get_dev_model_shown() {
   # Remove the \n in the end
   dev_model_shown="$(echo $dev_model_shown | sed -e "s|\\\n$||g")"
 } # end of get_dev_model_shown
+#
+get_vendor_product_name() {
+  # dev_model_shown is a global variable
+  local autoproductname vendor_name product_name
+
+  # Find the machine product name
+  # We have to format the output of dmidecode, otherwise the name might not be able to be used as a dir name. Therefore the special characters, e.g. space,,,.,: must have to be filtered.
+  vendor_name="$(LC_ALL=C dmidecode -s system-manufacturer 2>/dev/null | head -n 1 | sed -r -e "s/[[:space:]]+/_/g" -e "s/(:|,|\.)//g")"
+  product_name="$(LC_ALL=C dmidecode -s system-product-name 2>/dev/null | head -n 1 |  sed -r -e "s/[[:space:]]+/_/g" -e "s/(:|,|\.)//g")"
+  if [ -z "$vendor_name" -o "$vendor_name" = "To Be Filled By O.E.M." ]; then
+    vendor_name="unknown_vendor"
+  fi
+  if [ -z "$product_name" -o "$product_name" = "To Be Filled By O.E.M." ]; then
+    product_name="unknown_product"
+  fi
+  autoproductname="${vendor_name}_${product_name}"
+  # Remove the \n in the end
+  autoproductname="$(echo $autoproductname | sed -e "s|\\\n$||g")"
+  echo "$autoproductname"
+} # end of get_vendor_product_name
 #
 get_random_time() {
   local TIME_LIMIT=$1
@@ -6045,6 +6065,9 @@ get_target_dir_name_when_saving() {
     elif [ "$target_dir" = "autohostname" ]; then
        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
       --msgbox "$msg_autohostname_is_reserved_for_save_mode\n$msg_please_do_it_again!!!" 0 0 
+    elif [ "$target_dir" = "autoproductname" ]; then
+       $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+      --msgbox "$msg_autoproductname_is_reserved_for_save_mode\n$msg_please_do_it_again!!!" 0 0 
     else
        ASK_IMG_NAME=0
     fi

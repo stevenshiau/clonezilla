@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- A reserved image name "autoproductname" was added so that Clonezilla can be used to save and restore image based on manufacture and product name got from dmidecode.
+
 * Sun Aug 26 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.1-drbl1
 - Removing the vague "Something went wrong" prompts.
 
