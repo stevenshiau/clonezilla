@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.2
+Version:	3.1.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.1.2, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.51, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.1.3, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.51, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,8 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Sep 05 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.3-drbl1
+- Using drbl-run-parts instead of run-parts. This will more straightforward.
+
 * Mon Aug 27 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.2-drbl1
-- A reserved image name "autoproductname" was added so that Clonezilla can be used to save and restore image based on manufacture and product name got from dmidecode.
+- A reserved image name "autoproductname" was added so that Clonezilla can use that to save and restore image based on the manufacture and product name got from dmidecode.
 
 * Sun Aug 26 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.1-drbl1
 - Removing the vague "Something went wrong" prompts.
