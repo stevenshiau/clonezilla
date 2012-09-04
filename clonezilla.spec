@@ -38,7 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 * Wed Sep 05 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.3-drbl1
-- Using drbl-run-parts instead of run-parts. This will more straightforward.
+- Using drbl-run-parts instead of run-parts. This will be more straightforward.
 
 * Mon Aug 27 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.2-drbl1
 - A reserved image name "autoproductname" was added so that Clonezilla can use that to save and restore image based on the manufacture and product name got from dmidecode.
