@@ -48,6 +48,18 @@ if [ -z "$ocs_live_keymap" -a -z "$live_keyboard_layouts" ]; then
          ;;
     esac
   else
+    # ocs-langkbdconf-bterm does keyboard config and language config. Here we have do the same 2 jobs. Otherwise locales will be empty and a lot of warnings will be shown when ruuning commands.
+    # (1) language
+    [ -z "$ocs_lang" ] && ocs_lang=en_US.UTF-8
+    # put the language setting so that later program can reuse
+    if [ -z "$(grep -E "^[[:space:]]*ocs_lang=" /etc/ocs/ocs-live.conf 2>/dev/null)" ]; then
+      # append it
+      echo "ocs_lang=$ocs_lang" >> /etc/ocs/ocs-live.conf
+    else
+      # modify it
+      perl -pi -e "s|^[[:space:]]*ocs_lang=.*|ocs_lang=\"$ocs_lang\"|g" /etc/ocs/ocs-live.conf
+    fi
+    # (2) keyboard
     drbl-kbdchooser
   fi
 elif [ -n "$ocs_live_keymap" ]; then
