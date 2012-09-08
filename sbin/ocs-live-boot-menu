@@ -11,8 +11,8 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
 # Settings
-KERNEL_FILE_DEFAULT="casper/$kernel_file"
-INITRD_FILE_DEFAULT="casper/$initrd_file"
+KERNEL_FILE_DEFAULT="live/$kernel_file"
+INITRD_FILE_DEFAULT="live/$initrd_file"
 # default time (Unit: 1/10 secs)
 TIMEOUT_DEF="300"
 # Grub config
@@ -159,6 +159,17 @@ label $output_title 640x480
   VGA mode 640x480. OK for most of VGA cards.
   ENDTEXT
 
+label $output_title KMS
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title (Default settings, KMS)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param_rm_nomodeset $vga_mode_1024x768 ip=frommedia $quiet_opt $splash_opt
+  TEXT HELP
+  KMS mode. OK for ATI, Intel and NVIDIA VGA cards.
+  ENDTEXT
+
 BOOT_MENU_END
 fi
 
@@ -214,6 +225,17 @@ label $output_title ($lang_locale) 640x480
   TEXT HELP
   $lang_locale, and VGA mode 640x480. OK for most of VGA cards, 
   Choose this if this is an Asus Eee PC
+  ENDTEXT
+
+label $output_title ($lang_locale) KMS
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title ($lang_locale, default settings, KMS)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param_rm_nomodeset $vga_mode_1024x768 locale=$lang_locale ip=frommedia $quiet_opt $splash_opt
+  TEXT HELP
+  $lang_locale, and KMS mode.
   ENDTEXT
 
 BOOT_MENU_END
@@ -414,6 +436,11 @@ title $output_title (Default settings$vga_640x480_prompt)
   kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_mode_640x480 ip=frommedia 
   initrd $initrd_file
 
+title $output_title (Default settings, KMS)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param_rm_nomodeset $vga_mode_1024x768 ip=frommedia 
+  initrd $initrd_file
+
 BOOT_MENU_END
 fi
   cat <<-BOOT_MENU_END >> $output_file
@@ -442,6 +469,11 @@ title $output_title ($lang_locale, default settings$vga_1024x768_prompt)
 title $output_title ($lang_locale, default settings$vga_640x480_prompt)
   root ($op_hd_dev_grub,$op_part_no_grub)
   kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_mode_640x480 locale=$lang_locale ip=frommedia
+  initrd $initrd_file
+
+title $output_title ($lang_locale, default settings, KMS)
+  root ($op_hd_dev_grub,$op_part_no_grub)
+  kernel $kernel_file root=$output_dev_grub ro $boot_param_rm_nomodeset $vga_mode_1024x768 locale=$lang_locale ip=frommedia
   initrd $initrd_file
 
 BOOT_MENU_END
@@ -570,6 +602,13 @@ menuentry "$output_title (Default settings$vga_640x480_prompt)"{
   initrd $initrd_file
 }
 
+menuentry "$output_title (Default settings, KMS)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param_rm_nomodeset $vga_mode_1024x768 ip=frommedia $quiet_opt $splash_opt
+  initrd $initrd_file
+}
+
 BOOT_MENU_END
 fi
   cat <<-BOOT_MENU_END >> $output_file
@@ -605,6 +644,13 @@ menuentry "$output_title ($lang_locale, default settings$vga_640x480_prompt)"{
   search --set -f $kernel_file
   fakebios
   linux $kernel_file $boot_param $vga_mode_640x480 locale=$lang_locale ip=frommedia $quiet_opt $splash_opt
+  initrd $initrd_file
+}
+
+menuentry "$output_title ($lang_locale, default settings, KMS)"{
+  search --set -f $kernel_file
+  fakebios
+  linux $kernel_file $boot_param_rm_nomodeset $vga_mode_1024x768 locale=$lang_locale ip=frommedia $quiet_opt $splash_opt
   initrd $initrd_file
 }
 
@@ -876,6 +922,10 @@ if [ -z "$(echo $boot_param | grep -Ew "noprompt")" ]; then
 else
   boot_param_toram="$boot_param"
 fi
+
+# For KMS, we need to remove "nomodeset" if it exists in $boot_param
+boot_param_rm_nomodeset="$(echo $boot_param | sed -r -e "s/[[:space:]]*nomodeset[[:space:]]*/ /g")"
+
 #
 now_year="$(LC_ALL=C date +%Y)"
 if [ -n "$(echo $output_title | grep -i clonezilla)" ]; then
