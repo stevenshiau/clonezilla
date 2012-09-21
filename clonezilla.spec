@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: the VOL_LIMIT for spliting image file could not larger than 20000000000000. Ref: https://sourceforge.net/tracker/?func=detail&atid=671650&aid=3567350&group_id=115473
+
 * Sat Sep 08 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.5-drbl1
 - A KMS mode in the boot menu was added.
 
