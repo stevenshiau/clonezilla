@@ -18,6 +18,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Settings
 # By default we do not check the image saved by dd.
 dd_checking_method="no-check"
+nogui="off"   # Default to turn on TUI
 
 #
 USAGE() {
@@ -94,7 +95,7 @@ img_check_by_partclone() {
       cat $img
     done
   ) | \
-  $unzip_stdin_cmd | LC_ALL=C partclone.chkimg -s -
+  $unzip_stdin_cmd | LC_ALL=C partclone.chkimg $PARTCLONE_CHKIMG_OPT -s -
   rc="$?"
   return $rc
 } # end of img_check_by_partclone
@@ -532,6 +533,11 @@ while [ $# -gt 0 ]; do
            fi
            [ -z "$ocsroot" ] && USAGE && exit 1
            ;;
+   -nogui|--nogui)
+           shift; 
+           # -nogui is for backward compatable, better to use --nogui
+           nogui="on"
+           ;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
            exit 2 ;;
@@ -557,5 +563,11 @@ ask_and_load_lang_set
 imagedir="$ocsroot"
 [ -z "$ocs_chk_img_name" ] && ocs_chk_img_name="ask_user"
 # if "$ocs_chk_dev" is nothing, we check all the partitions.
+
+#
+if [ "$nogui" = "off" ]; then
+  # TUI is on.
+  PARTCLONE_CHKIMG_OPT="$PARTCLONE_CHKIMG_OPT -N"
+fi
 
 task_checkimage "$ocs_chk_img_name" "$ocs_chk_dev"
