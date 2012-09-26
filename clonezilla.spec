@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.8
+Version:	3.1.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,11 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Sep 26 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.9-drbl1
+- Typo fixed in ocs-live-boot-menu.
+
 * Wed Sep 26 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.8-drbl1
 - To avoid the KMS and vmwgfx conflict issue (http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=686939), some blacklist boot parameters were added.
 
 * Mon Sep 24 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.7-drbl1
-- Bug fixed: integer too large won't work in bash if command, changed to bc.
+- Bug fixed: integer too large won't work in bash if command, changed to bc in ocs-sr.
 
 * Mon Sep 24 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.6-drbl1
 - Bug fixed: the VOL_LIMIT for spliting image file could not larger than 20000000000000. Ref: https://sourceforge.net/tracker/?func=detail&atid=671650&aid=3567350&group_id=115473
