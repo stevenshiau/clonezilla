@@ -564,6 +564,15 @@ wrap_up_opt() {
     # The default output for udpcast stderr is surpressed, now turn it on
     udpcast_stderr="/dev/stderr"
   fi
+  # If the VOL_LIMIT is too large (>=20000000000000), split won't work. Therefore we reduce it as the upper limit "2000000000000"
+  # Ref: https://sourceforge.net/tracker/?func=detail&atid=671650&aid=3567350&group_id=115473
+  vol_cal="$(echo "scale=0; $VOL_LIMIT >= 20000000000000" | bc -l)"
+  if [ "$vol_cal" -eq 1 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Warning! VOL_LIMIT=\"$VOL_LIMIT\" is larger than 20000000000000, reduce it to '2000000000000'."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    VOL_LIMIT="2000000000000"
+  fi
 } # end of wrap_up_opt
 #
 run_ocs_sr_again_prompt() {
@@ -937,14 +946,6 @@ if [ "$ocs_sr_type_assign" = "ask_user" -o \
   VOL_LIMIT="$VOL_LIMIT_IN_INTERACTIVE"
 else
   ocs_sr_type="$ocs_sr_type_assign"
-fi
-# If the VOL_LIMIT is too large (>=20000000000000), split won't work. Therefore we reduce it as the upper limit "2000000000000"
-# Ref: https://sourceforge.net/tracker/?func=detail&atid=671650&aid=3567350&group_id=115473
-if [ "$VOL_LIMIT" -ge 20000000000000 ]; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Warning! VOL_LIMIT=\"$VOL_LIMIT\" is larger than 20000000000000, reduce it to '2000000000000'."
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  VOL_LIMIT="2000000000000"
 fi
 
 # ocs_mode_prompt is to be shown in the title of dialog menu later
