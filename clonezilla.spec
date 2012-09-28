@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.10
+Version:	3.1.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Sep 28 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.11-drbl1
+- Bug fixed: variable DRBL_SCRIPT_PATH was not defined correctly in live-hook files 
+
 * Fri Sep 28 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.10-drbl1
 - Bug fixed: the install_grub_hd in ocs-live-dev should skip checking the boot loader on the USB flash drive, because it might be new, empty one.
 
