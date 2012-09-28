@@ -2134,6 +2134,7 @@ install_grub_hd() {
     local selected_hd selected_parts  # selected_hd e.g. sda, selected_parts e.g. sda1, sda2
     local grub_ver_in_restored_os=""
     local grub2_boot_dir=""
+    local check_before_install="yes"  # By default we check if grub is already in the boot loader. If so, we continue to run grub-install
     # local functions in install_grub_hd
     do_run_grub2_from_restored_os() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -2202,6 +2203,15 @@ install_grub_hd() {
     # -s or -p option is used to pass the selected device, which means only these device will be searched for grub partition. If no assigning, all the available partitions on the system will be searched.
     while [ $# -gt 0 ]; do
       case "$1" in
+        -g|--grub-version)
+           shift
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             grub_ver_in_restored_os="$1"
+             shift
+           fi
+           [ -z "$grub_ver_in_restored_os" ] && echo "-g is used, but no grub_ver_in_restored_os assigned." && exit 1
+           ;;
         -s|--selected-hd)
            shift
            if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -2219,6 +2229,11 @@ install_grub_hd() {
              shift
            fi
            [ -z "$selected_parts" ] && echo "-p is used, but no selected_parts assigned." && exit 1
+           ;;
+        -n|--no-check-before-install)
+           # Option to force install grub even if boot loader is not found as grub
+           shift
+	   check_before_install="no"
            ;;
         -*)     echo "${0}: ${1}: invalid option" >&2
                 USAGE >& 2
@@ -2305,12 +2320,14 @@ install_grub_hd() {
     grub_hd="${grub_partition:5:3}"
     # active this device
     fdisk -l /dev/$grub_hd &>/dev/null
-    # Check if grub exists on the MBR. If not, skip this function.
-    if [ -z "$(LANG=C dd if=/dev/$grub_hd bs=512 count=1 2>/dev/null | strings | grep "GRUB")" ]; then
-       echo "The boot loader on /dev/$grub_hd is not grub. Skip running grub-install!"
-       return 5
-    else 
-       echo "Found boot loader grub in the MBR of disk /dev/$grub_hd."
+    if [ "$check_before_install" = "yes" ]; then
+      # Check if grub exists on the MBR. If not, skip this function.
+      if [ -z "$(LANG=C dd if=/dev/$grub_hd bs=512 count=1 2>/dev/null | strings | grep "GRUB")" ]; then
+         echo "The boot loader on /dev/$grub_hd is not grub. Skip running grub-install!"
+         return 5
+      else 
+         echo "Found boot loader grub in the MBR of disk /dev/$grub_hd."
+      fi
     fi
     # process the boot loader
     hd_img="$(mktemp -d /tmp/hd_img.XXXXXX)"
@@ -2347,15 +2364,17 @@ install_grub_hd() {
        mkdir -p $hd_img/boot
        mount $grub_partition $hd_img/boot/
 
-       # Check if it's grub2. For Fedora 16, the grub2 dir is in /boot/grub2. For other distribution (e.g. Ubuntu 11.10, Debian 6), it's in /boot/grub/.
-       if [ -n "$(find $hd_img/boot/grub/ -iname "*.mod" -print 2>/dev/null)" ]; then
-         grub_ver_in_restored_os="2"
-         grub2_boot_dir="/boot/grub/"
-       elif [ -n "$(find $hd_img/boot/grub2/ -iname "*.mod" -print 2>/dev/null)" ]; then
-         grub_ver_in_restored_os="2"
-         grub2_boot_dir="/boot/grub2/"
-       else
-         grub_ver_in_restored_os="1"
+       if [ -z "$grub_ver_in_restored_os" ]; then
+         # Check if it's grub2. For Fedora 16, the grub2 dir is in /boot/grub2. For other distribution (e.g. Ubuntu 11.10, Debian 6), it's in /boot/grub/.
+         if [ -n "$(find $hd_img/boot/grub/ -iname "*.mod" -print 2>/dev/null)" ]; then
+           grub_ver_in_restored_os="2"
+           grub2_boot_dir="/boot/grub/"
+         elif [ -n "$(find $hd_img/boot/grub2/ -iname "*.mod" -print 2>/dev/null)" ]; then
+           grub_ver_in_restored_os="2"
+           grub2_boot_dir="/boot/grub2/"
+         else
+           grub_ver_in_restored_os="1"
+         fi
        fi
 
        if [ "$grub_ver_in_restored_os" = "2" ]; then
@@ -7822,7 +7841,7 @@ set_boot_loader() {
      boot_loader=syslinux
      ;;
   *) 
-     echo "Not FAT, us grub as boot loader."
+     echo "Not FAT, use grub as boot loader."
      boot_loader=grub
      ;;
   esac
