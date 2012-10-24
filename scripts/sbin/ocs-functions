@@ -2424,9 +2424,17 @@ install_grub_hd() {
        # In this case, /boot must co-exist with root system in same partition, 
        # Then found_root_partition is the grub partition
        found_root_partition="$grub_partition"
-       # Check if it's grub2
-       if [ -n "$(unalias ls 2>/dev/null; ls $hd_img/boot/grub/*.mod 2>/dev/null)" ]; then
+       # Check if it's grub2. For Fedora 16, the grub2 dir is in /boot/grub2. For other distribution (e.g. Ubuntu 11.10, Debian 6), it's in /boot/grub/.
+       if [ -n "$(find $hd_img/boot/grub/ -iname "*.mod" -print 2>/dev/null)" ]; then
          grub_ver_in_restored_os="2"
+         grub2_boot_dir="/boot/grub/"
+       elif [ -n "$(find $hd_img/boot/grub2/ -iname "*.mod" -print 2>/dev/null)" ]; then
+         grub_ver_in_restored_os="2"
+         grub2_boot_dir="/boot/grub2/"
+       else
+         grub_ver_in_restored_os="1"
+       fi
+       if [ "$grub_ver_in_restored_os" = "2" ]; then
          echo "Found grub 2 installed in the restored OS."
          if [ -z "$run_grub2_from_restored_os_mode" ]; then
            # We will get variable run_grub2_from_restored_os_mode with this
@@ -2451,7 +2459,6 @@ install_grub_hd() {
        else
          # grub version 1
          echo "Found grub 1 installed in the restored OS."
-         grub_ver_in_restored_os="1"
          prepare_grub1_files_if_required
          # If device.map exists, remove it to avoid some problem.
          [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map

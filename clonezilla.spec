@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.12
+Version:	3.1.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.1.10, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.55, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.1.21, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.55, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Oct 24 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.13-drbl1
+- Bug fixed: the *.mod files for grub2 are not fixed in the path /boot/grub/. It could be in /boot/grub/i386-pc/. Function install_grub_hd failed in this case.
+
 * Mon Oct 22 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.12-drbl1
 - Bug fixed: Prompts in create-ubuntu-live were out-of-date. They are updated so there is no problem to create Raring-based Clonezilla live.
 
