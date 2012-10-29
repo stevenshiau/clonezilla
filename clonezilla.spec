@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: for live-config v3.x, the last file in /lib/live/config/ is 9990-hooks, not 999-hooks. S00ocs-start should honor 9990-hooks, too.
+
 * Mon Oct 28 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.15-drbl1
 - Bug fixed: the filesystem.squashfs is in /lib/live/image/ when created by live-build 3.x.
 
