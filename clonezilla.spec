@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.14
+Version:	3.1.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-* Sat Oct 28 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.14-drbl1
+* Mon Oct 28 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.15-drbl1
+- Bug fixed: the filesystem.squashfs is in /lib/live/image/ when created by live-build 3.x.
+
+* Sun Oct 28 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.14-drbl1
 - Bug fixed: autohostname failed to append the time tag for the image name. Thanks to dennisd248 for reporthing this bug.
 
 * Wed Oct 24 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.13-drbl1
