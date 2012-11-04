@@ -66,6 +66,18 @@ search --file --set=root /.disk/info
 set prefix=(\$root)/EFI/boot/
 
 GRUB_END
+
+# Check if xz compression is supported by grub-mkimage. If yes, use it. The prompt should look like:
+# -C, --compression=(xz|none|auto)  choose the compression to use
+grub_mkimg_compress_opt=""
+if [ -n "$(LC_ALL=C grub-mkimage --help 2>&1 | grep -Ew -- "-C" | grep -iw xz)" ]; then
+  # Even if grub-mkimage --help shows "-C xz" support, it still be possible that it actually lacks XZ support.
+  # Ref: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=692246
+  # Therefore we test here. When #692246 is fixed, we can remove this testing.
+  if LC_ALL=C grub-mkimage -C xz -O i386-efi -o /dev/null &>/dev/null; then
+    grub_mkimg_compress_opt="-C xz"
+  fi
+fi
 #
 for i in i386 x86_64; do
   export EFI_ARCH=$i
@@ -73,7 +85,16 @@ for i in i386 x86_64; do
     i386)   out_f="$output_dir/bootia32.efi" ;;
     x86_64) out_f="$output_dir/bootx64.efi" ;;
   esac
-  grub-mkimage -O $EFI_ARCH-efi -d $grub_efi_dir/usr/lib/grub/$EFI_ARCH-efi/ -o $out_f --prefix=/EFI/boot/ -c $grub_efi_dir/grub_head.cfg $efi_required_mod
+  # Checking the required modules
+  for im in $efi_required_mod; do
+    if [ ! -e "$grub_efi_dir/usr/lib/grub/$EFI_ARCH-efi/${im}.mod" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Missing grub2 module ${im}.mod... Exluding ${im}.mod..."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      efi_required_mod="$(echo $efi_required_mod | sed -r -e "s/$im //g")"
+    fi
+  done
+  grub-mkimage $grub_mkimg_compress_opt -O $EFI_ARCH-efi -d $grub_efi_dir/usr/lib/grub/$EFI_ARCH-efi/ -o $out_f --prefix=/EFI/boot/ -c $grub_efi_dir/grub_head.cfg $efi_required_mod
   rc=$?
   if [ "$rc" -gt 0 ]; then
     # When grub-mkimage fails, an empty output file will still be created. We'd better to clean it.
