@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Suppress the stderr messages of ocs-lvm2-start and ocs-lvm2-stop.
+
 * Sun Nov 04 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.17-drbl1
 - Bug fixed: uEFI booting of Quantal-based Clonezilla failed due to grub 2.x has no "pci.mod", so we should not list it.
 

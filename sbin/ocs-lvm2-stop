@@ -19,33 +19,33 @@ then
 	# functionality as described in this forum thread
 	#https://www.redhat.com/archives/linux-lvm/2001-May/msg00523.html
 
-	LOGICAL_VOLUMES=`lvdisplay |grep "LV Name"|awk '{print $3}'|sort|xargs echo`
-	VOLUME_GROUPS=`vgdisplay |grep "VG Name"|awk '{print $3}'|sort|xargs echo`
+	LOGICAL_VOLUMES=`lvdisplay 2>/dev/null|grep "LV Name"|awk '{print $3}'|sort|xargs echo`
+	VOLUME_GROUPS=`vgdisplay 2>/dev/null|grep "VG Name"|awk '{print $3}'|sort|xargs echo`
 	for x in ${LOGICAL_VOLUMES}
 	do
-		LV_IS_ACTIVE=`lvdisplay ${x}|grep "# open"|awk '{print $3}'`
+		LV_IS_ACTIVE=`lvdisplay ${x} 2>/dev/null|grep "# open"|awk '{print $3}'`
 		if [ "${LV_IS_ACTIVE}" = 0 ]
 		then
 			echo "  Shutting Down logical volume: ${x} "
-			lvchange -an --ignorelockingfailure -P ${x} >/dev/null
+			lvchange -an --ignorelockingfailure -P ${x} >/dev/null 2>&1
 			# eend $?
 		fi
 	done
 
 	for x in ${VOLUME_GROUPS}
 	do
-		VG_HAS_ACTIVE_LV=`vgdisplay ${x}|grep "Open LV"|awk '{print $3}'|xargs echo`
+		VG_HAS_ACTIVE_LV=`vgdisplay ${x} 2>/dev/null|grep "Open LV"|awk '{print $3}'|xargs echo`
 		if [ "${VG_HAS_ACTIVE_LV}" = 0 ]
 		then
 			echo "  Shutting Down volume group: ${x} "
-			vgchange -an --ignorelockingfailure -P ${x} >/dev/null
+			vgchange -an --ignorelockingfailure -P ${x} >/dev/null 2>&1
 			# eend
 		fi
 	done
 
 	for x in ${LOGICAL_VOLUMES}
 	do
-		LV_IS_ACTIVE=`lvdisplay ${x}|grep "# open"|awk '{print $3}'`
+		LV_IS_ACTIVE=`lvdisplay ${x} 2>/dev/null|grep "# open"|awk '{print $3}'`
 		if [ "${LV_IS_ACTIVE}" = 1 ]
 		then
 			
