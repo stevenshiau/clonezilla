@@ -3208,6 +3208,9 @@ task_postprocessing() {
      echo $msg_delimiter_star_line
   fi
 
+  # Restore the udevd rules (if exists) which were disabled by ocs-lvm2-stop.
+  restore_lvm2_udevd_rules
+
   # option_mount_point
   [ -n "$mount_point" ] && umount $ocsroot
   # option debug
@@ -8862,3 +8865,19 @@ show_deprecated_ocs_lang_and_keymap() {
     sleep 1
   fi
 } # end of show_deprecated_ocs_lang_and_keymap
+#
+restore_lvm2_udevd_rules() {
+  local new_fname reload_flag=false
+  # Restore the udevd rules, which are disabled by ocs-lvm2-stop.
+  echo "Checking if udevd rules have to be restored..."
+  for i in /lib/udev/rules.d/*.drblsave; do
+    new_fname="$(echo $i | sed -r -e "s/\.drblsave$//g")"
+    mv -v "$i" "$new_fname"
+    reload_flag="true"
+  done
+  # Reload the rules for udevd
+  if [ "$reload_flag" = "true" ]; then
+    echo "Running 'udevadm control --reload-rules' to reload udevd rules..."
+    udevadm control --reload-rules
+  fi
+} # End of restore_lvm2_udevd_rules

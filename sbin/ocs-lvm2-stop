@@ -19,11 +19,35 @@ then
 	# functionality as described in this forum thread
 	#https://www.redhat.com/archives/linux-lvm/2001-May/msg00523.html
 
-	LOGICAL_VOLUMES=`lvdisplay 2>/dev/null|grep "LV Name"|awk '{print $3}'|sort|xargs echo`
-	VOLUME_GROUPS=`vgdisplay 2>/dev/null|grep "VG Name"|awk '{print $3}'|sort|xargs echo`
+	# 2012/Nov/20 Ubuntu's lvm2 has a udevd rules will automatically active VG, therefore before using "vgchange -an" to deactive the VG, we have to disable it, then restore it later.
+	auto_active_rules="$(LC_ALL=C grep -Ew "^[^#].*vgchange -a y" /lib/udev/rules.d/*.rules 2>/dev/null | awk -F":" '{print $1}')"
+	if [ -n "$auto_active_rules" ]; then
+          echo "Found udevd rule causes block devices with LVM signatures to be automatically added to their volume group."
+	  echo "Temporarily disable it otherwise the partition tool won't be able to inform the kernel the changes of partition table..."
+          for i in $auto_active_rules; do
+            mv -v "${i}" "${i}.drblsave"
+	  done
+	  # Reload the rules for udevd
+	  udevadm control --reload-rules
+        fi
+
+	# 2012/Nov/19 For newer version of lvdisplay (>=2.02.95 in Ubuntu 12.10), "LV Path"  instead of "LV Name" is the one we want. "LV Name" in the older version output does not contain the full path:
+	# root@quantal:/tmp# lvdisplay
+	#  --- Logical volume ---
+	#  LV Path                /dev/lucid-server/root
+	#  LV Name                root
+
+	if [ -n "$(LC_ALL=C lvdisplay | grep -E "LV Path")" ]; then
+	  lv_name_grep_term="LV Path"
+	else
+	  lv_name_grep_term="LV Name"
+	fi
+
+	LOGICAL_VOLUMES=`LC_ALL=C lvdisplay 2>/dev/null|grep "$lv_name_grep_term"|awk '{print $3}'|sort|xargs echo`
+	VOLUME_GROUPS=`LC_ALL=C vgdisplay 2>/dev/null|grep "VG Name"|awk '{print $3}'|sort|xargs echo`
 	for x in ${LOGICAL_VOLUMES}
 	do
-		LV_IS_ACTIVE=`lvdisplay ${x} 2>/dev/null|grep "# open"|awk '{print $3}'`
+		LV_IS_ACTIVE=`LC_ALL=C lvdisplay ${x} 2>/dev/null|grep "# open"|awk '{print $3}'`
 		if [ "${LV_IS_ACTIVE}" = 0 ]
 		then
 			echo "  Shutting Down logical volume: ${x} "
@@ -34,7 +58,7 @@ then
 
 	for x in ${VOLUME_GROUPS}
 	do
-		VG_HAS_ACTIVE_LV=`vgdisplay ${x} 2>/dev/null|grep "Open LV"|awk '{print $3}'|xargs echo`
+		VG_HAS_ACTIVE_LV=`LC_ALL=C vgdisplay ${x} 2>/dev/null|grep "Open LV"|awk '{print $3}'|xargs echo`
 		if [ "${VG_HAS_ACTIVE_LV}" = 0 ]
 		then
 			echo "  Shutting Down volume group: ${x} "
@@ -45,11 +69,11 @@ then
 
 	for x in ${LOGICAL_VOLUMES}
 	do
-		LV_IS_ACTIVE=`lvdisplay ${x} 2>/dev/null|grep "# open"|awk '{print $3}'`
+		LV_IS_ACTIVE=`LC_ALL=C lvdisplay ${x} 2>/dev/null|grep "# open"|awk '{print $3}'`
 		if [ "${LV_IS_ACTIVE}" = 1 ]
 		then
 			
-			ROOT_DEVICE=`mount|grep " / "|awk '{print $1}'`
+			ROOT_DEVICE=`LC_ALL=C mount|grep " / "|awk '{print $1}'`
 			if [ ! ${ROOT_DEVICE} = ${x} ]
 			then
 				echo "  Unable to shutdown: ${x} "
@@ -58,5 +82,3 @@ then
 	done
 	echo "Finished Shutting down the Logical Volume Manager"
 fi
-
-# vim:ts=4
