@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: the date tag of image name for autohostname should be consistent with that of autoname.
+
 * Tue Nov 20 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.19-drbl1
 - Bug fixed: ocs-lvm2-stop did not work on Ubuntu Linux due to the udevd rules 85-lvm2.rules from Ubuntu.
 - File system exfat was removed from supporting list in drbl-ocs.conf due to patent concern.
