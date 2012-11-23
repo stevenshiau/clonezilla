@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.20
+Version:	3.1.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Nov 23 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.21-drbl1
+- Bug fixed: the for loop for searching files /lib/udev/rules.d/*.drblsave should test if file really exists before going on.
+
 * Fri Nov 23 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.20-drbl1
 - Bug fixed: the date tag of image name for autohostname should be consistent with that of autoname.
 - Help messages about autoproductname were added.
