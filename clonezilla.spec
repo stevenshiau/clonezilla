@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: for Debian live 3.x, the filesystem.squashfs is in /lib/live/image.
+
 * Fri Nov 23 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.21-drbl1
 - Bug fixed: the for loop for searching files /lib/udev/rules.d/*.drblsave should test if file really exists before going on.
 
