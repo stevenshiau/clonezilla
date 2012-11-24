@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.21
+Version:	3.1.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Nov 24 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.22-drbl1
 - Bug fixed: for Debian live 3.x, the filesystem.squashfs is in /lib/live/image.
 
 * Fri Nov 23 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.21-drbl1
