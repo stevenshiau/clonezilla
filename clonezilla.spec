@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Locale ca_ES will be generated when creating Clonezilla live.
+
 * Sat Nov 24 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.22-drbl1
 - Bug fixed: for Debian live 3.x, the filesystem.squashfs is in /lib/live/image.
 
