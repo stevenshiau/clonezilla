@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: the -k option of ocs-iso and ocs-live-dev should be updated since now keyboard layout boot parameter from live-config is used.
+
 * Wed Nov 28 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.23-drbl1
 - Locale ca_ES will be generated when creating Clonezilla live.
 
