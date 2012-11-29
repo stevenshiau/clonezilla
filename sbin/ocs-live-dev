@@ -19,6 +19,15 @@ img_size_sum=0
 # Two options: boot_dev or release_file
 target_mode="boot_dev"
 
+# If we need to download Clonezilla live iso from repository as template iso, the branch and CPU arch for the file, e.g.
+# http://downloads.sourceforge.net/clonezilla/$clonezilla_iso_branch/clonezilla-live-${cz_ver}${clonezilla_iso_arch_tag}.iso
+# Ref to the command get-latest-ocs-live-ver
+# For i686-pae in the stable branch, you can set: clonezilla_iso_branch="stable", and clonezilla_iso_arch_tag="-i686-pae"
+clonezilla_iso_branch="alternative"
+clonezilla_iso_arch_tag=""
+# Where the MD5SUM could be found for the above iso file. This has to match $clonezilla_iso_branch and $clonezilla_iso_arch_tag
+DEBIAN_ISO_ETC_PATH="http://free.nchc.org.tw/clonezilla-live/alternative/stable/"
+
 #
 prog="$(basename $0)"
 prog_option="$*"
@@ -38,8 +47,6 @@ USAGE() {
     echo "-k, --ocs-live-keymap KEYBOARD_LAYOUT Assign the keyboard layout when using clonezilla live. You can find the keyboard layout in /usr/share/X11/xkb/rules/base.lst. e.g. use '-k fr' for French keyboard layout. If 'NONE' is used, the default one (US keyboard) will be use. For more info, please check the live manual on Debian Live website."
     echo "-m, --custom-ocs  PATH/custom-ocs  Use the customized ocs program 'custom-ocs' instead of the default one. Note! PATH should be assigned so that it can be found. This is advanced mode."
     echo "-t, --ocs-live-batch  Set clonezilla live to run in batch mode, usually it's for restoring. If this mode is set, some dialog question will be ignored."
-    echo "-j, --debian-iso ISO_FILE  Assign Debian live template iso file name as ISO_FILE to be used to create Clonezilla live."
-    echo "-n, --debian-iso-etc-url-path ISO_ETC_FILE_URL  Assign the url (Ex. http://localhost/clonezilla-live/template-iso) for Debian live template iso file and other related files (unifont...) as ISO_FILE_URL to be used to create Clonezilla live."
     echo "-p, --image-path   Assign the clonezilla image source path where CLONEZILLA_IMAGE_NAME exists in this server.  Default = $ocsroot"
     echo "-d, --dev DEV      Write the output to DEV (such as /dev/sda1)"
     echo "-a, --boot-loader [grub|syslinux]  Force to use grub or syslinux as boot loader in target device"
@@ -53,18 +60,16 @@ USAGE() {
     echo "$prog will download a template Debian live CD for clonezilla iso file if ncecessary. You can also download it by yourself, and put it in the working directory when you run $prog. If you want to create that template iso file in Debian Etch, run create-debian-live."
     echo "NOTE! You have to prepare the target partition first, and the filesystem should be ready (FAT or ext2/3)."
     echo "Ex:"
-    echo "To put clonezilla image sarge-ocs (located in /home/partimag in clonezilla server) to USB device /dev/sda1, you can run:"
-    echo "  $prog -d /dev/sda1 sarge-ocs"
+    echo "To put clonezilla image squeeze-ocs (located in /home/partimag in clonezilla server) to USB device /dev/sda1, you can run:"
+    echo "  $prog -d /dev/sda1 squeeze-ocs"
     echo "To put more images, just append them, such as:"
-    echo "  $prog -d /dev/sda1 sarge-ocs etch-ocs"
+    echo "  $prog -d /dev/sda1 squeeze-ocs etch-ocs"
     echo "To create a Live USB device with DRBL/Clonezilla programs, which can be used to save image:"
     echo "  $prog -s -d /dev/sda1"
     echo "To create a zip file of general purpose Clonezilla live. Later it can be put in an USB flash drive or similar device:"
     echo "  $prog -s -c"
-    echo "To specify the Debian live template iso, run like this:"
-    echo "  $prog -j debian-live-for-ocs-1.0.1-3.iso -n http://localhost/clonezilla-live/template-iso/testing -s -c"
-    echo "To create a zip file for restoring with clonezilla image sarge-r5 builtin, and make it boot then restore the image sarge-r5 to hda in unattended mode (Only confirmation in the beginning), you can run:"
-    echo "  $prog -c -g en_US.UTF-8 -t -k NONE -e \"-b -c restoredisk sarge-r5 hda\" sarge-r5"
+    echo "To create a zip file for restoring with clonezilla image squeeze-r5 builtin, and make it boot then restore the image squeeze-r5 to sda in unattended mode (Only confirmation in the beginning), you can run:"
+    echo "  $prog -c -g en_US.UTF-8 -t -k NONE -e \"-b -c restoredisk squeeze-r5 sda\" squeeze-r5"
     echo "To create a zip file to run your own custom-ocs program:"
     echo "  $prog -g en_US.UTF-8 -k NONE -s -c -m ./custom-ocs"
 }
@@ -207,25 +212,6 @@ while [ $# -gt 0 ]; do
     -c|--create-release)
             target_mode="release_file"
             shift ;;
-    -j|--debian-iso)
-            shift
-            if [ -z "$(echo $1 |grep ^-.)" ]; then
-              # skip the -xx option, in case 
-              DEBIAN_ISO="$1"
-	      template_mode="from-download-live-media"
-              shift
-            fi
-	    [ -z "$DEBIAN_ISO" ] && USAGE && exit 1
-            ;;
-    -n|--debian-iso-etc-url-path)
-            shift
-            if [ -z "$(echo $1 |grep ^-.)" ]; then
-              # skip the -xx option, in case 
-              DEBIAN_ISO_ETC_PATH="$1"
-              shift
-            fi
-	    [ -z "$DEBIAN_ISO_ETC_PATH" ] && USAGE && exit 1
-            ;;
     -x|--extra-boot-param)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -269,10 +255,7 @@ fi
 [ -z "$image_path" ] && image_path=$ocsroot
 [ -z "$bg_mode" ] && bg_mode="$BG_MODE_DEF"
 [ -z "$output_dev" -a "$target_mode" = "boot_dev" ] && USAGE && exit 1
-[ -z "$DEBIAN_ISO_ETC_PATH" ] && DEBIAN_ISO_ETC_PATH="$DEBIAN_ISO_ETC_PATH_DEF"
-[ -z "$DEBIAN_ISO" ] && DEBIAN_ISO="$DEBIAN_ISO_DEF"
 [ -n "$ocs_live_boot_menu_option" ] && ocs_live_boot_menu_option="-$ocs_live_boot_menu_option"
-DEBIAN_ISO_URL="$DEBIAN_ISO_ETC_PATH/$DEBIAN_ISO"
 md5_file_url="$DEBIAN_ISO_ETC_PATH/$md5_file"
 
 #
@@ -399,27 +382,33 @@ fi
 
 if [ "$template_mode" = "from-downloaded-live-media" ]; then
   if [ ! -f "$DEBIAN_ISO" ]; then
-    echo "We need Debian live CD for Clonnezilla to create clonezilla live."
-    echo "Downloadling the iso file from $DEBIAN_ISO_URL..."
-    wget $DEBIAN_ISO_URL
+    echo "Searching for the latest Clonezilla live iso..."
+    cz_ver="$(LC_ALL=C get-latest-ocs-live-ver $clonezilla_iso_branch)"
+    clonezilla_iso_fname="clonezilla-live-${cz_ver}${clonezilla_iso_arch_tag}.iso"
+    iso_url_for_pxe_ocs_live="http://downloads.sourceforge.net/clonezilla/$clonezilla_iso_fname"
+    echo "We need Clonnezilla live iso to create such a recovery cd."
+    echo "Downloadling the iso file from $iso_url_for_pxe_ocs_live..."
+    wget $iso_url_for_pxe_ocs_live
     get_iso_rc=$?
     # validate it
     if [ "$get_iso_rc" -eq 0 ]; then
-      echo -n "Validating $DEBIAN_ISO... "
-      md5_tmp="$(mktemp -d /tmp/ocs_isomd5_tmp.XXXXX)"
-      #  wget http://opensource.nchc.org.tw/drbl-core/iso/MD5SUMS
+      echo -n "Validating $clonezilla_iso_fname... "
+      md5_tmp="$(mktemp -d /tmp/isomd5.XXXXX)"
+      #  wget http://free.nchc.org.tw/clonezilla-live/stable/MD5SUMS
       echo -n "Downloading $md5_file_url... "
       wget $wget_opt -P "$md5_tmp" $md5_file_url
-      if ! grep -w "$DEBIAN_ISO" $md5_tmp/MD5SUMS | md5sum -c; then
+      if ! grep -w "$clonezilla_iso_fname" $md5_tmp/$md5_file | md5sum -c; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "$DEBIAN_ISO is broken! Try to remove $DEBIAN_ISO and run this program again."
+        echo "$DEBIAN_ISO is broken! Try to remove $clonezilla_iso_fname and run this program again."
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         echo "$msg_program_stop"
         exit 1
       fi
+      # Rename it to the template iso file name (fixed name)
+      mv -f $clonezilla_iso_fname $DEBIAN_ISO
     else
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Unable to download $DEBIAN_ISO_URL!"
+      echo "Unable to download $iso_url_for_pxe_ocs_live!"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop"
       exit 1
@@ -433,7 +422,7 @@ if [ "$insert_mode" = "prog_and_img" ]; then
   # 2 cases:
   # (1) normal_menu_with_insert_image=no, i.e. only restore menu. ocs-live-restore is the main program.
   # If it's not batch mode for clonezilla live (especially for restoring), by default we have to append "-x --restore-only", and especially before any other parameters, so that ocs-sr will run like:
-  # ocs-sr -l $ocs_lang -p true -x --restore-only -b restoredisk sarge_image
+  # ocs-sr -l $ocs_lang -p true -x --restore-only -b restoredisk squeeze_image
   # (2) normal_menu_with_insert_image=yes, i.e. normal menu. ocs-live-general is the main program. Threfore no extra param.
   if [ "$ocs_live_batch" = "no" ]; then
     case "$normal_menu_with_insert_image" in
