@@ -41,7 +41,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 - Bug fixed: the -k option of ocs-iso and ocs-live-dev should be updated since now keyboard layout boot parameter from live-config is used.
 - Bug fixe: the batch_mode on the server is nothing to do with that on the client in the program ocs-onthefly. Thanks to kevluck373 for reporting this issue (https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/6188724).
 - The options "-j" and "-n" of ocs-iso and ocs-live-dev were removed because we won't put the template iso on the repository anymore.
-- No more using templiate iso from reporitory, now we use clonezilla live iso when running ocs-iso or ocs-live-dev to create a recovery iso or zip.
+- No more using template iso from reporitory, now we use clonezilla live iso when running ocs-iso or ocs-live-dev to create a recovery iso or zip.
 
 * Wed Nov 28 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.23-drbl1
 - Locale ca_ES will be generated when creating Clonezilla live.
