@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.23
+Version:	3.1.24
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.1.35, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.56, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.1.36, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.56, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Nov 30 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.24-drbl1
 - Bug fixed: the -k option of ocs-iso and ocs-live-dev should be updated since now keyboard layout boot parameter from live-config is used.
 - Bug fixe: the batch_mode on the server is nothing to do with that on the client in the program ocs-onthefly. Thanks to kevluck373 for reporting this issue (https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/6188724).
 - The options "-j" and "-n" of ocs-iso and ocs-live-dev were removed because we won't put the template iso on the repository anymore.
