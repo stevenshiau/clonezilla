@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: the description for the option "-r" of ocs-sr and ocs-onthefly was polished. Thanks to auroracore.
+
 * Fri Nov 30 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.24-drbl1
 - Bug fixed: the -k option of ocs-iso and ocs-live-dev should be updated since now keyboard layout boot parameter from live-config is used.
 - Bug fixed: the batch_mode on the server is nothing to do with that on the client in the program ocs-onthefly. Thanks to kevluck373 for reporting this issue (https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/6188724).
