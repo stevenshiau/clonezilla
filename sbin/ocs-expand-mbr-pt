@@ -122,6 +122,17 @@ if ! LC_ALL=C parted -s $target_disk unit s print &>/dev/null; then
 fi
 tgt_disk_size="$(LC_ALL=C parted -s $target_disk unit s print | grep -E "^Disk /dev" | awk -F":" '{print $2}' | sed -e "s/s$//g")"
 
+# If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
+tgt_disk_size_in_B="$(LC_ALL=C parted -s $target_disk unit B print | grep -E "^Disk /dev" | awk -F":" '{print $2}' | sed -e "s/B$//g")"
+tgt_disk_size_in_TB="$(LC_ALL=C parted -s $target_disk unit TB print | grep -E "^Disk /dev" | awk -F":" '{print $2}')"
+size_cal="$(echo "scale=0; $tgt_disk_size_in_B >= 2199023255040" | bc -l)"
+if [ "$size_cal" -eq 1 ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Error! Destination disk $target_disk is $tgt_disk_size_in_TB, which is larger than the MBR partition table entries  maximum 2 TiB (~ 2.2 TB). You have to use GUID partition table format (GPT)."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
 
 #
 ratio=$(echo "scale=4; $tgt_disk_size / $ori_disk_size" | bc -l) || exit 1

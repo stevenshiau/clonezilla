@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: MBR partition table should not be larger than 2 TiB (2.2 TB). A checking mechanism was added in ocs-expand-mbr-pt.
+
 * Sat Dec 01 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.25-drbl1
 - Bug fixed: the description for the option "-r" of ocs-sr and ocs-onthefly was polished. Thanks to auroracore.
 - Updtaed the lh_ver_required in drbl-ocs.conf, and since we no more using cdebootstrap to create Clonezilla/DRBL/GParted live, variable should change to debootstrap_ver_required instead of cdebootstrap_ver_required.
