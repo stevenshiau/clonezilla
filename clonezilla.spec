@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.26
+Version:	3.1.27
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Dec 05 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.27-drbl1
+- Bug fixed: converting the checking mechanism of 2 TiB as function and using that all before writing MBR partition table on a hard disk.
+
 * Tue Dec 04 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.26-drbl1
 - Bug fixed: MBR partition table should not be larger than 2 TiB (2.2 TB). A checking mechanism was added in ocs-expand-mbr-pt to avoid going on.
 

@@ -199,6 +199,9 @@ check_pt_then_run_create_part_table() {
             ;;
            *)
              # Create partition table by sfdisk and [hsv]d[a-z]-pt.sf
+             # If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
+	     init_mbr_part_table_if_not_existing /dev/$target_hd
+             check_mbr_disk_size_gt_2TiB /dev/$target_hd warning 
              echo "sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp"
              LC_ALL=C sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp
              RETVAL="$?"

@@ -2884,6 +2884,9 @@ create_partition() {
 	    ;;
           *)
             # Create partition table by sfdisk and [hsv]d[a-z]-pt.sf
+            # If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
+	    init_mbr_part_table_if_not_existing $tgt_hd_file
+            check_mbr_disk_size_gt_2TiB $tgt_hd_file warning 
             echo "Running sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/${tgt_hd_name}-pt.sf" | tee -a $RESTORE_SFDISK_LOG
             LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/${tgt_hd_name}-pt.sf | tee -a $RESTORE_SFDISK_LOG
             RETVAL="${PIPESTATUS[0]}"
@@ -8884,3 +8887,45 @@ restore_lvm2_udevd_rules() {
     udevadm control --reload-rules
   fi
 } # End of restore_lvm2_udevd_rules
+
+#
+init_mbr_part_table_if_not_existing() {
+  local dest_dsk="$1"  # e.g. /dev/sdc
+  if ! LC_ALL=C parted -s $dest_dsk unit s print &>/dev/null; then
+    # Try to create a partition table so that we can read the size via parted -s $dev unit s print
+    echo -n "No partition table exists in target disk $dest_dsk, try to initialize one so that we can get the disk size by parted... "
+    #echo 1,,83 | sfdisk -f $dest_dsk &>/dev/null
+    echo "Running: parted -s $dest_dsk mklabel msdos"
+    parted -s $dest_dsk mklabel msdos
+    echo "done!"
+  fi
+} # init_mbr_part_table_if_not_existing
+
+#
+check_mbr_disk_size_gt_2TiB() {
+  local dest_dsk="$1"  # e.g. /dev/sdc
+  local postaction="$2"  # "exit" will exit, anything eles will continue
+  # If dest_dsk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
+  dest_dsk_size_in_B="$(LC_ALL=C parted -s $dest_dsk unit B print | grep -E "^Disk /dev" | awk -F":" '{print $2}' | sed -e "s/B$//g")"
+  dest_dsk_size_in_TB="$(LC_ALL=C parted -s $dest_dsk unit TB print | grep -E "^Disk /dev" | awk -F":" '{print $2}')"
+  size_cal="$(echo "scale=0; $dest_dsk_size_in_B >= 2199023255040" | bc -l)"
+  if [ "$size_cal" -eq 1 ]; then
+    case "$postaction" in
+      exit) 
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+	    echo "Error! Destination disk ($dest_dsk) size is $dest_dsk_size_in_TB, which is larger than the MBR partition table entry maximum 2 TiB (~ 2.2 TB). You have to use GUID partition table format (GPT)."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    echo "$msg_program_stop!"
+            exit 1
+            ;;
+      *)
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	    echo "Error! Destination disk ($dest_dsk) size is $dest_dsk_size_in_TB, which is larger than the MBR partition table entry maximum 2 TiB (~ 2.2 TB). You have to use GUID partition table format (GPT)."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    echo "$msg_program_stop!"
+	    echo -n "$msg_press_enter_to_continue..."
+	    read
+            ;; 
+    esac
+  fi
+} # end of check_mbr_disk_size_gt_2TiB
