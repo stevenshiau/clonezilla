@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: typos in the prompt were fixed.
+
 * Wed Dec 05 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.28-drbl1
 Bug fixed: partition table should be initialized before using function check_mbr_disk_size_gt_2TiB.
 
