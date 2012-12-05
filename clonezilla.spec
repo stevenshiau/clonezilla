@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.27
+Version:	3.1.28
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Dec 05 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.28-drbl1
+Bug fixed: partition table should be initialized before using function check_mbr_disk_size_gt_2TiB.
+
 * Wed Dec 05 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.27-drbl1
 - Bug fixed: converting the checking mechanism of 2 TiB as function and using that all before writing MBR partition table on a hard disk.
 
