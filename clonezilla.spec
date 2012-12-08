@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.28
+Version:	3.1.29
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,8 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Dec 09 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.29-drbl1
 - Bug fixed: typos in the prompt were fixed.
 - Bug fixed: To avoid the OS does not know the partition changes, a commnad "partprobe" was added in prep-ocsroot after local disk is inserted. Thanks to neikalo for reporting this issue (https://sourceforge.net/tracker/index.php?func=detail&aid=3592776&group_id=115473&atid=671650).
+- Bug fixed: To avoid grub1 on ext4 issue, running the grub-install from the restored OS should be try first. If fails, then using the grub1 on the running OS.
 
 * Wed Dec 05 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.28-drbl1
 Bug fixed: partition table should be initialized before using function check_mbr_disk_size_gt_2TiB.

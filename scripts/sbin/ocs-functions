@@ -2014,6 +2014,117 @@ check_grub_install_version() {
   return $rc
 } # end of check_grub_install_version
 #
+test_run_grub1_from_restored_os(){
+  # The run_grub1_from_restored_os_mode we have to decide to run grub1 from the restored OS. Possible values are "yes" or "no". If "yes", Clonezilla will chroot and run grub-install. If "no", use the grub in the running system to run grub-install --root-directory=....
+  # //NOTE// The OS arch in the running environment must be the same as that in the restored OS, otherwise, e.g. running OS is i386, and restored OS is x86-64, if this option is "yes", you will get error messages when run grub1 install: 
+  # "cannot run command" "Exec format error"
+  # Ref: http://sourceforge.net/mailarchive/message.php?msg_name=59c9195a0911211504v7f500c6arf264ec4755d7a1fd%40mail.gmail.com
+  # Here we assume if we can "chroot $mount_dir ls", we can run it.
+  # run_grub1_from_restored_os_mode is global variable
+  local root_prt="$1"   # e.g. /dev/sda2, the partition where / exists
+  local rc_
+  if [ -z "$root_prt" ]; then
+    echo "Variable root_prt not assigned in function test_run_grub1_from_restored_os!"
+    echo "Program terminated!"
+    exit 1
+  fi
+  mnt_pnt="$(mktemp -d /tmp/root_reinst.XXXXXX)"
+  mount $root_prt $mnt_pnt
+  rc_=$?
+  if [ "$rc_" -gt 0 ]; then
+    echo "Failed to mount $root_prt! Maybe it does not exist or the file system is not supported in the kernel. Skip running grub1 reinstallation!" 
+    return 1
+  fi
+  echo "Test if we can chroot the restored OS partition $root_prt..."
+  # Actually we'd better to test /bin/bash instead of ls since we will run a shell script to for grub-install. However, if we test /bin/bash, we will enter the shell if it's successful.
+  LC_ALL=C chroot $mnt_pnt ls &>/dev/null
+  rc_=$?
+  if [ "$rc_" -eq 0 ]; then
+    echo "Yes, we are able to chroot the restored OS partition $root_prt."
+    run_grub1_from_restored_os_mode="yes"
+  else
+    echo "No, we are not able to chroot the restored OS partition $root_prt."
+    run_grub1_from_restored_os_mode="no"
+  fi
+  unmount_wait_and_try $mnt_pnt
+  [ -d "$mnt_pnt" -a -n "$mnt_pnt" ] && rmdir $mnt_pnt
+  return 0
+} # test_run_grub1_from_restored_os
+#
+run_grub1_from_restored_os() {
+  local mnt_pnt grub1_run_sh ival rc_
+  local grub1_prt="$1"  # e.g. /dev/sda1, the partition where /boot/grub exists
+  local root_prt="$2"   # e.g. /dev/sda2, the partition where / exists
+  local grub1_hd="$3"   # e.g. /dev/sda, the disk to install grub
+  for i in grub1_prt root_prt grub1_hd; do
+    eval ivar=\$${i}
+    if [ -z "$ivar" ]; then
+      echo "No \"$i\" assigned in function run_grub1_from_restored_os!"
+      echo "Program terminated!"
+      exit 1
+    fi
+  done
+  echo "Re-installing grub1 on disk $grub1_hd with grub1 dir in partition $grub1_prt and root partition $root_prt... "
+  mnt_pnt="$(mktemp -d /tmp/root_reinst.XXXXXX)"
+  mount $root_prt $mnt_pnt
+  rc_=$?
+  if [ "$rc_" -gt 0 ]; then
+    echo "Failed to mount $root_prt! Maybe it does not exist or the file system is not supported in the kernel. Skip running grub2 reinstallation!" 
+    return 1
+  fi
+  mkdir -p $mnt_pnt/dev
+  mount --bind /dev $mnt_pnt/dev
+  mount --bind /proc $mnt_pnt/proc
+  mount --bind /sys $mnt_pnt/sys
+
+  grub1_run_sh="$(mktemp $mnt_pnt/grub1-sh-XXXXXX)"
+  cat <<-SH_END > $grub1_run_sh
+#!/bin/bash
+export LC_ALL=C
+export PATH=/sbin/:/usr/sbin:/bin/:/usr/bin
+# We need to find a grub1-related file so we are sure grub1 exists.
+if ! type grub-install &>/dev/null; then
+   echo "No grub program (grub-install) was found in the restored OS!"
+   echo "Skipping grub1 reinstallation!"
+   exit 1
+fi
+rm -f /boot/grub/device.map
+# touch a file to avoid grep error in grub-install
+touch /boot/grub/device.map
+grub-install --recheck --no-floppy ${grub1_hd}
+SH_END
+  chmod 755 $grub1_run_sh
+  # If grub partition is not in the same partition as root partition, we have to mount grub partition in the root partition.
+  diff_grub_pt_flag="no"
+  if [ "$grub1_prt" != "$root_prt" ]; then
+     mkdir -p $mnt_pnt/boot/grub
+     chroot $mnt_pnt mount $grub1_prt /boot/
+     diff_grub_pt_flag="yes"
+  fi
+  # Run grub-install
+  LC_ALL=C chroot $mnt_pnt /"$(basename $grub1_run_sh)"
+  rc_=$?
+  [ -e "$grub1_run_sh" ] && rm -f $grub1_run_sh
+
+  # Remove the device.map in case it provents the restored OS fails to run update-grub1 due to different boot device name (e.g. sda <-> hda issue)
+  [ -f "$mnt_pnt/boot/grub/device.map" ] && rm -f $mnt_pnt/boot/grub/device.map
+
+  check_grub1_config_file $mnt_pnt
+  #
+  if [ "$diff_grub_pt_flag" = "yes" ]; then
+    chroot $mnt_pnt umount /boot/
+    rmdir $mnt_pnt/boot/grub 2>/dev/null
+  fi
+
+  unmount_wait_and_try $mnt_pnt/sys
+  unmount_wait_and_try $mnt_pnt/proc
+  unmount_wait_and_try $mnt_pnt/dev
+  unmount_wait_and_try $mnt_pnt
+  [ -d "$mnt_pnt/dev" ] && rmdir $mnt_pnt/dev
+  [ -d "$mnt_pnt" -a -n "$mnt_pnt" ] && rmdir $mnt_pnt
+  return $rc_
+} # end of run_grub1_from_restored_os
+#
 test_run_grub2_from_restored_os(){
   # The run_grub2_from_restored_os_mode we have to decide to run grub2 from the restored OS. Possible values are "yes" or "no". If "yes", Clonezilla will chroot and run grub-install. If "no", use the grub in the running system to run grub-install --root-directory=....
   # //NOTE// The OS arch in the running environment must be the same as that in the restored OS, otherwise, e.g. running OS is i386, and restored OS is x86-64, if this option is "yes", you will get error messages when run grub2 install: 
@@ -2136,6 +2247,85 @@ install_grub_hd() {
     local grub2_boot_dir=""
     local check_before_install="yes"  # By default we check if grub is already in the boot loader. If so, we continue to run grub-install
     # local functions in install_grub_hd
+    check_grub1_config_file() {
+      local ghd_="$1"
+      if [ -z "$ghd_" ]; then
+        echo "No variable ghd in function check_grub1_config_file!"
+	exit 1
+      fi
+      # Check if grub config exists or not
+      [ ! -e "$ghd_/boot/grub/menu.lst" -a ! -e "$ghd_/boot/grub/grub.conf" ] && echo "$msg_uppercase_Warning!!! Can NOT find the grub config file \"menu.lst\" or \"grub.conf\" in the system restored or cloned!!!"
+      
+      if [ -f "$ghd_/boot/grub/menu.lst" -a ! -e "$ghd_/boot/grub/grub.conf" ]; then
+        # For some version of grub, only honors grub.conf, we have to deal with.
+        # Test if soft link works, if yes, link it. If not, copy it.
+        # if it's VFAT, grub-install will fail when try to link menu.lst as grub.conf, we just copy it.
+        (cd $ghd_/boot/grub/ 
+         ln -fs menu.lst grub.conf 2>/dev/null
+        )
+        if [ ! -e "$ghd_/boot/grub/grub.conf" ]; then
+          cp -f $ghd_/boot/grub/menu.lst $ghd_/boot/grub/grub.conf
+        fi
+      fi
+      if [ ! -f "$ghd_/boot/grub/menu.lst" -a -e "$ghd_/boot/grub/grub.conf" ]; then
+        # For the grub from debian, only honors menu.lst, we have to deal with.
+        # Test if soft link works, if yes, link it. If not, copy it.
+        # if it's VFAT, grub-install will fail when try to link grub.conf as menu.lst, we just copy it.
+        (cd $ghd_/boot/grub/ 
+         ln -fs grub.conf menu.lst 2>/dev/null
+        )
+        if [ ! -e "$ghd_/boot/grub/menu.lst" ]; then
+          cp -f $ghd_/boot/grub/grub.conf $ghd_/boot/grub/menu.lst
+        fi
+      fi
+    } # end of check_grub1_config_file
+    do_run_grub1_from_restored_os() {
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Trying to use the grub1 in the restored OS!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      unmount_wait_and_try $grub_partition 2>/dev/null
+      unmount_wait_and_try $hd_img 2>/dev/null
+      # "sleep 0.5" was added to avoid ocs-restore-mdisks run too fast error.
+      # Without it, it might show this error when ocs-restore-mdisks is run:
+      # rmdir: failed to remove `/tmp/hd_img.weAw4i': Device or resource busy
+      [ -d "$hd_img/boot" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img/boot)
+      [ -d "$hd_img" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img)
+      echo "Running: run_grub1_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$grub_hd\""
+      run_grub1_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd"
+      rc=$?
+    } # end of do_run_grub1_from_restored_os
+    do_run_grub1_from_running_os() {
+      local grub1_patch_flag=""
+      prepare_grub1_files_if_required
+      show_grub1_ext4_warning $grub_partition
+      [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
+      echo "Trying to use the grub1 from the running OS..."
+      check_grub_install_version 1
+      rc_grub_check=$?
+      if [ "$rc_grub_check" -eq 0 ]; then
+        echo "Running: $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd"
+        $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd
+        rc=$?
+        # Remove the device.map in case it provents the restored OS fails to run update-grub due to different boot device name (e.g. sda <-> hda issue)
+        [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
+        
+        check_grub1_config_file $hd_img
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "The required version of grub-install for grub 1 was not found!"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "Command grub-install is skipped!"
+        rc=1
+      fi
+
+      unmount_wait_and_try $grub_partition 2>/dev/null
+      unmount_wait_and_try $hd_img 2>/dev/null
+      # "sleep 0.5" was added to avoid ocs-restore-mdisks run too fast error.
+      # Without it, it might show this error when ocs-restore-mdisks is run:
+      # rmdir: failed to remove `/tmp/hd_img.weAw4i': Device or resource busy
+      [ -d "$hd_img/boot" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img/boot)
+      [ -d "$hd_img" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img)
+    } # end of do_run_grub1_from_running_os
     do_run_grub2_from_restored_os() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "Trying to use the grub2 in the restored OS!"
@@ -2402,22 +2592,25 @@ install_grub_hd() {
        else
          # grub version 1
          echo "Found grub 1 installed in the restored OS."
-         show_grub1_ext4_warning $grub_partition
-         prepare_grub1_files_if_required
-         # If device.map exists, remove it to avoid some problem.
-         [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
-         check_grub_install_version 1
-         rc_grub_check=$?
-         if [ "$rc_grub_check" -eq 0 ]; then
-           echo "Running: $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd"
-           $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd
-           rc=$?
+         if [ -z "$run_grub1_from_restored_os_mode" ]; then
+           # We will get variable run_grub1_from_restored_os_mode with this
+           test_run_grub1_from_restored_os "$found_root_partition"
+         fi
+         if [ "$run_grub1_from_restored_os_mode" = "yes" ]; then
+           do_run_grub1_from_restored_os
+           if [ "$rc" -ne 0 ]; then
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+             echo "Unable to use the grub 1 in the restored OS, trying another method..."
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+             # Plan B:
+             mount_root_partition_for_separate_boot_part $hd_img  # return variable $found_root_partition
+             # just in case no /boot in root partition
+             mkdir -p $hd_img/boot
+             mount $grub_partition $hd_img/boot/
+             do_run_grub1_from_running_os
+           fi
          else
-           [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-           echo "The required version of grub-install for grub 1 was not found!"
-           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-           echo "Command grub-install is skipped!"
-           rc=1
+           do_run_grub1_from_running_os
          fi
        fi
     else
@@ -2459,63 +2652,27 @@ install_grub_hd() {
        else
          # grub version 1
          echo "Found grub 1 installed in the restored OS."
-         prepare_grub1_files_if_required
-         # If device.map exists, remove it to avoid some problem.
-         [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
-         check_grub_install_version 1
-         rc_grub_check=$?
-         if [ "$rc_grub_check" -eq 0 ]; then
-           show_grub1_ext4_warning $grub_partition
-           echo "Running: $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd"
-           $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd
-           rc=$?
+         if [ -z "$run_grub1_from_restored_os_mode" ]; then
+           # We will get variable run_grub1_from_restored_os_mode with this
+           test_run_grub1_from_restored_os "$found_root_partition"
+         fi
+         if [ "$run_grub1_from_restored_os_mode" = "yes" ]; then
+           do_run_grub1_from_restored_os
+           if [ "$rc" -ne 0 ]; then
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+             echo "Unable to use the grub 1 in the restored OS, trying another method..."
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+             # Plan B:
+             mount_root_partition_for_separate_boot_part $hd_img  # return variable $found_root_partition
+             # just in case no /boot in root partition
+             mkdir -p $hd_img/boot
+             mount $grub_partition $hd_img/boot/
+             do_run_grub1_from_running_os
+           fi
          else
-           [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-           echo "The required version of grub-install for grub 1 was not found!"
-           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-           echo "Command grub-install is skipped!"
-           rc=1
+           do_run_grub1_from_running_os
          fi
        fi
-    fi
-
-    if [ "$grub_ver_in_restored_os" = "1" ]; then 
-      # Check if grub config exists or not
-      [ ! -e "$hd_img/boot/grub/menu.lst" -a ! -e "$hd_img/boot/grub/grub.conf" ] && echo "$msg_uppercase_Warning!!! Can NOT find the grub config file \"menu.lst\" or \"grub.conf\" in the system restored or cloned!!!"
-      
-      if [ -f "$hd_img/boot/grub/menu.lst" -a ! -e "$hd_img/boot/grub/grub.conf" ]; then
-        # For some version of grub, only honors grub.conf, we have to deal with.
-        # Test if soft link works, if yes, link it. If not, copy it.
-        # if it's VFAT, grub-install will fail when try to link menu.lst as grub.conf, we just copy it.
-        (cd $hd_img/boot/grub/ 
-         ln -fs menu.lst grub.conf 2>/dev/null
-        )
-        if [ ! -e "$hd_img/boot/grub/grub.conf" ]; then
-          cp -f $hd_img/boot/grub/menu.lst $hd_img/boot/grub/grub.conf
-        fi
-      fi
-      if [ ! -f "$hd_img/boot/grub/menu.lst" -a -e "$hd_img/boot/grub/grub.conf" ]; then
-        # For the grub from debian, only honors menu.lst, we have to deal with.
-        # Test if soft link works, if yes, link it. If not, copy it.
-        # if it's VFAT, grub-install will fail when try to link grub.conf as menu.lst, we just copy it.
-        (cd $hd_img/boot/grub/ 
-         ln -fs grub.conf menu.lst 2>/dev/null
-        )
-        if [ ! -e "$hd_img/boot/grub/menu.lst" ]; then
-          cp -f $hd_img/boot/grub/grub.conf $hd_img/boot/grub/menu.lst
-        fi
-      fi
-
-      # Remove the device.map in case it provents the restored OS fails to run update-grub due to different boot device name (e.g. sda <-> hda issue)
-      [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
-
-      unmount_wait_and_try $grub_partition 2>/dev/null
-      unmount_wait_and_try $hd_img 2>/dev/null
-      # "sleep 0.5" was added to avoid ocs-restore-mdisks run too fast error.
-      # Without it, it might show this error when ocs-restore-mdisks is run:
-      # rmdir: failed to remove `/tmp/hd_img.weAw4i': Device or resource busy
-      [ -d "$hd_img/boot" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img/boot)
-      [ -d "$hd_img" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img)
     fi
 
     if [ "$rc" -ne 0 ]; then
