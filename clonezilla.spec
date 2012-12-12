@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: No more using "Something went wrong" message, instead more precise messages will be given.
+
 * Sun Dec 09 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.29-drbl1
 - Bug fixed: typos in the prompt were fixed.
 - Bug fixed: To avoid the OS does not know the partition changes, a command "partprobe" was added in prep-ocsroot after local disk is inserted. Thanks to neikalo for reporting this issue (https://sourceforge.net/tracker/index.php?func=detail&aid=3592776&group_id=115473&atid=671650).
