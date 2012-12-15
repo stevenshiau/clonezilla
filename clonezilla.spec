@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.29
+Version:	3.1.30
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Dec 16 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.30-drbl1
 - Bug fixed: No more using "Something went wrong" message, instead more precise messages will be given.
+- Module floppy was added in the blacklist in Clonezilla live and DRBL live. The floppy is normally useless but if it exists, it might cause the disk detection delay. If floppy is required, a user still can run "modprobe floppy" to load it.
 
 * Sun Dec 09 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.29-drbl1
 - Bug fixed: typos in the prompt were fixed.
