@@ -2510,6 +2510,15 @@ install_grub_hd() {
     grub_hd="${grub_partition:5:3}"
     # active this device
     fdisk -l /dev/$grub_hd &>/dev/null
+
+    # This install_grub_hd function is only for BIOS/MBR boot loader, not for EFI. Therefore if $selected_hd is GPT disk, skip it.
+    if [ -n "$(LC_ALL=C parted -s /dev/$grub_hd print | grep -iE "^Partition Table:" | grep -iE "gpt")" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Disk /dev/$grub_hd is GPT format. Skip the reinstallation of grub-pc (MBR) program."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      return 5
+    fi
+
     if [ "$check_before_install" = "yes" ]; then
       # Check if grub exists on the MBR. If not, skip this function.
       if [ -z "$(LANG=C dd if=/dev/$grub_hd bs=512 count=1 2>/dev/null | strings | grep "GRUB")" ]; then

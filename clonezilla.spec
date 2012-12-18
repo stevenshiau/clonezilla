@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: install_grub_hd should not run for GPT disk.
+
 * Sun Dec 16 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.30-drbl1
 - Bug fixed: No more using "Something went wrong" message, instead more precise messages will be given.
 - Module floppy was added in the blacklist in Clonezilla live and DRBL live. The floppy is normally useless but if it exists, it might cause the disk detection delay. If floppy is required, a user still can run "modprobe floppy" to load it.
