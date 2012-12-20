@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: Usage prompt for "-f" in create-debian-live was not updated.
+- Option "-f" was added to create-ubuntu-live so that amd64 version of Clonezilla live could be created.
+
 * Thu Dec 20 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.32-drbl1
 - If the hidden data size won't be saved, a note file should be saved in the image dir.
 
