@@ -310,7 +310,7 @@ save_hidden_data_after_MBR() {
   # 
   local src_dsk="$1"  # e.g. sda
   local img_s="$2"    # img_s in the image name with absolute path
-  local real_i start_s hidden_data_size
+  local real_i start_s hidden_data_size hidden_data_after_mbr_limit_in_sec size_exp
   for i in src_dsk img_s; do
     eval real_i=\$$i
     [ -z "$real_i" ] && echo "You have to assign $i in function save_hidden_data_after_MBR!" && exit 1
@@ -334,7 +334,8 @@ save_hidden_data_after_MBR() {
   # Therefore we can not just use sda1 or hda1 to find the start sector.
   start_s="$(LC_ALL=C parted -s /dev/${src_dsk} unit s print | grep -iE -A 100000 "[[:space:]]*Start[[:space:]]*End[[:space:]]*" | sed -e "s/^.*[[:space:]]*Start[[:space:]]*End[[:space:]]*.*$//g" | sed "/^$/d" | awk -F" " '{print $2}' | sed -e "s/s$//g" | sort -n | head -n 1)"
   echo "The first partition of disk /dev/${src_dsk} starts at $start_s."
-  hidden_data_size="$(($start_s -1))"
+  hidden_data_size="$(echo "scale=0; $start_s - 1" | bc -l)"
+
   if [ -z "$hidden_data_size" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "The hidden data size can NOT be found!"
@@ -342,10 +343,20 @@ save_hidden_data_after_MBR() {
     echo "$msg_program_stop!"
     exit 1
   fi
+
   if [ "$hidden_data_size" -le 0 ]; then
     echo "Skip saving hidden data between MBR and 1st partition since it's not found."
     return 3
   fi
+
+  # If the hidden_data_size is larger than hidden_data_after_mbr_limit (MB) (from drbl-ocs.conf), skip this.
+  hidden_data_after_mbr_limit_in_sec="$(echo "scale=0; $hidden_data_after_mbr_limit*1024*1024/512" | bc -l)"
+  size_exp="$(echo "scale=0; $hidden_data_size >= $hidden_data_after_mbr_limit_in_sec" | bc -l)"
+  if [ "$size_exp" -eq 1 ]; then
+    echo "The hidden data space size ($hidden_data_size sectors) is larger than $hidden_data_after_mbr_limit_in_sec sectors (\$hidden_data_after_mbr_limit, defined in drbl-ocs.conf). Skip saving that!" | tee ${img_s}.notes.txt
+    return 3
+  fi
+
   echo "Saving the hidden data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool, by:"
   echo dd if=/dev/${src_dsk} of=${img_s} skip=1 bs=512 count=$hidden_data_size
   dd if=/dev/${src_dsk} of=${img_s} skip=1 bs=512 count=$hidden_data_size

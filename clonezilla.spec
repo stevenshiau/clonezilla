@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.30
+Version:	3.1.31
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- If the hidden data size won't be saved, a note file should be saved in the image dir.
+
+* Wed Dec 19 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.31-drbl1
 - Bug fixed: install_grub_hd should not run for GPT disk.
+- If the hidden data size after MBR is larger than $hidden_data_after_mbr_limit (definited in drbl-ocs.conf), it won't be saved.
 
 * Sun Dec 16 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.30-drbl1
 - Bug fixed: No more using "Something went wrong" message, instead more precise messages will be given.
