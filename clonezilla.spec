@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.31
+Version:	3.1.32
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Dec 20 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.32-drbl1
 - If the hidden data size won't be saved, a note file should be saved in the image dir.
 
 * Wed Dec 19 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.31-drbl1
