@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.32
+Version:	3.1.33
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Dec 20 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.33-drbl1
 - Bug fixed: Usage prompt for "-f" in create-debian-live was not updated.
 - Option "-f" was added to create-ubuntu-live so that amd64 version of Clonezilla live could be created.
 
