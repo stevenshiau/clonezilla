@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Package grub-pc instead of grub is put in the packages list of create-gparted-live.
+
 * Sat Dec 22 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.34-drbl1
 - Bug fixed: EFI booting for GParted live did not really work.
 
