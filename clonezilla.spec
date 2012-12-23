@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Adding packages exfat-utils and exfat-fuse in create-gparted-live.
+
 * Sat Dec 22 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.35-drbl1
 - Package grub-pc instead of grub is put in the packages list of create-gparted-live.
 - Program create-gparted-live now supports creating amd64 release.
