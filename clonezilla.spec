@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.35
+Version:	3.1.36
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.1.47, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.56, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.1.48, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.56, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,7 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-- Adding packages exfat-utils and exfat-fuse in create-gparted-live.
+* Sun Dec 23 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.36-drbl1
+- Adding packages exfat-utils, exfat-fuse and tcplay in create-gparted-live.
+- Bug fixed: EFI booting for DRBL live did not really work.
 
 * Sat Dec 22 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.35-drbl1
 - Package grub-pc instead of grub is put in the packages list of create-gparted-live.

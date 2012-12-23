@@ -33,6 +33,8 @@ run_hook_script="drbl-live-hook"
 run_binary_hook_script="efi-binary-hook"
 # The option to create a corresponding source image.
 gen_source_tarball="no"
+# Flag to put EFI booting image in iso
+enabled_EFI=""
 
 #
 check_if_root
@@ -51,7 +53,7 @@ USAGE() {
     echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (cdebootstrap or debootstrap). If not specified, $bootstrap_default will be used."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
     echo "-d, --debian-dist [stable|testing|unstable|lenny|squeeze|wheezy|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
-    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 486 or 686. If it's not assigned, $cpu_flavor will be used."
+    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 486 or 686. If it's not assigned, $cpu_flavor_default will be used."
     echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
     echo "-n, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
@@ -132,6 +134,24 @@ create_drbl_live_iso(){
      exit 1
   fi
 
+  # Check if genisoimage support -efi-boot option
+  if [ -n "$(LC_ALL=C genisoimage --help 2>&1 | grep -E -- "-efi-boot")" ]; then
+    enabled_EFI="true"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Warning! Setting EFI boot image name is not supported in genisoimage!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    sleep 5
+    enabled_EFI="false"
+  fi
+  
+  if [ "$output_mode" = "cdwriter" -a type wodim &>/dev/null ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Program wodim is not aviailable! You have to install it."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop"
+    exit 1
+  fi
   # Now we can insert the boot menu of isolinux
   mkdir -p $ISOSYSLNX_TMP/syslinux $ISOSYSLNX_TMP/isolinux
   # create isolinux menu
@@ -220,23 +240,62 @@ create_drbl_live_iso(){
     sys_files_dir_graft_point="$sys_files_dir_graft_point /EFI/=$ISOSYSLNX_TMP/EFI"
   fi
 
+  # Remove the existing iso
+  [ -e "$real_target_iso" ] && rm -f $real_target_iso
+
+  # Build the EFI boot image. This is especially for iso file. Not for USB stick.
+  efi_img_opt=""
+  if [ "$enabled_EFI" = "true" ]; then
+    # The following codes are referred from Fedora 
+    EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
+    EFI_BOOTTREE="$stage1_iso_TMP/EFI"
+    EFI_IMGTREE="$ISOSYSLNX_TMP/EFI-imgs"
+    EFI_IMG="$EFI_IMGTREE/efiboot.img"
+    mkdir -p $EFI_IMGTREE
+    rm -rf $ISOSYSLNX_TMP/.disk
+    rm -f $EFI_IMG
+    
+    BOOTDISKSIZE="$(LC_ALL=C du -kcs $EFI_BOOTTREE | tail -n1 | awk '{print $1}')"
+    BOOTDISKSIZE="$(LC_ALL=C expr $BOOTDISKSIZE + 100)"
+    echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
+    mkdosfs -n DRBL-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
+    mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
+    mkdir -p $EFI_BOOTIMG_TMP/EFI/
+    cp -R $EFI_BOOTTREE/* $EFI_BOOTIMG_TMP/EFI/
+    umount $EFI_BOOTIMG_TMP
+    if [ -d "$EFI_BOOTIMG_TMP" -a -n \
+    	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
+      rm -rf $EFI_BOOTIMG_TMP
+    fi
+    
+    # Create an info file for grub2 to autodetect the cd root
+    # Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
+    mkdir $ISOSYSLNX_TMP/.disk
+    echo -n "[DRBL]" > $ISOSYSLNX_TMP/.disk/info
+    
+    efi_img_opt="-eltorito-alt-boot -efi-boot EFI-imgs/efiboot.img -no-emul-boot"
+    efi_img_graft_opt="/EFI-imgs/=$EFI_IMG /.disk/=$ISOSYSLNX_TMP/.disk"
+  fi
+
   # Create the iso file
   genisoimage \
    -A "DRBL Live CD" \
    -V "DRBL-live" \
-   -publisher "DRBL/Clonezilla http://drbl.name http://clonezilla.org" \
-   -r -J -l \
+   -publisher "DRBL/Clonezilla http://drbl.org http://clonezilla.org" \
+   -f -r -hide-rr-moved -hide-joliet-trans-tbl -J -l \
    -b isolinux/isolinux.bin -c isolinux/boot.cat \
    -no-emul-boot -boot-load-size 4 -boot-info-table \
    -x $stage1_iso_TMP/isolinux \
    -x $stage1_iso_TMP/md5sum.txt \
    -x $stage1_iso_TMP/EFI \
-   $mkiso_exclude_opt \
+   -x $stage1_iso_TMP/.disk/info \
+   $mkiso_exclude_opt $efi_img_opt \
    -graft-points $stage1_iso_TMP \
-    $sys_files_dir_graft_point \
-    /GPL=$DRBL_SCRIPT_PATH/doc/GPL \
-    /DRBL-Live-Version=$ISOSYSLNX_TMP/DRBL-Live-Version \
-    /utils=$ISOSYSLNX_TMP/utils \
+   $sys_files_dir_graft_point \
+   $efi_img_graft_opt \
+   /GPL=$DRBL_SCRIPT_PATH/doc/GPL \
+   /DRBL-Live-Version=$ISOSYSLNX_TMP/DRBL-Live-Version \
+   /utils=$ISOSYSLNX_TMP/utils \
    > $real_target_iso
   RC_ISO=$?
   if [ "$RC_ISO" -eq 0 ]; then
@@ -305,6 +364,34 @@ create_drbl_live_zip() {
   if [ -d "$USB_TMP/EFI/boot/" ]; then
     cp -af $pxelinux_bg_img $USB_TMP/EFI/boot/
   fi
+
+  # Build the EFI boot image. This is especially for iso file. Not for USB stick. However, here we still prepare the file so that later it's easier to use genisoimage to create the EFI-enabled iso.
+  # The following codes are referred from Fedora 
+  EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
+  EFI_BOOTTREE="$stage1_iso_TMP/EFI"
+  EFI_IMGTREE="$USB_TMP/EFI-imgs"
+  EFI_IMG="$EFI_IMGTREE/efiboot.img"
+  mkdir -p $EFI_IMGTREE
+  rm -rf $USB_TMP/.disk
+  rm -f $EFI_IMG
+  
+  BOOTDISKSIZE="$(LC_ALL=C du -kcs $EFI_BOOTTREE | tail -n1 | awk '{print $1}')"
+  BOOTDISKSIZE="$(LC_ALL=C expr $BOOTDISKSIZE + 100)"
+  echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
+  mkdosfs -n DRBL-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
+  mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
+  mkdir -p $EFI_BOOTIMG_TMP/EFI/
+  cp -R $EFI_BOOTTREE/* $EFI_BOOTIMG_TMP/EFI/
+  umount $EFI_BOOTIMG_TMP
+  if [ -d "$EFI_BOOTIMG_TMP" -a -n \
+  	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
+    rm -rf $EFI_BOOTIMG_TMP
+  fi
+  
+  # Create an info file for grub2 to autodetect the cd root
+  # Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
+  mkdir $USB_TMP/.disk
+  echo -n "[DRBL]" > $USB_TMP/.disk/info
 
   # ref: http://syslinux.zytor.com/archives/2006-October/007440.html
   # "-" will be regards as "_" if you want to use "-" for isolinux.
@@ -700,6 +787,14 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
 
   # We force to use the specific CPU kernel.
   $pref lb config --linux-flavours $cpu_flavor
+
+  # For OS arch, we can build amd64 Debian on i386 Debian or vice versus.
+  case "$cpu_flavor" in
+    686*|486*) os_arch="i386";;
+    amd64) os_arch="amd64";;
+  esac
+  $pref lb config --architecture $os_arch
+
 
   # No memtest from debian, we will use the one from drbl since it's newer.
   $pref lb config --memtest none
