@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Using functions to decide if GPT or MBR disk in ocs-onthefly.
+
 * Mon Dec 24 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.37-drbl1
 - Using functions to decide if GPT or MBR disk in ocs-functions.
 

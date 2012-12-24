@@ -117,7 +117,7 @@ check_pt_then_run_create_part_table() {
        fi
 
        # From the output file of parted, we can decide if the partition is gpt or mbr
-       if [ -n "$(grep -iE "^Partition Table:" $tgt_parted_info 2>/dev/null | grep -iE "gpt")" ]; then
+       if `is_gpt_partitition_table_file $tgt_parted_info`; then
          # The type is GPT
          if [ -e "$tgt_gpt_gdisk" ]; then
            # Use sgdisk to create that.
@@ -178,7 +178,7 @@ check_pt_then_run_create_part_table() {
          echo $msg_delimiter_star_line
          LC_ALL=C parted -s /dev/$target_hd print
          echo $msg_delimiter_star_line
-       else
+       elif `is_mbr_partitition_table_file $tgt_parted_info`; then
          # The type is MBR
          echo "Creating MBR type's partition table..."
          case "$create_part_type" in
@@ -235,6 +235,12 @@ check_pt_then_run_create_part_table() {
              [ -e "$dsk_chk_tmp" -a -n "$(echo $dsk_chk_tmp | grep "ocs_dskchk_tmp")" ] && rm -f $dsk_chk_tmp
             ;;
          esac
+       else
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "Unknown partition table format from file $tgt_parted_info!"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo "$msg_program_stop!"
+         exit 1
        fi
        ;;
     *)
@@ -352,8 +358,8 @@ if [ "$create_part" != "no" ]; then
     fi
     check_pt_then_run_create_part_table
     # After partition table is created, we can dump the hidden data which is between MBR and 1st partition.
-    # Exclude GPT type of disk. We only deal with MBR for this hidden data
-    if [ -z "$(LC_ALL=C parted -s /dev/$target_hd print | grep -iE "^Partition Table:" | grep -iE "gpt")" ]; then 
+    # Not GPT type of disk. We only deal with MBR for this hidden data
+    if `is_mbr_partitition_table_disk /dev/$target_hd`; then
       echo "$msg_delimiter_star_line"
       if [ "$clone_hidden_data" = "yes" ]; then
         restore_hidden_data_after_MBR $target_hd $tgt_hidden_img
@@ -463,10 +469,16 @@ prepare_local_clone_dev_info() {
   LC_ALL=C parted -s /dev/$source_hd unit s print > $src_parted_info
 
   # From the output file of parted, we can decide if the partition is gpt or mbr
-  if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $src_parted_info 2>/dev/null | grep -iE "gpt")" ]; then
+  if `is_gpt_partitition_table_file $src_parted_info`; then
     pt_type="gpt"
-  else
+  elif `is_mbr_partitition_table_file $src_parted_info`; then
     pt_type="mbr"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Unknown partition table format for file $src_parted_info!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
   fi
 
   # No matter it's MBR or GPT, we use sfdisk to dump partition table since if dual boot (Mac OS, Linux) on Mac book, this partition table is required for Linux normally.
@@ -648,10 +660,16 @@ prepare_network_clone_dev_info() {
     LC_ALL=C parted -s /dev/$source_hd unit s print > $src_parted_info
 
     # From the output file of parted, we can decide if the partition is gpt or mbr
-    if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $src_parted_info 2>/dev/null | grep -iE "gpt")" ]; then
+    if `is_gpt_partitition_table_file $src_parted_info`; then
       pt_type="gpt"
-    else
+    elif `is_mbr_partitition_table_file $src_parted_info`; then
       pt_type="mbr"
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Unknown partition table format from file $src_parted_info!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      exit 1
     fi
 
     # No matter it's MBR or GPT, we use sfdisk to dump partition table since if dual boot (Mac OS, Linux) on Mac book, this partition table is required for Linux normally.
@@ -2229,8 +2247,8 @@ do_fsck_in_source_dev_if_assigned
 create_partition_table_in_target
 
 # process the boot loader
-if [ -z "$(LC_ALL=C grep -iE "^Partition Table:" $src_parted_info 2>/dev/null | grep -iE "gpt")" ]; then
-  # Not GPT, then ask if clone boot loader
+if `is_mbr_partitition_table_file $src_parted_info`; then
+  # MBR disk, ask if clone boot loader
   clone_boot_loader_in_target
 fi
 
