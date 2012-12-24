@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Using functions to decide if GPT or MBR disk in ocs-functions.
+
 * Sun Dec 23 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.36-drbl1
 - Adding packages exfat-utils, exfat-fuse and tcplay in create-gparted-live.
 - Bug fixed: EFI booting for DRBL live did not really work.

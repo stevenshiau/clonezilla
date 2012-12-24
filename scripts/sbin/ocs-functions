@@ -151,15 +151,83 @@ get_disk_from_part() {
 get_partition_table_type_from_disk() {
   local tdisk=$1  # e.g. /dev/sda
   local ptype
-  if [ -n "$(LC_ALL=C parted -s $tdisk print 2>/dev/null | grep -iE "^Partition Table:" | grep -iE "gpt")" ]; then
+  if `is_gpt_partitition_table_disk $tdisk`; then
     ptype="gpt"
-  else
+  elif `is_mbr_partitition_table_disk $tdisk`; then
     ptype="mbr"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Unknown partition table format for disk $tdisk!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
   fi
   # If no ptype was found, force to be mbr.
   [ -z "$ptype" ] && ptype="mbr"
   echo "$ptype"
 } # get_partition_table_type_from_disk
+#
+is_gpt_partitition_table_file() {
+  local p_table_f="$1"
+  local rt_code=""
+  if [ -z "$p_table_f" ]; then
+    echo "No input parameter \$p_table_f in function is_gpt_partitition_table!"
+    return 3
+  fi
+  if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $p_table_f 2>/dev/null | grep -iE "gpt")" ]; then
+    rt_code=0
+  else
+    rt_code=1
+  fi
+  return $rt_code
+} # end of is_gpt_partitition_table_file
+#
+is_mbr_partitition_table_file() {
+  local p_table_f="$1"
+  local rt_code=""
+  if [ -z "$p_table_f" ]; then
+    echo "No input parameter \$p_table_f in function is_mbr_partitition_table!"
+    return 3
+  fi
+  if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $p_table_f 2>/dev/null | grep -iE "msdos")" ]; then
+    rt_code=0
+  else
+    rt_code=1
+  fi
+  return $rt_code
+} # end of is_mbr_partitition_table_file
+#
+is_gpt_partitition_table_disk() {
+  local input_disk_="$1"  # e.g. /dev/sda
+  local rt_code=""
+  if [ -z "$input_disk_" ]; then
+    echo "No input parameter \$input_disk_ in function is_gpt_partitition_table!"
+    return 3
+  fi
+  if [ -n "$(LC_ALL=C parted -s $input_disk_ print | grep -iE "^Partition Table:" | grep -iE "gpt")" ]
+  then 
+    rt_code=0
+  else
+    rt_code=1
+  fi
+  return $rt_code
+} # end of is_gpt_partitition_table_disk
+#
+is_mbr_partitition_table_disk() {
+  local input_disk_="$1"  # e.g. /dev/sda
+  local rt_code=""
+  if [ -z "$input_disk_" ]; then
+    echo "No input parameter \$input_disk_ in function is_mbr_partitition_table!"
+    return 3
+  fi
+  if [ -n "$(LC_ALL=C parted -s $input_disk_ print | grep -iE "^Partition Table:" | grep -iE "msdos")" ]
+  then
+    rt_code=0
+  else
+    rt_code=1
+  fi
+  return $rt_code
+} # end of is_mbr_partitition_table_disk
 #
 inform_kernel_partition_table_changed() {
   # Function to inform kernel the partition table has changed
@@ -2523,9 +2591,9 @@ install_grub_hd() {
     fdisk -l /dev/$grub_hd &>/dev/null
 
     # This install_grub_hd function is only for BIOS/MBR boot loader, not for EFI. Therefore if $selected_hd is GPT disk, skip it.
-    if [ -n "$(LC_ALL=C parted -s /dev/$grub_hd print | grep -iE "^Partition Table:" | grep -iE "gpt")" ]; then
+    if ! `is_mbr_partitition_table_disk /dev/$grub_hd`; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Disk /dev/$grub_hd is GPT format. Skip the reinstallation of grub-pc (MBR) program."
+      echo "Disk /dev/$grub_hd is not MBR format. Skip the reinstallation of grub-pc (MBR) program."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       return 5
     fi
@@ -2977,10 +3045,16 @@ create_partition() {
   fi
 
   # From the output file of parted, we can decide if the partition is gpt or mbr
-  if [ -n "$(grep -iE "^Partition Table:" $tgt_dir/${tgt_hd_name}-pt.parted 2>/dev/null | grep -iE "gpt")" ]; then
+  if `is_gpt_partitition_table_file $tgt_dir/${tgt_hd_name}-pt.parted`; then
     pt_type="gpt"
-  else
+  elif `is_mbr_partitition_table_file  $tgt_dir/${tgt_hd_name}-pt.parted`; then
     pt_type="mbr"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Unknown partition table format from the file $tgt_dir/${tgt_hd_name}-pt.parted!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
   fi
 
   #
@@ -3011,7 +3085,7 @@ create_partition() {
       load_HD_geometry_opt_from_image $tgt_dir $tgt_hd_name
     fi
     # If the partition table is tag as "gpt", change it as msdos
-    if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -iE "^Partition Table:" | grep -iE "gpt")" ]; then
+    if `is_gpt_partitition_table_disk $tgt_hd_file`; then
       echo "The partition table in $tgt_hd_file is for GPT, now make it for MBR."
       LC_ALL=C parted -s $tgt_hd_file mklabel msdos
     fi
@@ -6708,7 +6782,7 @@ task_saveparts() {
     # Output another one which is easier for human to read
     LC_ALL=C parted -s /dev/$ihd unit compact print > $target_dir/${ihd}-pt.parted.compact
     # From the output file of parted, we can decide if the partition is gpt or mbr
-    if [ -n "$(grep -iE "^Partition Table:" $target_dir/${ihd}-pt.parted 2>/dev/null | grep -iE "gpt")" ]; then
+    if `is_gpt_partitition_table_file $target_dir/${ihd}-pt.parted`; then
       # GPT, output the GPT data. Ref: http://en.wikipedia.org/wiki/GUID_Partition_Table
       # Legacy MBR (LBA 0), Partition table header (LBA 1), Partition entries (LBA 2-33)
       echo $msg_delimiter_star_line
@@ -6741,13 +6815,19 @@ task_saveparts() {
         LC_ALL=C sgdisk -p /dev/$ihd > $target_dir/${ihd}-gpt.sgdisk
         echo $msg_delimiter_star_line
       fi
-    else
-      # Not GPT type of disk, we can save the hidden data between MBR and 1st partition. Maybe the data is useless, maybe it's useful. Since some of the recovery programs put data on that.
+    elif `is_mbr_partitition_table_file $target_dir/${ihd}-pt.parted`; then
+      # MBR disk, we can save the hidden data between MBR and 1st partition. Maybe the data is useless, maybe it's useful. Since some of the recovery programs put data on that.
       echo $msg_delimiter_star_line
       if [ "$clone_hidden_data" = "yes" ]; then
         save_hidden_data_after_MBR $ihd $target_dir/${ihd}-hidden-data-after-mbr
       fi
       echo $msg_delimiter_star_line
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Unknown partition table format on disk /dev/$ihd !"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      exit 1
     fi
     if [ "$RETVAL" -ne 0 ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -7075,8 +7155,8 @@ task_restoreparts() {
   if [ "$clone_hidden_data" = "yes" ]; then
     for ihd in $target_hd; do
       # Restore the hidden data between MBR and 1st partition. Maybe it's useless, maybe it's useful. Since some of the recovery programs put data on that.
-      # Exclude GPT type of disk. We only deal with MBR for this hidden data
-      [ -n "$(LC_ALL=C parted -s /dev/$ihd print | grep -iE "^Partition Table:" | grep -iE "gpt")" ] && continue
+      # Only for MBR, excluding GPT type of disk. We only deal with MBR for this hidden data
+      if `is_mbr_partitition_table_disk /dev/$ihd`; then
         echo $msg_delimiter_star_line
         if [ -e "$target_dir_fullpath/${ihd}-hidden-data-after-mbr" ]; then
           restore_hidden_data_after_MBR $ihd $target_dir_fullpath/${ihd}-hidden-data-after-mbr
@@ -7084,7 +7164,8 @@ task_restoreparts() {
           echo "File $target_dir_fullpath/${ihd}-hidden-data-after-mbr not found!"
           echo "Skip restoring hidden data after MBR for disk $ihd."
         fi
-      echo $msg_delimiter_star_line
+        echo $msg_delimiter_star_line
+      fi
     done
   fi
 
@@ -7126,10 +7207,16 @@ task_restoreparts() {
   if [ -n "$(echo "$ocs_sr_type" | grep -Ei "restoredisk")" ]; then
     for ihd in $target_hd; do
       # Get the partition type from parted output
-      if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $target_dir_fullpath/${ihd}-pt.parted | grep -iE "gpt")" ]; then
+      if `is_gpt_partitition_table_file $target_dir_fullpath/${ihd}-pt.parted`; then
         ptype="gpt"
-      else
+      elif `is_mbr_partitition_table_file $target_dir_fullpath/${ihd}-pt.parted`; then
         ptype="mbr"
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "Unknown partition table format from the file $target_dir_fullpath/${ihd}-pt.parted!"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!"
+        exit 1
       fi
       case "$ptype" in
        mbr)
