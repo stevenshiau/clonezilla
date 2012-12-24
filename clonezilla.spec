@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.36
+Version:	3.1.37
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 24 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.37-drbl1
 - Using functions to decide if GPT or MBR disk in ocs-functions.
 
 * Sun Dec 23 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.36-drbl1
