@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Removing packages exfat-utils and exfat-fuse create-gparted-live.
+
 * Mon Dec 24 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.38-drbl1
 - Using functions to decide if GPT or MBR disk in ocs-onthefly.
 
