@@ -38,6 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 - Removing packages exfat-utils and exfat-fuse create-gparted-live.
+- If udevadm exists, use it to get the disk serial number. Thanks to Miracle Linux for this idea.
 
 * Mon Dec 24 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.38-drbl1
 - Using functions to decide if GPT or MBR disk in ocs-onthefly.

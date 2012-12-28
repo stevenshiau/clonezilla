@@ -3644,10 +3644,15 @@ get_input_image_name() {
 get_disk_serial_no() {
   # This is specially for sdx. For hdx, we can get from "cat /sys/block/$p/device/serial 2>/dev/null"
   local dsk_="$1"  # e.g. sda
-  serialno=""
+  serialno=""  # serialno is global variable
   [ -z "$dsk_" ] && echo "No input value for dsk_!" && exit 1
-  # lrwxrwxrwx 1 root root   9 2009-01-23 20:18 ata-ST3160815AS-6RX1880B -> ../../sda
-  serialno="$(LC_ALL=C find /dev/disk/by-id/ -lname "*${dsk_}" -print 2>/dev/null | sort | uniq | head -n 1 | xargs basename 2>/dev/null)"
+  if type udevadm &>/dev/null; then
+    serialno="$(LC_ALL=C udevadm info -q env -n /dev/${dsk_} | grep ID_SERIAL= | sed -e 's/ID_SERIAL=//g')"
+  fi
+  if [ -z "$serialno" ]; then
+    # lrwxrwxrwx 1 root root   9 2009-01-23 20:18 ata-ST3160815AS-6RX1880B -> ../../sda
+    serialno="$(LC_ALL=C find /dev/disk/by-id/ -lname "*${dsk_}" -print 2>/dev/null | sort | uniq | head -n 1 | xargs basename 2>/dev/null)"
+  fi
   # results e.g.: 
   # ata-ST3160815AS-6RX1880B
   # scsi-SATA_ST3160815AS_6RX1880B
