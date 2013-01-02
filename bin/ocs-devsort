@@ -1,0 +1,38 @@
+#!/usr/bin/perl
+# This function is provided by Miracle Linux.
+# Now since the sort program on CentOS/RHEL 5 does not support the option "-V", we use this function.
+# In the future we should use "sort -V" only. It's easier. 
+
+sub split_devname {
+  my $dev = $_[0];
+  my ($h, $m, $t);
+
+  $dev =~ m!(?:(?:((?:i2o/)*[hsv]d)([a-z]+))|(?:(cciss)/(c[0-9]d[0-9])p*))([0-9]*)!;
+  if ($1 ne "") {
+    $h = $1; $m = $2; $t = $5;
+  }
+  else {
+    $h = $3; $m = $4; $t = $5;
+  }
+  return ($h, $m, $t);
+}
+
+
+sub subsort {
+  my ($a_h, $a_m, $a_t) = split_devname($a);
+  my ($b_h, $b_m, $b_t) = split_devname($b);
+
+  if ($a_h ne $b_h) {
+    return $a_h cmp $b_h;
+  }
+  elsif (length($a_m) == length($b_m)) {
+    return $a_m cmp $b_m || $a_t <=> $b_t;
+  }
+  else {
+    return length($a_m) <=> length($b_m);
+  } 
+}
+
+@input = <STDIN>;
+@devnames = sort subsort @input;
+print @devnames;

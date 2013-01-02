@@ -70,13 +70,24 @@ parse_cmdline_option() {
       # For case like: ocs_prerun="sleep 5" or ocs_prerun=\"sleep 5\"
       LC_ALL=C grep -oE -- "$ik=(\"|\\\\\")([[:space:]]|[[:alnum:]]|_|-|\.|\/|:|=|,|@|\\$|>|\^|\*)*(\"|\\\\\")([[:space:]]|$)+" $cmdl_file | sed -r -e "s|=\\\\\"|=\"|g" -e "s@\\\\\"([[:space:]]|$)+@\"@g" | sed -r -e 's|^\"(.*)=|\1=\"|g' > $parse_tmp
     elif LC_ALL=C grep -Eq "\"$ik=" $cmdl_file; then
-      # For case like: "ocs_prerun=sleep 5"
-      LC_ALL=C grep -oE -- "\"$ik=([[:space:]]|[[:alnum:]]|_|-|\.|\/|:|=|,|@|\\$|>|\^|\*)*\"([[:space:]]|$)+" $cmdl_file | sed -r -e "s|=\\\\\"|=\"|g" -e "s@\\\\\"([[:space:]]|$)+@\"@g" | sed -r -e 's|^\"(.*)=|\1=\"|g' > $parse_tmp
+      # For case like: "ocs_prerun=sleep 5", "ocs_prerun1=mount UUID=XXXYYZZ /mnt"
+      # 2012/08/20 Without separating "=", it might fail in this case:
+      # "ocs_prerun1=mount UUID=XXXYYZZ /mnt" -> ocs_prerun1=mount UUID="XXXYYZZ /mnt"
+      # Therefore we have to use: sed -r -e 's|^\"(.*=)(.*=.*)*|\1\"\2|g'
+      # Ref: http://stackoverflow.com/questions/9681393/sed-multiple-patterns-on-the-same-line-how-to-match-parse-first-one
+      LC_ALL=C grep -oE -- "\"$ik=([[:space:]]|[[:alnum:]]|_|-|\.|\/|:|=|,|@|\\$|>|\^|\*)*\"([[:space:]]|$)+" $cmdl_file | sed -r -e "s|=\\\\\"|=\"|g" -e "s@\\\\\"([[:space:]]|$)+@\"@g" | sed -r -e 's|^\"(.*=)(.*=.*)*|\1\"\2|g' > $parse_tmp
     else
       # This is for case xxx=xyz, no space in its assignment
       LC_ALL=C grep -oE -- "$ik=([[:alnum:]]|_|-|\.|\/|:)*([[:space:]]|$)+" $cmdl_file > $parse_tmp
     fi
     # now we can get the variables
+    # . $parse_tmp <--- One more thing to do.
+    # In we just read the variable using ". $parse_tmp", and it happends to have "$" in the variable, then the way will go wrong. E.g. the output file "/tmp/cmdtmp.XXXXX" contains this line:
+    # ocs_prerun="mount -t cifs -o user=steven,domain=ABC.COM,password=12$ABC34 //serv/images /home/partimag"
+    # By running ". /tmp/cmdtmp.XXXXX", the ocs_prerun will be:
+    # mount -t cifs -o user=steven,domain=ABC.COM,password=12 //serv/images /home/partimag
+    # It's because $ABC34 is nothing here. Therefore we have to protect "$" in the temp file.
+    perl -pi -e 's|\$|\\\$|g' $parse_tmp
     . $parse_tmp
   done
   [ -f "$parse_tmp" ] && rm -f $parse_tmp
