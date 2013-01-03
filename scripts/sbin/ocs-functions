@@ -8595,10 +8595,11 @@ ocs-live-env-prepare(){
 network_config_if_necessary() {
   local configured_ip run_net_cfg run_again_ans ttys
   local ether_dev host_ip netmask default_gateway nameserver
+  ocs_log_rotate $OCS_NETCFG_LOG
   configured_ip="$(get-all-nic-ip --all-ip-address)"
   if [ -z "$configured_ip" ]; then
-    echo $msg_delimiter_star_line             >> $OCS_LOGFILE
-    echo "Running ocs-live-netcfg to configure network..." >> $OCS_LOGFILE
+    echo $msg_delimiter_star_line             >> $OCS_NETCFG_LOG
+    echo "Running ocs-live-netcfg to configure network..." >> $OCS_NETCFG_LOG
     run_net_cfg="yes"
     while [ "$run_net_cfg" = "yes" ]; do
       ocs-live-netcfg
@@ -8623,7 +8624,7 @@ network_config_if_necessary() {
       fi
     done
   else
-    echo "$msg_network_is_already_configured: $configured_ip" | tee --append ${OCS_LOGFILE}
+    echo "$msg_network_is_already_configured: $configured_ip" | tee --append ${OCS_NETCFG_LOG}
   fi
   #
   ether_dev="$(get-all-nic-ip --all-net-dev)"
@@ -8636,13 +8637,13 @@ network_config_if_necessary() {
     nameserver="$(LC_ALL=C awk '/^nameserver/{printf "%s ",$2}' /etc/resolv.conf | sed -e 's/ $//g')"
   fi
 
-  echo $msg_delimiter_star_line             >> $OCS_LOGFILE
-  echo "Network Device  : $ether_dev"       >> $OCS_LOGFILE
-  echo "Host IP Address : $host_ip"         >> $OCS_LOGFILE
-  echo "Netmask         : $netmask"         >> $OCS_LOGFILE
-  echo "Default Gateway : $default_gateway" >> $OCS_LOGFILE
-  echo "Name Server     : $nameserver"      >> $OCS_LOGFILE
-  echo $msg_delimiter_star_line             >> $OCS_LOGFILE
+  echo $msg_delimiter_star_line             >> $OCS_NETCFG_LOG
+  echo "Network Device  : $ether_dev"       >> $OCS_NETCFG_LOG
+  echo "Host IP Address : $host_ip"         >> $OCS_NETCFG_LOG
+  echo "Netmask         : $netmask"         >> $OCS_NETCFG_LOG
+  echo "Default Gateway : $default_gateway" >> $OCS_NETCFG_LOG
+  echo "Name Server     : $nameserver"      >> $OCS_NETCFG_LOG
+  echo $msg_delimiter_star_line             >> $OCS_NETCFG_LOG
 } # end of network_config_if_necessary
 #
 unmount_mounted_fs_before_ocs_live_reboot() {
@@ -8812,18 +8813,19 @@ get_fb_term(){
 check_if_ocsroot_a_mountpoint() {
   local mntpnt_continue
   local rc
+  ocs_log_rotate ${OCS_MOUNT_LOG}
   fail_mountpoint() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Clonezilla image home directory $ocsroot is not a mounting point! Failed to mount other device as $ocsroot!" | tee --append ${OCS_LOGFILE}
+    echo "Clonezilla image home directory $ocsroot is not a mounting point! Failed to mount other device as $ocsroot!" | tee --append ${OCS_MOUNT_LOG}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     rc=1
     confirm_continue_or_default_quit
   }
   success_mountpoint() {
-    echo "$msg_df_report" | tee --append ${OCS_LOGFILE}
-    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-    df -ah 2>&1 | tee --append ${OCS_LOGFILE}
-    echo $msg_delimiter_star_line  | tee --append ${OCS_LOGFILE}
+    echo "$msg_df_report" | tee --append ${OCS_MOUNT_LOG}
+    echo $msg_delimiter_star_line | tee --append ${OCS_MOUNT_LOG}
+    df -ah 2>&1 | tee --append ${OCS_MOUNT_LOG}
+    echo $msg_delimiter_star_line  | tee --append ${OCS_MOUNT_LOG}
     echo -n "$msg_press_enter_to_continue..."
     read
     rc=0

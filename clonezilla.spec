@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.2.0
+Version:	3.2.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jan 03 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.1-drbl1
+- Two log files were separated from clonezilla.log: ocs-netcfg.log and ocs-mount.log.
+
 * Thu Jan 03 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.0-drbl1
 - Removing packages exfat-utils and exfat-fuse create-gparted-live.
 - If udevadm exists, use it to get the disk serial number. Thanks to Miracle Linux for this idea.
