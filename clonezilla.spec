@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.2.2
+Version:	3.2.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jan 03 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.3-drbl1
+- Bug fixed: Getting default gateway was not working in function network_config_if_necessary of ocs-functions.
+
 * Thu Jan 03 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.2-drbl1
 - Using "route -n" instead of "route" to find the default gateway in function network_config_if_necessary of ocs-functions.
 
