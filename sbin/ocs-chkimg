@@ -103,7 +103,7 @@ img_check_by_partclone() {
 do_partition_or_lv_img_check() {
   # part is like: /dev/hda1
   local target_d="$1"
-  local img_file="$2"
+  local img_file="$(to_filename $2)"
   local rc hdtmp partition
   image_name_="$(basename $target_d)"
   # get the cat program: cat, zcat or bzcat
@@ -300,7 +300,7 @@ task_checkimage() {
   # find the target hd
   # maybe we will have one more hd (like hda1, hda2, hdb1, hdb3 -> hda, hdb)
   for ipart in $target_parts; do
-    thd_tmp=${ipart:0:3}
+    thd_tmp="$(get_diskname $ipart)"
     if [ -z "$target_hd" ]; then
       target_hd="$thd_tmp"
     elif [ -z "$(echo $target_hd | grep -Ew "$thd_tmp" 2>/dev/null)" ]; then
@@ -344,16 +344,22 @@ task_checkimage() {
   echo "Checking the partition table in the image \"$target_dir\"..."
   for ihd in $target_hd; do
     # Get the partition type from parted output
-    if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $target_dir_fullpath/${ihd}-pt.parted | grep -iE "gpt")" ]; then
+    if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
       ptype="gpt"
-    else
+    elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
       ptype="mbr"
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+      exit 1
     fi
     case "$ptype" in
      mbr)
-      if [ ! -e "$target_dir_fullpath/${ihd}-pt.sf" ]; then
+      if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-pt.sf" ]; then
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-         echo "$msg_this_partition_table_file_not_found: ${ihd}-pt.sf"
+         echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-pt.sf"
          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
          echo -n "$msg_press_enter_to_continue..."
          read
@@ -362,27 +368,27 @@ task_checkimage() {
       fi
       ;;
      gpt)
-      if [ ! -e "$target_dir_fullpath/${ihd}-gpt-1st" ]; then
+	 if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-gpt-1st" ]; then
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-         echo "$msg_this_partition_table_file_not_found: ${ihd}-gpt-1st"
+	 echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-gpt-1st"
          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
          echo -n "$msg_press_enter_to_continue..."
          read
       else
          echo "GPT 1st partition table file found!"
       fi
-      if [ ! -e "$target_dir_fullpath/${ihd}-gpt-2nd" ]; then
+      if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-gpt-2nd" ]; then
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-         echo "$msg_this_partition_table_file_not_found: ${ihd}-gpt-2nd"
+	 echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-gpt-2nd"
          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
          echo -n "$msg_press_enter_to_continue..."
          read
       else
          echo "GPT 2nd partition table file found!"
       fi
-      if [ ! -e "$target_dir_fullpath/${ihd}-gpt.gdisk" ]; then
+      if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-gpt.gdisk" ]; then
          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-         echo "$msg_this_partition_table_file_not_found: ${ihd}-gpt.gdisk"
+	 echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-gpt.gdisk"
 	 echo "Was this image saved by older version of Clonezilla? If so, we still can use this old image. However, it's recommended to save the image with the latest Clonezilla. "
          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
          echo -n "$msg_press_enter_to_continue..."
@@ -401,15 +407,21 @@ task_checkimage() {
     # Check swap partition
     for ihd in $target_hd; do
       # Get the partition type from parted output
-      if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $target_dir_fullpath/${ihd}-pt.parted | grep -iE "gpt")" ]; then
+      if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
         ptype="gpt"
-      else
+      elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
         ptype="mbr"
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+	echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+        exit 1
       fi
       case "$ptype" in
        mbr)
-        echo "Finding swap partition(s) in MBR table $target_dir_fullpath/${ihd}-pt.sf..."
-        for partition in `get_swap_partition_sf_format $target_dir_fullpath/${ihd}-pt.sf`; do
+        echo "Finding swap partition(s) in MBR table $target_dir_fullpath/$(to_filename ${ihd})-pt.sf..."
+        for partition in `get_swap_partition_sf_format $target_dir_fullpath/$(to_filename ${ihd})-pt.sf`; do
           echo "Checking swap partition $partition..."
           # read LABEL, UUID info for $partition if swappt-$partition.info exists
           uuid_opt=""
@@ -427,8 +439,8 @@ task_checkimage() {
         done
         ;;
        gpt)
-        echo "Finding swap partition(s) in GPT table $target_dir_fullpath/${ihd}-pt.parted..."
-        for partition in `get_swap_partition_parted_format $target_dir_fullpath/${ihd}-pt.parted`; do
+        echo "Finding swap partition(s) in GPT table $target_dir_fullpath/$(to_filename ${ihd})-pt.parted..."
+        for partition in `get_swap_partition_parted_format $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; do
           echo "Checking swap partition $partition..."
           # read LABEL, UUID info for $partition if swappt-$partition.info exists
           uuid_opt=""
@@ -476,7 +488,7 @@ task_checkimage() {
   rct=0
   for partition in $target_parts; do
     # hda1 -> hda
-    hd_tmp="${partition:0:3}"
+    hd_tmp="$(get_diskname $partition)"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
      if [ -n "$(grep -Ew "$partition" $target_dir_fullpath/lvm_vg_dev.list 2>/dev/null)" ]; then
       # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later

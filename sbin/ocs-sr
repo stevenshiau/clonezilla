@@ -583,11 +583,13 @@ run_ocs_sr_again_prompt() {
   if [ "$ocs_sr_mode" = "interactive" ]; then
     run_again_fname="/tmp/ocs-$img-`date +%F-%H-%M`"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
-    echo PS. $msg_run_drbl_ocs_again_cmd 
+    echo PS. $msg_run_drbl_ocs_again_cmd | tee --append ${OCS_LOGFILE}
+    echo $0 $OCS_OPTS $ocs_sr_type $img $dev >> ${OCS_LOGFILE}
     echo $0 $OCS_OPTS $ocs_sr_type $img $dev | tee $run_again_fname
     echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     if [ "$ocs_batch_mode" != "on" ]; then
       echo -n "$msg_press_enter_to_continue "
       read
@@ -710,7 +712,8 @@ create_clonezilla_live_recovery_iso_zip() {
        iso)
           run_again_fname="/tmp/ocs-iso-zip-`date +%F-%H-%M`"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
-          echo PS. $msg_run_drbl_ocs_again_cmd 
+          echo PS. $msg_run_drbl_ocs_again_cmd | tee --append ${OCS_LOGFILE}
+          echo ocs-iso -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir >> ${OCS_LOGFILE}
           echo ocs-iso -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee $run_again_fname
 	  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
           echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
@@ -723,7 +726,8 @@ create_clonezilla_live_recovery_iso_zip() {
        zip)
           run_again_fname="/tmp/ocs-iso-zip-`date +%F-%H-%M`"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
-          echo PS. $msg_run_drbl_ocs_again_cmd 
+          echo PS. $msg_run_drbl_ocs_again_cmd | tee --append ${OCS_LOGFILE}
+          echo ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir >> ${OCS_LOGFILE} 
           echo ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee $run_again_fname
 	  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
           echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
@@ -736,8 +740,10 @@ create_clonezilla_live_recovery_iso_zip() {
        both)
           run_again_fname="/tmp/ocs-iso-zip-`date +%F-%H-%M`"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
-          echo PS. $msg_run_drbl_ocs_again_cmd 
+          echo PS. $msg_run_drbl_ocs_again_cmd | tee --append ${OCS_LOGFILE}
+          echo ocs-iso -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir >> ${OCS_LOGFILE}
           echo ocs-iso -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee $run_again_fname
+          echo ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir >> ${OCS_LOGFILE}
           echo ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee -a $run_again_fname
 	  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
           echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
@@ -850,6 +856,13 @@ ocs_sr_dev="$*"
 # If the inputted dev is: "hda hdb", convert it to hda hdb (so it won't be ""hda hdb"")
 ocs_sr_dev="$(echo $ocs_sr_dev | tr -d \")"
 
+# Rotate the log file
+ocs_log_rotate $OCS_LOGFILE
+ocs_log_rotate /var/log/partclone.log
+
+#
+echo "Starting $0 at "$(LC_ALL=C date +%F' '%T' '%Z)"..." | tee --append ${OCS_LOGFILE}
+
 #
 ask_and_load_lang_set $specified_lang
 
@@ -951,10 +964,10 @@ fi
 # ocs_mode_prompt is to be shown in the title of dialog menu later
 ocs_mode_prompt="$ocs_sr_type"
 
-echo $msg_delimiter_star_line
+echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
 # Clonezilla image home
 [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-echo "Clonezilla image dir: $ocsroot"
+echo "Clonezilla image dir: $ocsroot" | tee --append $OCS_LOGFILE
 [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 [ ! -d "$ocsroot" ] && mkdir -p $ocsroot
   
@@ -1051,7 +1064,7 @@ case "$ocs_sr_type" in
     fi
     echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_hd" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
 
-    task_postprocessing
+    task_postprocessing "$ocs_sr_type" "$target_dir"
     ;;
   "restoredisk")
     task_preprocessing "$ocs_sr_type"
@@ -1087,7 +1100,7 @@ case "$ocs_sr_type" in
 
     run_ocs_sr_again_prompt "$target_dir" "$target_hd"
     task_restoredisk "$target_dir" "$target_hd"
-    task_postprocessing
+    task_postprocessing "$ocs_sr_type" "$target_dir"
     ;;
   "saveparts")
     task_preprocessing "$ocs_sr_type"
@@ -1166,7 +1179,7 @@ case "$ocs_sr_type" in
     fi
     echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_parts" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
 
-    task_postprocessing
+    task_postprocessing "$ocs_sr_type" "$target_dir"
     ;;
   "restoreparts")
     task_preprocessing "$ocs_sr_type"
@@ -1201,7 +1214,7 @@ case "$ocs_sr_type" in
 
     run_ocs_sr_again_prompt "$target_dir" "$target_parts"
     task_restoreparts "$target_dir" "$target_parts"
-    task_postprocessing
+    task_postprocessing "$ocs_sr_type" "$target_dir"
     ;;
   "recovery-iso-zip")
     create_clonezilla_live_recovery_iso_zip
@@ -1217,14 +1230,14 @@ case "$ocs_sr_type" in
     task_processing_after_parameters_checked
 
     task_multicast_restoredisk "$ocs_sr_img_name" "$ocs_sr_dev" "$ocs_sr_mcast_port"
-    task_postprocessing
+    task_postprocessing "$ocs_sr_type" ""
     ;;
   "multicast_restoreparts")
     task_preprocessing "$ocs_sr_type"
     task_processing_after_parameters_checked
 
     task_multicast_restoreparts "$ocs_sr_img_name" "$ocs_sr_dev" "$ocs_sr_mcast_port"
-    task_postprocessing
+    task_postprocessing "$ocs_sr_type" ""
     ;;
   *)
     USAGE
@@ -1232,4 +1245,5 @@ case "$ocs_sr_type" in
     ;;
 esac
 
+echo "Ending $0 at $(LC_ALL=C date +%F' '%T' '%Z)..." | tee --append ${OCS_LOGFILE}
 exit 0

@@ -143,7 +143,7 @@ get_disk_from_part() {
   local ipart=$1  # ipart is like /dev/sda1
   local parttmp hdtmp
   parttmp="$(basename $ipart)"
-  hdtmp="${parttmp:0:3}"
+  hdtmp="$(get_diskname $parttmp)"
   hdtmp=/dev/$hdtmp
   echo "$hdtmp"
 } # end of get_disk_from_part
@@ -157,9 +157,9 @@ get_partition_table_type_from_disk() {
     ptype="mbr"
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Unknown partition table format for disk $tdisk!"
+    echo "Unknown partition table format for disk $tdisk!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
   fi
   # If no ptype was found, force to be mbr.
@@ -234,11 +234,14 @@ inform_kernel_partition_table_changed() {
   local ptype=$1  # e.g. mbr, gpt
   local tdisk=$2  # e.g. /dev/sda
   if [ -z "$ptype" -o -z "$tdisk" ]; then
-    echo "No ptype or tdisk parameter was assigned in function inform_kernel_partition_table_changed! Program terminated!"
+    echo "No ptype or tdisk parameter was assigned in function inform_kernel_partition_table_changed. Program terminated." | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
-  # if tdisk is not the form /dev/[hsv]d[a-z] (e.g. LVM), skip.
-  [ -z "$(echo $tdisk | grep -E -- "/dev/[hsv]d[a-z]")" ] && return 3
+  # if tdisk is not a disk (e.g. LVM), skip.
+  if ! is_whole_disk $tdisk; then
+    return 3
+  fi
   echo -n "Informing kernel the file system has been changed..."
   case "$ptype" in
   mbr)
@@ -317,7 +320,6 @@ dump_hardware_software_info() {
   local img_dir="$1" 
   local save_time pkg_to_query installed_pkgs
   [ -z "$img_dir" ] && return 1
-  save_time="$(LC_ALL=C date "+%r, %Y/%b/%d, %Z")"
   # lshw does not exist in SuSE, but hwinfo does.
   if type lshw &>/dev/null; then
     echo "Saving hardware info by lshw..."
@@ -353,8 +355,6 @@ dump_hardware_software_info() {
     echo "Image was saved by these Clonezilla-related packages:" > $img_dir/Info-packages.txt
     output_ocs_related_pkgs $img_dir Info-packages.txt
   fi
-  # Output a file name to tag the image. It's easier for us to identify in the future.
-  echo "This image was saved by Clonezilla at $save_time." > $img_dir/clonezilla-img
 } # end of dump_hardware_software_info
 #
 save_hidden_data_after_MBR() {
@@ -381,7 +381,12 @@ save_hidden_data_after_MBR() {
   local real_i start_s hidden_data_size hidden_data_after_mbr_limit_in_sec size_exp
   for i in src_dsk img_s; do
     eval real_i=\$$i
-    [ -z "$real_i" ] && echo "You have to assign $i in function save_hidden_data_after_MBR!" && exit 1
+    if [ -z "$real_i" ]; then
+      echo "You have to assign $i in function save_hidden_data_after_MBR." | tee --append ${OCS_LOGFILE}
+      echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+      copy_error_log
+      exit 1
+    fi
   done
 
   # WRONG! WRONG! Do not do this!
@@ -401,19 +406,20 @@ save_hidden_data_after_MBR() {
   # -------------------------------------------
   # Therefore we can not just use sda1 or hda1 to find the start sector.
   start_s="$(LC_ALL=C parted -s /dev/${src_dsk} unit s print | grep -iE -A 100000 "[[:space:]]*Start[[:space:]]*End[[:space:]]*" | sed -e "s/^.*[[:space:]]*Start[[:space:]]*End[[:space:]]*.*$//g" | sed "/^$/d" | awk -F" " '{print $2}' | sed -e "s/s$//g" | sort -n | head -n 1)"
-  echo "The first partition of disk /dev/${src_dsk} starts at $start_s."
+  echo "The first partition of disk /dev/${src_dsk} starts at $start_s." | tee --append ${OCS_LOGFILE}
   hidden_data_size="$(echo "scale=0; $start_s - 1" | bc -l)"
 
   if [ -z "$hidden_data_size" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The hidden data size can NOT be found!"
+    echo "The hidden data size can NOT be found." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
 
   if [ "$hidden_data_size" -le 0 ]; then
-    echo "Skip saving hidden data between MBR and 1st partition since it's not found."
+    echo "Skip saving hidden data between MBR and 1st partition since it's not found." | tee --append ${OCS_LOGFILE}
     return 3
   fi
 
@@ -425,8 +431,8 @@ save_hidden_data_after_MBR() {
     return 3
   fi
 
-  echo "Saving the hidden data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool, by:"
-  echo dd if=/dev/${src_dsk} of=${img_s} skip=1 bs=512 count=$hidden_data_size
+  echo "Saving the hidden data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool, by:" | tee --append ${OCS_LOGFILE}
+  echo dd if=/dev/${src_dsk} of=${img_s} skip=1 bs=512 count=$hidden_data_size | tee --append ${OCS_LOGFILE}
   dd if=/dev/${src_dsk} of=${img_s} skip=1 bs=512 count=$hidden_data_size
 
 } # end of save_hidden_data_after_MBR
@@ -749,8 +755,10 @@ get_image_cat_zip_cmd() {
     # (2) Old format. Get compression info by file magic, i.e. use command "file"
     if [ ! -e "$imgf" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "$imgf not found!!! $msg_program_stop!"
+      echo "$imgf not found." | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+      copy_error_log
       exit 1
     fi
     if [ -n "$(file -Ls $imgf | grep -i "gzip compressed data")" ]; then
@@ -854,8 +862,10 @@ get_image_cat_zip_cmd() {
 
   if [ -z "$cat_prog" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Unknown format for $imgf!!! $msg_program_stop!"
+    echo "Unknown format for $imgf." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
 } # end of get_image_cat_zip_cmd
@@ -909,13 +919,14 @@ disk_full_test() {
   # Testing using 1MB, since small file maybe is accepted when disk is full.
   if ! dd if=/dev/zero of=$diskfull_test bs=1M count=1 &>/dev/null; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$tgt_dir is full! No space left on device!"
+    echo "$tgt_dir is full! No space left on device!" | tee --append ${OCS_LOGFILE}
     [ -n "$prompt_msg" ] && echo $prompt_msg
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     [ -f "$diskfull_test" ] && rm -f $diskfull_test
     echo -n "$msg_press_enter_to_continue..."
     read
+    copy_error_log
     exit 1
   fi
   [ -f "$diskfull_test" ] && rm -f $diskfull_test
@@ -1061,7 +1072,7 @@ is_partclone_image() {
   # (2) New format (after -q2 is the default option)
   #   ${tgt_file}.${fs_pre}-img.${comp_suf}
   #   e.g. sda1.ext4-ptcl-img.gz
-  local tgt_d=$1 img_f=$2 rc=1
+  local tgt_d=$1 img_f=$(to_filename $2) rc=1
   if [ -z "$tgt_d" -o -z "$img_f" ]; then
     echo "You must assign tgt_d or img_f in function is_partclone_image! Program terminated!"
     exit 1
@@ -1090,8 +1101,9 @@ save_part_by_partclone() {
   local fs_save partclone_img_info_tmp IP fs_p fs_pre comp_suf
   fs_save="$1"
   if [ -z "$fs_save" ]; then
-    echo "///ERROR/// The filesystem must be assigned in function save_part_by_partclone!!!"
-    echo "$msg_program_stop!"
+    echo "///ERROR/// The filesystem must be assigned in function save_part_by_partclone." | tee --append ${OCS_LOGFILE}
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
 
@@ -1107,7 +1119,7 @@ save_part_by_partclone() {
   compress_prog_prompt="$(echo "$compress_prog_opt" | sed -e "s/ -.*//g")"
   comp_suf="$(ocs-get-comp-suffix $compress_prog_opt)"
 
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   echo "Checking the disk space... " && disk_full_test $image_name_
   # assign partclone tmp file.
   # TODO: partclone_progress is not set actually
@@ -1119,53 +1131,69 @@ save_part_by_partclone() {
        partclone_img_info_tmp="/var/log/partclone.log" ;;
   esac
   [ -e "$partclone_img_info_tmp" ] && rm -f $partclone_img_info_tmp
-  echo $msg_delimiter_star_line
-  echo "Use partclone with $compress_prog_prompt to save the image."
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  echo "Use partclone with $compress_prog_prompt to save the image." | tee --append ${OCS_LOGFILE}
   case "$VOL_LIMIT" in
     [1-9]*)
-       echo "Image file will be split with size limit $VOL_LIMIT MB." ;;
+       echo "Image file will be split with size limit $VOL_LIMIT MB." | tee --append ${OCS_LOGFILE} ;;
     *)
-       echo "Image file will not be split." ;;
+       echo "Image file will not be split." | tee --append ${OCS_LOGFILE} ;;
   esac
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "If this action fails or hangs, check:"
-  echo "* Is the disk full ?" 
-  [ "$(root_over_nfs)" = "yes" ] && echo "* Network connection and NFS service."
+  echo "If this action fails or hangs, check:" | tee --append ${OCS_LOGFILE}
+  echo "* Is the disk full ?"  | tee --append ${OCS_LOGFILE}
+  [ "$(root_over_nfs)" = "yes" ] && echo "* Network connection and NFS service." | tee --append ${OCS_LOGFILE}
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
 
   start_time="$(date +%s%N)"
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
-  ( LC_ALL=C partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp \
-    -c -s $source_dev --output - | $compress_prog_opt | \
-    (
-     case "$VOL_LIMIT" in
-       [1-9]*)
-          # $tgt_dir/${tgt_file}.${fs_pre}-img. is prefix, the last "." is necessary make the output file is like hda1.${fs_pre}-img.aa, hda1.${fs_pre}-img.ab. We do not add -d to make it like hda1.${fs_pre}-img.00, hda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (hda1.${fs_pre}-img.000, hda1.${fs_pre}-img.001)
-          split -b ${VOL_LIMIT}m - $tgt_dir/${tgt_file}.${fs_pre}-img.${comp_suf}.
-          ;;
-       *)
-          cat - > $tgt_dir/${tgt_file}.${fs_pre}-img.${comp_suf}
-          ;;
-     esac
-    )
-  )
+
+  split_error="$(mktemp /tmp/split_error.XXXXXX)"
+
+  cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -c -s $source_dev --output - | $compress_prog_opt"
+  case "$VOL_LIMIT" in
+    [1-9]*)
+       # $tgt_dir/${tgt_file}.${fs_pre}-img. is prefix, the last "." is necessary make the output file is like hda1.${fs_pre}-img.aa, hda1.${fs_pre}-img.ab. We do not add -d to make it like hda1.${fs_pre}-img.00, hda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (hda1.${fs_pre}-img.000, hda1.${fs_pre}-img.001)
+       cmd_partclone="${cmd_partclone} | split -b ${VOL_LIMIT}m - $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}. 2> $split_error"
+       ;;
+    *)
+       cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf} 2> $split_error"
+       ;;
+  esac
+  echo "Run partclone: $cmd_partclone" | tee --append ${OCS_LOGFILE}
+  LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
   rc="$?"
+  cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
   end_time="$(date +%s%N)"
-  # sync_and_active_exec_files
+  if [ -s "$split_error" ]; then
+    cat $split_error | tee --append ${OCS_LOGFILE}
+  fi
+  rm -f $split_error
   # UGLY! Since we use partclone, then pipe to compression program, then IO redirect to file, the error control is weak. partclone wil not exit even if the disk is full. Therefore we check here.
-  echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/${tgt_file}.${fs_pre}-img.${comp_suf} is incomplete! You have to increase the disk space, then start clonezilla save mode again."
+  echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf} is incomplete. You have to increase the disk space, then start clonezilla save mode again."
   get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
-  # no preparation time, it's accurate enough.
-  echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)"
-  # For better security
-  chmod 600 $tgt_dir/${tgt_file}.${fs_pre}-img.${comp_suf}* 2>/dev/null
+  [ $rc -eq 0 ] && rc=$?
+  if [ $rc -eq 0 ]; then
+    # no preparation time, it's accurate enough.
+    echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append ${OCS_LOGFILE}
+    # For better security
+    chmod 600 $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}* 2>/dev/null
+  else
+    if ls $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}* &>/dev/null; then
+      rm -f $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}*
+    fi
+  fi
   # prepare statistic report
   conv_return_code_to_human_read $rc
   report_msg="$report_msg $source_dev, $clone_status, $space_used, $time_elapsed_in_min mins;"
-  echo $msg_delimiter_star_line
-  echo "Finished saving $source_dev as $tgt_dir/${tgt_file}.${fs_pre}-img.${comp_suf}"
+
+  if [ $rc -eq 0 ]; then
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    echo "Finished saving $source_dev as $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}" | tee --append ${OCS_LOGFILE}
+  fi
+  return $rc
 } #  end of save_part_by_partclone
 #
 save_part_by_partimage() {
@@ -1188,42 +1216,43 @@ save_part_by_partimage() {
   # Before saving, we check the filesystem integrity
   echo $msg_delimiter_star_line
   check_partimage_partition_integrity $source_dev
-  echo "Use $compress_prog_prompt to compress the image."
+  echo "Use $compress_prog_prompt to compress the image." | tee --append ${OCS_LOGFILE}
   case "$VOL_LIMIT" in
     [1-9]*)
-       echo "Image file will be split with size limit $VOL_LIMIT MB." ;;
+       echo "Image file will be split with size limit $VOL_LIMIT MB." | tee --append ${OCS_LOGFILE} ;;
     *)
-       echo "Image will not be split." ;;
+       echo "Image will not be split." | tee --append ${OCS_LOGFILE} ;;
   esac
   echo $msg_delimiter_star_line
   # it is important to run partimage in save mode with volume=0 and -B gui=no
   # so that we can send the data to stdout
   start_time="$(date +%s%N)"
-  partimage $DEFAULT_PARTIMAGE_SAVE_OPT $PARTIMAGE_SAVE_OPT -B gui=no save $source_dev stdout | $compress_prog_opt | \
-  (
-   case "$VOL_LIMIT" in
-     [1-9]*)
-        # "$tgt_dir/${tgt_file}." is prefix, the last "." is necessary
-        # make the output file is like hda1.aa, hda1.ab.
-        # We do not add -d to make it like hda1.00, hda1.01, since it will confuse people that it looks like created by partimage (hda1.000, hda1.001)
-        split -b ${VOL_LIMIT}m - $tgt_dir/${tgt_file}.
-        ;;
-     *)
-        cat - > $tgt_dir/${tgt_file}
-        ;;
-   esac
-  )
+  cmd_partimage="partimage $DEFAULT_PARTIMAGE_SAVE_OPT $PARTIMAGE_SAVE_OPT -B gui=no save $source_dev stdout | $compress_prog_opt"
+  case "$VOL_LIMIT" in
+    [1-9]*)
+       # "$tgt_dir/${tgt_file}." is prefix, the last "." is necessary
+       # make the output file is like hda1.aa, hda1.ab.
+       # We do not add -d to make it like hda1.00, hda1.01, since it will confuse people that it looks like created by partimage (hda1.000, hda1.001)
+       cmd_partimage="${cmd_partimage} | split -b ${VOL_LIMIT}m - $tgt_dir/${tgt_file}."
+       ;;
+    *)
+       cmd_partimage="${cmd_partimage} > $tgt_dir/${tgt_file}"
+       ;;
+  esac
+  echo "Run partimage: $cmd_partimage" | tee --append ${OCS_LOGFILE}
+  eval "$cmd_partimage" 2>&1 | tee --append ${OCS_LOGFILE}
   rc="$?"
   end_time="$(date +%s%N)"
   calculate_elapsed_time $start_time $end_time
-  echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)"
+  echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append ${OCS_LOGFILE}
   # For better security
   chmod 600 $tgt_dir/${tgt_file}* 2>/dev/null
   # prepare statistic report
   conv_return_code_to_human_read $rc
   report_msg="$report_msg $source_dev, $clone_status, $time_elapsed_in_min mins;"
   echo $msg_delimiter_star_line
-  echo "Finished saving $source_dev as $tgt_dir/${tgt_file}.XXX"
+  echo "Finished saving $source_dev as $tgt_dir/${tgt_file}.XXX" | tee --append ${OCS_LOGFILE}
+  return $rc
 } # end of save_part_by_partimage
 #
 save_part_by_dd() {
@@ -1248,72 +1277,87 @@ save_part_by_dd() {
   [ -z "$IMG_CLONE_CMP" ] && compress_prog_opt="gzip -c $extra_gzip_opt"
   compress_prog_prompt="$(echo "$compress_prog_opt" | sed -e "s/ -.*//g")"
 
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   echo "Checking the disk space... " && disk_full_test $image_name_
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "$msg_fs_not_supported_by_partimage_ntfsclone: $part_fs"
-  echo "$msg_cons_for_dd_clone"
+  echo "$msg_fs_not_supported_by_partimage_ntfsclone: $part_fs" | tee --append ${OCS_LOGFILE}
+  echo "$msg_cons_for_dd_clone" | tee --append ${OCS_LOGFILE}
   echo "$msg_will_be_inefficent_and_slow..."
   case "$s2s_img_prog_for_save" in
   dd)
-    echo "$msg_use_this_method_to_save_img: dd + $compress_prog_prompt"
-    echo "$msg_status_report_is_very_primitive..."
+    echo "$msg_use_this_method_to_save_img: dd + $compress_prog_prompt" | tee --append ${OCS_LOGFILE}
+    echo "$msg_status_report_is_very_primitive..." | tee --append ${OCS_LOGFILE}
     ;;
   partclone)
-    echo "$msg_use_this_method_to_save_img: partclone.dd + $compress_prog_prompt"
+    echo "$msg_use_this_method_to_save_img: partclone.dd + $compress_prog_prompt" | tee --append ${OCS_LOGFILE}
     ;;
   esac
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   case "$VOL_LIMIT" in
     [1-9]*)
-       echo "Image file will be split with size limit $VOL_LIMIT MB." ;;
+       echo "Image file will be split with size limit $VOL_LIMIT MB." | tee --append ${OCS_LOGFILE} ;;
     *)
-       echo "Image file will not be split." ;;
+       echo "Image file will not be split." | tee --append ${OCS_LOGFILE} ;;
   esac
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "If this action fails or hangs after several minutes, check:"
-  echo "* Is the disk full ?" 
+  echo "If this action fails or hangs after several minutes, check:" | tee --append ${OCS_LOGFILE}
+  echo "* Is the disk full ?" | tee --append ${OCS_LOGFILE}
   [ "$(root_over_nfs)" = "yes" ] && echo "* Network connection and NFS service."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
 
   case "$s2s_img_prog_for_save" in
   dd)
     dd_img_info_tmp="$(mktemp /tmp/dd_info.XXXXXX)"
     part_size="$(ocs-get-part-info $source_dev size)"
-    echo "Partition size: $part_size"
-    echo $msg_delimiter_star_line
+    echo "Partition size: $part_size" | tee --append ${OCS_LOGFILE}
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     # since dd does not report status with any option, we have to send SIGUSR1 to tell dd to report every some secs...
     # dd report interval (secs) is loaded from drbl-ocs.conf
     trigger_dd_status_report $source_dev $part_size &
     dd_report_sig_pid=$!
     start_time="$(date +%s%N)"
+    dd_retcode_file="$(mktemp /tmp/dd_retcode.XXXXXX)"
+    echo 1 > $dd_retcode_file
     #
-    ( LC_ALL=C dd bs=1M if=$source_dev $dd_save_extra_opt | \
-      $compress_prog_opt | \
+    ( 
+      (
+        LC_ALL=C dd bs=1M if=$source_dev $dd_save_extra_opt
+        echo $? > $dd_retcode_file
+      ) \
+      | $compress_prog_opt \
+      | \
       (
        case "$VOL_LIMIT" in
          [1-9]*)
             # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary
             # make the output file is like hda1.dd-img.aa, hda1.dd-img.ab.
             # We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.dd-img.001)
-            split -b ${VOL_LIMIT}m - $tgt_dir/${tgt_file}.dd-img.
+            split -b ${VOL_LIMIT}m - $tgt_dir/$(to_filename ${tgt_file}).dd-img.
             ;;
          *)
-            cat - > $tgt_dir/${tgt_file}.dd-img
+            cat - > $tgt_dir/$(to_filename ${tgt_file}).dd-img
             ;;
        esac
       )
-    ) 2>&1 | \
-    tee $dd_img_info_tmp
-    rc="$?"
+    ) 2>&1 \
+    | tee $dd_img_info_tmp
+    tail -n 30 "${dd_img_info_tmp}" >> ${OCS_LOGFILE}
+    dd_retcode="$(cat $dd_retcode_file)"
+    if [ "$dd_retcode" = "0" ]; then
+      echo "dd successfully cloned the device ($source_dev) to the image (-)" | tee --append ${OCS_LOGFILE}
+    fi
+    rm -f $dd_retcode_file
+    rc=$dd_retcode
+
     end_time="$(date +%s%N)"
     kill -9 $dd_report_sig_pid &>/dev/null
     # save the size so that when we restore the image, partition size can be shown in the status report. This is better than to get partition info from *-pt.sf (which is shown in sectors, not absolute value) or uncompress *.dd-img then get the partition info in the loop device file (not efficient).
-    echo "$part_size" > $tgt_dir/${tgt_file}-size
+    echo "$part_size" > $tgt_dir/$(to_filename ${tgt_file})-size
     # UGLY! Since we use dd, then pipe to compression program, then IO redirect to file, the error control is weak. dd wil not exit even if the disk is full. Therefore we check here.
-    echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/${tgt_file}.dd-img is incomplete! You have to increase the disk space, then start clonezilla save mode again."
+    echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename ${tgt_file}).dd-img is incomplete. You have to increase the disk space, then start Clonzilla save mode again."
     get_dd_image_info $dd_img_info_tmp $start_time $end_time
+    [ $rc -eq 0 ] && rc=$?
     [ -f "$dd_img_info_tmp" ] && rm -f $dd_img_info_tmp
     ;;
   partclone)
@@ -1329,55 +1373,69 @@ save_part_by_dd() {
     [ -f "$partclone_img_info_tmp" ] && rm -f $partclone_img_info_tmp
     start_time="$(date +%s%N)"
     # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
-    ( LC_ALL=C partclone.dd $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp \
-      -c -s $source_dev --output - | $compress_prog_opt | \
-      (
-       case "$VOL_LIMIT" in
-         [1-9]*)
-            # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary make the output file is like hda1.dd-img.aa, hda1.dd-img.ab. We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.$dd-img.001)
-            split -b ${VOL_LIMIT}m - $tgt_dir/${tgt_file}.dd-img.
-            ;;
-         *)
-            cat - > $tgt_dir/${tgt_file}.dd-img
-            ;;
-       esac
-      )
-    )
+
+    split_error="$(mktemp /tmp/split_error.XXXXXX)"
+
+    cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -c -s $source_dev --output - | $compress_prog_opt"
+    case "$VOL_LIMIT" in
+      [1-9]*)
+         # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary make the output file is like hda1.dd-img.aa, hda1.dd-img.ab. We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.$dd-img.001)
+         cmd_partclone="${cmd_partclone} | split -b ${VOL_LIMIT}m - $tgt_dir/$(to_filename ${tgt_file}).dd-img. 2> $split_error"
+         ;;
+      *)
+         cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).dd-img 2> $split_error"
+         ;;
+    esac
+    echo "Run partclone: $cmd_partclone" | tee --append ${OCS_LOGFILE}
+    LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     rc="$?"
+    cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
     end_time="$(date +%s%N)"
+    if [ -s "$split_error" ]; then
+      cat $split_error | tee --append ${OCS_LOGFILE}
+    fi
+    rm -f $split_error
     # sync_and_active_exec_files
     # UGLY! Since we use partclone, then pipe to compression program, then IO redirect to file, the error control is weak. partclone wil not exit even if the disk is full. Therefore we check here.
-    echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/${tgt_file}.dd-img is incomplete! You have to increase the disk space, then start clonezilla save mode again."
+    echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename {tgt_file}).dd-img is incomplete! You have to increase the disk space, then start clonezilla save mode again."
     get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
+    [ $rc -eq 0 ] && rc=$?
     ;;
   esac
 
-  # no preparation time, it's accurate enough.
-  echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)"
-  # For better security
-  chmod 600 $tgt_dir/${tgt_file}.dd-img* 2>/dev/null
+  if [ $rc -eq 0 ]; then
+    # no preparation time, it's accurate enough.
+    echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append ${OCS_LOGFILE}
+    # For better security
+    chmod 600 $tgt_dir/$(to_filename ${tgt_file}).dd-img* 2>/dev/null
+  else
+    if ls $tgt_dir/$(to_filename ${tgt_file}).dd-img* &>/dev/null; then
+      rm -f $tgt_dir/$(to_filename ${tgt_file}).dd-img*
+    fi
+  fi
 
   # Put this partition info if we can find it
   # (1) Check if it's VMware vmkcore partition
   # (2) Check if it's BSD swap partition
-  hdtmp="${tgt_file:0:3}"
-  part_id="$(get_part_id_from_sf_format $tgt_dir/${hdtmp}-pt.sf ${tgt_file})"
+  hdtmp="$(get_diskname $tgt_file)"
+  part_id="$(get_part_id_from_sf_format $tgt_dir/$(to_filename ${hdtmp})-pt.sf ${tgt_file})"
   # Find if it's a BSD swap partition
   bsd_swap_partition="$(get_bsd_swap_partition /dev/$hdtmp)"
   if [ -n "$(LC_ALL=C echo "$part_id" | grep -Ewi "fc")" ]; then
-    echo 'partition=VMware_vmkcore_partition' > $tgt_dir/${tgt_file}.dd-img.info
+    echo 'partition=VMware_vmkcore_partition' > $tgt_dir/$(to_filename ${tgt_file}).dd-img.info
   elif [ -n "$(LC_ALL=C echo "$part_id" | grep -Ewi "(a5|a6|a9)")" ]; then
     # Partition ID a5 (FreeBSD), a6 (OpenBSD), a9 (NetBSD) are slices
-    echo 'partition=BSD_slice' > $tgt_dir/${tgt_file}.dd-img.info
+    echo 'partition=BSD_slice' > $tgt_dir/$(to_filename ${tgt_file}).dd-img.info
   elif [ -n "$(LC_ALL=C echo "$bsd_swap_partition" | grep -Ewo "/dev/$tgt_file")" ]; then
-    echo 'partition=BSD_swap_partition' > $tgt_dir/${tgt_file}.dd-img.info
+    echo 'partition=BSD_swap_partition' > $tgt_dir/$(to_filename ${tgt_file}).dd-img.info
   fi
 
   # prepare statistic report
   conv_return_code_to_human_read $rc
   report_msg="$report_msg $source_dev, $clone_status, $space_used, $time_elapsed_in_min mins;"
-  echo $msg_delimiter_star_line
-  echo "Finished saving $source_dev as $tgt_dir/${tgt_file}.dd-img"
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  echo "Finished saving $source_dev as $tgt_dir/$(to_filename ${tgt_file}).dd-img" | tee --append ${OCS_LOGFILE}
+  return $rc
 } # end of save_part_by_dd
 #
 image_save() {
@@ -1409,7 +1467,7 @@ image_save() {
     case "$part_fs" in
       fat16|fat32|vfat|ntfs) ocs-rm-win-swap-hib $source_dev;;
     esac
-    echo $msg_delimiter_star_line
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
   if [ "$fsck_src_part_auto" = "yes" ]; then
@@ -1426,14 +1484,14 @@ image_save() {
     echo $msg_delimiter_star_line
   fi
 
-  echo "Starting saving $source_dev as $tgt_dir/${tgt_file}.XXX..."
+  echo "Starting saving $source_dev as $tgt_dir/${tgt_file}.XXX..." | tee --append ${OCS_LOGFILE}
   if [ -z "$part_fs" ]; then
     part_fs_shown="Unknown or unsupported"
   else
     part_fs_shown="$part_fs"
   fi
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "$source_dev filesystem: $part_fs_shown."
+  echo "$source_dev filesystem: $part_fs_shown." | tee --append ${OCS_LOGFILE}
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   if [ "$FORCE_TO_USE_DD" = "yes" ]; then
     # case (0): force to use dd
@@ -1451,51 +1509,55 @@ image_save() {
     # case (4): not supported filesystem, the last choice is to use dd to dump.
     save_part_by_dd
   fi
-  echo $msg_delimiter_star_line
+  rc=$?
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   if [ "$rc" -ne 0 ]; then
      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "Failed to save partition $source_dev! $msg_press_enter_to_continue..."
+     echo "Failed to save partition $source_dev." | tee --append ${OCS_LOGFILE}
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     echo "$msg_press_enter_to_continue..."
      read
+     copy_error_log
   fi
+  # We put the complete log in clonezilla-img file, not here.
+  #copy_log ${tgt_dir} ${source_dev}
   return $rc
 } # end of image_save
 
 # check if the user input /dev/hda, /dev/hdb...
 check_input_hd() {
     local target_hd="$*"
-    [ -z "$target_hd" ] && echo "No device selected!" && exit 1
+    if [ -z "$target_hd" ]; then
+      echo "No device selected." | tee --append ${OCS_LOGFILE}
+      echo "$msg_program_stop."  | tee --append ${OCS_LOGFILE}
+      copy_error_log
+      exit 1
+    fi
     for idisk in $target_hd; do
-      case "$idisk" in
-           [hsv]d[a-z])
-             true
-             ;;
-           *)
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-            echo "\"$idisk\" is unknown HD device! Known and supported HD device is like hda, hdb, sda, sdb... $msg_program_stop!"
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-            echo -n "Press Enter to exit..."
-            read
-            exit 1
-      esac
+      if ! is_supported_dev "$idisk"; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "\"$idisk\" is an unknown hard drive device. $msg_program_stop." | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "Press Enter to exit..." | tee --append ${OCS_LOGFILE}
+        read
+        copy_error_log
+        exit 1
+      fi
     done
 }
 check_input_partition() {
     local tgt_parts="$*"
     [ -z "$tgt_parts" ] && echo "No device selected!" && exit 1
     for ipart in $tgt_parts; do
-      case "$ipart" in
-           [hsv]d[a-z][0-9]*)
-             continue
-             ;;
-           *)
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-            echo "\"$target_part\" is unknown partition device! Known and supported partition device is like hda1, hda2, hdb1, hdc1... $msg_program_stop!"
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-            echo -n "Press Enter to exit..."
-            read
-            exit 1
-      esac
+      if ! is_partition "$ipart"; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "\"$ipart\" is an unknown partition device. $msg_program_stop." | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "Press Enter to exit..."
+        read
+        copy_error_log
+        exit 1
+      fi
     done
 }
 #
@@ -1512,15 +1574,15 @@ check_specify_hd_exists() {
   gen_proc_partitions_map_file
   if [ -z "$(grep -E "$target_hd_2_be_checked\>" $partition_table)" ]; then
      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "$msg_unable_to_find_target_hd: \"$target_hd_2_be_checked\"!!!"
-     echo "$msg_check_if_this_hd_exists_and_more: $target_hd_2_be_checked"
+     echo "$msg_unable_to_find_target_hd: \"$target_hd_2_be_checked\"!!!" | tee --append ${OCS_LOGFILE}
+     echo "$msg_check_if_this_hd_exists_and_more: $target_hd_2_be_checked" | tee --append ${OCS_LOGFILE}
      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-     echo "$msg_the_partition_in_the_system_now:"
+     echo "$msg_the_partition_in_the_system_now:" | tee --append ${OCS_LOGFILE}
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-     echo $msg_delimiter_star_line
-     cat /proc/partitions
-     echo $msg_delimiter_star_line
-     echo "$msg_program_stop!!!"
+     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+     cat /proc/partitions | tee --append ${OCS_LOGFILE}
+     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+     echo "$msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
      echo -n "$msg_press_enter_to_continue..."
      read
@@ -1533,8 +1595,8 @@ check_specify_part_exists() {
   local check_target_part=$1
   local partition_table
   if [ -z "$check_target_part" ]; then
-    echo "You have to assign a device to be checked!"
-    echo "Skip checking HD!!!"
+    echo "You have to assign a device to be checked." | tee --append ${OCS_LOGFILE}
+    echo "Skip checking HD." | tee --append ${OCS_LOGFILE}
     return 1
   fi
   # Check if the target part exists or not
@@ -1542,16 +1604,17 @@ check_specify_part_exists() {
   gen_proc_partitions_map_file
   if [ -z "$(LC_ALL=C grep -Ew "$check_target_part\>" $partition_table)" ]; then
      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "Unable to find target partition \"$check_target_part\"!!!"
+     echo "Unable to find target partition \"$check_target_part\"." | tee --append ${OCS_LOGFILE}
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-     echo $msg_delimiter_star_line
-     echo "The disk and partition in this system:"
-     cat $partition_table
-     echo $msg_delimiter_star_line
-     echo "Check if the partition $check_target_part really exists, otherwise maybe the kernel is too old!"
-     echo "$msg_program_stop!!!"
+     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+     echo "The disk and partition in this system:" | tee --append ${OCS_LOGFILE}
+     cat $partition_table | tee --append ${OCS_LOGFILE}
+     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+     echo "Check if the partition $check_target_part really exists, otherwise maybe the kernel is too old." | tee --append ${OCS_LOGFILE}
+     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
      echo -n "$msg_press_enter_to_continue..."
      read
+     copy_error_log
      exit 1
   fi
   [ -f "$partition_table" ] && rm -f $partition_table
@@ -1593,8 +1656,8 @@ get_known_partition_sf_format() {
        for i in $fuzzy_parts; do
          # /dev/sda2 -> sda2 -> 2
 	 # dsk_pt is like /home/partimag/sarge-r8/sda-pt.parted
-         dsk_pt="$workdir/$(basename $i | sed -e "s/[[:digit:]]*$//g")-pt.parted"
-         index="$(basename $i | sed -e "s/[hsv]d[a-z]*//g")" # index is like 2
+         dsk_pt="$workdir/$(to_filename $(get_diskname $i))-pt.parted"
+         index=$(get_part_number $i) # index is like 2
 	 if [ -e "${dsk_pt}" ]; then
 	   part_fs="$(grep -Ew "^[[:space:]]*$index" ${dsk_pt} | grep -i swap)"
            if [ -z "$part_fs" ]; then  # No swap keyword in parted table for $index
@@ -1621,12 +1684,12 @@ get_swap_partition_sf_format() {
          # For ocs-onthefly, the file to be checked is tgt_pt.parted
          if [ -z "$(LC_ALL=C basename "$partition_table" | grep -Ei "tgt_pt.sf")" ]; then
            # normal case, i.e. the file name is like sda-pt.sf
-           dsk_pt="$workdir/$(LC_ALL=C basename $i | sed -e "s/[[:digit:]]*$//g")-pt.parted"
+           dsk_pt="$workdir/$(to_filename $(get_diskname $i))-pt.parted"
          else
            # Special case for ocs-onthefly, the file name is like tgt_pt.sf
            dsk_pt="$workdir/tgt_pt.parted"
          fi
-         index="$(LC_ALL=C basename $i | sed -e "s/[hsv]d[a-z]*//g")" # index is like 2
+         index=$(get_part_number $i) # index is like 2
 	 if [ -e "${dsk_pt}" ]; then
 	   part_fs="$(LC_ALL=C grep -Ew "^[[:space:]]*$index" ${dsk_pt} | grep -i swap)"
            if [ -n "$part_fs" ]; then  # With swap keyword in parted table for $index
@@ -1748,7 +1811,7 @@ get_known_partition_proc_format() {
          # i.e. No "extended" keyword.
          # Therefore here we use parted to check it again.
          # Ex: parted -s /dev/hda print | grep -i -A10000 "^Number" | grep -iEw "^[[:space:]]*2" | grep -io 'extended'
-         [ -n "$(LC_ALL=C parted -s /dev/${p:0:3} print | grep -i -A10000 "^Number" | grep -iEw "^[[:space:]]*${p:3}" | grep -ioE 'extended')" ] && continue
+	 [ -n "$(LC_ALL=C parted -s /dev/$(get_diskname $p) print | grep -i -A10000 "^Number" | grep -iEw "^[[:space:]]*$(get_part_number $p)" | grep -ioE 'extended')" ] && continue
          ;;
        swap)
          # We want swap partition only, so only include swap.
@@ -1757,7 +1820,7 @@ get_known_partition_proc_format() {
          # i.e. No "extended" keyword.
          # Therefore here we use parted to check it again.
          # Ex: parted -s /dev/hda print | grep -i -A10000 "^Number" | grep -iEw "^[[:space:]]*2" | grep -io 'extended'
-         [ -z "$(LC_ALL=C parted -s /dev/${p:0:3} print | grep -i -A10000 "^Number" | grep -iEw "^[[:space:]]*${p:3}" | grep -ioE 'swap')" ] && continue
+	 [ -z "$(LC_ALL=C parted -s /dev/$(get_diskname $p) print | grep -i -A10000 "^Number" | grep -iEw "^[[:space:]]*$(get_part_number $p)" | grep -ioE 'swap')" ] && continue
          ;;
        esac
        BACKUP_DEVS="$BACKUP_DEVS $p"
@@ -1786,7 +1849,7 @@ check_grub_partition() {
     done
   else
     # Search whole system
-    partition_list="$(LC_ALL=C awk '/[hsv]d[a-z][0-9]+/ { print $4; }' $partition_table | sort $sort_V_opt)"
+    partition_list="$(get_part_list $partition_table)"
   fi
   found_grub_partition=""
   for ipartition in $partition_list; do
@@ -1827,8 +1890,7 @@ mount_root_partition_for_separate_boot_part() {
   local partition_list="" root_part="" lvm_list ilv fname mrc p_type rc
   [ -z "$hd_img" ] && echo "You must assign mounting point in function mount_root_partition_for_separate_boot_part" && exit 1
   gen_proc_partitions_map_file
-  get_sort_V_opt
-  partition_list="$(LC_ALL=C awk '/[hsv]d[a-z][0-9]+/ { print $4; }' $partition_table | sort $sort_V_opt)"
+  partition_list=$(get_part_list $partition_table)
   for ipartition in $partition_list; do
     root_partition="/dev/$ipartition"
     # process the boot loader
@@ -1871,10 +1933,10 @@ mount_root_partition_for_separate_boot_part() {
   fi
   [ -f "$partition_table" ] && rm -f $partition_table
   if [ -n "$found_root_partition" ]; then
-    echo "$found_root_partition is mounted as root partition for grub-install..."
+    echo "$found_root_partition is mounted as root partition for grub-install..." | tee --append ${OCS_LOGFILE} 
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "No root partition is mounted! You'd better to make sure the running kernel does support the file system of root partition!"
+    echo "No root partition is mounted! You'd better to make sure the running kernel does support the file system of root partition!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
 } # end of mount_root_partition_for_separate_boot_part
@@ -1913,12 +1975,13 @@ check_if_input_device_exist() {
     echo $ret_dev > $ANS_TMP
     # strip the unnecessary quotation mark "
     LC_ALL=C perl -pi -e "s/\"//g" $ANS_TMP
-    echo "The selected devices: $ret_dev"
+    echo "The selected devices: $ret_dev" | tee --append ${OCS_LOGFILE}
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "No inputted devices found!"
-    echo "$msg_program_stop!!!"
+    echo "No inputted devices found!" | tee --append ${OCS_LOGFILE}
+    echo "$msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    copy_error_log
     exit 1
   fi
 } # end of check_if_input_device_exist
@@ -1946,9 +2009,10 @@ check_ntfs_partition_integrity() {
 	   ntfsfix $src_dev
 	   ;;
 	 *)
-           echo "$msg_program_stop!"
+           echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
            echo -n "$msg_press_enter_to_continue..."
            read
+           copy_error_log
            exit 1
 	   ;;
        esac
@@ -2103,8 +2167,9 @@ test_run_grub1_from_restored_os(){
   local root_prt="$1"   # e.g. /dev/sda2, the partition where / exists
   local rc_
   if [ -z "$root_prt" ]; then
-    echo "Variable root_prt not assigned in function test_run_grub1_from_restored_os!"
-    echo "Program terminated!"
+    echo "Variable root_prt not assigned in function test_run_grub2_from_restored_os." | tee --append ${OCS_LOGFILE}
+    echo "Program terminated." | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
   mnt_pnt="$(mktemp -d /tmp/root_reinst.XXXXXX)"
@@ -2214,8 +2279,9 @@ test_run_grub2_from_restored_os(){
   local root_prt="$1"   # e.g. /dev/sda2, the partition where / exists
   local rc_
   if [ -z "$root_prt" ]; then
-    echo "Variable root_prt not assigned in function test_run_grub2_from_restored_os!"
-    echo "Program terminated!"
+    echo "Variable root_prt not assigned in function test_run_grub2_from_restored_os." | tee --append ${OCS_LOGFILE}
+    echo "Program terminated." | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
   mnt_pnt="$(mktemp -d /tmp/root_reinst.XXXXXX)"
@@ -2249,8 +2315,9 @@ run_grub2_from_restored_os() {
   for i in grub2_prt root_prt grub2_hd; do
     eval ivar=\$${i}
     if [ -z "$ivar" ]; then
-      echo "No \"$i\" assigned in function run_grub2_from_restored_os!"
-      echo "Program terminated!"
+      echo "No \"$i\" assigned in function run_grub2_from_restored_os." | tee --append ${OCS_LOGFILE}
+      echo "Program terminated." | tee --append ${OCS_LOGFILE}
+      copy_error_log
       exit 1
     fi
   done
@@ -2488,7 +2555,12 @@ install_grub_hd() {
              selected_hd="$1"
              shift
            fi
-           [ -z "$selected_hd" ] && echo "-s is used, but no selected_hd assigned." && exit 1
+           if [ -z "$selected_hd" ]; then
+             echo "-s is used, but no selected_hd assigned." | tee --append ${OCS_LOGFILE}
+             echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+             copy_error_log
+             exit 1
+           fi
            ;;
         -p|--selected-parts)
            shift
@@ -2497,15 +2569,22 @@ install_grub_hd() {
              selected_parts="$1"
              shift
            fi
-           [ -z "$selected_parts" ] && echo "-p is used, but no selected_parts assigned." && exit 1
+           if [ -z "$selected_parts" ]; then
+             echo "-p is used, but no selected_parts assigned." | tee --append ${OCS_LOGFILE}
+             echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+             copy_error_log
+             exit 1
+           fi
            ;;
         -n|--no-check-before-install)
            # Option to force install grub even if boot loader is not found as grub
            shift
 	   check_before_install="no"
            ;;
-        -*)     echo "${0}: ${1}: invalid option" >&2
-                USAGE >& 2
+        -*)     echo "${0}: ${1}: invalid option" | tee --append ${OCS_LOGFILE} >&2
+                USAGE | tee --append ${OCS_LOGFILE} >& 2
+                echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+                copy_error_log
                 exit 2 ;;
         *)      break ;;
       esac
@@ -2574,10 +2653,10 @@ install_grub_hd() {
        if [ -n "$selected_parts" ]; then
          # Only if we assign the selected partitions, we have to check...
          if [ -n "$(echo $selected_parts | grep -Ewo "$(basename $grub_partition)")" ]; then
-           echo "Found grub partition \"$grub_partition\", which is on the restored partition list ($selected_parts). Will run $grub_install_exec later."
+           echo "Found grub partition \"$grub_partition\", which is on the restored partitions list ($selected_parts). Will run $grub_install_exec later."
          else
            # E.g. echo "sda1 sda3" | grep -Ewo "$(basename /dev/sda1)"
-           echo "The found grub partition \"$grub_partition\" is _NOT_ on the restored partition list ($selected_parts). Skip running $grub_install_exec."
+           echo "The found grub partition \"$grub_partition\" is _NOT_ on the restored partitions list ($selected_parts). Skip running $grub_install_exec."
            return 3
          fi
        fi
@@ -2586,7 +2665,7 @@ install_grub_hd() {
     # So grub_hd is like "hda" or "sda"
     # Remove the leading space, just in case.
     grub_partition="$(LC_ALL=C echo "$grub_partition" | sed -r -e "s/^[[:space:]]*//g")"
-    grub_hd="${grub_partition:5:3}"
+    grub_hd="$(get_diskname $grub_partition)"
     # active this device
     fdisk -l /dev/$grub_hd &>/dev/null
 
@@ -2792,10 +2871,10 @@ output_HD_CHS() {
    cylinders="$(LC_ALL=C sfdisk $opt_gm /dev/$DEV 2>/dev/null | grep -oEi "[[:digit:]]+ cylinders" | awk -F" " '{print $1}')"
    heads="$(LC_ALL=C sfdisk $opt_gm /dev/$DEV 2>/dev/null | grep -oEi "[[:digit:]]+ heads" | awk -F" " '{print $1}')"
    sectors="$(LC_ALL=C sfdisk $opt_gm /dev/$DEV 2>/dev/null |grep -oEi "[[:digit:]]+ sectors" | awk -F" " '{print $1}')"
-   [ -f "$target_d/${DEV}-chs.sf" ] && rm -f $target_d/${DEV}-chs.sf
+   [ -f "$target_d/$(to_filename ${DEV})-chs.sf" ] && rm -f $target_d/$(to_filename ${DEV})-chs.sf
    for i in cylinders heads sectors; do
      eval num=\$$i
-     echo "$i=$num" >> $target_d/${DEV}-chs.sf
+     echo "$i=$num" >> $target_d/$(to_filename ${DEV})-chs.sf
    done
 } # output the CHS values of a HD
 #
@@ -2805,7 +2884,7 @@ load_HD_geometry_opt_from_image() {
   # sfdisk_opt is global variable
   no_CHS_data_warning() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Unable to find the previous saved file $target_d/${DEV}-chs.sf!"
+      echo "Unable to find the previous saved file $target_d/$(to_filename ${DEV})-chs.sf."
       echo "Maybe the image is created by old verson clonezilla."
       echo "We will not force to use the specified HD geometry."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -2813,8 +2892,8 @@ load_HD_geometry_opt_from_image() {
 
   [ -z "$target_d" ] && return 1
   [ -z "$DEV" ] && return 1
-  if [ -f "$target_d/${DEV}-chs.sf" ]; then
-    . $target_d/${DEV}-chs.sf
+  if [ -f "$target_d/$(to_filename ${DEV})-chs.sf" ]; then
+    . $target_d/$(to_filename ${DEV})-chs.sf
     [ -z "$cylinders" -o -z "$heads" -o -z "$sectors" ] && no_CHS_data_warning
     sfdisk_opt="$sfdisk_opt -C $cylinders -H $heads -S $sectors"
   else 
@@ -2854,10 +2933,10 @@ turn_off_swap() {
 } # end of turn_off_swap
 #
 turn_off_swap_and_LVM2() {
-  turn_off_swap
+  turn_off_swap | tee --append ${OCS_LOGFILE}
   # Stop LVM so that the HD will not be occupied, we use script comes from
   # gentoo, but actually just run "vgchange -an" will be ok.
-  ocs-lvm2-stop
+  ocs-lvm2-stop | tee --append ${OCS_LOGFILE}
   sleep 1
 } # end of turn_off_swap_and_LVM2
 #
@@ -2868,39 +2947,42 @@ check_integrity_of_partition_table_in_disk() {
   local dsk_chk_tmp="$(mktemp /tmp/dsk_chk_tmp.XXXXXX)"
   local disk_name continue_confirm_ans
   if [ -z "$disk_file" ]; then
-    echo "To check partition table, you have to assign disk!"
+    echo "To check partition table, you have to assign disk." | tee --append ${OCS_LOGFILE}
+    echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
   # use parted to check if the partition table is ok or not.
-  echo "Checking the integrity of partition table in the disk $disk_file... "
+  echo "Checking the integrity of partition table in the disk $disk_file... " | tee --append ${OCS_LOGFILE}
   parted -s $disk_file print &> $dsk_chk_tmp
   rc=$?
   if [ "$rc" -gt 0 ]; then
     disk_name="$(basename $disk_file)"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$msg_the_partition_table_in_disk_is_illegal: $disk_file"
-    echo "$msg_parted_detect_as_wrong"
+    echo "$msg_the_partition_table_in_disk_is_illegal: $disk_file" | tee --append ${OCS_LOGFILE}
+    echo "$msg_parted_detect_as_wrong" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     if [ -e "$dsk_chk_tmp" ]; then
-      echo "$msg_error_messages_from_parted_are:"
-      echo $msg_delimiter_star_line
-      cat $dsk_chk_tmp
-      echo $msg_delimiter_star_line
+      echo "$msg_error_messages_from_parted_are:" | tee --append ${OCS_LOGFILE}
+      echo $msg_delimiter_star_line               | tee --append ${OCS_LOGFILE}
+      cat $dsk_chk_tmp                            | tee --append ${OCS_LOGFILE}
+      echo $msg_delimiter_star_line               | tee --append ${OCS_LOGFILE}
       rm -f $dsk_chk_tmp
     fi
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_continue_with_weried_partition_table"
+    echo "$msg_continue_with_weried_partition_table"      | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo -n "$msg_are_u_sure_u_want_to_continue ? (y/N) "
+    echo -n "$msg_are_u_sure_u_want_to_continue ? (y/N) " | tee --append ${OCS_LOGFILE}
     read continue_confirm_ans
     case "$continue_confirm_ans" in
          y|Y|[yY][eE][sS])
-	    echo "Very bad choice!"
-            echo "$msg_ok_let_do_it!"
+            echo "Very bad choice."  | tee --append ${OCS_LOGFILE}
+            echo "$msg_ok_let_do_it" | tee --append ${OCS_LOGFILE}
             ;;
          *)
-	    echo "Smart choice!"
-            echo "$msg_program_stop!"
+            echo "Smart choice."      | tee --append ${OCS_LOGFILE}
+            echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+            copy_error_log
             exit 1
     esac
   fi
@@ -2922,24 +3004,24 @@ check_created_partition_table() {
     exit 1
   fi
   # use parted to check if the partition table is ok or not.
-  echo "Checking the integrity of partition table in the disk $disk_file... "
+  echo "Checking the integrity of partition table in the disk $disk_file... " | tee --append $OCS_LOGFILE
   parted -s $disk_file print &> $dsk_chk_tmp
   rc=$?
   if [ "$rc" -gt 0 ]; then
     disk_name="$(basename $disk_file)"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$msg_the_partition_table_in_disk_is_illegal: $disk_file"
-    echo "$msg_does_this_part_table_file_fit_disk: $img_name/${disk_name}-pt.sf ?"
-    echo "$msg_is_this_disk_too_small: $disk_file ?"
+    echo "$msg_the_partition_table_in_disk_is_illegal: $disk_file" | tee --append $OCS_LOGFILE
+    echo "$msg_does_this_part_table_file_fit_disk: $img_name/$(to_filename ${disk_name})-pt.sf ?" | tee --append $OCS_LOGFILE
+    echo "$msg_is_this_disk_too_small: $disk_file ?" | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     if [ -e "$dsk_chk_tmp" ]; then
-      echo "$msg_error_messages_from_parted_are:"
-      echo $msg_delimiter_star_line
-      cat $dsk_chk_tmp
-      echo $msg_delimiter_star_line
+      echo "$msg_error_messages_from_parted_are:" | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+      cat $dsk_chk_tmp | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
       rm -f $dsk_chk_tmp
     fi
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop." | tee --append $OCS_LOGFILE
     exit 1
   fi
   [ -e "$dsk_chk_tmp" ] && rm -f $dsk_chk_tmp
@@ -2951,8 +3033,9 @@ check_blocks_per_group_of_ext2_3(){
   local img_name="$2"
   local blocks_per_group
   if [ -z "$ $part_" ]; then
-    echo "To check the blocks per group of ext2/ext3, you have to assign the partition!"
-    echo "$msg_program_stop!"
+    echo "To check the blocks per group of ext2/ext3, you have to assign the partition." | tee --append $OCS_LOGFILE
+    echo "$msg_program_stop." | tee --append $OCS_LOGFILE
+    copy_error_log
     exit 1
   fi
   blocks_per_group="$(dumpe2fs $part_ 2>/dev/null | grep -i "^Blocks per group:" | awk -F":" '{print $2}' | sed -e "s/^[[:space:]]*//g")"
@@ -3014,7 +3097,7 @@ create_partition() {
 
   # The following actions must be after turn_off_swap_and_LVM2, since if swap and LVM2 is not off, partimage or ntfsclone will not be able to write the busy partitions. 
 
-  echo "Creating partition in $tgt_hd_file..."
+  echo "Creating partition in $tgt_hd_file..." | tee --append $OCS_LOGFILE
   check_if_source_dev_busy_before_create_partition $tgt_hd_file
 
   #
@@ -3024,36 +3107,37 @@ create_partition() {
   tgt_disk_size_GB="$(LC_ALL=C echo "scale=1; $tgt_disk_size_sec*512/1000.0^3" | bc -l)"
   if [ "$chk_tgt_disk_size_bf_mk_pt" = "yes" ]; then
     if [ "$src_disk_size_sec" -gt "$tgt_disk_size_sec" ]; then
-      echo $msg_delimiter_star_line
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "$msg_destination_disk_too_small"
-      echo "$msg_destination_disk_size: $tgt_disk_size_sec sectors ($tgt_disk_size_GB GB)"
-      echo "$msg_src_disk_size_from_image: $src_disk_size_sec sectors ($src_disk_size_GB GB)"
+      echo "$msg_destination_disk_too_small" | tee --append ${OCS_LOGFILE}
+      echo "$msg_destination_disk_size: $tgt_disk_size_sec sectors ($tgt_disk_size_GB GB)" | tee --append ${OCS_LOGFILE}
+      echo "$msg_src_disk_size_from_image: $src_disk_size_sec sectors ($src_disk_size_GB GB)" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+      copy_error_log
       exit 1
     fi
   fi
 
   # Clean the MBR and GPT partition table on the destination disk first
   if type sgdisk &>/dev/null; then
-    echo "Trying to clean the MBR and GPT partition table on the destination disk first: $tgt_hd_file"
+    echo "Trying to clean the MBR and GPT partition table on the destination disk first: $tgt_hd_file" | tee --append ${OCS_LOGFILE}
     LC_ALL=C sgdisk --zap-all $tgt_hd_file &>/dev/null
     sleep 1
-    echo "Informing kernel the partition table has changed..."
+    echo "Informing kernel the partition table has changed..." | tee --append ${OCS_LOGFILE}
     inform_kernel_partition_table_changed mbr $tgt_hd_file
   fi
 
   # From the output file of parted, we can decide if the partition is gpt or mbr
-  if `is_gpt_partitition_table_file $tgt_dir/${tgt_hd_name}-pt.parted`; then
+  if `is_gpt_partitition_table_file $tgt_dir/$(to_filename ${tgt_hd_name})-pt.parted`; then
     pt_type="gpt"
-  elif `is_mbr_partitition_table_file  $tgt_dir/${tgt_hd_name}-pt.parted`; then
+  elif `is_mbr_partitition_table_file $tgt_dir/$(to_filename ${tgt_hd_name})-pt.parted`; then
     pt_type="mbr"
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Unknown partition table format from the file $tgt_dir/${tgt_hd_name}-pt.parted!"
+    echo "Unknown partition table format from the file $tgt_dir/$(to_filename ${tgt_hd_name})-pt.parted!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
   fi
 
@@ -3062,11 +3146,11 @@ create_partition() {
   mbr)
     # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
     if [ "$use_HD_CHS_from_EDD_pref" = "yes" ]; then
-      if [ -z "$(LC_ALL=C strings $tgt_dir/${tgt_hd_name}-mbr | grep -i "grub")" ]
+      if [ -z "$(LC_ALL=C strings $tgt_dir/$(to_filename ${tgt_hd_name})-mbr | grep -i "grub")" ]
       then
         # It's not grub boot loader, set use_HD_CHS_from_EDD as yes
-	echo "Non-grub boot loader found on $tgt_dir/${tgt_hd_name}-mbr..."
-	echo "The CHS value of hard drive from EDD will be used for sfdisk."
+	echo "Non-grub boot loader found on $tgt_dir/$(to_filename ${tgt_hd_name})-mbr..." | tee --append $OCS_LOGFILE
+	echo "The CHS value of hard drive from EDD will be used for sfdisk." | tee --append $OCS_LOGFILE
 	use_HD_CHS_from_EDD="yes"
       fi
     fi
@@ -3078,7 +3162,7 @@ create_partition() {
       if [ -n "$rawhead" -a -n "$rawsector" -a -n "$rawcylinder" ]; then
         sfdisk_opt="$sfdisk_opt -C $rawcylinder -H $rawhead -S $rawsector"
       else
-        echo "No CHS value was found from EDD info for disk $tgt_hd_file."
+        echo "No CHS value was found from EDD info for disk $tgt_hd_file." | tee --append $OCS_LOGFILE
       fi
     elif [ "$load_HD_CHS_from_img" = "yes" ]; then
       # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
@@ -3086,14 +3170,14 @@ create_partition() {
     fi
     # If the partition table is tag as "gpt", change it as msdos
     if `is_gpt_partitition_table_disk $tgt_hd_file`; then
-      echo "The partition table in $tgt_hd_file is for GPT, now make it for MBR."
+      echo "The partition table in $tgt_hd_file is for GPT, now make it for MBR." | tee --append $OCS_LOGFILE
       LC_ALL=C parted -s $tgt_hd_file mklabel msdos
     fi
     # create partition from file
     # Before create partition, clean the warning message in ${tgt_hd_name}-pt.sf so that sfdisk will not refuse to do that.
-    echo $msg_delimiter_star_line
-    LC_ALL=C date | tee $RESTORE_SFDISK_LOG
-    echo "Writing the partition table..." | tee -a $RESTORE_SFDISK_LOG
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    LC_ALL=C date | tee --append $OCS_LOGFILE
+    echo "Writing the partition table..." | tee -a $OCS_LOGFILE
     # dump partition table only without running sfdisk
     # ref: http://www.nautilus.com.br/~rei/material/artigos/sistema-de-boot.html
     # Ref: http://en.wikipedia.org/wiki/Master_boot_record
@@ -3102,33 +3186,36 @@ create_partition() {
     # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
     case "$create_part_by_sfdisk" in
       n|N|[nN][oO])
-        dd if=$tgt_dir/${tgt_hd_name}-mbr of=$tgt_hd_file skip=446 seek=446 bs=1 count=66
+	dd if=$tgt_dir/$(to_filename $tgt_hd_name)-mbr of=$tgt_hd_file skip=446 seek=446 bs=1 count=66
         RETVAL="$?"
         if [ "$RETVAL" -eq 0 ]; then
-          echo -n "Making kernel re-read the partition table of $tgt_hd_file... "
-          sfdisk -R $tgt_hd_file
-          echo "done!"
-          echo "The partition table of $tgt_hd_file is:"
-          fdisk -l $tgt_hd_file
+          echo -n "Making kernel re-read the partition table of $tgt_hd_file... " | tee --append $OCS_LOGFILE
+          sfdisk -R $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
+          echo "done." | tee --append $OCS_LOGFILE
+          echo "The partition table of $tgt_hd_file is:" | tee --append $OCS_LOGFILE
+          fdisk -l $tgt_hd_file | tee --append $OCS_LOGFILE
         else
           [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-          echo "Unable to use dd to dump the partition table in $tgt_hd_file!"
+          echo "Unable to use dd to dump the partition table in $tgt_hd_file!" | tee --append $OCS_LOGFILE
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+          copy_error_log
+          exit 1
         fi
         ;;
       y|Y|[yY][eE][sS])
         case "$create_part_type" in
 	  "proportion")
             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	    echo "Create the proportional partition table in $tgt_hd_file based on $tgt_dir/${tgt_hd_name}-pt.sf and the size of $tgt_hd_file..."
+	    echo "Create the proportional partition table in $tgt_hd_file based on $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf and the size of $tgt_hd_file..." | tee --append $OCS_LOGFILE
             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 	    # We use environmental variable EXTRA_SFDISK_OPT so it can be used in ocs-expand-mbr-pt
 	    EXTRA_SFDISK_OPT=""
 	    [ -n "$sfdisk_opt" ] && EXTRA_SFDISK_OPT="$sfdisk_opt"
-	    EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-mbr-pt --batch $tgt_dir/${tgt_hd_name}-pt.sf $tgt_hd_file
+	    EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-mbr-pt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
 	    ;;
 	  "manual")
-	    echo "$msg_enter_another_shell_for_fdisk"
+	    echo "$msg_enter_another_shell_for_fdisk" | tee --append $OCS_LOGFILE
             echo -n "$msg_press_enter_to_continue..."
             read
             /bin/bash
@@ -3138,18 +3225,19 @@ create_partition() {
             # If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
 	    init_mbr_part_table_if_not_existing $tgt_hd_file
             check_mbr_disk_size_gt_2TiB $tgt_hd_file warning 
-            echo "Running sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/${tgt_hd_name}-pt.sf" | tee -a $RESTORE_SFDISK_LOG
-            LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/${tgt_hd_name}-pt.sf | tee -a $RESTORE_SFDISK_LOG
+            echo "Running sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
+            LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf 2>&1 | tee -a $OCS_LOGFILE
             RETVAL="${PIPESTATUS[0]}"
-            echo "This was done by sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/${tgt_hd_name}-pt.sf" | tee -a $RESTORE_SFDISK_LOG
+            echo "This was done by sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
             # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
             if [ "$RETVAL" -ne 0 ]; then
               [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-              echo "$msg_failed_to_create_partition_table_on_disk: $tgt_hd_file"
+              echo "$msg_failed_to_create_partition_table_on_disk: $tgt_hd_file" | tee -a $OCS_LOGFILE
               [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-              echo "$msg_is_this_disk_too_small: $tgt_hd_file?"
+              echo "$msg_is_this_disk_too_small: $tgt_hd_file?" | tee -a $OCS_LOGFILE
               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-              echo "$msg_program_stop!"
+              echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+              copy_error_log
               exit 1
             fi
             # Add another checking mechanism by parted, since sfdisk with -f won't return correct code.
@@ -3169,12 +3257,12 @@ create_partition() {
     ;;
   gpt)
     echo $msg_delimiter_star_line
-    if [ -e "$tgt_dir/${tgt_hd_name}-gpt.gdisk" ]; then
+    if [ -e "$tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk" ]; then
       clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
       create_gpt_table_if_no_table $tgt_hd_file
       gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
-      echo "Running: sgdisk -l $tgt_dir/${tgt_hd_name}-gpt.gdisk $tgt_hd_file"
-      LC_ALL=C sgdisk -l $tgt_dir/${tgt_hd_name}-gpt.gdisk $tgt_hd_file | tee $gdisk_tmp
+      echo "Running: sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file"
+      LC_ALL=C sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file | tee $gdisk_tmp
       sgdisk_rc=$?
       if [ "$sgdisk_rc" -eq 0 ]; then
         # There is a bug about sgdisk 0.6.14, i.e.
@@ -3208,10 +3296,10 @@ create_partition() {
       do_gpt_dd="yes"
     fi
     if [ "$do_gpt_dd" = "yes" ]; then
-      echo "Restoring the primary GPT to $tgt_hd_file..."
+      echo "Restoring the primary GPT to $tgt_hd_file..." | tee -a $OCS_LOGFILE
       # ///NOTE/// We can not use ocs-create-gpt (parted) to clone GPT, since the original GPT contains unique GUID! Ref:  http://developer.apple.com/technotes/tn2006/tn2166.html#SECCOPYINGCONCERNS for more details.
       # ocs-create-gpt $tgt_dir/${tgt_hd_name}-pt.parted
-      LC_ALL=C dd if=$tgt_dir/${tgt_hd_name}-gpt-1st of=$tgt_hd_file
+      LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-1st of=$tgt_hd_file | tee -a $OCS_LOGFILE
       retv=$?
       if [ "$retv" -gt 0 ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -3233,18 +3321,18 @@ create_partition() {
       # --------------------
       echo "Restoring the secondary GPT to $tgt_hd_file..."
       to_seek="$((${src_disk_size_sec}-33+1))"
-      LC_ALL=C dd if=$tgt_dir/${tgt_hd_name}-gpt-2nd of=$tgt_hd_file seek=${to_seek} bs=512 count=33
+      LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-2nd of=$tgt_hd_file seek=${to_seek} bs=512 count=33 | tee -a $OCS_LOGFILE
     fi
 
-    echo "Informing kernel the partition table has changed..."
+    echo "Informing kernel the partition table has changed..." | tee -a $OCS_LOGFILE
     inform_kernel_partition_table_changed gpt $tgt_hd_file
     sleep 1
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_the_partition_in_the_system_now:"
+    echo "$msg_the_partition_in_the_system_now:" | tee -a $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo $msg_delimiter_star_line
-    LC_ALL=C parted -s $tgt_hd_file print
-    echo $msg_delimiter_star_line
+    echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
+    LC_ALL=C parted -s $tgt_hd_file print | tee -a $OCS_LOGFILE
+    echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
     ;;
   esac
 } # end of create_partition
@@ -3257,22 +3345,22 @@ countdown_or_confirm_before_save() {
     n="$TIME_to_wait"
     echo $msg_delimiter_star_line
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_the_following_step_is_to_save_the_disk_part_as_img:"
-    echo $msg_delimiter_star_line
-    echo -e "$dev_model_shown"
-    echo $msg_delimiter_star_line
-    echo "-> \"$save_img_name\"."
+    echo "$msg_the_following_step_is_to_save_the_disk_part_as_img:" | tee --append $OCS_LOGFILE
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    echo -e "$dev_model_shown" | tee --append $OCS_LOGFILE
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    echo "-> \"$save_img_name\"." | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     countdown $TIME_to_wait
   fi
   if [ "$confirm_before_clone" = "yes" ]; then
     echo $msg_delimiter_star_line
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_the_following_step_is_to_save_the_disk_part_as_img:"
-    echo $msg_delimiter_star_line
-    echo -e "$dev_model_shown"
-    echo $msg_delimiter_star_line
-    echo "-> \"$save_img_name\"."
+    echo "$msg_the_following_step_is_to_save_the_disk_part_as_img:" | tee --append $OCS_LOGFILE
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    echo -e "$dev_model_shown" | tee --append $OCS_LOGFILE
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    echo "-> \"$save_img_name\"." | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     confirm_continue_no_default_answer
   fi
@@ -3301,36 +3389,36 @@ countdown_or_confirm_before_restore() {
 
   if [ -n "$TIME_to_wait" ]; then
     n="$TIME_to_wait"
-    echo $msg_delimiter_star_line
-    echo "$msg_the_following_step_is_to_restore_img_to_disk_part: \"$restore_img_name\" -> \"$new_dev_to_be_restore\""
+    echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
+    echo "$msg_the_following_step_is_to_restore_img_to_disk_part: \"$restore_img_name\" -> \"$new_dev_to_be_restore\"" | tee -a $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     if [ "$ocs_sr_type" = "restoreparts" -a "$create_part" = "yes" ]; then
-      echo "$msg_uppercase_Warning! $msg_option_k_is_not_chosen_part_table_will_be_recreated"
+      echo "$msg_uppercase_Warning. $msg_option_k_is_not_chosen_part_table_will_be_recreated" | tee --append $OCS_LOGFILE
     fi
-    echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
+    echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!" | tee --append $OCS_LOGFILE
     if [ -n "$dev_model_shown" ]; then
-      echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten:"
-      echo $msg_delimiter_star_line
-      echo -e "$dev_model_shown"
-      echo $msg_delimiter_star_line
+      echo "$msg_uppercase_Warning. $msg_all_data_in_dev_will_be_overwritten:" | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+      echo -e "$dev_model_shown" | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     fi
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "Last chance to quit in $TIME_to_wait seconds... Press Shutdown button in this machine to avoid continuing."
+    echo "Last chance to quit in $TIME_to_wait seconds... Press Shutdown button in this machine to avoid continuing." | tee --append $OCS_LOGFILE
     countdown $TIME_to_wait
   fi
   if [ "$confirm_before_clone" = "yes" ]; then
-    echo $msg_delimiter_star_line
-    echo "$msg_the_following_step_is_to_restore_img_to_disk_part: \"$restore_img_name\" -> \"$new_dev_to_be_restore\""
+    echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
+    echo "$msg_the_following_step_is_to_restore_img_to_disk_part: \"$restore_img_name\" -> \"$new_dev_to_be_restore\"" | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     if [ "$ocs_sr_type" = "restoreparts" -a "$create_part" = "yes" ]; then
-      echo "$msg_uppercase_Warning! $msg_option_k_is_not_chosen_part_table_will_be_recreated"
+      echo "$msg_uppercase_Warning. $msg_option_k_is_not_chosen_part_table_will_be_recreated" | tee --append $OCS_LOGFILE
     fi
     echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
     if [ -n "$dev_model_shown" ]; then
-      echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten:"
-      echo $msg_delimiter_star_line
-      echo -e "$dev_model_shown"
-      echo $msg_delimiter_star_line
+      echo "$msg_uppercase_Warning. $msg_all_data_in_dev_will_be_overwritten:" | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+      echo -e "$dev_model_shown" | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     fi
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     confirm_continue_no_default_answer
@@ -3364,8 +3452,8 @@ task_preprocessing() {
     fi
     mount -t nfs $server_tmp:$mntpnt_tmp $ocsroot
     if [ $? -ne 0 ]; then
-      echo "The mount point you specified ($mntpnt_tmp) is not exported by server ($server)"
-      echo "We can NOT go on! Press \"c\" to enter command prompt or any other key to quit the program..." 
+      echo "The mount point you specified ($mntpnt_tmp) is not exported by server ($server)" | tee -a $OCS_LOGFILE
+      echo "We can NOT go on. Press \"c\" to enter command prompt or any other key to quit the program..."  | tee -a $OCS_LOGFILE
       read fail_answer
       case "$fail_answer" in
         [cC]) /sbin/sulogin ;;
@@ -3378,10 +3466,10 @@ task_preprocessing() {
 task_processing_after_parameters_checked() {
   #
   if [ "$run_prerun_dir" = "yes" ]; then
-    echo $msg_delimiter_star_line
-    echo "Start to run the program(s) in $OCS_PRERUN_DIR..."
+    echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
+    echo "Start to run the program(s) in $OCS_PRERUN_DIR..." | tee -a $OCS_LOGFILE
     drbl-run-parts $OCS_PRERUN_DIR
-    echo $msg_delimiter_star_line
+    echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
   fi
 
   if [ "$debug_mode" = "on" ]; then
@@ -3428,23 +3516,25 @@ run_post_cmd_when_clone_end() {
 
 # task for post processing
 task_postprocessing() {
+  local mode="$1"
+  local img_dir="$ocsroot/$2"
   local ipart retv
   #
   echo "*****************************************************"
   case "$change_win_hostname" in
      By_IP)
           for ipart in $target_parts; do
-            echo "Changing the hostname of M$ windows based on IP address..."
-            ocs-chnthn -b -v IP -p $win_hostname_prefix -d /dev/$ipart
-            retv=$?
+            echo "Changing the hostname of M$ windows based on IP address..." | tee --append ${OCS_LOGFILE}
+            ocs-chnthn -b -v IP -p $win_hostname_prefix -d /dev/$ipart | tee --append ${OCS_LOGFILE}
+            retv="${PIPESTATUS[0]}"
             [ "$retv" -eq 0 ] && break
           done
           ;;
      By_MAC)
           for ipart in $target_parts; do
-            echo "Changing the hostname of M$ windows based on MAC address..."
+            echo "Changing the hostname of M$ windows based on MAC address..." | tee --append ${OCS_LOGFILE}
             ocs-chnthn -b -v MAC -p $win_hostname_prefix -d /dev/$ipart
-            retv=$?
+            retv="${PIPESTATUS[0]}"
             [ "$retv" -eq 0 ] && break
           done
           ;;
@@ -3456,14 +3546,14 @@ task_postprocessing() {
     [ -f "/etc/inittab.ocs" ] && mv -f /etc/inittab.ocs /etc/inittab
   fi
   if [ "$run_postrun_dir" = "yes" ]; then
-     echo $msg_delimiter_star_line
-     echo "Start to run the program(s) in $OCS_POSTRUN_DIR..."
-     drbl-run-parts $OCS_POSTRUN_DIR
-     echo $msg_delimiter_star_line
+     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+     echo "Start to run the program(s) in $OCS_POSTRUN_DIR..." | tee --append ${OCS_LOGFILE}
+     drbl-run-parts $OCS_POSTRUN_DIR | tee --append ${OCS_LOGFILE}
+     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
   # Restore the udevd rules (if exists) which were disabled by ocs-lvm2-stop.
-  restore_lvm2_udevd_rules
+  restore_lvm2_udevd_rules | tee --append ${OCS_LOGFILE}
 
   # option_mount_point
   [ -n "$mount_point" ] && umount $ocsroot
@@ -3473,14 +3563,26 @@ task_postprocessing() {
     sulogin
   fi
   # notify the server if necessary
-  task_notify_localboot
+  task_notify_localboot | tee --append ${OCS_LOGFILE}
 
   #
-  echo "Now syncing - flush filesystem buffers..." 
-  sync;sync;sync
+  echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}
+  sync;sync;sync | tee --append ${OCS_LOGFILE}
 
   # reboot/poweroff/choose...
-  run_post_cmd_when_clone_end "$postrun"
+  run_post_cmd_when_clone_end "$postrun" | tee --append ${OCS_LOGFILE}
+
+  case "$mode" in
+    "saveparts"|"savedisk")
+      # Output a file name to tag the image and put the log for saving the image. It's easier for us to identify in the future.
+      echo "This image was saved by Clonezilla at $(LC_ALL=C date +%F' '%T' '%Z)." > $img_dir/clonezilla-img
+      echo "The log during saving:" >> $img_dir/clonezilla-img
+      echo "----------------------------------------------------------" >> $img_dir/clonezilla-img
+      cat ${OCS_LOGFILE} >> $img_dir/clonezilla-img
+    ;;
+  esac
+
+  # 
 } # end of task_postprocessing
 #
 ask_time_or_clients_to_wait() {
@@ -3563,8 +3665,8 @@ ask_time_or_clients_to_wait() {
 check_existing_target_image() {
   local tgt_image="$1"
   if [ "${tgt_image/%\//}" = "${ocsroot/%\//}" -o -z "$tgt_image" ]; then
-    echo "Existing destination image is nothing!"
-    echo "$msg_program_stop!!!"
+    echo "Existing destination image is nothing!" | tee --append $OCS_LOGFILE
+    echo "$msg_program_stop." | tee --append $OCS_LOGFILE
     exit 1
   else
     [ -f "$tgt_image" ] && rm -f $tgt_image
@@ -3576,9 +3678,10 @@ check_input_target_image() {
   [ -z "$tgt_dir" ] && echo "Image name not found!" && exit 1
   if [ ! -d "$tgt_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The directory $tgt_dir for the inputed name does NOT exist!"
+    echo "The directory $tgt_dir for the inputed name does NOT exist!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!!!"
+    echo "$msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
 }
@@ -3623,7 +3726,7 @@ get_input_image_name() {
           0) # yes is chosen
              ASK_IMGNAME=1;;
           1) # no is chosen
-             echo "$msg_program_stop!"
+             echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
              [ -f "$TMP" ] && rm -f $TMP
              exit 1;;
         esac
@@ -3669,140 +3772,130 @@ get_disk_or_part_hardware_info() {
   local p="$1"  # p is like hda, sda, or hda1, sda1
   local dsize x dsk_ rc serialno part_fst
   dsize="" # device size
-  case "$p" in
-     hd[a-z])
-       if [ "$(cat /proc/ide/$p/media)" = "disk" ] ; then
-         # parted output Ex. Disk /dev/sda: 160GB // This is only for newer parted. For old parted (1.6.3 in redhat 9, nothing will be shown)
-         dsize="$(LC_ALL=C parted -s /dev/$p print 2>/dev/null | grep -E "^[[:space:]]*Disk[[:space:]]+/dev/$p:" | awk -F":" '{print $2}' | sed -e "s/ //g")"
-         if [ -z "$dsize" ]; then
-          # Try the other way since parted will fail if the disk is not partitioned.
-          dsize="$(LC_ALL=C echo "scale=1; $(cat /sys/block/$p/size 2>/dev/null)*512/1000.0^3" | bc -l)GB"
-         fi
-         if [ -n "$dsize" ]; then
-            dsize="${dsize}_"
-         else
-            dsize="Unknown_size_"
-         fi
-	 # put serial #
-	 serialno="$(cat /sys/block/$p/device/serial 2>/dev/null | sed -e "s/ //g")"
-         if [ -n "$serialno" ]; then
-           serialno="_${serialno}"
-         else
-           serialno="_No_disk_serial_no"
-         fi
-         # The result is like 8590MB_VMware_Virtual_IDE
-         DEV_MODEL="${dsize}$(tr ' ' _ </proc/ide/$p/model)${serialno}"
-       fi
-       [ -z "$DEV_MODEL" ] && DEV_MODEL="No_description"
-       ;;
-     sd[a-z])
-       # TODO: This method will fail in cciss device. Since it's like:
-       # ls -alF /sys/block/cciss\!c0d0/
-       # total 0
-       # drwxr-xr-x  7 root root    0 2008-03-06 12:25 ./
-       # drwxr-xr-x 28 root root    0 2008-03-06 11:41 ../
-       # -r--r--r--  1 root root 4096 2008-03-06 11:41 capability
-       # drwxr-xr-x  3 root root    0 2008-03-06 12:25 cciss!c0d0p1/
-       # drwxr-xr-x  3 root root    0 2008-03-06 12:25 cciss!c0d0p2/
-       # -r--r--r--  1 root root 4096 2008-03-06 11:41 dev
-       # lrwxrwxrwx  1 root root    0 2008-03-06 11:41 device -> ../../devices/pci0000:00/0000:00:06.0/0000:17:00.0/
-       # drwxr-xr-x  2 root root    0 2008-03-06 11:41 holders/
-       # drwxr-xr-x  3 root root    0 2008-03-06 11:41 queue/
-       # -r--r--r--  1 root root 4096 2008-03-06 11:41 range
-       # -r--r--r--  1 root root 4096 2008-03-06 11:41 removable
-       # -r--r--r--  1 root root 4096 2008-03-06 11:41 size
-       # drwxr-xr-x  2 root root    0 2008-03-06 11:41 slaves/
-       # -r--r--r--  1 root root 4096 2008-03-06 11:41 stat
-       # lrwxrwxrwx  1 root root    0 2008-03-06 11:41 subsystem -> ../../block/
-       # --w-------  1 root root 4096 2008-03-06 11:41 uevent
-       #
-       x="$(cat /sys/block/$p/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr ' ' _ 2>/dev/null)"
-       # the result is like "WDC WD1600JS-60M"
-       # Note! The above method only works in kernel 2.6. For kernel 2.4, it not supported, and it's shown as "No_description" later.
-       x=${x#*\"}
-       x=${x%\"*}
-       [ -z "$x" ] && x="Unknown_model"
-       # parted output Ex. Disk /dev/sda: 160GB // This is only for newer parted. For old parted (1.6.3 in redhat 9, nothing will be shown)
-       # If it's cciss device, since we already made a link in /dev/, so here it won't be a problem.
-       dsize="$(LC_ALL=C parted -s /dev/$p print 2>/dev/null | grep -E "^[[:space:]]*Disk[[:space:]]+/dev/" | awk -F":" '{print $2}' | sed -e "s/ //g")"
-       if [ -z "$dsize" ]; then
-        # Try the other way since parted will fail if the disk is not partitioned.
-        dsize="$(LC_ALL=C echo "scale=1; $(cat /sys/block/$p/size 2>/dev/null)*512/1000.0^3" | bc -l)GB"
-       fi
-       if [ -n "$dsize" ]; then
-          dsize="${dsize}_"
-       else
-          dsize="Unknown_size_"
-       fi
-       # Serial #
-       #serialno="$(LC_ALL=C cat $lshw_disk_info | grep -A3 -Ewi "logical name: /dev/$p" | grep -i "serial: " | awk -F":" '{print $2}' | sed -e "s/ //g")"
-       get_disk_serial_no $p
-       if [ -n "$serialno" ]; then
-	  serialno="_${serialno}"
-       else
-	  serialno="_No_disk_serial_no"
-       fi
-       # The result is like 8590MB_VMware_Virtual_IDE
-       DEV_MODEL="${dsize}${x}${serialno}"
-       # just in case if nothing found
-       [ -z "$DEV_MODEL" ] && DEV_MODEL="No_description"
-       ;;
-     [hsv]d[a-z][0-9]*)
-       # Skip swap and extended partition
-       # We do not use the output of fdisk -l, it's type mabe like
-       # Extended, Ext'd, it's not easy to tell... We use file to get the
-       # partition type
-       echo "Getting /dev/$p info..."
-       #part_type="$(LC_ALL=C file -Ls "/dev/$p" 2>/dev/null)"
-       part_type="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null)"
-       rc=$?
-       [ "$rc" -gt 0 ] && continue 
-       case "$part_type" in *[Ss][Ww][Aa][Pp]*|*extended*) continue ;; esac
-       if [ "$skip_lvm" = "yes" ]; then
-         case "$part_type" in *[Ll][Vv][Mm]*) continue ;; esac
-       fi
-       dsize="$(LC_ALL=C ocs-get-part-info /dev/$p size)"
-       [ -n "$dsize" ] && DEV_MODEL="${dsize}"
-       # File system
-       part_fst="$(LC_ALL=C ocs-get-part-info /dev/$p filesystem)"
-       [ -n "$part_fst" ] && DEV_MODEL="${DEV_MODEL}_${part_fst}"
-       # Volume name
-       part_v="$(LC_ALL=C get_part_vol_name /dev/$p $part_fst)"
-       [ -n "$part_v" ] && DEV_MODEL="${DEV_MODEL}_${part_v}"
-       # show more info (From which disk). The result is like:
-       # 20GB_ext3(In_VMware_Virtual_IDE_Hard_Drive)
-       # The disk is either hdx or sdx here.
-       # hda1 -> hda
-       dsk_=${p:0:3}
-       if [ "$(cat /proc/ide/${dsk_}/media 2>/dev/null)" = "disk" ] ; then
-         DEV_MODEL_EXT="$(tr ' ' _ </proc/ide/${dsk_}/model)"
-       else
-         x="$(cat /sys/block/${dsk_}/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr ' ' _ 2>/dev/null)"
-         # the result is like "WDC WD1600JS-60M"
-         # Note! The above method only works in kernel 2.6. For kernel 2.4, it not supported, and it's shown as "No_description" later.
-         x=${x#*\"}
-         x=${x%\"*}
-         DEV_MODEL_EXT=${x}
-       fi
-       [ -n "$DEV_MODEL_EXT" ] && DEV_MODEL="${DEV_MODEL}(In_${DEV_MODEL_EXT})"
-       # Put serial #
-       case "$dsk_" in
-        hd[a-z]*)
-         serialno="$(cat /sys/block/$dsk_/device/serial 2>/dev/null | sed -e "s/ //g")"
-	 ;;
-        sd[a-z]*)
-         #serialno="$(LC_ALL=C cat $lshw_disk_info | grep -A3 -Ewi "logical name: /dev/$dsk_" | grep -i "serial: " | awk -F":" '{print $2}' | sed -e "s/ //g")"
-         get_disk_serial_no $dsk_
-	 ;;
-       esac
-       if [ -n "$serialno" ]; then
+
+  if ! is_supported_dev "$p"; then
+    DEV_MODEL="NOT_SUPPORTED_DEV"
+    return 1
+  fi
+  if is_partition "$p"; then
+    # Partition 
+    # Skip swap and extended partition
+    # We do not use the output of fdisk -l, it's type mabe like
+    # Extended, Ext'd, it's not easy to tell... We use file to get the
+    # partition type
+    echo "Getting /dev/$p info..."
+    #part_type="$(LC_ALL=C file -Ls "/dev/$p" 2>/dev/null)"
+    part_type="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null)"
+    rc=$?
+    [ "$rc" -gt 0 ] && continue 
+    case "$part_type" in *[Ss][Ww][Aa][Pp]*|*extended*) continue ;; esac
+    if [ "$skip_lvm" = "yes" ]; then
+      case "$part_type" in *[Ll][Vv][Mm]*) continue ;; esac
+    fi
+    dsize="$(LC_ALL=C ocs-get-part-info /dev/$p size)"
+    [ -n "$dsize" ] && DEV_MODEL="${dsize}"
+    # File system
+    part_fst="$(LC_ALL=C ocs-get-part-info /dev/$p filesystem)"
+    [ -n "$part_fst" ] && DEV_MODEL="${DEV_MODEL}_${part_fst}"
+    # Volume name
+    part_v="$(LC_ALL=C get_part_vol_name /dev/$p $part_fst)"
+    [ -n "$part_v" ] && DEV_MODEL="${DEV_MODEL}_${part_v}"
+    # show more info (From which disk). The result is like:
+    # 20GB_ext3(In_VMware_Virtual_IDE_Hard_Drive)
+    # The disk is either hdx or sdx here.
+    # hda1 -> hda
+    dsk_="$(get_diskname $p)"
+    if [ "$(cat /proc/ide/${dsk_}/media 2>/dev/null)" = "disk" ] ; then
+      DEV_MODEL_EXT="$(tr ' ' _ </proc/ide/${dsk_}/model)"
+    else
+      x="$(cat /sys/block/$(to_sysblock_name ${dsk_})/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr ' ' _ 2>/dev/null)"
+      # the result is like "WDC WD1600JS-60M"
+      # Note! The above method only works in kernel 2.6. For kernel 2.4, it not supported, and it's shown as "No_description" later.
+      x=${x#*\"}
+      x=${x%\"*}
+      DEV_MODEL_EXT=${x}
+    fi
+    [ -n "$DEV_MODEL_EXT" ] && DEV_MODEL="${DEV_MODEL}(In_${DEV_MODEL_EXT})"
+    # Put serial #
+    if is_ide_disk "$dsk_"; then
+      serialno="$(cat /sys/block/$(to_sysblock_name $dsk_)/device/serial 2>/dev/null | sed -e "s/ //g")"
+    else
+      #serialno="$(LC_ALL=C cat $lshw_disk_info | grep -A3 -Ewi "logical name: /dev/$dsk_" | grep -i "serial: " | awk -F":" '{print $2}' | sed -e "s/ //g")"
+      get_disk_serial_no $dsk_
+    fi
+    if [ -n "$serialno" ]; then
+      serialno="_${serialno}"
+    else
+      serialno="_No_disk_serial_no"
+    fi
+    if [ -L /dev/$p ]; then
+      DEV_MODEL="${DEV_MODEL}_$(readlink -f /dev/$p)"
+    else
+      DEV_MODEL="${DEV_MODEL}${serialno}"
+    fi
+  else
+    # Disk
+    if is_ide_disk "$p"; then
+      if [ "$(cat /proc/ide/$(get_diskname $p)/media)" = "disk" ] ; then
+        # parted output Ex. Disk /dev/sda: 160GB // This is only for newer parted. For old parted (1.6.3 in redhat 9, nothing will be shown)
+        dsize="$(LC_ALL=C parted -s /dev/$p print 2>/dev/null | grep -E "^[[:space:]]*Disk[[:space:]]+/dev/$p:" | awk -F":" '{print $2}' | sed -e "s/ //g")"
+        if [ -z "$dsize" ]; then
+         # Try the other way since parted will fail if the disk is not partitioned.
+         dsize="$(LC_ALL=C echo "scale=1; $(cat /sys/block/$(to_sysblock_name $p)/size 2>/dev/null)*512/1000.0^3" | bc -l 2>/dev/null)GB"
+        fi
+        if [ -n "$dsize" ]; then
+           dsize="${dsize}_"
+        else
+           dsize="Unknown_size_"
+        fi
+        # put serial #
+  	serialno="$(cat /sys/block/$(to_sysblock_name $(get_diskname $p))/device/serial 2>/dev/null | sed -e "s/ //g")"
+        if [ -n "$serialno" ]; then
+          serialno="_${serialno}"
+        else
+          serialno="_No_disk_serial_no"
+        fi
+        # The result is like 8590MB_VMware_Virtual_IDE
+        DEV_MODEL="${dsize}$(tr ' ' _ </proc/ide/$(get_diskname $p)/model)${serialno}"
+      fi
+    else
+      x="$(cat /sys/block/$(to_sysblock_name $(get_diskname $p))/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr ' ' _ 2>/dev/null)"
+      # the result is like "WDC WD1600JS-60M"
+      # Note! The above method only works in kernel 2.6. For kernel 2.4, it not supported, and it's shown as "No_description" later.
+      x=${x#*\"}
+      x=${x%\"*}
+      [ -z "$x" ] && x="Unknown_model"
+      # parted output Ex. Disk /dev/sda: 160GB // This is only for newer parted. For old parted (1.6.3 in redhat 9, nothing will be shown)
+      # If it's cciss device, since we already made a link in /dev/, so here it won't be a problem.
+      dsize="$(LC_ALL=C parted -s /dev/$p print 2>/dev/null | grep -E "^[[:space:]]*Disk[[:space:]]+/dev/" | awk -F":" '{print $2}' | sed -e "s/ //g")"
+      if [ -z "$dsize" ]; then
+       # Try the other way since parted will fail if the disk is not partitioned.
+       dsize="$(LC_ALL=C echo "scale=1; $(cat /sys/block/$(to_sysblock_name $(get_diskname $p))/size 2>/dev/null)*512/1000.0^3" | bc -l 2>/dev/null)GB"
+      fi
+      if [ -n "$dsize" ]; then
+         dsize="${dsize}_"
+      else
+         dsize="Unknown_size_"
+      fi
+      # Serial #
+      #serialno="$(LC_ALL=C cat $lshw_disk_info | grep -A3 -Ewi "logical name: /dev/$p" | grep -i "serial: " | awk -F":" '{print $2}' | sed -e "s/ //g")"
+      get_disk_serial_no $p
+      if [ -n "$serialno" ]; then
          serialno="_${serialno}"
-       else
+      else
          serialno="_No_disk_serial_no"
-       fi
-       DEV_MODEL="${DEV_MODEL}${serialno}"
-       ;;
-  esac
+      fi
+      # The result is like 8590MB_VMware_Virtual_IDE
+      if [ -L /dev/$p ]; then
+        DEV_MODEL="${dsize}${x}_$(readlink -f /dev/$p)"
+      else
+        DEV_MODEL="${dsize}${x}${serialno}"
+      fi
+    fi
+  fi
+  # just in case if nothing found
+  [ -z "$DEV_MODEL" ] && DEV_MODEL="No_description"
+  return 0
 } # end of get_disk_or_part_hardware_info
 #
 get_not_busy_disks_or_parts() {
@@ -3812,6 +3905,7 @@ get_not_busy_disks_or_parts() {
     local partition_table=""
     local mounted_table=""
     local part_list=""
+    local dsk_list=""
     # dev_list is global in this function (but not true for others) to be returned
     # initialize dev_list
     dev_list=""
@@ -3829,8 +3923,7 @@ get_not_busy_disks_or_parts() {
     # sda1 sda11 sda12 sda2 sda3...
     # XXX part_list="$(LC_ALL=C awk '/[hsv]d[a-z][0-9]+($| )/ { print $4; }' $partition_table | sort)"
     # To overcome the sorting problem, we use "-V" option. //NOTE// This won't work for older sort... e.g. the one in RHEL4?
-    get_sort_V_opt
-    part_list="$(LC_ALL=C awk '/[hsv]d[a-z][0-9]+($| )/ { print $4; }' $partition_table | sort $sort_V_opt)"
+    part_list="$(get_part_list $partition_table)"
     echo "Excluding busy partition or disk..."
     # Convert by uuid to traditional list in /proc/mounts so it's easier for us to exclude.
     # The format of /proc/mounts with uuid is like:
@@ -3854,7 +3947,7 @@ get_not_busy_disks_or_parts() {
     for ipart in $part_list; do
       if grep -qEw "^/dev/$ipart" $mounted_table; then
         # hda1 -> hda
-        hdtmp="${ipart:0:3}"
+        hdtmp="$(get_diskname $ipart)"
 	# strip disk
         LC_ALL=C perl -i -ne "print unless /^.*$hdtmp[[:space:]]+/ .. /.*$/" $partition_table
 	# strip parititon
@@ -3869,15 +3962,9 @@ get_not_busy_disks_or_parts() {
 
     case "$dev_type" in
       harddisk)
-        dev_list="$(LC_ALL=C awk '/[hsv]d[a-z]($| )/ { print $4; }' $partition_table | sort $sort_V_opt)"
-        ;;
+        dev_list="$(get_disk_list $partition_table)" ;;
       partition)
-        # ///NOTE/// Do NOT sort them! Otherwise the partitions list will be like:
-        # sda1 sda11 sda12 sda2 sda3...
-        # XXX dev_list=$(LC_ALL=C awk '/[hsv]d[a-z][0-9]+($| )/ { print $4; }' $partition_table | sort)
-        # To overcome the sorting problem, we use "-V" option. //NOTE// This won't work for older sort... e.g. the one in RHEL4?
-        dev_list="$(LC_ALL=C awk '/[hsv]d[a-z][0-9]+($| )/ { print $4; }' $partition_table | sort $sort_V_opt)"
-        ;;
+        dev_list="$(get_part_list $partition_table)" ;;
     esac
     dev_list="$(echo $dev_list)"   # convert to 1 line
     [ -f "$mounted_table" ] && rm -f $mounted_table
@@ -3962,7 +4049,7 @@ get_input_dev_name() {
           # This is for restoring an image of parts to blank disk (no partitions on the destination disk)
           if [ "$ocs_sr_type" = "restoreparts" ]; then
             # only when running restoreparts
-            if [ -n "$(grep -Ew "[hsv]d[a-z]" /proc/partitions)" ]; then
+            if [ -n "$(get_part_list /proc/partitions)" ]; then
               # If [hsv]d[a-z] exists in /proc/partitions, let's create the partition table
               [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
               echo "$msg_no_partition_table_need_to_create"
@@ -4026,7 +4113,7 @@ get_input_dev_name() {
            0) # yes is chosen
               ASK_INPUT=1;;
            1) # no is chosen
-              echo "$msg_program_stop!"
+              echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
               [ -f "$TMP" ] && rm -f $TMP
               exit 1;;
          esac
@@ -4170,7 +4257,7 @@ get_existing_disk_image() {
            0) # yes is chosen
               ASK_IMGNAME=1;;
            1) # no is chosen
-              echo "$msg_program_stop!"
+              echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
               [ -f "$TMP" ] && rm -f $TMP
               exit 1;;
          esac
@@ -4181,7 +4268,7 @@ get_existing_disk_image() {
      done
    else
      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "No disk image is found in $imagedir.. Make sure you already saved an image! Or make sure you did not try to restore an image saved from partition(s) to disk(s)! $msg_program_stop!!!"
+     echo "No disk image is found in $imagedir.. Make sure you already saved an image! Or make sure you did not try to restore an image saved from partition(s) to disk(s)! $msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
      [ -f "$TMP" ] && rm -f $TMP
      exit 1
@@ -4247,7 +4334,7 @@ get_existing_parts_image() {
            0) # yes is chosen
               ASK_IMGNAME=1;;
            1) # no is chosen
-              echo "$msg_program_stop!"
+              echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
               [ -f "$TMP" ] && rm -f $TMP
               exit 1;;
          esac
@@ -4257,7 +4344,7 @@ get_existing_parts_image() {
      done
    else
      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "No disk or partitions image directory is found in $imagedir! $msg_program_stop!!!"
+     echo "No disk or partitions image directory is found in $imagedir! $msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
      [ -f "$TMP" ] && rm -f $TMP
      exit 1
@@ -4301,7 +4388,7 @@ get_existing_disks_from_img() {
            0) # yes is chosen
               ASK_INPUT=1;;
            1) # no is chosen
-              echo "$msg_program_stop!"
+              echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
               [ -f "$TMP" ] && rm -f $TMP
               exit 1;;
          esac
@@ -4311,7 +4398,7 @@ get_existing_disks_from_img() {
      done
    else
      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "No disk image file is found in $tgt_file! $msg_program_stop!!!"
+     echo "No disk image file is found in $tgt_file! $msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
      [ -f "$TMP" ] && rm -f $TMP
      exit 1
@@ -4362,7 +4449,7 @@ get_existing_partitions_from_img() {
 		 if [ "$skip_mounted_part" = "yes" ]; then
                    [ -n "$(mount | grep -Ew "^/dev/$p")" ] && continue
 		 fi
-                 echo "$p" "disk("${p:0:3}")_partition("${p:3}")" off
+                 echo "$p" "disk("$(get_diskname $p)")_partition("$(get_part_number $p)")" off
 	       done)"
      if [ "$NUMPARTS" = "1" ]; then
        # If only one dev, turn on it.
@@ -4370,9 +4457,9 @@ get_existing_partitions_from_img() {
      fi
      if [ -z "$PROMPT" ]; then
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-       echo "No prompt for dialog!"
+       echo "No prompt for dialog!" | tee --append ${OCS_LOGFILE}
        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-       echo "$msg_program_stop!"
+       echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
        exit 1
      fi
      if [ "$request_mode" = "check" ]; then
@@ -4393,7 +4480,7 @@ get_existing_partitions_from_img() {
            0) # yes is chosen
               ASK_INPUT=1;;
            1) # no is chosen
-              echo "$msg_program_stop!"
+              echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
               [ -f "$TMP" ] && rm -f $TMP
               exit 1;;
          esac
@@ -4403,7 +4490,7 @@ get_existing_partitions_from_img() {
      done
    else
      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "No partition image file is found in $tgt_file! $msg_program_stop!!!"
+     echo "No partition image file is found in $tgt_file! $msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
      [ -f "$TMP" ] && rm -f $TMP
      exit 1
@@ -4422,7 +4509,7 @@ check_dhcpd_config() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "You must setup DRBL first. Check http://drbl.nchc.org.tw or http://drbl.org for more details!"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!!!"
+      echo "$msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
       exit 1
     fi
 }
@@ -4560,13 +4647,13 @@ get_partclone_image_info() {
   space_used="$(awk -F":" '/^Space in use/ {print $2}' $report_info | sed -e "s/[[:space:]]*([[:digit:]]*.*)[[:space:]]*//g" | sed -e "s/^[[:space:]]*//g")"
   space_used_number="$(echo $space_used | awk -F" " '{print $1}')"
   space_used_unit="$(echo $space_used | awk -F" " '{print $2}')"
-  speed="$(LC_ALL=C echo "scale=1; $space_used_number / $time_elapsed *60.0" | bc -l)"
+  speed="$(LC_ALL=C echo "scale=1; $space_used_number / $time_elapsed *60.0" | bc -l 2>/dev/null)"
   if [ -z "$speed" ]; then
     rcode=1
     # show it with unit
     speed="N/A $space_used_unit/min"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Failed to use partclone program to save or restore an image!"
+    echo "Failed to use partclone program to save or restore an image!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo -n "$msg_press_enter_to_continue..."
     read
@@ -4596,28 +4683,44 @@ unicast_restore_by_partimage() {
     # although it's not split, we still sort it as split_by="partimage", since it the same model with partimage
     split_by="partimage"
   fi
-  echo $msg_delimiter_star_line
-  echo "Starting unicast restoring image ${target_d##*/} to $part..."
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  echo "Starting unicast restoring image ${target_d##*/} to $part..." | tee --append ${OCS_LOGFILE}
   start_time="$(date +%s%N)"
   case "$split_by" in
     partimage)
       toskip=0
       # partimage will put header in 2nd and later volumes, so we have to uncompress it, then strip it before pipe them to partimage
+cat <<_EOT_ >> ${OCS_LOGFILE}
       ( for img in $target_d/$img_file_prefix; do
           $cat_prog $img | dd bs=512 skip=$toskip 2> /dev/null
           toskip=1
         done
       ) \
-      | partimage $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT -o -d restore $part stdin
+      | partimage $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT -o -d restore $part stdin | tee --append ${OCS_LOGFILE}
+_EOT_
+      ( for img in $target_d/$img_file_prefix; do
+          $cat_prog $img | dd bs=512 skip=$toskip 2> /dev/null
+          toskip=1
+        done
+      ) \
+      | partimage $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT -o -d restore $part stdin | tee --append ${OCS_LOGFILE}
       ;;
     split)
       # ntfsclone+split will NOT put header in 2nd and later volumes, so just cat them
+cat <<_EOT_ >> ${OCS_LOGFILE}
       ( for img in $target_d/$img_file_prefix; do
           cat $img
         done
       ) \
       | $unzip_stdin_cmd \
-      | partimage $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT -o -d restore $part stdin
+      | partimage $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT -o -d restore $part stdin | tee --append ${OCS_LOGFILE}
+_EOT_
+      ( for img in $target_d/$img_file_prefix; do
+          cat $img
+        done
+      ) \
+      | $unzip_stdin_cmd \
+      | partimage $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT -o -d restore $part stdin | tee --append ${OCS_LOGFILE}
       ;;
   esac
   # TODO
@@ -4680,6 +4783,8 @@ unicast_restore_by_ntfsclone() {
 #
 unicast_restore_by_partclone() {
   local file_ fs_ partclone_img_info_tmp file_basename
+  local unzip_stdin_cmd_error
+  local -a retcodes='()'
   # First, we find the filesystem 
   file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
   file_basename="$(basename ${file_})"
@@ -4694,9 +4799,9 @@ unicast_restore_by_partclone() {
   fi
   if [ -z "${fs_}" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The file system can not be decided in function unicast_restore_by_partclone!!!"
+    echo "The file system can not be decided in function unicast_restore_by_partclone." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
     exit 1
   fi
  
@@ -4736,37 +4841,65 @@ unicast_restore_by_partclone() {
     *)
        partclone_img_info_tmp="/var/log/partclone.log" ;;
   esac
+  unzip_stdin_cmd_error="$(mktemp /tmp/unzip_stdin_cmd_error.XXXXXX)"
   [ -f "$partclone_img_info_tmp" ] && rm -f $partclone_img_info_tmp
   echo $msg_delimiter_star_line
-  echo "Starting unicast restoring image ${target_d##*/} to $part..."
+  echo "Starting unicast restoring image ${target_d##*/} to $part..." | tee --append ${OCS_LOGFILE}
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "If this action fails or hangs, check:"
-  echo "* Is the saved image $target_d/$img_file_prefix corrupted ?" 
+  echo "If this action fails or hangs, check:" | tee --append ${OCS_LOGFILE}
+  echo "* Is the saved image $target_d/$img_file_prefix corrupted ?"  | tee --append ${OCS_LOGFILE}
   [ "$(root_over_nfs)" = "yes" ] && echo "* Network connection and NFS service."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
 
   start_time="$(date +%s%N)"
   # partclone_hfsp does not put any header, so just cat them
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
+cat <<_EOT_ >> ${OCS_LOGFILE}
   ( for img in $target_d/$img_file_prefix; do
       cat $img
     done
-  ) | \
-  $unzip_stdin_cmd | \
-  LC_ALL=C partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
-  rc="$?"
+  ) \
+  | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
+  | LC_ALL=C partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
+_EOT_
+  ( for img in $target_d/$img_file_prefix; do
+      cat $img
+    done
+  ) \
+  | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
+  | LC_ALL=C partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
+  retcodes=(${PIPESTATUS[@]})
+
+  if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
+    rc=0
+  else
+    rc=1
+  fi
+
+  cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
+  if [ -s "$unzip_stdin_cmd_error" ]; then
+    cat "$unzip_stdin_cmd_error" | tee --append ${OCS_LOGFILE}
+  fi
+  rm -f $unzip_stdin_cmd_error
+
   end_time="$(date +%s%N)"
   # sync_and_active_exec_files
   get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
   # For unicast, no preparation time, it's accurate enough.
-  echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)"
+  echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append  ${OCS_LOGFILE}
   # prepare statistic report
   conv_return_code_to_human_read $rc
   report_msg="$report_msg $part, $clone_status, $space_used, $time_elapsed_in_min mins;"
+  return $rc
 } # end of unicast_restore_by_partclone
+#
 unicast_restore_by_dd() {
   local partclone_img_info_tmp
+  local unzip_retcode_file unzip_retcode
+  local dd_retcode_file dd_retcode
+  local unzip_stdin_cmd_error
+  local -a retcodes='()'
   if [ -f "$target_d/$img_file.dd-img.aa" ]; then
     get_image_cat_zip_cmd $target_d/$img_file.dd-img.aa
     # The files are split, like hda1.00, hda1.01, so we have to add "."
@@ -4806,13 +4939,32 @@ unicast_restore_by_dd() {
     
     start_time="$(date +%s%N)"
     # dd does not put any header, so just cat them
-    ( for img in $target_d/$img_file_prefix; do
-        cat $img
-      done
-    ) | \
-    $unzip_stdin_cmd | \
-    LC_ALL=C dd bs=1M of=$part 2>&1 | tee $dd_img_info_tmp
-    rc="$?"
+    unzip_retcode_file="$(mktemp /tmp/unzip_retcode.XXXXXX)"
+    dd_retcode_file="$(mktemp /tmp/dd_retcode.XXXXXX)"
+    echo 1 > $unzip_retcode_file
+    echo 1 > $dd_retcode_file
+    (
+      ( for img in $target_d/$img_file_prefix; do
+          cat $img
+        done
+      ) \
+      | ( $unzip_stdin_cmd ; echo $? > $unzip_retcode_file ) \
+      | ( LC_ALL=C dd bs=1M of=$part ; echo $? > $dd_retcode_file ) \
+    ) 2>&1 \
+    | tee $dd_img_info_tmp
+    tail -n 30 "${dd_img_info_tmp}" >> ${OCS_LOGFILE}
+
+    unzip_retcode="$(cat $unzip_retcode_file)"
+    dd_retcode="$(cat $dd_retcode_file)"
+    rm -f $unzip_retcode_file $dd_retcode_file
+
+    if [ "$unzip_retcode" = "0" -a "$dd_retcode" = "0" ]; then
+      echo "dd successfully restored the image (-) to the device ($part)" | tee --append ${OCS_LOGFILE}
+      rc=0
+    else
+      rc=1
+    fi
+
     end_time="$(date +%s%N)"
     kill -9 $dd_report_sig_pid &>/dev/null
     get_dd_image_info $dd_img_info_tmp $start_time $end_time
@@ -4827,30 +4979,53 @@ unicast_restore_by_dd() {
       *)
          partclone_img_info_tmp="/var/log/partclone.log" ;;
     esac
+    unzip_stdin_cmd_error="$(mktemp /tmp/unzip_stdin_cmd_error.XXXXXX)"
     [ -f "$partclone_img_info_tmp" ] && rm -f $partclone_img_info_tmp
-    echo $msg_delimiter_star_line
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
 
     start_time="$(date +%s%N)"
     # partclone_hfsp does not put any header, so just cat them
     # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
+cat <<_EOT_ >> ${OCS_LOGFILE}
     ( for img in $target_d/$img_file_prefix; do
         cat $img
       done
-    ) | \
-    $unzip_stdin_cmd | \
-    LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
-    rc="$?"
+    ) \
+    | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
+    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
+_EOT_
+    ( for img in $target_d/$img_file_prefix; do
+        cat $img
+      done
+    ) \
+    | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
+    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
+    retcodes=(${PIPESTATUS[@]})
+    
+    if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
+      rc=0
+    else
+      rc=1
+    fi
+    
+    cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
+    if [ -s "$unzip_stdin_cmd_error" ]; then
+      cat "$unzip_stdin_cmd_error" | tee --append ${OCS_LOGFILE}
+    fi
+    rm -f $unzip_stdin_cmd_error
+
     end_time="$(date +%s%N)"
     # sync_and_active_exec_files
     get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
     ;;
   esac
   # For unicast, no preparation time, it's accurate enough.
-  echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)"
+  echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append  ${OCS_LOGFILE}
   [ -f "$dd_img_info_tmp" ] && rm -f $dd_img_info_tmp
   # prepare statistic report
   conv_return_code_to_human_read $rc
   report_msg="$report_msg $part, $clone_status, $space_used, $time_elapsed_in_min mins;"
+  return $rc
 } # end of unicast_restore_by_dd
 #
 multicast_restore_by_partimage() {
@@ -4862,11 +5037,15 @@ multicast_restore_by_partimage() {
   else
     get_image_cat_zip_cmd $target_d/$img_file
   fi
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
 
   start_time="$(date +%s%N)"
+cat <<_EOT_ >>  ${OCS_LOGFILE}
   $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | partimage \
-  $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT restore $part stdin 
+  $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT restore $part stdin | tee --append ${OCS_LOGFILE}
+_EOT_
+  $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | partimage \
+  $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT restore $part stdin | tee --append ${OCS_LOGFILE}
   # TODO
   # partimage will return 1 no matter it finishes or not when we use stdin and
   # other options to suppress the warning message... 
@@ -4935,9 +5114,9 @@ multicast_restore_by_partclone() {
   fi
   if [ -z "${fs_}" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The file system can not be decided in function multicast_restore_by_partclone!!!"
+    echo "The file system can not be decided in function multicast_restore_by_partclone." | tee --append  ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop." | tee --append  ${OCS_LOGFILE}
     exit 1
   fi
 
@@ -4962,25 +5141,29 @@ multicast_restore_by_partclone() {
   esac
   [ -f "$partclone_img_info_tmp" ] && rm -f $partclone_img_info_tmp
   echo $msg_delimiter_star_line
-  echo "Waiting for the image from server..."
+  echo "Waiting for the image from server..." | tee --append  ${OCS_LOGFILE}
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "If this action fails or hangs, check:"
-  echo "* Is the saved image $target_d/$file_basename* corrupted ?" 
-  [ "$(root_over_nfs)" = "yes" ] && echo "* Network connection or switch ? Did you forget to link those network switches if you have more than 1 ? Does your network switch block multicast packet ?"
+  echo "If this action fails or hangs, check:" | tee --append  ${OCS_LOGFILE}
+  echo "* Is the saved image $target_d/$file_basename* corrupted ?"  | tee --append  ${OCS_LOGFILE}
+  [ "$(root_over_nfs)" = "yes" ] && echo "* Network connection or switch ? Did you forget to link those network switches if you have more than 1 ? Does your network switch block multicast packet ?" | tee --append  ${OCS_LOGFILE}
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append  ${OCS_LOGFILE}
 
   start_time="$(date +%s%N)"
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
+cat <<_EOT_ >> ${OCS_LOGFILE}
+  $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
+  LC_ALL=C partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
+_EOT_
   $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
   LC_ALL=C partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
   rc="$?"
   end_time="$(date +%s%N)"
   # sync_and_active_exec_files
   get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
-  echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)"
+  echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append  ${OCS_LOGFILE}
   # For multicast, with preparation time, it's no so accurate.
-  echo ">>> NOTE: The elapsed time may include some preparation time, so it is not very accurate."
+  echo ">>> NOTE: The elapsed time may include some preparation time, so it is not very accurate." | tee --append  ${OCS_LOGFILE}
   # prepare statistic report
   conv_return_code_to_human_read $rc
   report_msg="$report_msg $part, $clone_status, $space_used, $time_elapsed_in_min mins;"
@@ -5067,13 +5250,13 @@ multicast_restore_by_dd() {
 do_unicast_stdin_restore() {
   # part is like: /dev/hda1
   local target_d="$1"
-  local img_file="$2"
+  local img_file="$(to_filename $2)"
   local part="$3"  # part is like /dev/hda1
   local start_time end_time image_name_ split_by dd_report_sig_pid part_size hdtmp pt_type
   # if the report_msg is empty, put the initial one: image_name_
   image_name_="$(basename $target_d)"
   [ -z "$report_msg" ] && report_msg="Unicast restored $image_name_,"
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   check_if_target_dev_busy_before_restoring $part
   echo $msg_delimiter_star_line
   # time_elapsed, time_elapsed_in_min and speed are global variables
@@ -5097,13 +5280,14 @@ do_unicast_stdin_restore() {
     clean_filesystem_header_in_partition $part
     unicast_restore_by_dd
   fi
-  echo "Finished unicast restoring image ${target_d##*/} to $part."
+  echo "Finished unicast restoring image ${target_d##*/} to $part." | tee --append ${OCS_LOGFILE}
   sleep 1
   # Informing kernel that the OS that partition table has changed since for BSD system, the partitions info exists in the slice
   hdtmp="$(get_disk_from_part $part)"
   pt_type="$(get_partition_table_type_from_disk $hdtmp)"
   inform_kernel_partition_table_changed $pt_type $hdtmp
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  #copy_log $target_d $img_file
   return $rc
 } # end of do_unicast_stdin_restore
 #
@@ -5119,7 +5303,7 @@ do_multicast_udpcast_restore() {
   image_name_="$(basename $target_d)"
   [ -z "$report_msg" ] && report_msg="Multicast restored $image_name_,"
   udpcast_rec_cmd="udp-receiver $udp_receiver_extra_opt_default --nokbd --mcast-all-addr $MULTICAST_ALL_ADDR --portbase $port $TIME_TO_LIVE_OPT" 
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   echo "Starting to restore image ${target_d##*/} to $part..."
   if [ -f "$target_d/$img_file.000" -o \
        -f "$target_d/$img_file.aa" -o \
@@ -5140,7 +5324,7 @@ do_multicast_udpcast_restore() {
     clean_filesystem_header_in_partition $part
     multicast_restore_by_dd
   fi
-  echo "Finished restoring image ${target_d##*/} to $part."
+  echo "Finished restoring image ${target_d##*/} to $part." | tee --append ${OCS_LOGFILE}
   echo $msg_delimiter_star_line
   # Informing kernel that the OS that partition table has changed since for BSD system, the partitions info exists in the slice
   hdtmp="$(get_disk_from_part $part)"
@@ -5148,7 +5332,7 @@ do_multicast_udpcast_restore() {
   inform_kernel_partition_table_changed $pt_type $hdtmp
   
   # note! We must sleep a while to let the udp-receiver to finish their jobs then start the next ones.
-  echo -n "Preparing the next... "
+  echo -n "Preparing the next... " | tee --append ${OCS_LOGFILE}
   # we sleep at least 3 secs.
   sleep 3
   # To avoid all the clients notify at almost same time, we use random sleep before joining multicast.
@@ -5262,9 +5446,9 @@ multicast_feed_img_for_partclone() {
   fi
   if [ -z "${fs_}" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The file system can not be decided in function multicast_feed_img_for_partclone!!!"
+    echo "The file system can not be decided in function multicast_feed_img_for_partclone!!!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
   fi
 
@@ -5378,7 +5562,7 @@ feed_multicast_restoreparts() {
   do_LVM_restore_feed="no"
   for partition in $tgt_parts; do
     # hda1 -> hda
-    hd_tmp="${partition:0:3}"
+    hd_tmp="$(get_diskname $partition)"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
     if [ -n "$(grep -Ew "$partition" $imagedir/$tgt_dir/lvm_vg_dev.list 2>/dev/null)" ]; then
       # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
@@ -5466,7 +5650,7 @@ save_logv() {
   [ -z "$report_msg" ] && report_msg="Saved $image_name_,"
   rm -f $PV_PARSE_CONF $LOGV_PARSE_CONF
   ocs-lvm2-start
-  echo "Parsing LVM layout..."
+  echo "Parsing LVM layout..." | tee --append $OCS_LOGFILE
   LC_ALL=C pvscan | grep -Ew lvm2 | while read LINE; do
     DEV="$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f2)"
     VG="$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f4)"
@@ -5490,15 +5674,18 @@ save_logv() {
     done
     if [ "$FND_PV" = "yes" ]; then
       UUID="$(LC_ALL=C pvdisplay $DEV | grep "PV UUID" | awk -F" " '{print $3}')"
-      echo "$VG $DEV $UUID" | tee -a $PV_PARSE_CONF
+      echo "$VG $DEV $UUID" | tee -a $PV_PARSE_CONF | tee --append $OCS_LOGFILE
     fi
   done
 
   if [ ! -e "$PV_PARSE_CONF" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "///WARNING/// The LVM setting is not found!"
-    echo "Unable to save LVM image!!!"
+    echo "///WARNING/// The LVM physical volume setting was not found." | tee --append $OCS_LOGFILE
+    echo "Unable to save LVM image." | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    #copy_log $target_dir_fullpath "lvm"
+    return 1
   fi
   
   # We just want the LV in chosen target
@@ -5538,9 +5725,9 @@ save_logv() {
   while read vg dev uuid; do
     if [ ! -e "$target_dir/lvm_$vg.conf" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "$target_dir/lvm_$vg.conf NOT created! Not volume group of LVM was saved!"
+      echo "$target_dir/lvm_$vg.conf NOT created! Not volume group of LVM was saved!" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
       exit 1
     fi
   done < $PV_PARSE_CONF
@@ -5580,9 +5767,9 @@ restore_logv() {
   local volg is_in_chosen_partition lvm_tmp
   if [ -z "$mode" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "To restore LVM, you must specify it's unicast or multicast!!!"
+    echo "To restore LVM, you must specify it's unicast or multicast!!!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!!!"
+    echo "$msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
     exit 1
   fi
   PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
@@ -5704,9 +5891,9 @@ feed_LVM_multicast() {
   local volg n
   if [ -z "$port" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "To feed multicast/broadcast LVM, you must specify the port!!!"
+    echo "To feed multicast/broadcast LVM, you must specify the port!!!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!!!"
+    echo "$msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
     exit 1
   fi
   # Note! With a leading $imagedir before /$target_dir
@@ -5758,11 +5945,11 @@ check_target_hd() {
   local tgt_hd="$2"
   if [ -z "$tgt_hd" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The target harddisk you assigned is nothing!"
-    echo "$disk_file is empty ?"
-    echo "Maybe diskfull when you saved image ?"
+    echo "The target harddisk you assigned is nothing!" | tee --append ${OCS_LOGFILE}
+    echo "$disk_file is empty ?" | tee --append ${OCS_LOGFILE}
+    echo "Maybe disk is full when you saved image?" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
   fi
 }
@@ -5772,11 +5959,11 @@ check_target_parts() {
   local tgt_parts="$2"
   if [ -z "$tgt_parts" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The target partitions you assigned is nothing!"
-    echo "$parts_file is empty ?"
-    echo "Maybe diskfull when you saved image ?"
+    echo "The target partitions you assigned is nothing!" | tee --append ${OCS_LOGFILE}
+    echo "$parts_file is empty ?" | tee --append ${OCS_LOGFILE}
+    echo "Maybe diskfull when you saved image ?" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
   fi
 }
@@ -6070,7 +6257,7 @@ start_ocs_service() {
   echo "$msg_client_job_are_logged_in: $ocs_log_file"
   if [ -n "$(echo $task | grep -i "restore")" ]; then
     # if the mode restore, show the log prompt
-    echo "$msg_client_sfdisk_log_are_in $RESTORE_SFDISK_LOG"
+    echo "$msg_client_sfdisk_log_are_in $OCS_LOGFILE"
   fi
 
   # Multicast part
@@ -6080,7 +6267,11 @@ start_ocs_service() {
     [ -n "$mcast_wait_time" ] && udpcast_hold_opt1="--min-wait $mcast_wait_time" 
     [ -n "$n_clients" ] && udpcast_hold_opt2="--min-clients $n_clients"
     [ -n "$mcast_max_wait_time" ] && udpcast_hold_opt3="--max-wait $mcast_max_wait_time" 
-    [ -z "$udpcast_hold_opt1" -a -z "$udpcast_hold_opt2" -a -z "$udpcast_hold_opt3" ] && echo "Someting went wrong! I can not find time_to_wait, clients_to_wait or clients+time_to_wait option! $msg_program_stop!" && exit 1
+    if [ -z "$udpcast_hold_opt1" -a -z "$udpcast_hold_opt2" -a -z "$udpcast_hold_opt3" ]; then
+      echo "No time_to_wait, clients_to_wait or clients+time_to_wait option was found." | tee --append ${OCS_LOGFILE}
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+      exit 1
+    fi
   fi
 
   #
@@ -6108,10 +6299,10 @@ start_ocs_service() {
       # target_dir will be got from $option when run feed_multicast_restoreparts
       if [ -z "$target_parts" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "No target partitions were found from image $target_dir!"
-	echo "Failed to start $multi_broad_cast_prompt clone service for image $target_dir!"
+        echo "No target partitions were found from image $target_dir!" | tee --append ${OCS_LOGFILE}
+	echo "Failed to start $multi_broad_cast_prompt clone service for image $target_dir!" | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop!"
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
         exit 1
       fi
       feed_multicast_restoreparts "$target_dir" "$target_parts" &
@@ -6122,10 +6313,10 @@ start_ocs_service() {
       #feed_multicast_restoreparts "$option" &
       if [ -z "$target_parts" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "No target partitions were found from image $target_dir!"
-	echo "Failed to start $multi_broad_cast_prompt clone service for image $target_dir!"
+        echo "No target partitions were found from image $target_dir!" | tee --append ${OCS_LOGFILE}
+	echo "Failed to start $multi_broad_cast_prompt clone service for image $target_dir!" | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop!"
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
         exit 1
       fi
       feed_multicast_restoreparts "$target_dir" "$target_parts" &
@@ -6272,9 +6463,9 @@ prep_client_inittab_rc_srv() {
       ;;
     *)
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Unknown mode for ocs_client_trig_type in /etc/drbl/drbl-ocs.conf!"
+      echo "Unknown mode for ocs_client_trig_type in /etc/drbl/drbl-ocs.conf!" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
       exit 1
   esac
 } # end of prep_client_inittab_rc_srv
@@ -6327,8 +6518,8 @@ task_notify_localboot() {
 show_warning_about_write_failed() {
   local img_dir=$1
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "The disk or partition information can NOT be written in target directory $img_dir!"
-  echo "Maybe the disk or partition is full in Clonezilla server ?"
+  echo "The disk or partition information can NOT be written in target directory $img_dir!" | tee --append $OCS_LOGFILE
+  echo "Maybe the disk or partition is full in Clonezilla server ?" | tee --append $OCS_LOGFILE
   echo "$msg_press_enter_to_continue..."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   read
@@ -6482,23 +6673,23 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
     # (3) source hardisk number is >= 2
     if [ -n "$port" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "$msg_create_cvrt_img_for_different_not_supported_in_multicast_mode $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead"
+      echo "$msg_create_cvrt_img_for_different_not_supported_in_multicast_mode $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
       exit 1
     fi
     if [ "$src_dsk_no" -ge 2 ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "$msg_create_cvrt_img_for_more_than_2_disks_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead"
+      echo "$msg_create_cvrt_img_for_more_than_2_disks_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
       exit 1
     fi
     is_spawned_by_drbl_ocs $ocs_ppid
     rc=$?
     if [ "$rc" -eq 0 ]; then
-      echo "$msg_create_cvrt_img_for_clonezilla_server_edition_client_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead"
-      echo "$msg_program_stop!"
+      echo "$msg_create_cvrt_img_for_clonezilla_server_edition_client_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
       exit 1
     fi
 
@@ -6548,20 +6739,21 @@ check_mbr_gpt_partition_table() {
   # Identified 1 problems!
   # 
   if ! type sgdisk &>/dev/null; then
-    echo "Program sgdisk not found! Skip checking MBR and GPT partition table!"
+    echo "Program sgdisk not found! Skip checking MBR and GPT partition table!" | tee --append ${OCS_LOGFILE}
     return 3
   fi
   if [ -n "$(LC_ALL=C sgdisk -v /dev/$tdisk 2>&1 | grep -i "Mismatched GPT and MBR partition")" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$msg_mismatched_GPT_MBR_partition: /dev/$tdisk"
-    echo "$msg_confuse_clonezilla_and_saved_image_useless"
+    echo "$msg_mismatched_GPT_MBR_partition: /dev/$tdisk" | tee --append ${OCS_LOGFILE}
+    echo "$msg_confuse_clonezilla_and_saved_image_useless" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_description_to_fix_mismatched_GPT_and_MBR_partition:"
-    echo "sudo sgdisk -z /dev/sdx"
-    echo "$msg_replace_sdx_with_harddrive_name"
+    echo "$msg_description_to_fix_mismatched_GPT_and_MBR_partition:" | tee --append ${OCS_LOGFILE}
+    echo "sudo sgdisk -z /dev/sdx" | tee --append ${OCS_LOGFILE}
+    echo "$msg_replace_sdx_with_harddrive_name" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_please_fix_this_issue_then_restart_clonezilla_again"
-    echo "$msg_program_stop!"
+    echo "$msg_please_fix_this_issue_then_restart_clonezilla_again" | tee --append ${OCS_LOGFILE}
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
 } # end of check_mbr_gpt_partition_table
@@ -6641,18 +6833,18 @@ task_savedisk() {
     check_mbr_gpt_partition_table $idisk
 
     BACKUP_DEVS=""
-    echo "Searching for data partition(s)..."
+    echo "Searching for data partition(s)..." | tee --append $OCS_LOGFILE
     get_known_partition_proc_format $idisk data
     target_parts="$target_parts $BACKUP_DEVS"
 
     BACKUP_DEVS=""
-    echo "Searching for swap partition(s)..."
+    echo "Searching for swap partition(s)..." | tee --append $OCS_LOGFILE
     get_known_partition_proc_format $idisk swap
     target_swap_parts="$target_swap_parts $BACKUP_DEVS"
   done
 
-  [ -n "$target_parts" ] && echo "The data partition to be saved: $target_parts"
-  [ -n "$target_swap_parts" ] && echo "The swap partition to be saved: $target_swap_parts"
+  [ -n "$target_parts" ] && echo "The data partition to be saved: $target_parts" | tee --append $OCS_LOGFILE
+  [ -n "$target_swap_parts" ] && echo "The swap partition to be saved: $target_swap_parts" | tee --append $OCS_LOGFILE
   # Let task_saveparts do the real job. However, we do not generate md5sums, sha1sums in task_saveparts, since there are some files will be created later. We will generate them in the end of this function.
   gen_md5sum_status="$gen_md5sum"; gen_sha1sum_status="$gen_sha1sum" # save values
   gen_md5sum="no"; gen_sha1sum="no"
@@ -6662,9 +6854,9 @@ task_savedisk() {
   gen_md5sum="$gen_md5sum_status"; gen_sha1sum="$gen_sha1sum_status" # restore values
 
   # save swap partition UUID/LABEL if it exists.
-  echo $msg_delimiter_star_line
+  echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   for isp in $target_swap_parts; do
-    echo "Saving swap partition $isp info in $ocsroot/$target_dir/swappt-${isp}.info if it exists..."
+    echo "Saving swap partition $isp info in $ocsroot/$target_dir/swappt-${isp}.info if it exists..." | tee --append $OCS_LOGFILE
     output_swap_partition_uuid_label /dev/$isp $ocsroot/$target_dir/swappt-${isp}.info
   done
 
@@ -6688,6 +6880,8 @@ task_savedisk() {
     echo "$msg_this_image_not_saved_correctly"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
+  echo "End of savedisk job for image $target_dir." | tee --append $OCS_LOGFILE
+
   return $rc_task_savedisk
 } # end of task_savedisk
 
@@ -6732,7 +6926,7 @@ task_saveparts() {
   # find the target hd
   # maybe we will have one more hd (like hda1, hda2, hdb1, hdb3 -> hda, hdb)
   for ipart in $target_parts; do
-    hd_tmp=${ipart:0:3}
+    hd_tmp="$(get_diskname $ipart)"
     if [ -z "$target_hd" ]; then
 	    target_hd="$hd_tmp"
     elif [ -z "$(echo $target_hd | grep -E "$hd_tmp" 2>/dev/null)" ]; then
@@ -6775,25 +6969,25 @@ task_saveparts() {
   # save partition table
   for ihd in $target_hd; do
     check_integrity_of_partition_table_in_disk /dev/$ihd
-    echo -n "Reading the partition table for /dev/$ihd..."
+    echo -n "Reading the partition table for /dev/$ihd..." | tee --append $OCS_LOGFILE
     # No matter it's MBR or GPT, we use sfdisk to dump partition table since if dual boot (Mac OS, Linux) on Mac book, this partition table is required for Linux normally.
-    LC_ALL=C sfdisk -d /dev/$ihd > $target_dir/${ihd}-pt.sf 2>/dev/null
+    LC_ALL=C sfdisk -d /dev/$ihd > $target_dir/$(to_filename ${ihd})-pt.sf 2>/dev/null
     RETVAL="$?"
-    echo "RETVAL=$RETVAL"
-    clean_cylinder_boundary_warning $target_dir/${ihd}-pt.sf
+    echo "RETVAL=$RETVAL" | tee --append $OCS_LOGFILE
+    clean_cylinder_boundary_warning $target_dir/$(to_filename ${ihd})-pt.sf
     output_HD_CHS $ihd $target_dir
     # Output the info from parted, it contains more info.
-    LC_ALL=C parted -s /dev/$ihd unit s print > $target_dir/${ihd}-pt.parted
+    LC_ALL=C parted -s /dev/$ihd unit s print > $target_dir/$(to_filename ${ihd})-pt.parted
     # Output another one which is easier for human to read
-    LC_ALL=C parted -s /dev/$ihd unit compact print > $target_dir/${ihd}-pt.parted.compact
+    LC_ALL=C parted -s /dev/$ihd unit compact print > $target_dir/$(to_filename ${ihd})-pt.parted.compact
     # From the output file of parted, we can decide if the partition is gpt or mbr
-    if `is_gpt_partitition_table_file $target_dir/${ihd}-pt.parted`; then
+    if `is_gpt_partitition_table_file $target_dir/$(to_filename ${ihd})-pt.parted`; then
       # GPT, output the GPT data. Ref: http://en.wikipedia.org/wiki/GUID_Partition_Table
       # Legacy MBR (LBA 0), Partition table header (LBA 1), Partition entries (LBA 2-33)
-      echo $msg_delimiter_star_line
-      echo "Saving the primary GPT of $ihd as $target_dir/${ihd}-gpt-1st by dd..."
-      LC_ALL=C dd if=/dev/$ihd of=$target_dir/${ihd}-gpt-1st bs=512 count=34
-      echo $msg_delimiter_star_line
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+      echo "Saving the primary GPT of $ihd as $target_dir/$(to_filename ${ihd})-gpt-1st by dd..." | tee --append ${OCS_LOGFILE}
+      LC_ALL=C dd if=/dev/$ihd of=$target_dir/$(to_filename ${ihd})-gpt-1st bs=512 count=34 | tee --append ${OCS_LOGFILE}
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       # There is a redundant GPT (secondary GPT) in the last block: LBA -34, -33... -1. Ref: http://developer.apple.com/technotes/tn2006/tn2166.html#SECLASTBLOCK
       # We need to get the total size of disk so that we can skip and dump the last block:
       # The output of 'parted -s /dev/sda unit s print' is like:
@@ -6807,38 +7001,38 @@ task_saveparts() {
       #  2      409641s   4316406s   3906766s   ext2         primary         
       #  3      4316407s  15625000s  11308594s  reiserfs     primary         
       # --------------------
-      echo "Saving the secondary GPT of $ihd as $target_dir/${ihd}-gpt-2nd by dd..."
-      disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $target_dir/${ihd}-pt.parted | awk -F":" '{print $2}' | sed -e "s/s$//g")"
+      echo "Saving the secondary GPT of $ihd as $target_dir/$(to_filename ${ihd})-gpt-2nd by dd..." | tee --append ${OCS_LOGFILE}
+      disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $target_dir/$(to_filename ${ihd})-pt.parted | awk -F":" '{print $2}' | sed -e "s/s$//g")"
       to_skip="$((${disk_size_sec}-33+1))"
-      LC_ALL=C dd if=/dev/$ihd of=$target_dir/${ihd}-gpt-2nd skip=${to_skip} bs=512 count=33
-      echo $msg_delimiter_star_line
+      LC_ALL=C dd if=/dev/$ihd of=$target_dir/$(to_filename ${ihd})-gpt-2nd skip=${to_skip} bs=512 count=33 | tee --append ${OCS_LOGFILE}
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       if type sgdisk &>/dev/null; then
-        echo "Saving the GPT of $ihd as $target_dir/${ihd}-gpt.gdisk by gdisk..."
-        LC_ALL=C sgdisk -b $target_dir/${ihd}-gpt.gdisk /dev/$ihd
+	echo "Saving the GPT of $ihd as $target_dir/$(to_filename ${ihd})-gpt.gdisk by gdisk..." | tee --append ${OCS_LOGFILE}
+	LC_ALL=C sgdisk -b $target_dir/$(to_filename ${ihd})-gpt.gdisk /dev/$ihd | tee --append ${OCS_LOGFILE}
 
         # Dump the GPT table in plain text
-        LC_ALL=C sgdisk -p /dev/$ihd > $target_dir/${ihd}-gpt.sgdisk
-        echo $msg_delimiter_star_line
+	LC_ALL=C sgdisk -p /dev/$ihd > $target_dir/$(to_filename ${ihd})-gpt.sgdisk | tee --append ${OCS_LOGFILE}
+        echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       fi
-    elif `is_mbr_partitition_table_file $target_dir/${ihd}-pt.parted`; then
+    elif `is_mbr_partitition_table_file $target_dir/$(to_filename ${ihd})-pt.parted`; then
       # MBR disk, we can save the hidden data between MBR and 1st partition. Maybe the data is useless, maybe it's useful. Since some of the recovery programs put data on that.
-      echo $msg_delimiter_star_line
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       if [ "$clone_hidden_data" = "yes" ]; then
-        save_hidden_data_after_MBR $ihd $target_dir/${ihd}-hidden-data-after-mbr
+	save_hidden_data_after_MBR $ihd $target_dir/$(to_filename ${ihd})-hidden-data-after-mbr
       fi
-      echo $msg_delimiter_star_line
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     else
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Unknown partition table format on disk /dev/$ihd !"
+      echo "Unknown partition table format on disk /dev/$ihd." | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
       exit 1
     fi
     if [ "$RETVAL" -ne 0 ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "$msg_failed_to_save_partition_table_for_disk: $ihd"
+      echo "$msg_failed_to_save_partition_table_for_disk: $ihd" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
       exit 1
     fi
   done
@@ -6850,8 +7044,8 @@ task_saveparts() {
     # Master Boot Record (MBR) is the 512-byte boot sector:
     # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
     # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
-    echo "Saving the MBR data for $ihd..."
-    dd if=/dev/$ihd of=$target_dir/${ihd}-mbr count=1 bs=512
+    echo "Saving the MBR data for $ihd..." | tee --append $OCS_LOGFILE
+    dd if=/dev/$ihd of=$target_dir/$(to_filename ${ihd})-mbr count=1 bs=512 | tee --append ${OCS_LOGFILE}
   done
 
   do_LVM_save="no"
@@ -6892,9 +7086,12 @@ task_saveparts() {
   else
     gen_md5_sha1_sums $target_dir
   fi
+
+  # TODO: show error message if failing; check image?
+  echo "End of saveparts job for image $target_dir." | tee --append $OCS_LOGFILE
+
   rc_saveparts="$(($rc_saveparts + $rc))"
   return $rc_saveparts
-  # TODO: show error message if failing; check image?
 } # end of task_saveparts()
 
 # task "restoredisk" 
@@ -6934,7 +7131,7 @@ task_restoredisk() {
     # Thanks to Orgad Shaneh.
     # //NOTE// Now this method only works for unicast. Not for multicast/broadcast.
     gen_proc_partitions_map_file
-    target_hd="$(LC_ALL=C awk '/[hsv]d[a-z]($| )/ { print $4; }' $partition_table | sort $sort_V_opt | head -n 1)"
+    target_hd="$(get_disk_list $partition_table | awk -F" " '{print $1}')"
     [ -f "$partition_table" ] && rm -f $partition_table
     ;;
   esac
@@ -6961,7 +7158,10 @@ task_restoredisk() {
   # Let task_restoreparts do the real job
   # However, we do not check md5sums, sha1sums in task_restoreparts, since maybe there are some files (like create-ocs-tmp-img will convert hda img to sda...) will be created later. We have to check them before the image was converted.
   check_md5sum="no"; check_sha1sum="no"
+  echo "Running: task_restoreparts \"$target_dir\" \"$target_parts\" \"$port\"" >> $OCS_LOGFILE
   task_restoreparts "$target_dir" "$target_parts" "$port"
+
+  echo "End of restoredisk job for image $target_dir." | tee --append $OCS_LOGFILE
 } # end of task_restoredisk
 
 # task "multicast_restoredisk" 
@@ -6998,16 +7198,16 @@ task_restoreparts() {
 
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "target_dir is NOT assigned in function task_restoreparts!!!"
+    echo "target_dir is NOT assigned in function task_restoreparts." | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop." | tee --append $OCS_LOGFILE
     exit 1
   fi
   if [ -z "$target_parts" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "target_parts is NOT assigned in function task_restoreparts!!!"
+    echo "target_parts is NOT assigned in function task_restoreparts." | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop." | tee --append $OCS_LOGFILE
     exit 1
   fi
 
@@ -7039,7 +7239,7 @@ task_restoreparts() {
   # find the target hd
   # maybe we will have one more hd (like hda1, hda2, hdb1, hdb3 -> hda, hdb)
   for ipart in $target_parts; do
-    thd_tmp=${ipart:0:3}
+    thd_tmp="$(get_diskname $ipart)"
     if [ -z "$target_hd" ]; then
       target_hd="$thd_tmp"
     elif [ -z "$(echo $target_hd | grep -Ew "$thd_tmp" 2>/dev/null)" ]; then
@@ -7049,7 +7249,7 @@ task_restoreparts() {
 
   # Find the source hd
   for jpart in `cat $ocsroot/$target_dir/parts`; do
-    shd_tmp=${jpart:0:3}
+    shd_tmp="$(get_diskname $jpart)"
     if [ -z "$source_hd" ]; then
       source_hd="$shd_tmp"
     elif [ -z "$(echo $source_hd | grep -Ew "$shd_tmp" 2>/dev/null)" ]; then
@@ -7163,10 +7363,10 @@ task_restoreparts() {
       # Only for MBR, excluding GPT type of disk. We only deal with MBR for this hidden data
       if `is_mbr_partitition_table_disk /dev/$ihd`; then
         echo $msg_delimiter_star_line
-        if [ -e "$target_dir_fullpath/${ihd}-hidden-data-after-mbr" ]; then
-          restore_hidden_data_after_MBR $ihd $target_dir_fullpath/${ihd}-hidden-data-after-mbr
+	if [ -e "$target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr" ]; then
+          restore_hidden_data_after_MBR $ihd $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr
         else
-          echo "File $target_dir_fullpath/${ihd}-hidden-data-after-mbr not found!"
+	  echo "File $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr not found!"
           echo "Skip restoring hidden data after MBR for disk $ihd."
         fi
         echo $msg_delimiter_star_line
@@ -7177,14 +7377,14 @@ task_restoreparts() {
   do_LVM_restore="no"
   for partition in $target_parts; do
     # hda1 -> hda
-    hd_tmp="${partition:0:3}"
+    hd_tmp="$(get_diskname $partition)"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
      if [ -n "$(grep -Ew "$partition" $target_dir_fullpath/lvm_vg_dev.list 2>/dev/null)" ]; then
       # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
       do_LVM_restore="yes"
       continue
     fi
-    echo "Restoring partition /dev/$partition..."
+    echo "Restoring partition /dev/$partition..." | tee --append $OCS_LOGFILE
     # From partimage 0.6.6, batch mode won't stop if checkInodeForDevice is not run. Therefore comment it.
     # checkInodeForDevice /dev/$partition
     # Before we start to clone, check if kernel can find /dev/$partition
@@ -7201,7 +7401,8 @@ task_restoreparts() {
     esac
     if [ $rc -gt 0 ]; then
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-       echo "Failed to restore partition image file $target_dir_fullpath/${partition}* to /dev/$partition! Maybe this image is corrupt or there is no $target_dir_fullpath/${partition}*! If you are restoring the image of partition to different partition, check the FAQ on Clonezilla website for how to make it. $msg_press_enter_to_continue..."
+       echo "Failed to restore partition image file $target_dir_fullpath/${partition}* to /dev/$partition! Maybe this image is corrupt or there is no $target_dir_fullpath/${partition}*! If you are restoring the image of partition to different partition, check the FAQ on Clonezilla website for how to make it." | tee --append $OCS_LOGFILE
+       echo "$msg_press_enter_to_continue..."
        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
        read
     fi
@@ -7212,24 +7413,24 @@ task_restoreparts() {
   if [ -n "$(echo "$ocs_sr_type" | grep -Ei "restoredisk")" ]; then
     for ihd in $target_hd; do
       # Get the partition type from parted output
-      if `is_gpt_partitition_table_file $target_dir_fullpath/${ihd}-pt.parted`; then
+      if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
         ptype="gpt"
-      elif `is_mbr_partitition_table_file $target_dir_fullpath/${ihd}-pt.parted`; then
+      elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
         ptype="mbr"
       else
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "Unknown partition table format from the file $target_dir_fullpath/${ihd}-pt.parted!"
+	echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop!"
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
         exit 1
       fi
       case "$ptype" in
        mbr)
-        echo "Finding swap partition(s) in MBR table $target_dir_fullpath/${ihd}-pt.sf..."
-        for partition in `get_swap_partition_sf_format $target_dir_fullpath/${ihd}-pt.sf`; do
-          echo "Creating swap partition /dev/$partition..."
+	  echo "Finding swap partition(s) in MBR table $target_dir_fullpath/$(to_filename ${ihd})-pt.sf..." | tee --append $OCS_LOGFILE
+	  for partition in `get_swap_partition_sf_format $target_dir_fullpath/$(to_filename ${ihd})-pt.sf`; do
+          echo "Creating swap partition /dev/$partition..." | tee --append $OCS_LOGFILE
           check_specify_part_exists $partition
-          echo "Found the swap partition /dev/$partition info in the image dir, create it by:"
+          echo "Found the swap partition /dev/$partition info in the image dir, create it by:" | tee --append $OCS_LOGFILE
           # read LABEL, UUID info for $partition if swappt-$partition.info exists
           uuid_opt=""
           label_opt=""
@@ -7241,17 +7442,17 @@ task_restoreparts() {
             [ -n "$LABEL" ] && label_opt="-L $LABEL"
           fi
           get_mkswap_uuid_cmd
-          echo "${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition"
-          ${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition
-          echo $msg_delimiter_star_line
+          echo "${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition" | tee --append $OCS_LOGFILE
+          ${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition | tee --append $OCS_LOGFILE
+          echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
         done
         ;;
        gpt)
-        echo "Finding swap partition(s) in GPT table $target_dir_fullpath/${ihd}-pt.parted..."
-        for partition in `get_swap_partition_parted_format $target_dir_fullpath/${ihd}-pt.parted`; do
-          echo "Creating swap partition /dev/$partition..."
+	echo "Finding swap partition(s) in GPT table $target_dir_fullpath/$(to_filename ${ihd})-pt.parted..." | tee --append $OCS_LOGFILE
+	for partition in `get_swap_partition_parted_format $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; do
+          echo "Creating swap partition /dev/$partition..." | tee --append $OCS_LOGFILE
           check_specify_part_exists $partition
-          echo "Found the swap partition /dev/$partition info in the image dir, create it by:"
+          echo "Found the swap partition /dev/$partition info in the image dir, create it by:" | tee --append $OCS_LOGFILE
           # read LABEL, UUID info for $partition if swappt-$partition.info exists
           uuid_opt=""
           label_opt=""
@@ -7263,9 +7464,9 @@ task_restoreparts() {
             [ -n "$LABEL" ] && label_opt="-L $LABEL"
           fi
           get_mkswap_uuid_cmd
-          echo "${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition"
-          ${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition
-          echo $msg_delimiter_star_line
+          echo "${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition" | tee --append $OCS_LOGFILE
+          ${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition | tee --append $OCS_LOGFILE
+          echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
         done
         ;;
       esac
@@ -7288,15 +7489,15 @@ task_restoreparts() {
       # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
       if [ "$restore_prebuild_mbr" = "yes" ]; then
         # For M$ Windows system, sometimes it will fail if we restore the mbr from the one we saved (Ex. hda-mbr). Another option is to use mbr.bin from syslinux
-	echo -n "Restoring the mbr.bin from syslinux to /dev/$ihd... "
+	echo -n "Restoring the mbr.bin from syslinux to /dev/$ihd... " | tee --append $OCS_LOGFILE
         cat $pxelinux_binsrc_dir/mbr.bin > /dev/$ihd
-        echo "done!"
+        echo "done." | tee --append $OCS_LOGFILE
       else
-        echo -n "Restoring the first 446 bytes of MBR data, i.e. executable code area, for $ihd... "
+        echo -n "Restoring the first 446 bytes of MBR data, i.e. executable code area, for $ihd... " | tee --append $OCS_LOGFILE
         dd if=$target_dir_fullpath/${ihd}-mbr of=/dev/$ihd bs=446 count=1 &>/dev/null
-        echo "done!"
+        echo "done." | tee --append $OCS_LOGFILE
       fi
-      echo $msg_delimiter_star_line
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     fi
   done
 
@@ -7304,36 +7505,36 @@ task_restoreparts() {
   if [ "$resize_partition" = "on" ]; then
     for partition in $target_parts; do
       # hda1 -> hd_tmp, part_no_tmp ,i.e => hda, 1 
-      hd_tmp="${partition:0:3}"
-      part_no_tmp="${partition:3}"
-      echo "Now resize the partition for $hd_tmp$part_no_tmp"
-      ocs-resize-part --batch $hd_tmp $part_no_tmp
-      echo $msg_delimiter_star_line
+      hd_tmp="$(get_diskname $partition)"
+      part_no_tmp="$(get_part_number $partition)"
+      echo "Now resize the partition for $hd_tmp$part_no_tmp" | tee --append $OCS_LOGFILE
+      ocs-resize-part --batch $hd_tmp $part_no_tmp | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     done
   fi
 
   # Remove the udev MAC address records on the restored GNU/Linux
   if [ "$do_rm_hardware_record" = "yes" ]; then
-    ocs-tux-postprocess $target_hd
-    echo $msg_delimiter_star_line
+    ocs-tux-postprocess $target_hd | tee --append $OCS_LOGFILE
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
   # re-install syslinux
   if [ "$do_update_syslinux" = "yes" ]; then
-    ocs-update-syslinux -b $target_parts
-    echo $msg_delimiter_star_line
+    ocs-update-syslinux -b $target_parts | tee --append $OCS_LOGFILE
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
   # re-install grub here
   if [ "$install_grub" = "on" ]; then
-    install_grub_hd -p "$target_parts" $grub_partition
-    echo $msg_delimiter_star_line
+    install_grub_hd -p "$target_parts" $grub_partition | tee --append $OCS_LOGFILE
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
   # Reloc ntfs boot partition
   if [ "$change_ntfs_boot_chs" = "on" ]; then
-    run_ntfsreloc_part -p "$target_parts" $ntfs_boot_partition
-    echo $msg_delimiter_star_line
+    run_ntfsreloc_part -p "$target_parts" $ntfs_boot_partition | tee --append $OCS_LOGFILE
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
   # 
@@ -7346,20 +7547,23 @@ task_restoreparts() {
       # Master Boot Record (MBR) is the 512-byte boot sector:
       # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
       # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
-      echo -n "Restoring the MBR data (512 bytes), i.e. executable code area + table of primary partitions + MBR signature, for $ihd... "
-      dd if=$target_dir_fullpath/${ihd}-mbr of=/dev/$ihd bs=512 count=1 &>/dev/null
-      echo "done!"
-      echo -n "Making kernel re-read the partition table of /dev/$ihd... "
+      echo -n "Restoring the MBR data (512 bytes), i.e. executable code area + table of primary partitions + MBR signature, for $ihd... " | tee --append $OCS_LOGFILE
+      dd if=$target_dir_fullpath/$(to_filename ${ihd})-mbr of=/dev/$ihd bs=512 count=1 &>/dev/null
+      echo "done." | tee --append $OCS_LOGFILE
+      echo -n "Making kernel re-read the partition table of /dev/$ihd... " | tee --append $OCS_LOGFILE
       sfdisk -R /dev/$ihd
-      echo "done!"
-      echo "The partition table of /dev/$ihd is:"
+      echo "done." | tee --append $OCS_LOGFILE
+      echo "The partition table of /dev/$ihd is:" | tee --append $OCS_LOGFILE
       fdisk -l /dev/$ihd
-      echo $msg_delimiter_star_line
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     done
   fi
 
   # Remove the temp converted image. //NOTE// Now target_dir is *-tmp-cnvted. img_cnvt_flag is just for insurance.
   rm_tmp_cnvt_img
+
+  #
+  echo "End of restoreparts job for image $target_dir." | tee --append $OCS_LOGFILE
 
 } # end of task_restoreparts
 
@@ -7816,12 +8020,12 @@ check_ocs_input_params(){
   # This function is used to check drbl-ocs and ocs-sr input parameters
   if [ -n "$(echo $VOL_LIMIT | grep -E "[^0-9]" 2>/dev/null)" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Image file size must be digits, not [$VOL_LIMIT]! $msg_program_stop!"
+    echo "Image file size must be digits, not [$VOL_LIMIT]! $msg_program_stop!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     exit 1
   fi
   # convert 05/006... to 5, 6, also make it as integer
-  VOL_LIMIT="$(echo "scale=0; $VOL_LIMIT / 1" |bc -l)"
+  VOL_LIMIT="$(LC_ALL=C echo "scale=0; $VOL_LIMIT / 1" | bc -l)"
   
   if [ "$USE_NTFSCLONE" = "yes" ] && ! type lzop &>/dev/null; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -7861,7 +8065,7 @@ check_ocs_input_params(){
   
   # check grub_partition if we want to install grub
   if [ "$install_grub" = "on" ]; then
-    if [ -z "`echo $grub_partition | grep "/dev/[sh]d[a-z][1-9]*"`" -a "$grub_partition" != "auto" ]; then
+    if ! is_supported_dev "$grub_partition" && [ "$grub_partition" != "auto" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "\"$grub_partition\" is NOT a valid grub root partition! $msg_program_stop!!!"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -7968,15 +8172,15 @@ check_if_source_dev_busy_before_saving() {
   [ -z "$src_dev" ] && return 1
   if [ -n "$(mount | grep -Ew "^$src_dev")" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$src_dev is mounted! You have to unmount the $src_dev!!!"
+    echo "$src_dev is mounted. You have to unmount the $src_dev." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo $msg_delimiter_star_line
-    echo "Clean the incomplete image $img_name... "
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    echo "Clean the incomplete image $img_name... " | tee --append ${OCS_LOGFILE}
     # To avoid if user input empty for the image name, the $ocsroot will be all removed (https://sourceforge.net/tracker/?func=detail&atid=671650&aid=2956592&group_id=115473)
     if [ -n "$img_name" -a -d "$img_name" ] && \
        [ "$(LC_ALL=C readlink -f "$img_name")" != "$(LC_ALL=C readlink -f "$ocsroot")" ]; then
-      echo "$msg_do_u_want_to_remove"
-      echo -n "[y/N] "
+      echo "$msg_do_u_want_to_remove" | tee --append ${OCS_LOGFILE}
+      echo -n "[y/N] "                | tee --append ${OCS_LOGFILE}
       read rm_dir_confirm
       case "$rm_dir_confirm" in
           y|[yY][eE][sS])
@@ -7988,8 +8192,9 @@ check_if_source_dev_busy_before_saving() {
       esac 
       [ "$rm_dir_confirm" = "yes" ] && rm -rfv $img_name
     fi
-    echo "done!"
-    echo "$msg_program_stop!"
+    echo "done."              | tee --append ${OCS_LOGFILE}
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
 } # end of check_if_source_dev_busy_before_saving
@@ -7999,9 +8204,10 @@ check_if_target_dev_busy_before_restoring() {
   [ -z "$tgt_dev" ] && return 1
   if [ -n "$(mount | grep -Ew "^$tgt_dev")" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$tgt_dev is mounted! You have to unmount the $tgt_dev!!!"
+    echo "$tgt_dev is mounted. You have to unmount the $tgt_dev." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
 } # end of check_if_target_dev_busy_before_restoring
@@ -8012,13 +8218,14 @@ check_if_source_dev_busy_before_create_partition() {
   mounted_parts="$(mount | grep -Ew "^${src_dev}[0-9]*")"
   if [ -n "$mounted_parts" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$src_dev is busy! Some partition is mounted!"
-    echo $msg_delimiter_star_line
-    echo "$mounted_parts"
-    echo $msg_delimiter_star_line
-    echo "You have to unmount them first!!! Or you can choose '-k' to skip partition recreation when you start clonezilla!"
+    echo "$src_dev is busy. Some partition is mounted." | tee --append ${OCS_LOGFILE}
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    echo "$mounted_parts" | tee --append ${OCS_LOGFILE}
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    echo "You have to unmount them first. Or you can choose '-k' to skip partition recreation when you start clonezilla!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    copy_error_log
     exit 1
   fi
 } # end of check_if_source_dev_busy_before_create_partition
@@ -8071,9 +8278,10 @@ convert_ocs_format_from_1.5_to_2.0_or_newer() {
       if [ "$(echo $hd_dev | wc -w)" -gt 1 ]; then
         # clonezilla 1.x format, should only for one disk, no multiple disks.
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "Unknown clonezilla image format! The format is in a mess ?"
+        echo "Unknown clonezilla image format! The format is in a mess?" | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop!!!"
+        echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+        copy_error_log
         exit 1
       fi
     elif [ -f "$img_path/parts" ]; then
@@ -8081,7 +8289,7 @@ convert_ocs_format_from_1.5_to_2.0_or_newer() {
       # we need get disk name: hda1 hda2 hda3 -> hda
       # we choose the first one in partitions to convert, since in old format, when image of partitions exists, 
       tgt_hd_tmp="$(cat $img_path/parts | awk -F" " '{print $1}')"
-      hd_dev="${tgt_hd_tmp:0:3}"
+      hd_dev="$(get_diskname $tgt_hd_tmp)"
     fi
     for ifile in mbr pt.sf chs.sf; do
       # chs.sf maybe not exists for very old clonezilla 1.x
@@ -8292,8 +8500,7 @@ get_harddisk_list(){
     # function to get the harddisk list.
     # CDROM won't be listed in /proc/partitions, so we do not have to worry about that when cloning.
     gen_proc_partitions_map_file
-    get_sort_V_opt
-    disk_list="$(LC_ALL=C awk '/[hsv]d[a-z]($| )/ { print $4; }' $partition_table | sort $sort_V_opt)"
+    disk_list="$(get_disk_list $partition_table)"
     [ -f "$partition_table" ] && rm -f $partition_table
     echo "$disk_list"
 } # end of get_harddisk_list
@@ -8307,8 +8514,7 @@ get_partition_list(){
     # sda1 sda11 sda12 sda2 sda3...
     # XXX part_list="$(LC_ALL=C awk '/[hsv]d[a-z][0-9]+($| )/ { print $4; }' $partition_table | sort)"
     # To overcome the sorting problem, we use "-V" option. //NOTE// This won't work for older sort... e.g. the one in RHEL4?
-    get_sort_V_opt
-    part_list="$(LC_ALL=C awk '/[hsv]d[a-z][0-9]+($| )/ { print $4; }' $partition_table | sort $sort_V_opt)"
+    part_list="$(get_part_list $partition_table)"
     [ -f "$partition_table" ] && rm -f $partition_table
     echo "$part_list"
 } # end of get_partition_list
@@ -8388,9 +8594,11 @@ ocs-live-env-prepare(){
 #
 network_config_if_necessary() {
   local configured_ip run_net_cfg run_again_ans ttys
+  local ether_dev host_ip netmask default_gateway nameserver
   configured_ip="$(get-all-nic-ip --all-ip-address)"
   if [ -z "$configured_ip" ]; then
-    echo "Running ocs-live-netcfg to configure network..."
+    echo $msg_delimiter_star_line             >> $OCS_LOGFILE
+    echo "Running ocs-live-netcfg to configure network..." >> $OCS_LOGFILE
     run_net_cfg="yes"
     while [ "$run_net_cfg" = "yes" ]; do
       ocs-live-netcfg
@@ -8415,8 +8623,26 @@ network_config_if_necessary() {
       fi
     done
   else
-    echo "$msg_network_is_already_configured: $configured_ip"
+    echo "$msg_network_is_already_configured: $configured_ip" | tee --append ${OCS_LOGFILE}
   fi
+  #
+  ether_dev="$(get-all-nic-ip --all-net-dev)"
+  host_ip="$(get-all-nic-ip --all-ip-address)"
+  if [ -n "$ether_dev" ]; then
+    netmask="$(LC_ALL=C ifconfig $(get-all-nic-ip -d) | grep "Mask:" | sed -e 's/.*Mask:\(.*\)/\1/g')"
+    default_gateway="$(LC_ALL=C route | grep default | awk '{ print $2 }')"
+  fi
+  if [ -f "/etc/resolv.conf" ]; then
+    nameserver="$(LC_ALL=C awk '/^nameserver/{printf "%s ",$2}' /etc/resolv.conf | sed -e 's/ $//g')"
+  fi
+
+  echo $msg_delimiter_star_line             >> $OCS_LOGFILE
+  echo "Network Device  : $ether_dev"       >> $OCS_LOGFILE
+  echo "Host IP Address : $host_ip"         >> $OCS_LOGFILE
+  echo "Netmask         : $netmask"         >> $OCS_LOGFILE
+  echo "Default Gateway : $default_gateway" >> $OCS_LOGFILE
+  echo "Name Server     : $nameserver"      >> $OCS_LOGFILE
+  echo $msg_delimiter_star_line             >> $OCS_LOGFILE
 } # end of network_config_if_necessary
 #
 unmount_mounted_fs_before_ocs_live_reboot() {
@@ -8585,19 +8811,22 @@ get_fb_term(){
 } # end of get_fb_term
 check_if_ocsroot_a_mountpoint() {
   local mntpnt_continue
+  local rc
   fail_mountpoint() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Clonezilla image home directory $ocsroot is not a mounting point! Failed to mount other device as $ocsroot!"
+    echo "Clonezilla image home directory $ocsroot is not a mounting point! Failed to mount other device as $ocsroot!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    rc=1
     confirm_continue_or_default_quit
   }
   success_mountpoint() {
-    echo "$msg_df_report"
-    echo $msg_delimiter_star_line
-    df -ah
-    echo $msg_delimiter_star_line
+    echo "$msg_df_report" | tee --append ${OCS_LOGFILE}
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    df -ah 2>&1 | tee --append ${OCS_LOGFILE}
+    echo $msg_delimiter_star_line  | tee --append ${OCS_LOGFILE}
     echo -n "$msg_press_enter_to_continue..."
     read
+    rc=0
   }
   # check if $ocsroot is a mounting point
   if ! mountpoint $ocsroot &>/dev/null; then
@@ -8616,6 +8845,7 @@ check_if_ocsroot_a_mountpoint() {
   else
     success_mountpoint
   fi
+  return $r
 } # end of check_if_ocsroot_a_mountpoint
 #
 check_ntfs_boot_partition() {
@@ -8630,7 +8860,7 @@ check_ntfs_boot_partition() {
     partition_list="$select_parts"
   else
     # No partitions are assigned, search available partitions.
-    partition_list="$(LC_ALL=C awk '/[hsv]d[a-z][0-9]+/ { print $4; }' $partition_table | sort $sort_V_opt)"
+    partition_list="$(get_part_list $partition_table)"
   fi
   for ipartition in $partition_list; do
     ntfs_boot_partition="/dev/$ipartition"
@@ -8821,10 +9051,17 @@ run_ntfsreloc_part() {
              selected_parts="$1"
              shift
            fi
-           [ -z "$selected_parts" ] && echo "-p is used, but no selected_parts assigned." && exit 1
+           if [ -z "$selected_parts" ]; then
+             echo "-p is used, but no selected_parts assigned." | tee --append ${OCS_LOGFILE}
+             echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+             copy_error_log
+             exit 1
+           fi
            ;;
-        -*)     echo "${0}: ${1}: invalid option" >&2
-                USAGE >& 2
+        -*)     echo "${0}: ${1}: invalid option" | tee --append ${OCS_LOGFILE} >&2
+                USAGE | tee --append ${OCS_LOGFILE} >& 2
+                echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+                copy_error_log
                 exit 2 ;;
         *)      break ;;
       esac
@@ -8843,7 +9080,7 @@ run_ntfsreloc_part() {
        fi
     fi
 
-    ntfs_boot_hd="${ntfs_boot_partition:0:8}"  # e.g. /dev/hda1 -> /dev/hda
+    ntfs_boot_hd="/dev/$(get_diskname $ntfs_boot_partition)"  # e.g. /dev/hda1 -> /dev/hda
     # use_RawCHS_from_EDD_for_ntfsreloc or use_RawCHS_from_hdparm_for_ntfsreloc is from drbl-ocs.conf. The priority is use_RawCHS_from_EDD_for_ntfsreloc first, then use_RawCHS_from_hdparm_for_ntfsreloc
     rawhead=""
     rawsector=""
@@ -8857,10 +9094,10 @@ run_ntfsreloc_part() {
         # Ref: https://sourceforge.net/forum/message.php?msg_id=6181406
         if [ "$load_HD_CHS_from_img" = "yes" ]; then
 	  # Since user forces to load CHS, we read CHS from image file 
-          . $ocsroot/$target_dir/"$(basename ${ntfs_boot_hd})"-chs.sf
+          . $ocsroot/$target_dir/$(to_filename ${ntfs_boot_hd#/dev/*})-chs.sf
           rawhead="$heads"
           rawsector="$sectors"
-          echo "Head and sector number of ${ntfs_boot_hd} from image info $ocsroot/$target_dir/"$(basename ${ntfs_boot_hd})"-chs.sf: $rawhead, $rawsector."
+          echo "Head and sector number of ${ntfs_boot_hd} from image info $ocsroot/$target_dir/$(to_filename ${ntfs_boot_hd#/dev/*})-chs.sf: $rawhead, $rawsector."
 	else
 	  # Read from the partition table
           get_RawCHS_of_HD_from_sfdisk "$ntfs_boot_hd" "-G"
@@ -9182,19 +9419,251 @@ check_mbr_disk_size_gt_2TiB() {
     case "$postaction" in
       exit) 
             [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-	    echo "Error! Destination disk ($dest_dsk) size is $dest_dsk_size_in_TB, which is larger than the MBR partition table entry maximum 2 TiB (~ 2.2 TB). You have to use GUID partition table format (GPT)."
+	    echo "Error! Destination disk ($dest_dsk) size is $dest_dsk_size_in_TB, which is larger than the MBR partition table entry maximum 2 TiB (~ 2.2 TB). You have to use GUID partition table format (GPT)." | tee --append ${OCS_LOGFILE}
             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    echo "$msg_program_stop!"
+	    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
             exit 1
             ;;
       *)
             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	    echo "Error! Destination disk ($dest_dsk) size is $dest_dsk_size_in_TB, which is larger than the MBR partition table entry maximum 2 TiB (~ 2.2 TB). You have to use GUID partition table format (GPT)."
+	    echo "Error! Destination disk ($dest_dsk) size is $dest_dsk_size_in_TB, which is larger than the MBR partition table entry maximum 2 TiB (~ 2.2 TB). You have to use GUID partition table format (GPT)." | tee --append ${OCS_LOGFILE}
             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    echo "$msg_program_stop!"
+	    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
 	    echo -n "$msg_press_enter_to_continue..."
 	    read
             ;; 
     esac
   fi
 } # end of check_mbr_disk_size_gt_2TiB
+# ############################
+# Functions from Miracle Linux
+# ############################
+is_supported_dev() {
+  local disk=${1#/dev/*}
+  local RE1='[hsv]d[a-z]+[0-9]*'
+  local RE2='i2o/hd[a-z]+[0-9]*'
+  local RE3='cciss/c[0-9]d[0-9](p[0-9]+)?'
+  local rc=1
+
+  if [ -n "$disk" ]; then
+    echo $disk | grep -Eq "^($RE1|$RE2|$RE3)$"
+    rc=$?
+  fi
+  return $rc
+} # end of is_supported_dev
+#
+is_partition() {
+  local disk=${1#/dev/*}
+  local RE1='[hsv]d[a-z]+[0-9]+'
+  local RE2='i2o/hd[a-z]+[0-9]+'
+  local RE3='cciss/c[0-9]d[0-9]p[0-9]+'
+  local rc=1
+
+  if [ -n "$disk" ]; then
+    echo $disk | grep -Eq "^($RE1|$RE2|$RE3)$"
+    rc=$?
+  fi
+
+  return $rc
+} # end of is_partition
+#
+is_ide_disk() {
+  local disk="$1"
+  local RE1='hd[a-z]+[0-9]*'
+  local rc=1
+
+  if [ -n "$disk" ]; then
+    echo $disk | grep -Eq "^${RE1}$"
+    rc=$?
+  fi
+
+  return $rc
+} # end of is_ide_disk
+#
+get_part_number() {
+  local disk=${1#/dev/*}
+  local num=""
+
+  if [ -n "$disk" ]; then
+    num=$(echo "$disk" | sed -e 's/^[^0-9]*\([0-9]*\)$/\1/g' \
+                             -e 's/^.*[0-9]\{1,\}\(p[0-9]\{1,\}\)$/\1/g')
+  fi
+
+  echo $num
+} # end of get_part_number
+#
+get_diskname() {
+  local disk=${1#/dev/*}
+
+  if [ -n "$disk" ]; then
+    echo "$disk" | sed -e 's/^\([^0-9]*\)[0-9]*$/\1/g' \
+                       -e 's/^\(.*[0-9]\{1,\}\)p[0-9]\{1,\}$/\1/g'
+  fi
+} # end of get_diskname
+#
+is_whole_disk() {
+  local disk=${1#/dev/*}
+
+  test "$disk" = "$(get_diskname $disk)"
+  return $?
+} # end of is_whole_disk
+#
+to_dev_name() {
+  local src=$1
+  echo "$src" | sed -e 's:!:/:g'
+} # to_dev_name
+#
+to_filename() {
+  local src=$1
+  echo "$src" | sed -e 's!/!-!g'
+} # end of to_filename
+#
+to_sysblock_name() {
+  local src=$1
+  echo "$src" | sed -e 's:/:!:g'
+} # end of to_sysblock_name
+#
+get_part_list() {
+  local part_table=$1
+  local part_list devs dev
+  get_sort_V_opt
+
+  devs="$(LC_ALL=C egrep '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
+         | awk '{ print $4 }' | sort $sort_V_opt)"
+  for dev in $devs; do
+    dev="$(to_dev_name $dev)"
+    if is_supported_dev "$dev" && is_partition "$dev"; then
+      part_list="$part_list $dev"
+    fi
+  done
+
+  echo $part_list | tr ' ' '\n' | ocs-devsort | tr '\n' ' '
+} # end of get_part_list
+#
+get_disk_list() {
+  local part_table=$1
+  local disk_list devs dev
+  get_sort_V_opt
+
+  devs="$(LC_ALL=C egrep '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
+         | awk '{ print $4 }' | sort $sort_V_opt)"
+  for dev in $devs; do
+    dev="$(to_dev_name $dev)"
+    if is_supported_dev "$dev" && ! is_partition "$dev"; then
+      disk_list="$disk_list $dev"
+    fi
+  done
+
+  echo $disk_list | tr ' ' '\n' | ocs-devsort | tr '\n' ' '
+} # end of get_disk_list
+#
+copy_log() {
+  local target_dir="$1"
+  local source_dev="$2"
+  local ip_address log_type log_filename
+  # Decide where is the $LIVE_MEDIA
+  get_live_media_mnt_point
+  [ -e "$LIVE_MEDIA/$ocsroot" ] && return 0
+  [ -z "$target_dir" -o ! -e "$target_dir" ] && return 1
+  ip_address="$(get-ip-link-2-drbl-srv)"
+  test -n "$ip_address" && ip_address="-${ip_address}"
+  log_type="${ocs_mode_prompt%disk}"
+  log_type="${log_type%parts}"
+  case "${log_type}" in
+    save)    log_type="saving" ;;
+    restore) log_type="restoring" ;;
+  esac
+  log_filename="$target_dir/${log_type}${ip_address}-$(to_filename ${source_dev#/dev/})-`LC_ALL=C date +%Y%m%d%H%M`"
+  cat ${OCS_LOGFILE} > ${log_filename}
+  return 0
+} # end of copy_log
+#
+copy_error_log() {
+  if [ ! -e "$target_dir_fullpath/Info-lshw.txt" ]; then
+    # Dump hardware info
+    dump_hardware_software_info $target_dir_fullpath
+  fi
+  copy_log "$target_dir_fullpath" "error"
+} # end of copy_error_log
+#
+is_ipv4(){
+  local addr
+  [ $# -lt 1 ] && return 1
+  addr=$1
+  perl -MData::Validate::IP -e "if (Data::Validate::IP::is_ipv4(\"$addr\")) { exit 0 } else { exit 1 }"
+} # end of is_ipv4
+#
+is_ipv4_netmask(){
+  local addr mask ret
+  [ $# -lt 2 ] && return 1
+  addr=$1
+  mask=$2
+  ret=$(perl -MNetAddr::IP -e "print NetAddr::IP->new(\"$addr\", \"$mask\")")
+  if [ -z "$ret" ]; then
+    return 1
+  fi
+  return 0
+} # end of is_ipv4_netmask
+#
+is_ipv4_broadcast(){
+  local addr mask addrmask broadcast
+  [ $# -lt 2 ] && return 1
+  addr=$1
+  mask=$2
+  addrmask=$(perl -MNetAddr::IP -e "print NetAddr::IP->new(\"$addr\", \"$mask\")")
+  [ -z "$addrmask" ] && return 1
+  broadcast=$(perl -MNetAddr::IP -e "print NetAddr::IP->new(\"$addrmask\")->broadcast()")
+  [ -z "$broadcast" -o "$addrmask" != "$broadcast" ] && return 1
+  return 0
+} # end of is_ipv4_broadcast
+#
+is_ipv4_network(){
+  local addr mask addrmask network
+  [ $# -lt 2 ] && return 1
+  addr=$1
+  mask=$2
+  addrmask=$(perl -MNetAddr::IP -e "print NetAddr::IP->new(\"$addr\", \"$mask\")")
+  [ -z "$addrmask" ] && return 1
+  network=$(perl -MNetAddr::IP -e "print NetAddr::IP->new(\"$addrmask\")->network()")
+  [ -z "$network" -o "$addrmask" != "$network" ] && return 1
+  return 0
+} # end of is_ipv4_network
+#
+is_domain(){
+  local domain
+  [ $# -lt 1 ] && return 1
+  domain=$1
+  perl -MData::Validate::Domain -e "if (Data::Validate::Domain::is_domain(\"$domain\")) { exit 0 } else { exit 1 }"
+} # end of is_domain
+# ############################
+# End of functions from Miracle Linux
+# ############################
+#
+ocs_log_rotate() {
+  # Function to rotate the log file, e.g. clonezilla.log -> clonezilla.log.0
+  # clonezilla.log.1 -> clonezilla.log.2,
+  local file_="$1"
+  [ -z "$file_" ] && return 3
+  if [ ! -e "${file_}" ]; then
+    return 2
+  fi
+  # Find the next digit
+  # Use "/bin/ls" to avoid alias
+  last_one="$(LC_ALL=C /bin/ls -1vr ${file_}* | head -n 1 | xargs basename)"
+  # We do not compress it, however, just in case.
+  last_digit="$(echo $last_one | sed -e "s/$(basename ${file_})\.//g" -e "s/\.gz//g")"
+  if [ -z "$last_digit" -o "$(echo $last_digit | grep -E "[^[:digit:]]")" ]; then
+    last_digit=0
+  fi
+  # Rotate the old ones, i.e. clonezilla.log.0 -> clonezilla.log.1, 
+  # clonezilla.log.1 -> clonezilla.log.2,...
+  for i in `seq $last_digit -1 0`; do
+    if [ -e ${file_}.${i} ]; then
+      mv -f ${file_}.${i} ${file_}.$((i+1))
+    fi
+  done
+  # The last one, i.e. clonezilla.log -> clonezilla.log.0,
+  if [ -e ${file_} ]; then
+    mv -f ${file_} ${file_}.0
+  fi
+} # end of ocs_log_rotate

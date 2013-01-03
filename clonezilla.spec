@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.1.38
+Version:	3.2.0
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.1.49, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.56, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.2.0, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.56, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,11 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jan 03 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.0-drbl1
 - Removing packages exfat-utils and exfat-fuse create-gparted-live.
 - If udevadm exists, use it to get the disk serial number. Thanks to Miracle Linux for this idea.
 - Define the OCS_LOGFILE variable in drbl-ocs.conf.
 - The variable DRBL_SCRIPT_PATH in gparted-live-hook was removed. It's not used when creating GParted live.
 - Function parse_cmdline_option in gl-functions was updated to be the same as that in drbl-functions.
+- File ocs-devsort from Miracle Linux was added.
+- Part of the modifications from Miracle Linux were merged, including using functions get_diskname, get_part_number... and logging the screen output in /var/log/clonezilla.log.
 
 * Mon Dec 24 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.38-drbl1
 - Using functions to decide if GPT or MBR disk in ocs-onthefly.
