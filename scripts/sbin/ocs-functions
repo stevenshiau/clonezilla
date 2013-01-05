@@ -427,7 +427,7 @@ save_hidden_data_after_MBR() {
   hidden_data_after_mbr_limit_in_sec="$(echo "scale=0; $hidden_data_after_mbr_limit*1024*1024/512" | bc -l)"
   size_exp="$(echo "scale=0; $hidden_data_size >= $hidden_data_after_mbr_limit_in_sec" | bc -l)"
   if [ "$size_exp" -eq 1 ]; then
-    echo "The hidden data space size ($hidden_data_size sectors) is larger than $hidden_data_after_mbr_limit_in_sec sectors (\$hidden_data_after_mbr_limit, defined in drbl-ocs.conf). Skip saving that!" | tee ${img_s}.notes.txt
+    echo "The hidden data space size ($hidden_data_size sectors) is larger than $hidden_data_after_mbr_limit_in_sec sectors (\$hidden_data_after_mbr_limit, defined in drbl-ocs.conf). Skip saving that!" | tee ${img_s}.notes.txt | tee --append ${OCS_LOGFILE}
     return 3
   fi
 
@@ -443,10 +443,15 @@ restore_hidden_data_after_MBR() {
   local real_i data_size start_s hidden_space_size
   for i in tgt_dsk img_r; do
     eval real_i=\$$i
-    [ -z "$real_i" ] && echo "You have to assign $i in function restore_hidden_data_after_MBR!" && exit 1
+    if [ -z "$real_i" ]; then
+      echo "You have to assign $i in function restore_hidden_data_after_MBR!" | tee --append ${OCS_LOGFILE}
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+      copy_error_log
+      exit 1
+    fi
   done
   if [ ! -e "$img_r" ]; then
-    echo "No hidden data (between MBR and 1st partition) image was found. Skip restoring it."
+    echo "No hidden data (between MBR and 1st partition) image was found. Skip restoring it."  | tee --append ${OCS_LOGFILE}
     return 3
   fi
 
@@ -468,7 +473,7 @@ restore_hidden_data_after_MBR() {
   # -------------------------------------------
   # Therefore we can not just use sda1 or hda1 to find the start sector.
   start_s="$(LC_ALL=C parted -s /dev/${tgt_dsk} unit s print | grep -iE -A 100000 "[[:space:]]*Start[[:space:]]*End[[:space:]]*" | sed -e "s/^.*[[:space:]]*Start[[:space:]]*End[[:space:]]*.*$//g" | sed "/^$/d" | awk -F" " '{print $2}' | sed -e "s/s$//g" | sort -n | head -n 1)"
-  echo "The first partition of disk /dev/${tgt_dsk} starts at $start_s."
+  echo "The first partition of disk /dev/${tgt_dsk} starts at $start_s." | tee --append ${OCS_LOGFILE}
   hidden_space_size="$(($start_s -1))"
 
   # Check the size. We have to make sure there is enough space to restore.
@@ -477,15 +482,15 @@ restore_hidden_data_after_MBR() {
 
   if [ "$data_size" -gt "$hidden_space_size" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "The hidden space between MBR and 1st partition is \"$hidden_space_size\" sectors, which is smaller than the hidden data $img_r) size \"$data_size\" sectors."
+    echo "The hidden space between MBR and 1st partition is \"$hidden_space_size\" sectors, which is smaller than the hidden data $img_r) size \"$data_size\" sectors." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "Skip restoring the hidden data between MBR and 1st partition."
+    echo "Skip restoring the hidden data between MBR and 1st partition." | tee --append ${OCS_LOGFILE}
     return 1
   fi
 
-  echo "Restoring the hidden data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool, by:"
-  echo dd if=${img_r} of=/dev/${tgt_dsk} seek=1 bs=512 count=$data_size
-  dd if=${img_r} of=/dev/${tgt_dsk} seek=1 bs=512 count=$data_size
+  echo "Restoring the hidden data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool, by:" | tee --append ${OCS_LOGFILE}
+  echo dd if=${img_r} of=/dev/${tgt_dsk} seek=1 bs=512 count=$data_size | tee --append ${OCS_LOGFILE}
+  dd if=${img_r} of=/dev/${tgt_dsk} seek=1 bs=512 count=$data_size | tee --append ${OCS_LOGFILE}
 } # end of restore_hidden_data_after_MBR
 #
 cciss_dev_map_if_necessary() {
