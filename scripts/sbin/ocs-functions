@@ -156,14 +156,8 @@ get_partition_table_type_from_disk() {
   elif `is_mbr_partitition_table_disk $tdisk`; then
     ptype="mbr"
   else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Unknown partition table format for disk $tdisk!" | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-    exit 1
+    ptype="unknown"
   fi
-  # If no ptype was found, force to be mbr.
-  [ -z "$ptype" ] && ptype="mbr"
   echo "$ptype"
 } # get_partition_table_type_from_disk
 #
@@ -255,7 +249,7 @@ inform_kernel_partition_table_changed() {
     LC_ALL=C sfdisk -R $tdisk
     echo -n "."
     sleep 1
-  ;;
+    ;;
   gpt)
     # Since sfdisk does not work for gpt, skip it.
     LC_ALL=C partprobe $tdisk
@@ -264,7 +258,11 @@ inform_kernel_partition_table_changed() {
     LC_ALL=C kpartx $tdisk &>/dev/null
     echo -n "."
     sleep 1
-  ;;
+    ;;
+    *)
+    echo "Not MBR or GPT type of device."
+    echo "Skipping informing kernel."
+    ;;
   esac
   echo " done!"
 } # end of inform_kernel_partition_table_changed
@@ -2432,7 +2430,7 @@ install_grub_hd() {
     } # end of check_grub1_config_file
     do_run_grub1_from_restored_os() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Trying to use the grub1 in the restored OS..." | tee --append $OCS_LOGFILE
+      echo "Trying to use the grub1 in the restored OS..."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       unmount_wait_and_try $grub_partition 2>/dev/null
       unmount_wait_and_try $hd_img 2>/dev/null
@@ -2441,31 +2439,31 @@ install_grub_hd() {
       # rmdir: failed to remove `/tmp/hd_img.weAw4i': Device or resource busy
       [ -d "$hd_img/boot" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img/boot)
       [ -d "$hd_img" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img)
-      echo "Running: run_grub1_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$grub_hd\"" | tee --append $OCS_LOGFILE
-      run_grub1_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd" | tee --append $OCS_LOGFILE
-      rc="${PIPESTATUS[0]}"
+      echo "Running: run_grub1_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$grub_hd\""
+      run_grub1_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd"
+      rc="$?"
     } # end of do_run_grub1_from_restored_os
     do_run_grub1_from_running_os() {
       local grub1_patch_flag=""
       prepare_grub1_files_if_required
       show_grub1_ext4_warning $grub_partition
       [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
-      echo "Trying to use the grub1 from the running OS..." | tee --append $OCS_LOGFILE
+      echo "Trying to use the grub1 from the running OS..."
       check_grub_install_version 1
       rc_grub_check=$?
       if [ "$rc_grub_check" -eq 0 ]; then
-        echo "Running: $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd" | tee --append $OCS_LOGFILE
-        $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd | tee --append $OCS_LOGFILE
-        rc="${PIPESTATUS[0]}"
+        echo "Running: $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd"
+        $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd
+        rc="$?"
         # Remove the device.map in case it provents the restored OS fails to run update-grub due to different boot device name (e.g. sda <-> hda issue)
         [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
         
         check_grub1_config_file $hd_img
       else
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "The required version of grub-install for grub 1 was not found!" | tee --append $OCS_LOGFILE
+        echo "The required version of grub-install for grub 1 was not found!"
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "Command grub-install is skipped!" | tee --append $OCS_LOGFILE
+        echo "Command grub-install is skipped!"
         rc=1
       fi
 
@@ -2479,7 +2477,7 @@ install_grub_hd() {
     } # end of do_run_grub1_from_running_os
     do_run_grub2_from_restored_os() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Trying to use the grub2 in the restored OS..." | tee --append $OCS_LOGFILE
+      echo "Trying to use the grub2 in the restored OS..."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       unmount_wait_and_try $grub_partition 2>/dev/null
       unmount_wait_and_try $hd_img 2>/dev/null
@@ -2488,16 +2486,16 @@ install_grub_hd() {
       # rmdir: failed to remove `/tmp/hd_img.weAw4i': Device or resource busy
       [ -d "$hd_img/boot" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img/boot)
       [ -d "$hd_img" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img)
-      echo "Running: run_grub2_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$grub_hd\"" | tee --append $OCS_LOGFILE
-      run_grub2_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd" | tee --append $OCS_LOGFILE
-      rc="${PIPESTATUS[0]}"
+      echo "Running: run_grub2_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$grub_hd\""
+      run_grub2_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd"
+      rc="$?"
     } # end of do_run_grub2_from_restored_os
     #
     do_run_grub2_from_running_os() {
       local grub2_patch_flag=""
       prepare_grub2_files_if_required
       [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
-      echo "Trying to use the grub2 from the running OS..." | tee --append $OCS_LOGFILE
+      echo "Trying to use the grub2 from the running OS..."
       check_grub_install_version 2
       rc_grub_check=$?
       if [ "$rc_grub_check" -eq 0 ]; then
@@ -2509,18 +2507,18 @@ install_grub_hd() {
           perl -pi -e 's|(^grubdir=.*)/grub(\".*)|$1/grub2$2|g' "$(which $grub_install_exec)"
           grub2_patch_flag="true"
         fi
-        echo "Running: $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd" | tee --append $OCS_LOGFILE
-        $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd | tee --append $OCS_LOGFILE
-        rc="${PIPESTATUS[0]}"
+        echo "Running: $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd"
+        $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd
+        rc="$?"
         # Revert
         if [ "$grub2_patch_flag" = "true" ]; then
           mv -f "$(which $grub_install_exec)".orig "$(which $grub_install_exec)"
         fi
       else
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "The required version of grub-install for grub 2 was not found!" | tee --append $OCS_LOGFILE
+        echo "The required version of grub-install for grub 2 was not found!"
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "Command grub-install is skipped!" | tee --append $OCS_LOGFILE
+        echo "Command grub-install is skipped!"
         rc=1
       fi
       unmount_wait_and_try $grub_partition 2>/dev/null
@@ -2537,7 +2535,7 @@ install_grub_hd() {
       grub_part_fs="$(LC_ALL=C ocs-get-part-info $grub_pt_ filesystem)"
       if [ "$grub_part_fs" = "ext4" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "Warning! Found grub partition ($grub_pt_) file system is ext4! Not all versions of grub 1 supports file system ext4!" | tee --append $OCS_LOGFILE
+        echo "Warning! Found grub partition ($grub_pt_) file system is ext4! Not all versions of grub 1 supports file system ext4!"
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       fi
     } # end of show_grub1_ext4_warning
@@ -2561,8 +2559,8 @@ install_grub_hd() {
              shift
            fi
            if [ -z "$selected_hd" ]; then
-             echo "-s is used, but no selected_hd assigned." | tee --append ${OCS_LOGFILE}
-             echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+             echo "-s is used, but no selected_hd assigned."
+             echo "$msg_program_stop"
              copy_error_log
              exit 1
            fi
@@ -2575,8 +2573,8 @@ install_grub_hd() {
              shift
            fi
            if [ -z "$selected_parts" ]; then
-             echo "-p is used, but no selected_parts assigned." | tee --append ${OCS_LOGFILE}
-             echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+             echo "-p is used, but no selected_parts assigned."
+             echo "$msg_program_stop"
              copy_error_log
              exit 1
            fi
@@ -2586,9 +2584,9 @@ install_grub_hd() {
            shift
 	   check_before_install="no"
            ;;
-        -*)     echo "${0}: ${1}: invalid option" | tee --append ${OCS_LOGFILE} >&2
-                USAGE | tee --append ${OCS_LOGFILE} >& 2
-                echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+        -*)     echo "${0}: ${1}: invalid option"
+                USAGE >& 2
+                echo "$msg_program_stop"
                 copy_error_log
                 exit 2 ;;
         *)      break ;;
@@ -2643,25 +2641,25 @@ install_grub_hd() {
          # No assignment, use the one found. However, maybe there are more than 1. We only take the first one.
          if [ "$(LC_ALL=C echo $found_grub_partition | wc -w)" -gt 1 ]; then
            grub_partition="$(echo $found_grub_partition | awk -F" " '{print $1}')"
-           echo "More than one grub config partitions exist: $found_grub_partition. Choose the 1st one: $grub_partition." | tee --append $OCS_LOGFILE
+           echo "More than one grub config partitions exist: $found_grub_partition. Choose the 1st one: $grub_partition."
          else
            grub_partition="$found_grub_partition"
          fi
        fi
        if [ -n "$grub_partition" ]; then
-         echo "Found grub partition: $grub_partition" | tee --append $OCS_LOGFILE
+         echo "Found grub partition: $grub_partition"
        else
-         echo "The grub directory is NOT found. Maybe it does not exist (so other boot manager exists) or the file system is not supported in the kernel. Skip running $grub_install_exec." | tee --append $OCS_LOGFILE
+         echo "The grub directory is NOT found. Maybe it does not exist (so other boot manager exists) or the file system is not supported in the kernel. Skip running $grub_install_exec."
 	 return 1
        fi
        # Check if grub_partition is on the list of target partitions
        if [ -n "$selected_parts" ]; then
          # Only if we assign the selected partitions, we have to check...
          if [ -n "$(echo $selected_parts | grep -Ewo "$(basename $grub_partition)")" ]; then
-           echo "Found grub partition \"$grub_partition\", which is on the restored partitions list ($selected_parts). Will run $grub_install_exec later." | tee --append $OCS_LOGFILE
+           echo "Found grub partition \"$grub_partition\", which is on the restored partitions list ($selected_parts). Will run $grub_install_exec later."
          else
            # E.g. echo "sda1 sda3" | grep -Ewo "$(basename /dev/sda1)"
-           echo "The found grub partition \"$grub_partition\" is _NOT_ on the restored partitions list ($selected_parts). Skip running $grub_install_exec." | tee --append $OCS_LOGFILE
+           echo "The found grub partition \"$grub_partition\" is _NOT_ on the restored partitions list ($selected_parts). Skip running $grub_install_exec."
            return 3
          fi
        fi
@@ -2677,7 +2675,7 @@ install_grub_hd() {
     # This install_grub_hd function is only for BIOS/MBR boot loader, not for EFI. Therefore if $selected_hd is GPT disk, skip it.
     if ! `is_mbr_partitition_table_disk /dev/$grub_hd`; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Disk /dev/$grub_hd is not MBR format. Skip the reinstallation of grub-pc (MBR) program." | tee --append $OCS_LOGFILE
+      echo "Disk /dev/$grub_hd is not MBR format. Skip the reinstallation of grub-pc (MBR) program."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       return 5
     fi
@@ -2685,10 +2683,10 @@ install_grub_hd() {
     if [ "$check_before_install" = "yes" ]; then
       # Check if grub exists on the MBR. If not, skip this function.
       if [ -z "$(LANG=C dd if=/dev/$grub_hd bs=512 count=1 2>/dev/null | strings | grep "GRUB")" ]; then
-         echo "The boot loader on /dev/$grub_hd is not grub. Skip running grub-install." | tee --append $OCS_LOGFILE
+         echo "The boot loader on /dev/$grub_hd is not grub. Skip running grub-install."
          return 5
       else 
-         echo "Found boot loader grub in the MBR of disk /dev/$grub_hd." | tee --append $OCS_LOGFILE
+         echo "Found boot loader grub in the MBR of disk /dev/$grub_hd."
       fi
     fi
     # process the boot loader
@@ -2772,7 +2770,7 @@ install_grub_hd() {
            do_run_grub1_from_restored_os
            if [ "$rc" -ne 0 ]; then
              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-             echo "Unable to use the grub 1 in the restored OS, trying another method..." | tee --append $OCS_LOGFILE
+             echo "Unable to use the grub 1 in the restored OS, trying another method..."
              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
              # Plan B:
              mount_root_partition_for_separate_boot_part $hd_img  # return variable $found_root_partition
@@ -2800,7 +2798,7 @@ install_grub_hd() {
          grub_ver_in_restored_os="1"
        fi
        if [ "$grub_ver_in_restored_os" = "2" ]; then
-         echo "Found grub 2 installed in the restored OS." | tee --append $OCS_LOGFILE
+         echo "Found grub 2 installed in the restored OS."
          if [ -z "$run_grub2_from_restored_os_mode" ]; then
            # We will get variable run_grub2_from_restored_os_mode with this
            test_run_grub2_from_restored_os "$found_root_partition"
@@ -2809,7 +2807,7 @@ install_grub_hd() {
            do_run_grub2_from_restored_os
            if [ "$rc" -ne 0 ]; then
              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-             echo "Unable to use the grub 2 in the restored OS, trying another method..." | tee --append $OCS_LOGFILE
+             echo "Unable to use the grub 2 in the restored OS, trying another method..."
              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
              # Plan B:
              mount_root_partition_for_separate_boot_part $hd_img  # return variable $found_root_partition
@@ -2823,7 +2821,7 @@ install_grub_hd() {
          fi
        else
          # grub version 1
-         echo "Found grub 1 installed in the restored OS." | tee --append $OCS_LOGFILE
+         echo "Found grub 1 installed in the restored OS."
          if [ -z "$run_grub1_from_restored_os_mode" ]; then
            # We will get variable run_grub1_from_restored_os_mode with this
            test_run_grub1_from_restored_os "$found_root_partition"
@@ -2832,7 +2830,7 @@ install_grub_hd() {
            do_run_grub1_from_restored_os
            if [ "$rc" -ne 0 ]; then
              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-             echo "Unable to use the grub 1 in the restored OS, trying another method..." | tee --append $OCS_LOGFILE
+             echo "Unable to use the grub 1 in the restored OS, trying another method..."
              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
              # Plan B:
              mount_root_partition_for_separate_boot_part $hd_img  # return variable $found_root_partition
@@ -2849,14 +2847,14 @@ install_grub_hd() {
 
     if [ "$rc" -ne 0 ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-	echo "Failed to install grub!!!" | tee --append $OCS_LOGFILE
+	echo "Failed to install grub!!!"
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         if [ "$grub_ver_in_restored_os" -eq "1" ]; then
           show_grub1_ext4_warning $grub_partition
         fi
 	[ "$debug_mode" = "on" ] && sulogin
     else
-	echo "done!" | tee --append $OCS_LOGFILE
+	echo "done!"
     fi
     return $rc
 } # end of install_grub_hd

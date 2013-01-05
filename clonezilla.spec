@@ -37,7 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-- Put the output of restore_hidden_data_after_MBR and install_grub_hd to log file, too.
+- Put the output of restore_hidden_data_after_MBR to log file, too.
 
 * Sat Jan 05 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.4-drbl1
 - Typo fixed: "Unmouted" -> "Unmounted" in ocs-functions. Thanks to Peter Bratton <peter _at_ bratton ca> for reporting this.
