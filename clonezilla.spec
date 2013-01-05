@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.2.4
+Version:	3.2.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jan 05 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.5-drbl1
 - Put the output of restore_hidden_data_after_MBR to log file, too.
 
 * Sat Jan 05 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.4-drbl1
