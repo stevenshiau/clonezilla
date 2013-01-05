@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.2.3
+Version:	3.2.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jan 05 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.4-drbl1
 - Typo fixed: "Unmouted" -> "Unmounted" in ocs-functions. Thanks to Peter Bratton <peter _at_ bratton ca> for reporting this.
+- Part of the LVM codes from Miracle Linux were merged.
 
 * Thu Jan 03 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.3-drbl1
 - Bug fixed: Getting default gateway was not working in function network_config_if_necessary of ocs-functions.

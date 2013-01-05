@@ -3662,7 +3662,7 @@ ask_time_or_clients_to_wait() {
   [ -f "$TMP" ] && rm -f $TMP
 } # end of ask_time_or_clients_to_wait
 #
-check_existing_target_image() {
+rm_target_image_if_exist() {
   local tgt_image="$1"
   if [ "${tgt_image/%\//}" = "${ocsroot/%\//}" -o -z "$tgt_image" ]; then
     echo "Existing destination image is nothing!" | tee --append $OCS_LOGFILE
@@ -3672,7 +3672,8 @@ check_existing_target_image() {
     [ -f "$tgt_image" ] && rm -f $tgt_image
     [ -d "$tgt_image" -a -n "$tgt_image" ] && rm -rf $tgt_image
   fi
-}
+} # end of rm_target_image_if_exist
+#
 check_input_target_image() {
   local tgt_dir="$1"
   [ -z "$tgt_dir" ] && echo "Image name not found!" && exit 1
@@ -3684,8 +3685,7 @@ check_input_target_image() {
     copy_error_log
     exit 1
   fi
-}
-
+} # end of check_input_target_image
 #
 get_input_image_name() {
     # parameters: [/home/partimag|...] [hda1|hda2...]
@@ -5643,17 +5643,24 @@ save_logv() {
   local LOGV
   local image_name_ rc_save_logv FND_PV
   local target="$1"
-  PV_PARSE_CONF="$target_dir/lvm_vg_dev.list"
-  LOGV_PARSE_CONF="$target_dir/lvm_logv.list"
+  # target_dir_fullpath is local (in function task_saveparts) global variable, since save_logv is used in function task_saveparts 
+  PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
+  LOGV_PARSE_CONF="$target_dir_fullpath/lvm_logv.list"
   # if the report_msg is empty, put the initial one: image_name_
-  image_name_="$(basename $target_dir)"
+  image_name_="$(basename $target_dir_fullpath)"
   [ -z "$report_msg" ] && report_msg="Saved $image_name_,"
   rm -f $PV_PARSE_CONF $LOGV_PARSE_CONF
   ocs-lvm2-start
   echo "Parsing LVM layout..." | tee --append $OCS_LOGFILE
-  LC_ALL=C pvscan | grep -Ew lvm2 | while read LINE; do
+  LC_ALL=C pvscan 2>/dev/null 3<&- 4<&- | grep -Ew lvm2 | while read LINE; do
     DEV="$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f2)"
-    VG="$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f4)"
+    if [ "$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f3)" = "VG" ]; then
+      VG="$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f4)"
+    else
+      # The volume group is not found in the DEV.
+      # We set "/NOT_FOUND" to VG because to parse logical volumes.
+      VG="/NOT_FOUND"
+    fi
     # DEV is like /dev/hda2
     # We just want to keep the chosen target
     # The results in $PV_PARSE_CONF is like:
@@ -5661,6 +5668,7 @@ save_logv() {
     # vg /dev/hda2 qdlt6U-M4bo-xExy-XG9Q-U7pg-bOXN-n54i5Y
     # ----------------------------------------------------
     # Ex: target: hda1 hda2 hda3, DEV maybe: /dev/hda2
+    # MERGE_TO_DO: MSS's multipath
     # If the device is CCISS RAID, we have to follow the file links since they
     # are linkded by create-cciss-mapping
     # Therefore here we use stat to get the real device name
@@ -5687,9 +5695,18 @@ save_logv() {
     #copy_log $target_dir_fullpath "lvm"
     return 1
   fi
+  if [ -n "$(grep -E "/NOT_FOUND" $PV_PARSE_CONF 2>/dev/null)" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "///WARNING/// The volume group setting is not found." | tee --append $OCS_LOGFILE
+    echo "Unable to save LVM image." | tee --append $OCS_LOGFILE
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    #copy_log $target_dir_fullpath "lvm"
+    return 1
+  fi
   
   # We just want the LV in chosen target
-  echo "Parsing logical volumes..."
+  echo "Parsing logical volumes..." | tee --append $OCS_LOGFILE
   # lvscan results are like:
   # ACTIVE            '/dev/vg3/lvol0' [1.20 GB] inherit
   # ACTIVE            '/dev/vg3/lvol1' [648.00 MB] inherit
@@ -5698,10 +5715,17 @@ save_logv() {
   #                         ^^ The VG
   
   # find LV for chosen PV.
-  LC_ALL=C lvscan | grep "/.*/" | while read LINE; do
+  LC_ALL=C lvscan 2>/dev/null 3<&- 4<&- | grep "/.*/" | while read LINE; do
     LOGV="$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f2 | tr -d "'")"
     # LOGV is like: /dev/vg3/lvol0
     while read vg dev uuid; do
+     if [ "$vg" = "/NOT_FOUND" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "///WARNING/// No volume group in $dev." | tee --append $OCS_LOGFILE
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      # copy_log $target_dir_fullpath "lvm"
+      continue
+     fi
      # only keep LOGV is in the chosen vg
      if [ -n "$(LC_ALL=C echo $LOGV | grep -E "/dev/$vg/" 2>/dev/null)" ]; then
       file_system="$(LC_ALL=C file -Ls $LOGV | awk -F":" '{print $2}')"
@@ -5713,42 +5737,61 @@ save_logv() {
   
   # Backup the vg conf
   vgcfg_tmp="$(mktemp /tmp/vgcfg_tmp.XXXXXX)"
-  echo "Saving the VG config... "
+  echo "Saving the VG config... " | tee --append $OCS_LOGFILE
   while read vg dev uuid; do
-    # Here we avoid to run vgcfgbackup with output on the $target_dir, since due to some reason, if $target_dir is on NFS, when vgcfgbackup output the file on NFS, the lockd might fail to lock it (vgcfgbackup will use the output file path to creating temp file and try to lock it)...
+    [ "$vg" = "/NOT_FOUND" ] && continue
+    # Here we avoid to run vgcfgbackup with output on the $target_dir_fullpath, since due to some reason, if $target_dir_fullpath is on NFS, when vgcfgbackup output the file on NFS, the lockd might fail to lock it (vgcfgbackup will use the output file path to creating temp file and try to lock it)...
     rm -f $vgcfg_tmp
-    LC_ALL=C vgcfgbackup -f $vgcfg_tmp $vg 2>/dev/null
-    cp -a $vgcfg_tmp $target_dir/lvm_$vg.conf
+    LC_ALL=C vgcfgbackup -f $vgcfg_tmp $vg 2>&1 3<&- 4<&- | tee --append $OCS_LOGFILE
+    rc=${PIPESTATUS[0]}
+    if [ $rc -ne 0 ]; then
+      echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+      # copy_error_log
+      exit 1
+    else
+      cp -a $vgcfg_tmp $target_dir_fullpath/lvm_$vg.conf
+    fi
   done < $PV_PARSE_CONF
   [ -e "$vgcfg_tmp" ] && rm -f $vgcfg_tmp
-  echo "Checking if the VG config was saved correctly... "
+  echo "done." | tee --append $OCS_LOGFILE
+
+  echo "Checking if the VG config was saved correctly... " | tee --append ${OCS_LOGFILE}
   while read vg dev uuid; do
-    if [ ! -e "$target_dir/lvm_$vg.conf" ]; then
+    if [ ! -e "$target_dir_fullpath/lvm_$vg.conf" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "$target_dir/lvm_$vg.conf NOT created! Not volume group of LVM was saved!" | tee --append ${OCS_LOGFILE}
+      echo "$target_dir_fullpath/lvm_$vg.conf NOT created! No volume group of LVM was saved!" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
       exit 1
     fi
   done < $PV_PARSE_CONF
-  echo "done!"
-  [ ! -f "$PV_PARSE_CONF" ] && exit 1
-  [ ! -f "$LOGV_PARSE_CONF" ] && exit 1
-  # To avoid the stdin/stdout in ntfsclone/partimage/partclone (image_save $lv $target_dir $fn) conflict with "while read", here we use different file descriptor  (3)
+  echo "done." | tee --append $OCS_LOGFILE
+
+  if [ ! -e "$LOGV_PARSE_CONF" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "///WARNING/// The logical volume setting is not found." | tee --append $OCS_LOGFILE
+    echo "Unable to save LVM image." | tee --append $OCS_LOGFILE
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    #copy_log $target_dir_fullpath "lvm"
+    return 1
+  fi
+
+  # To avoid the stdin/stdout in ntfsclone/partimage/partclone (image_save $lv $target_dir_fullpath $fn) conflict with "while read", here we use different file descriptor (3)
   exec 3< $LOGV_PARSE_CONF
   while read -u 3 lv fs; do
    [ ! -e "$lv" ] && continue
    fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
-   echo "Saving $lv as filename: $fn. Filesystem: $fs"
+   echo "Saving $lv as filename: $fn. $lv info: $fs" | tee --append $OCS_LOGFILE
    # skip swap or extended partition
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*)
-       output_swap_partition_uuid_label $lv $target_dir/swappt-${fn}.info
+       output_swap_partition_uuid_label $lv $target_dir_fullpath/swappt-${fn}.info
        continue ;;
      *extended*) 
        continue ;;
    esac
-   image_save $lv $target_dir $fn
+   image_save $lv $target_dir_fullpath $fn
    rc_save_logv="$(($rc_save_logv + $?))"
    echo $msg_delimiter_star_line
   done
@@ -5765,6 +5808,7 @@ restore_logv() {
   local mode="$2"
   local port="$3"
   local volg is_in_chosen_partition lvm_tmp
+  # target_dir_fullpath is local (in function task_saveparts) global variable, since restore_logv is used in function task_restoreparts 
   if [ -z "$mode" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "To restore LVM, you must specify it's unicast or multicast!!!" | tee --append ${OCS_LOGFILE}
@@ -5774,8 +5818,8 @@ restore_logv() {
   fi
   PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
   LOGV_PARSE_CONF="$target_dir_fullpath/lvm_logv.list"
-  [ ! -f "$PV_PARSE_CONF" ] && exit 1
-  [ ! -f "$LOGV_PARSE_CONF" ] && exit 1
+
+  echo "Preparing the LVM (PV/VG/LV)... " | tee --append $OCS_LOGFILE
   #
   ocs-lvm2-stop
   # Clean the filesystem header in partition where PV exists
@@ -5792,36 +5836,93 @@ restore_logv() {
    for ipt in $tgt_parts; do
      if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
        # Found the chosen partitions is in the VG
-       clean_filesystem_header_in_partition /dev/$ipt
+       if check_LVM_partition /dev/$ipt; then
+         clean_filesystem_header_in_partition /dev/$ipt
+       fi
      fi
    done
   done < $LOGV_PARSE_CONF
 
+  if [ ! -e "$PV_PARSE_CONF" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "///WARNING/// $(basename $PV_PARSE_CONF) not found." | tee --append $OCS_LOGFILE
+    echo "Unable to create PV." | tee --append $OCS_LOGFILE
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    # copy_log $target_dir_fullpath "lvm"
+    return 1
+  fi
   #
   lvm_tmp="$(mktemp -d /tmp/lvm_tmp.XXXXXX)"
   # create PV first
-  echo "Creating the PV... "
+  echo "Creating the PV... " | tee --append $OCS_LOGFILE
   while read vg dev uuid; do
-    cp -f $target_dir_fullpath/lvm_$vg.conf $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
-    #pvcreate -ff --yes --uuid $uuid $dev
-    pvcreate -ff --yes --uuid $uuid --zero y --restorefile $lvm_tmp/lvm_$vg.conf $dev
-    rm -f $lvm_tmp/lvm_$vg.conf
+    if [ "$vg" = "/NOT_FOUND" -o ! -e $target_dir_fullpath/lvm_$vg.conf ]; then
+      pvcreate -ff --yes --uuid $uuid --zero y $dev 3<&- 4<&-
+    else
+      cp -f $target_dir_fullpath/lvm_$vg.conf $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
+      #pvcreate -ff --yes --uuid $uuid $dev
+      pvcreate -ff --yes --uuid $uuid --zero y --restorefile $lvm_tmp/lvm_$vg.conf $dev 3<&- 4<&-
+      rm -f $lvm_tmp/lvm_$vg.conf
+    fi
   done < $PV_PARSE_CONF
-  echo "done!"
+  echo "done." | tee --append $OCS_LOGFILE
   
+  if [ -z "$(grep -v "/NOT_FOUND" $PV_PARSE_CONF 2>/dev/null)" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "///WARNING/// The volume group setting is not found." | tee --append $OCS_LOGFILE
+    echo "Unable to create VG." | tee --append $OCS_LOGFILE
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    # copy_log $target_dir_fullpath "lvm"
+    return 1
+  fi
+
   # Restore the vg conf
-  echo "Restoring the VG config... "
+  echo "Restoring the VG config... " | tee --append $OCS_LOGFILE
   while read vg dev uuid; do
+    if [ "$vg" = "/NOT_FOUND" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "///WARNING/// $dev didn't have the volume group." | tee --append $OCS_LOGFILE
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      # copy_log $target_dir_fullpath "lvm"
+      continue
+    fi
+    if [ ! -e $target_dir_fullpath/lvm_$vg.conf ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "///WARNING/// "lvm_$vg.conf" not found." | tee --append $OCS_LOGFILE
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+      # copy_log $target_dir_fullpath "lvm"
+      continue
+    fi
     cp -f $target_dir_fullpath/lvm_$vg.conf $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
     # vgcfgrestore -f $target_dir_fullpath/lvm_$vg.conf $vg 2>/dev/null
-    vgcfgrestore -f $lvm_tmp/lvm_$vg.conf $vg 2>/dev/null
+    vgcfgrestore -f $lvm_tmp/lvm_$vg.conf $vg 2>&1 3<&- 4<&- | tee --append $OCS_LOGFILE
+    rc=${PIPESTATUS[0]}
     rm -f $lvm_tmp/lvm_$vg.conf
+    [ $rc -ne 0 ] && break
   done < $PV_PARSE_CONF
   [ -d "$lvm_tmp" -a -n "$lvm_tmp" ] && rmdir $lvm_tmp 
-  echo "done!"
+  echo "done." | tee --append $OCS_LOGFILE
+  if [ $rc -ne 0 ]; then
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    copy_error_log
+    exit 1
+  fi
   #
   ocs-lvm2-start
   
+  if [ ! -e "$LOGV_PARSE_CONF" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "///WARNING/// $(basename $LOGV_PARSE_CONF) not found." | tee --append $OCS_LOGFILE
+    echo "Unable to create LV." | tee --append $OCS_LOGFILE
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    #copy_log $target_dir_fullpath "lvm"
+    return 1
+  fi
+
   # To avoid the stdin/stdout in ntfsclone/partimage/partclone ( do_unicast_stdin_restore $target_dir_fullpath $fn $lv; do_multicast_udpcast_restore $target_dir_fullpath $fn $lv) conflict with "while read", here we use different file descriptor  (3)
   exec 3< $LOGV_PARSE_CONF
   while read -u 3 lv fs; do
@@ -5867,15 +5968,26 @@ restore_logv() {
 	# then skip the rest.
         continue;; 
    esac
-   echo "Restoring device $fn..."
+   echo "Restoring device $fn..." | tee --append $OCS_LOGFILE
    case "$mode" in
      unicast)
        do_unicast_stdin_restore $target_dir_fullpath $fn $lv
+       rc=$?
        ;;
      multicast)
        do_multicast_udpcast_restore $target_dir_fullpath $fn $lv
+       rc=$?
        ;;
    esac
+   if [ $rc -gt 0 ]; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "Failed to restore partition image file $target_dir_fullpath/${fn}* to $lv. Maybe this image is corrupt." | tee --append $OCS_LOGFILE
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     echo "$msg_program_stop"      | tee --append ${OCS_LOGFILE}
+     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+     copy_error_log
+     exit 1
+   fi
   done
   exec 3<&-
 } # end of restore_logv
@@ -6893,8 +7005,9 @@ task_saveparts() {
   local target_dir="$1"
   local target_parts="$2"
   local disk_size_sec to_skip dev_to_be_saved_shown_in_warning rc_saveparts
+  local target_dir_fullpath
 
-  # target_hd will be extract from $target_parts, maybe we will have one more
+  # target_hd will be extracted from $target_parts, maybe we will have one more
   local target_hd=""
   local hd_tmp=""
 
@@ -6907,8 +7020,8 @@ task_saveparts() {
     get_target_dir_name_when_saving
   fi
    
-  # set $target_dir as the absolute path, i.e. put leading $ocsroot.
-  target_dir="$ocsroot/$target_dir"
+  # set absolute path, i.e. put leading $ocsroot.
+  target_dir_fullpath="$ocsroot/$target_dir"
 
   if [ "$target_parts" = "ask_user" ]; then
     get_target_parts_name_from_local_machine
@@ -6951,10 +7064,10 @@ task_saveparts() {
   fi
   # get_dev_model_shown will give $dev_model_shown
   get_dev_model_shown "$dev_to_be_saved_shown_in_warning"
-  countdown_or_confirm_before_save "$target_dir" 
+  countdown_or_confirm_before_save "$target_dir_fullpath" 
 
   # If the existing target image exists, remove it.
-  check_existing_target_image "$target_dir"
+  rm_target_image_if_exist $target_dir_fullpath
 
   # Turn on HD DMA
   for ihd in $target_hd; do
@@ -6964,29 +7077,29 @@ task_saveparts() {
   turn_off_swap_and_LVM2
 
   # create the image directory
-  mkdir -p $target_dir
+  mkdir -p $target_dir_fullpath
 
   # save partition table
   for ihd in $target_hd; do
     check_integrity_of_partition_table_in_disk /dev/$ihd
     echo -n "Reading the partition table for /dev/$ihd..." | tee --append $OCS_LOGFILE
     # No matter it's MBR or GPT, we use sfdisk to dump partition table since if dual boot (Mac OS, Linux) on Mac book, this partition table is required for Linux normally.
-    LC_ALL=C sfdisk -d /dev/$ihd > $target_dir/$(to_filename ${ihd})-pt.sf 2>/dev/null
+    LC_ALL=C sfdisk -d /dev/$ihd > $target_dir_fullpath/$(to_filename ${ihd})-pt.sf 2>/dev/null
     RETVAL="$?"
     echo "RETVAL=$RETVAL" | tee --append $OCS_LOGFILE
-    clean_cylinder_boundary_warning $target_dir/$(to_filename ${ihd})-pt.sf
-    output_HD_CHS $ihd $target_dir
+    clean_cylinder_boundary_warning $target_dir_fullpath/$(to_filename ${ihd})-pt.sf
+    output_HD_CHS $ihd $target_dir_fullpath
     # Output the info from parted, it contains more info.
-    LC_ALL=C parted -s /dev/$ihd unit s print > $target_dir/$(to_filename ${ihd})-pt.parted
+    LC_ALL=C parted -s /dev/$ihd unit s print > $target_dir_fullpath/$(to_filename ${ihd})-pt.parted
     # Output another one which is easier for human to read
-    LC_ALL=C parted -s /dev/$ihd unit compact print > $target_dir/$(to_filename ${ihd})-pt.parted.compact
+    LC_ALL=C parted -s /dev/$ihd unit compact print > $target_dir_fullpath/$(to_filename ${ihd})-pt.parted.compact
     # From the output file of parted, we can decide if the partition is gpt or mbr
-    if `is_gpt_partitition_table_file $target_dir/$(to_filename ${ihd})-pt.parted`; then
+    if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
       # GPT, output the GPT data. Ref: http://en.wikipedia.org/wiki/GUID_Partition_Table
       # Legacy MBR (LBA 0), Partition table header (LBA 1), Partition entries (LBA 2-33)
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-      echo "Saving the primary GPT of $ihd as $target_dir/$(to_filename ${ihd})-gpt-1st by dd..." | tee --append ${OCS_LOGFILE}
-      LC_ALL=C dd if=/dev/$ihd of=$target_dir/$(to_filename ${ihd})-gpt-1st bs=512 count=34 | tee --append ${OCS_LOGFILE}
+      echo "Saving the primary GPT of $ihd as $target_dir_fullpath/$(to_filename ${ihd})-gpt-1st by dd..." | tee --append ${OCS_LOGFILE}
+      LC_ALL=C dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-gpt-1st bs=512 count=34 | tee --append ${OCS_LOGFILE}
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       # There is a redundant GPT (secondary GPT) in the last block: LBA -34, -33... -1. Ref: http://developer.apple.com/technotes/tn2006/tn2166.html#SECLASTBLOCK
       # We need to get the total size of disk so that we can skip and dump the last block:
@@ -7001,24 +7114,24 @@ task_saveparts() {
       #  2      409641s   4316406s   3906766s   ext2         primary         
       #  3      4316407s  15625000s  11308594s  reiserfs     primary         
       # --------------------
-      echo "Saving the secondary GPT of $ihd as $target_dir/$(to_filename ${ihd})-gpt-2nd by dd..." | tee --append ${OCS_LOGFILE}
-      disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $target_dir/$(to_filename ${ihd})-pt.parted | awk -F":" '{print $2}' | sed -e "s/s$//g")"
+      echo "Saving the secondary GPT of $ihd as $target_dir_fullpath/$(to_filename ${ihd})-gpt-2nd by dd..." | tee --append ${OCS_LOGFILE}
+      disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $target_dir_fullpath/$(to_filename ${ihd})-pt.parted | awk -F":" '{print $2}' | sed -e "s/s$//g")"
       to_skip="$((${disk_size_sec}-33+1))"
-      LC_ALL=C dd if=/dev/$ihd of=$target_dir/$(to_filename ${ihd})-gpt-2nd skip=${to_skip} bs=512 count=33 | tee --append ${OCS_LOGFILE}
+      LC_ALL=C dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-gpt-2nd skip=${to_skip} bs=512 count=33 | tee --append ${OCS_LOGFILE}
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       if type sgdisk &>/dev/null; then
-	echo "Saving the GPT of $ihd as $target_dir/$(to_filename ${ihd})-gpt.gdisk by gdisk..." | tee --append ${OCS_LOGFILE}
-	LC_ALL=C sgdisk -b $target_dir/$(to_filename ${ihd})-gpt.gdisk /dev/$ihd | tee --append ${OCS_LOGFILE}
+	echo "Saving the GPT of $ihd as $target_dir_fullpath/$(to_filename ${ihd})-gpt.gdisk by gdisk..." | tee --append ${OCS_LOGFILE}
+	LC_ALL=C sgdisk -b $target_dir_fullpath/$(to_filename ${ihd})-gpt.gdisk /dev/$ihd | tee --append ${OCS_LOGFILE}
 
         # Dump the GPT table in plain text
-	LC_ALL=C sgdisk -p /dev/$ihd > $target_dir/$(to_filename ${ihd})-gpt.sgdisk | tee --append ${OCS_LOGFILE}
+	LC_ALL=C sgdisk -p /dev/$ihd > $target_dir_fullpath/$(to_filename ${ihd})-gpt.sgdisk | tee --append ${OCS_LOGFILE}
         echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       fi
-    elif `is_mbr_partitition_table_file $target_dir/$(to_filename ${ihd})-pt.parted`; then
+    elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
       # MBR disk, we can save the hidden data between MBR and 1st partition. Maybe the data is useless, maybe it's useful. Since some of the recovery programs put data on that.
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       if [ "$clone_hidden_data" = "yes" ]; then
-	save_hidden_data_after_MBR $ihd $target_dir/$(to_filename ${ihd})-hidden-data-after-mbr
+	save_hidden_data_after_MBR $ihd $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr
       fi
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     else
@@ -7045,7 +7158,7 @@ task_saveparts() {
     # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
     # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
     echo "Saving the MBR data for $ihd..." | tee --append $OCS_LOGFILE
-    dd if=/dev/$ihd of=$target_dir/$(to_filename ${ihd})-mbr count=1 bs=512 | tee --append ${OCS_LOGFILE}
+    dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-mbr count=1 bs=512 | tee --append ${OCS_LOGFILE}
   done
 
   do_LVM_save="no"
@@ -7060,14 +7173,14 @@ task_saveparts() {
     # not LVM, normal partition
     # From partimage 0.6.6, batch mode won't stop if checkInodeForDevice is not run. Therefore comment it.
     # checkInodeForDevice /dev/$partition 
-    image_save /dev/$partition $target_dir $partition
+    image_save /dev/$partition $target_dir_fullpath $partition
     rc_saveparts="$(($rc_saveparts + $?))"
     # Tag the partition info. This is special for NTFS boot reserved partiition
     rc_boot_reserve=""
     check_if_windows_boot_reserve_part /dev/$partition
     rc_boot_reserve="$?"
     if [ "$rc_boot_reserve" -eq 0 ]; then
-      echo "PARTITION_TYPE=Win_boot_reserved" > $target_dir/$partition.info
+      echo "PARTITION_TYPE=Win_boot_reserved" > $target_dir_fullpath/$partition.info
     fi
   done
   # We have to do save LVM (PV/VG/LV) together, not follow every partition
@@ -7077,18 +7190,18 @@ task_saveparts() {
   fi
 
   # Dump hardware info
-  dump_hardware_software_info $target_dir
+  dump_hardware_software_info $target_dir_fullpath
 
-  echo "$target_parts" > $target_dir/parts
+  echo "$target_parts" > $target_dir_fullpath/parts
   rc=$?
   if [ "$rc" -gt 0 ]; then
-    show_warning_about_write_failed $target_dir
+    show_warning_about_write_failed $target_dir_fullpath
   else
-    gen_md5_sha1_sums $target_dir
+    gen_md5_sha1_sums $target_dir_fullpath
   fi
 
   # TODO: show error message if failing; check image?
-  echo "End of saveparts job for image $target_dir." | tee --append $OCS_LOGFILE
+  echo "End of saveparts job for image $target_dir_fullpath." | tee --append $OCS_LOGFILE
 
   rc_saveparts="$(($rc_saveparts + $rc))"
   return $rc_saveparts
@@ -7195,6 +7308,7 @@ task_restoreparts() {
   local shd_tmp=""
   local continue_choice
   local ptype
+  local whole_disk=""
 
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -7239,6 +7353,10 @@ task_restoreparts() {
   # find the target hd
   # maybe we will have one more hd (like hda1, hda2, hdb1, hdb3 -> hda, hdb)
   for ipart in $target_parts; do
+    if is_whole_disk $ipart ; then
+      whole_disk="$whole_disk $ipart"
+      continue
+    fi
     thd_tmp="$(get_diskname $ipart)"
     if [ -z "$target_hd" ]; then
       target_hd="$thd_tmp"
@@ -7291,9 +7409,11 @@ task_restoreparts() {
     # To restore a disk, we will erase the whole data in the disk, so list partition(s), too 
     # Find the existing partition(s) in the system.
     gen_proc_partitions_map_file
-    parts_included="$(grep -Eo "${target_hd}[[:digit:]]+" $partition_table)"
+    if [ -n "$target_hd" ]; then
+      parts_included="$(grep -Eo "${target_hd}[[:digit:]]+" $partition_table)"
+    fi
     [ -f "$partition_table" ] && rm -f $partition_table
-    dev_to_be_overwrite="$target_hd $parts_included"
+    dev_to_be_overwrite="$target_hd $whole_disk $parts_included"
   fi
   # get_dev_model_shown will give $dev_model_shown
   # Only show this when not in batch mode
@@ -7304,41 +7424,41 @@ task_restoreparts() {
   is_spawned_by_drbl_ocs $ocs_ppid
   rc=$?
   if [ "$rc" -gt 0 -a "$ocs_batch_mode" != "on" ]; then
-    echo "This program is not started by clonezilla server."
-    echo "$msg_the_following_step_is_to_restore_img_to_disk_part: \"$target_dir_fullpath\" -> \"$target_hd ($target_parts)\""
+    echo "This program is not started by clonezilla server." | tee --append $OCS_LOGFILE
+    echo "$msg_the_following_step_is_to_restore_img_to_disk_part: \"$target_dir_fullpath\" -> \"$target_hd ($target_parts)\"" | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     if [ "$ocs_sr_type" = "restoreparts" -a "$create_part" = "yes" ]; then
-      echo "$msg_uppercase_Warning! $msg_option_k_is_not_chosen_part_table_will_be_recreated"
+      echo "$msg_uppercase_Warning! $msg_option_k_is_not_chosen_part_table_will_be_recreated" | tee --append $OCS_LOGFILE
     fi
-    echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
+    echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!" | tee --append $OCS_LOGFILE
     if [ -n "$dev_model_shown" ]; then
-      echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten:"
-      echo $msg_delimiter_star_line
-      echo -e "$dev_model_shown"
-      echo $msg_delimiter_star_line
+      echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten:" | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+      echo -e "$dev_model_shown" | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     fi
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     continue_choice=""
     while [ -z "$continue_choice" ]; do
-      echo "$msg_let_me_ask_you_again. $msg_are_u_sure_u_want_to_continue ?"
-      echo -n "[y/n] "
+      echo "$msg_let_me_ask_you_again. $msg_are_u_sure_u_want_to_continue ?" | tee --append $OCS_LOGFILE
+      echo -n "[y/n] " | tee --append $OCS_LOGFILE
       read continue_restore
       case "$continue_restore" in
        y|Y|[yY][eE][sS])
          continue_choice="yes"
-         echo "$msg_ok_let_do_it!"
+         echo "$msg_ok_let_do_it!" | tee --append $OCS_LOGFILE
          ;;
        n|N|[nN][oO])
          continue_choice="no"
          rm_tmp_cnvt_img
-         echo "$msg_program_stop!"
+         echo "$msg_program_stop!" | tee --append $OCS_LOGFILE
          exit 1
          ;;
        *)
          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-         echo "$msg_you_have_to_enter_yes_or_no!"
+         echo "$msg_you_have_to_enter_yes_or_no!" | tee --append $OCS_LOGFILE
          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo $msg_delimiter_star_line
+         echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
          ;;
       esac
     done
@@ -7357,19 +7477,20 @@ task_restoreparts() {
     done
   fi
 
-  if [ "$clone_hidden_data" = "yes" ]; then
+  # We will only restore hidden data when the mode is restoredisk (including unicast & multicast restoredisk, i.e. restoredisk or multicast_restoredisk).
+  if [ "$clone_hidden_data" = "yes" -a -n "$(echo "$ocs_sr_type" | grep -Ei "restoredisk")" ]; then
     for ihd in $target_hd; do
       # Restore the hidden data between MBR and 1st partition. Maybe it's useless, maybe it's useful. Since some of the recovery programs put data on that.
       # Only for MBR, excluding GPT type of disk. We only deal with MBR for this hidden data
       if `is_mbr_partitition_table_disk /dev/$ihd`; then
-        echo $msg_delimiter_star_line
+        echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
 	if [ -e "$target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr" ]; then
           restore_hidden_data_after_MBR $ihd $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr
         else
-	  echo "File $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr not found!"
-          echo "Skip restoring hidden data after MBR for disk $ihd."
+	  echo "File $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr not found!" | tee --append $OCS_LOGFILE
+          echo "Skip restoring hidden data after MBR for disk $ihd." | tee --append $OCS_LOGFILE
         fi
-        echo $msg_delimiter_star_line
+        echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
       fi
     done
   fi
@@ -7402,9 +7523,10 @@ task_restoreparts() {
     if [ $rc -gt 0 ]; then
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
        echo "Failed to restore partition image file $target_dir_fullpath/${partition}* to /dev/$partition! Maybe this image is corrupt or there is no $target_dir_fullpath/${partition}*! If you are restoring the image of partition to different partition, check the FAQ on Clonezilla website for how to make it." | tee --append $OCS_LOGFILE
-       echo "$msg_press_enter_to_continue..."
+       echo "$msg_press_enter_to_continue..." | tee --append ${OCS_LOGFILE}
        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
        read
+       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     fi
   done
 
@@ -7476,8 +7598,9 @@ task_restoreparts() {
   # We have to do restore LVM (PV/VG/LV) together, not follow every partition
   if [ "$do_LVM_restore" = "yes" ]; then
     # LVM exists, restore PV/VG/LV.
+    echo "LVM exists, restoring PV/VG/LV." | tee --append ${OCS_LOGFILE}
     restore_logv "$target_parts" $net_mode $port
-    echo $msg_delimiter_star_line
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
   # Reinstall executable code area (first 446 bytes in MBR)
@@ -7494,7 +7617,7 @@ task_restoreparts() {
         echo "done." | tee --append $OCS_LOGFILE
       else
         echo -n "Restoring the first 446 bytes of MBR data, i.e. executable code area, for $ihd... " | tee --append $OCS_LOGFILE
-        dd if=$target_dir_fullpath/${ihd}-mbr of=/dev/$ihd bs=446 count=1 &>/dev/null
+        dd if=$target_dir_fullpath/$(to_filename ${ihd})-mbr of=/dev/$ihd bs=446 count=1 &>/dev/null
         echo "done." | tee --append $OCS_LOGFILE
       fi
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
@@ -7504,6 +7627,7 @@ task_restoreparts() {
   # resize partition if necessary
   if [ "$resize_partition" = "on" ]; then
     for partition in $target_parts; do
+      is_whole_disk $partition && continue
       # hda1 -> hd_tmp, part_no_tmp ,i.e => hda, 1 
       hd_tmp="$(get_diskname $partition)"
       part_no_tmp="$(get_part_number $partition)"
@@ -7551,7 +7675,7 @@ task_restoreparts() {
       dd if=$target_dir_fullpath/$(to_filename ${ihd})-mbr of=/dev/$ihd bs=512 count=1 &>/dev/null
       echo "done." | tee --append $OCS_LOGFILE
       echo -n "Making kernel re-read the partition table of /dev/$ihd... " | tee --append $OCS_LOGFILE
-      sfdisk -R /dev/$ihd
+      inform_kernel_partition_table_changed mbr /dev/$ihd
       echo "done." | tee --append $OCS_LOGFILE
       echo "The partition table of /dev/$ihd is:" | tee --append $OCS_LOGFILE
       fdisk -l /dev/$ihd
