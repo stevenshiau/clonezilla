@@ -433,7 +433,7 @@ save_hidden_data_after_MBR() {
 
   echo "Saving the hidden data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool, by:" | tee --append ${OCS_LOGFILE}
   echo dd if=/dev/${src_dsk} of=${img_s} skip=1 bs=512 count=$hidden_data_size | tee --append ${OCS_LOGFILE}
-  dd if=/dev/${src_dsk} of=${img_s} skip=1 bs=512 count=$hidden_data_size
+  dd if=/dev/${src_dsk} of=${img_s} skip=1 bs=512 count=$hidden_data_size 2>&1 | tee --append ${OCS_LOGFILE}
 
 } # end of save_hidden_data_after_MBR
 #
@@ -490,7 +490,7 @@ restore_hidden_data_after_MBR() {
 
   echo "Restoring the hidden data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool, by:" | tee --append ${OCS_LOGFILE}
   echo dd if=${img_r} of=/dev/${tgt_dsk} seek=1 bs=512 count=$data_size | tee --append ${OCS_LOGFILE}
-  dd if=${img_r} of=/dev/${tgt_dsk} seek=1 bs=512 count=$data_size | tee --append ${OCS_LOGFILE}
+  dd if=${img_r} of=/dev/${tgt_dsk} seek=1 bs=512 count=$data_size 2>&1 | tee --append ${OCS_LOGFILE}
 } # end of restore_hidden_data_after_MBR
 #
 cciss_dev_map_if_necessary() {
@@ -1245,7 +1245,7 @@ save_part_by_partimage() {
        ;;
   esac
   echo "Run partimage: $cmd_partimage" | tee --append ${OCS_LOGFILE}
-  eval "$cmd_partimage" 2>&1 | tee --append ${OCS_LOGFILE}
+  LC_ALL=C eval "(${cmd_partimage} && exit \${PIPESTATUS[0]})"
   rc="$?"
   end_time="$(date +%s%N)"
   calculate_elapsed_time $start_time $end_time
@@ -2432,7 +2432,7 @@ install_grub_hd() {
     } # end of check_grub1_config_file
     do_run_grub1_from_restored_os() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Trying to use the grub1 in the restored OS!"
+      echo "Trying to use the grub1 in the restored OS..." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       unmount_wait_and_try $grub_partition 2>/dev/null
       unmount_wait_and_try $hd_img 2>/dev/null
@@ -2441,31 +2441,31 @@ install_grub_hd() {
       # rmdir: failed to remove `/tmp/hd_img.weAw4i': Device or resource busy
       [ -d "$hd_img/boot" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img/boot)
       [ -d "$hd_img" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img)
-      echo "Running: run_grub1_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$grub_hd\""
-      run_grub1_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd"
-      rc=$?
+      echo "Running: run_grub1_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$grub_hd\"" | tee --append $OCS_LOGFILE
+      run_grub1_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd" | tee --append $OCS_LOGFILE
+      rc="${PIPESTATUS[0]}"
     } # end of do_run_grub1_from_restored_os
     do_run_grub1_from_running_os() {
       local grub1_patch_flag=""
       prepare_grub1_files_if_required
       show_grub1_ext4_warning $grub_partition
       [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
-      echo "Trying to use the grub1 from the running OS..."
+      echo "Trying to use the grub1 from the running OS..." | tee --append $OCS_LOGFILE
       check_grub_install_version 1
       rc_grub_check=$?
       if [ "$rc_grub_check" -eq 0 ]; then
-        echo "Running: $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd"
-        $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd
-        rc=$?
+        echo "Running: $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd" | tee --append $OCS_LOGFILE
+        $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd | tee --append $OCS_LOGFILE
+        rc="${PIPESTATUS[0]}"
         # Remove the device.map in case it provents the restored OS fails to run update-grub due to different boot device name (e.g. sda <-> hda issue)
         [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
         
         check_grub1_config_file $hd_img
       else
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "The required version of grub-install for grub 1 was not found!"
+        echo "The required version of grub-install for grub 1 was not found!" | tee --append $OCS_LOGFILE
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "Command grub-install is skipped!"
+        echo "Command grub-install is skipped!" | tee --append $OCS_LOGFILE
         rc=1
       fi
 
@@ -2479,7 +2479,7 @@ install_grub_hd() {
     } # end of do_run_grub1_from_running_os
     do_run_grub2_from_restored_os() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Trying to use the grub2 in the restored OS!"
+      echo "Trying to use the grub2 in the restored OS..." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       unmount_wait_and_try $grub_partition 2>/dev/null
       unmount_wait_and_try $hd_img 2>/dev/null
@@ -2488,16 +2488,16 @@ install_grub_hd() {
       # rmdir: failed to remove `/tmp/hd_img.weAw4i': Device or resource busy
       [ -d "$hd_img/boot" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img/boot)
       [ -d "$hd_img" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img)
-      echo "Running: run_grub2_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$grub_hd\""
-      run_grub2_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd"
-      rc=$?
+      echo "Running: run_grub2_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$grub_hd\"" | tee --append $OCS_LOGFILE
+      run_grub2_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd" | tee --append $OCS_LOGFILE
+      rc="${PIPESTATUS[0]}"
     } # end of do_run_grub2_from_restored_os
     #
     do_run_grub2_from_running_os() {
       local grub2_patch_flag=""
       prepare_grub2_files_if_required
       [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
-      echo "Trying to use the grub2 from the running OS..."
+      echo "Trying to use the grub2 from the running OS..." | tee --append $OCS_LOGFILE
       check_grub_install_version 2
       rc_grub_check=$?
       if [ "$rc_grub_check" -eq 0 ]; then
@@ -2509,18 +2509,18 @@ install_grub_hd() {
           perl -pi -e 's|(^grubdir=.*)/grub(\".*)|$1/grub2$2|g' "$(which $grub_install_exec)"
           grub2_patch_flag="true"
         fi
-        echo "Running: $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd"
-        $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd
-        rc=$?
+        echo "Running: $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd" | tee --append $OCS_LOGFILE
+        $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd | tee --append $OCS_LOGFILE
+        rc="${PIPESTATUS[0]}"
         # Revert
         if [ "$grub2_patch_flag" = "true" ]; then
           mv -f "$(which $grub_install_exec)".orig "$(which $grub_install_exec)"
         fi
       else
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "The required version of grub-install for grub 2 was not found!"
+        echo "The required version of grub-install for grub 2 was not found!" | tee --append $OCS_LOGFILE
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "Command grub-install is skipped!"
+        echo "Command grub-install is skipped!" | tee --append $OCS_LOGFILE
         rc=1
       fi
       unmount_wait_and_try $grub_partition 2>/dev/null
@@ -2537,7 +2537,7 @@ install_grub_hd() {
       grub_part_fs="$(LC_ALL=C ocs-get-part-info $grub_pt_ filesystem)"
       if [ "$grub_part_fs" = "ext4" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "Warning! Found grub partition ($grub_pt_) file system is ext4! Not all versions of grub 1 supports file system ext4!"
+        echo "Warning! Found grub partition ($grub_pt_) file system is ext4! Not all versions of grub 1 supports file system ext4!" | tee --append $OCS_LOGFILE
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       fi
     } # end of show_grub1_ext4_warning
@@ -2643,25 +2643,25 @@ install_grub_hd() {
          # No assignment, use the one found. However, maybe there are more than 1. We only take the first one.
          if [ "$(LC_ALL=C echo $found_grub_partition | wc -w)" -gt 1 ]; then
            grub_partition="$(echo $found_grub_partition | awk -F" " '{print $1}')"
-           echo "More than one grub config partitions exist: $found_grub_partition. Choose the 1st one: $grub_partition."
+           echo "More than one grub config partitions exist: $found_grub_partition. Choose the 1st one: $grub_partition." | tee --append $OCS_LOGFILE
          else
            grub_partition="$found_grub_partition"
          fi
        fi
        if [ -n "$grub_partition" ]; then
-         echo "Found grub partition: $grub_partition"
+         echo "Found grub partition: $grub_partition" | tee --append $OCS_LOGFILE
        else
-         echo "The grub directory is NOT found. Maybe it does not exist (so other boot manager exists) or the file system is not supported in the kernel. Skip running $grub_install_exec." 
+         echo "The grub directory is NOT found. Maybe it does not exist (so other boot manager exists) or the file system is not supported in the kernel. Skip running $grub_install_exec." | tee --append $OCS_LOGFILE
 	 return 1
        fi
        # Check if grub_partition is on the list of target partitions
        if [ -n "$selected_parts" ]; then
          # Only if we assign the selected partitions, we have to check...
          if [ -n "$(echo $selected_parts | grep -Ewo "$(basename $grub_partition)")" ]; then
-           echo "Found grub partition \"$grub_partition\", which is on the restored partitions list ($selected_parts). Will run $grub_install_exec later."
+           echo "Found grub partition \"$grub_partition\", which is on the restored partitions list ($selected_parts). Will run $grub_install_exec later." | tee --append $OCS_LOGFILE
          else
            # E.g. echo "sda1 sda3" | grep -Ewo "$(basename /dev/sda1)"
-           echo "The found grub partition \"$grub_partition\" is _NOT_ on the restored partitions list ($selected_parts). Skip running $grub_install_exec."
+           echo "The found grub partition \"$grub_partition\" is _NOT_ on the restored partitions list ($selected_parts). Skip running $grub_install_exec." | tee --append $OCS_LOGFILE
            return 3
          fi
        fi
@@ -2677,7 +2677,7 @@ install_grub_hd() {
     # This install_grub_hd function is only for BIOS/MBR boot loader, not for EFI. Therefore if $selected_hd is GPT disk, skip it.
     if ! `is_mbr_partitition_table_disk /dev/$grub_hd`; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Disk /dev/$grub_hd is not MBR format. Skip the reinstallation of grub-pc (MBR) program."
+      echo "Disk /dev/$grub_hd is not MBR format. Skip the reinstallation of grub-pc (MBR) program." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       return 5
     fi
@@ -2685,10 +2685,10 @@ install_grub_hd() {
     if [ "$check_before_install" = "yes" ]; then
       # Check if grub exists on the MBR. If not, skip this function.
       if [ -z "$(LANG=C dd if=/dev/$grub_hd bs=512 count=1 2>/dev/null | strings | grep "GRUB")" ]; then
-         echo "The boot loader on /dev/$grub_hd is not grub. Skip running grub-install!"
+         echo "The boot loader on /dev/$grub_hd is not grub. Skip running grub-install." | tee --append $OCS_LOGFILE
          return 5
       else 
-         echo "Found boot loader grub in the MBR of disk /dev/$grub_hd."
+         echo "Found boot loader grub in the MBR of disk /dev/$grub_hd." | tee --append $OCS_LOGFILE
       fi
     fi
     # process the boot loader
@@ -2772,7 +2772,7 @@ install_grub_hd() {
            do_run_grub1_from_restored_os
            if [ "$rc" -ne 0 ]; then
              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-             echo "Unable to use the grub 1 in the restored OS, trying another method..."
+             echo "Unable to use the grub 1 in the restored OS, trying another method..." | tee --append $OCS_LOGFILE
              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
              # Plan B:
              mount_root_partition_for_separate_boot_part $hd_img  # return variable $found_root_partition
@@ -2800,7 +2800,7 @@ install_grub_hd() {
          grub_ver_in_restored_os="1"
        fi
        if [ "$grub_ver_in_restored_os" = "2" ]; then
-         echo "Found grub 2 installed in the restored OS."
+         echo "Found grub 2 installed in the restored OS." | tee --append $OCS_LOGFILE
          if [ -z "$run_grub2_from_restored_os_mode" ]; then
            # We will get variable run_grub2_from_restored_os_mode with this
            test_run_grub2_from_restored_os "$found_root_partition"
@@ -2809,7 +2809,7 @@ install_grub_hd() {
            do_run_grub2_from_restored_os
            if [ "$rc" -ne 0 ]; then
              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-             echo "Unable to use the grub 2 in the restored OS, trying another method..."
+             echo "Unable to use the grub 2 in the restored OS, trying another method..." | tee --append $OCS_LOGFILE
              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
              # Plan B:
              mount_root_partition_for_separate_boot_part $hd_img  # return variable $found_root_partition
@@ -2823,7 +2823,7 @@ install_grub_hd() {
          fi
        else
          # grub version 1
-         echo "Found grub 1 installed in the restored OS."
+         echo "Found grub 1 installed in the restored OS." | tee --append $OCS_LOGFILE
          if [ -z "$run_grub1_from_restored_os_mode" ]; then
            # We will get variable run_grub1_from_restored_os_mode with this
            test_run_grub1_from_restored_os "$found_root_partition"
@@ -2832,7 +2832,7 @@ install_grub_hd() {
            do_run_grub1_from_restored_os
            if [ "$rc" -ne 0 ]; then
              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-             echo "Unable to use the grub 1 in the restored OS, trying another method..."
+             echo "Unable to use the grub 1 in the restored OS, trying another method..." | tee --append $OCS_LOGFILE
              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
              # Plan B:
              mount_root_partition_for_separate_boot_part $hd_img  # return variable $found_root_partition
@@ -2849,14 +2849,14 @@ install_grub_hd() {
 
     if [ "$rc" -ne 0 ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-	echo "Failed to install grub!!!"
+	echo "Failed to install grub!!!" | tee --append $OCS_LOGFILE
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         if [ "$grub_ver_in_restored_os" -eq "1" ]; then
           show_grub1_ext4_warning $grub_partition
         fi
 	[ "$debug_mode" = "on" ] && sulogin
     else
-	echo "done!"
+	echo "done!" | tee --append $OCS_LOGFILE
     fi
     return $rc
 } # end of install_grub_hd
@@ -3067,7 +3067,8 @@ clean_mbr_partition_table_before_gen_gpt_table() {
     echo "Program terminated!"
     exit 1
   fi
-  LC_ALL=C dd if=/dev/zero of=$gpt_disk bs=512 count=1
+  echo "Running: dd if=/dev/zero of=$gpt_disk bs=512 count=1" | tee --append $OCS_LOGFILE
+  LC_ALL=C dd if=/dev/zero of=$gpt_disk bs=512 count=1 2>&1 | tee --append $OCS_LOGFILE
 } # end of clean_mbr_partition_table_before_gen_gpt_table
 #
 create_gpt_table_if_no_table() {
@@ -3082,8 +3083,9 @@ create_gpt_table_if_no_table() {
     exit 1
   fi
   if [ -n "$(LC_ALL=C parted -s $gpt_disk print | grep -iE "Error:.*: unrecognised disk label")" ]; then
-    echo "No initial GPT table on disk $gpt_disk. Create one now..."
-    LC_ALL=C parted -s $gpt_disk mklabel gpt
+    echo "No initial GPT table on disk $gpt_disk. Create one now by:" | tee --append $OCS_LOGFILE
+    echo "parted -s $gpt_disk mklabel gpt" | tee --append $OCS_LOGFILE
+    LC_ALL=C parted -s $gpt_disk mklabel gpt | tee --append $OCS_LOGFILE
   fi
 } # end of create_gpt_table_if_no_table
 # create partition from file
@@ -3176,7 +3178,8 @@ create_partition() {
     # If the partition table is tag as "gpt", change it as msdos
     if `is_gpt_partitition_table_disk $tgt_hd_file`; then
       echo "The partition table in $tgt_hd_file is for GPT, now make it for MBR." | tee --append $OCS_LOGFILE
-      LC_ALL=C parted -s $tgt_hd_file mklabel msdos
+      echo "Running: parted -s $tgt_hd_file mklabel msdos" | tee --append $OCS_LOGFILE
+      LC_ALL=C parted -s $tgt_hd_file mklabel msdos | tee --append $OCS_LOGFILE
     fi
     # create partition from file
     # Before create partition, clean the warning message in ${tgt_hd_name}-pt.sf so that sfdisk will not refuse to do that.
@@ -3191,8 +3194,8 @@ create_partition() {
     # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
     case "$create_part_by_sfdisk" in
       n|N|[nN][oO])
-	dd if=$tgt_dir/$(to_filename $tgt_hd_name)-mbr of=$tgt_hd_file skip=446 seek=446 bs=1 count=66
-        RETVAL="$?"
+	dd if=$tgt_dir/$(to_filename $tgt_hd_name)-mbr of=$tgt_hd_file skip=446 seek=446 bs=1 count=66 2>&1 | tee --append $OCS_LOGFILE 
+        RETVAL="${PIPESTATUS[0]}"
         if [ "$RETVAL" -eq 0 ]; then
           echo -n "Making kernel re-read the partition table of $tgt_hd_file... " | tee --append $OCS_LOGFILE
           sfdisk -R $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
@@ -3268,7 +3271,7 @@ create_partition() {
       gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
       echo "Running: sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file"
       LC_ALL=C sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file | tee $gdisk_tmp
-      sgdisk_rc=$?
+      sgdisk_rc="${PIPESTATUS[0]}"
       if [ "$sgdisk_rc" -eq 0 ]; then
         # There is a bug about sgdisk 0.6.14, i.e.
         # sgdisk -l /home/partimag/2011-02-27-02-img-hfsplus-gdisk/sda-gpt.gdisk /dev/sdb
@@ -3304,8 +3307,8 @@ create_partition() {
       echo "Restoring the primary GPT to $tgt_hd_file..." | tee -a $OCS_LOGFILE
       # ///NOTE/// We can not use ocs-create-gpt (parted) to clone GPT, since the original GPT contains unique GUID! Ref:  http://developer.apple.com/technotes/tn2006/tn2166.html#SECCOPYINGCONCERNS for more details.
       # ocs-create-gpt $tgt_dir/${tgt_hd_name}-pt.parted
-      LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-1st of=$tgt_hd_file | tee -a $OCS_LOGFILE
-      retv=$?
+      LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-1st of=$tgt_hd_file 2>&1 | tee -a $OCS_LOGFILE
+      retv="${PIPESTATUS[0]}"
       if [ "$retv" -gt 0 ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
         echo -n "Failed to restore GPT partition to $tgt_hd_file! $msg_press_enter_to_continue... "
@@ -3326,7 +3329,7 @@ create_partition() {
       # --------------------
       echo "Restoring the secondary GPT to $tgt_hd_file..."
       to_seek="$((${src_disk_size_sec}-33+1))"
-      LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-2nd of=$tgt_hd_file seek=${to_seek} bs=512 count=33 | tee -a $OCS_LOGFILE
+      LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-2nd of=$tgt_hd_file seek=${to_seek} bs=512 count=33 2>&1 | tee -a $OCS_LOGFILE
     fi
 
     echo "Informing kernel the partition table has changed..." | tee -a $OCS_LOGFILE
@@ -4775,7 +4778,7 @@ unicast_restore_by_ntfsclone() {
   ) | \
   $unzip_stdin_cmd | \
   ntfsclone $ntfsclone_progress_option $ntfsclone_restore_extra_opt_def --restore-image --overwrite $part - | tee $ntfs_img_info_tmp
-  rc="$?"
+  rc="${PIPESTATUS[0]}"
   end_time="$(date +%s%N)"
   get_ntfs_image_info $ntfs_img_info_tmp $start_time $end_time
   # For unicast, no preparation time, it's accurate enough.
@@ -5090,7 +5093,7 @@ multicast_restore_by_ntfsclone() {
   start_time="$(date +%s%N)"
   $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
   ntfsclone $ntfsclone_progress_option $ntfsclone_restore_extra_opt_def --restore-image --overwrite $part - | tee $ntfs_img_info_tmp
-  rc="$?"
+  rc="${PIPESTATUS[0]}"
   end_time="$(date +%s%N)"
   get_ntfs_image_info $ntfs_img_info_tmp $start_time $end_time
   echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins), average speed: $speed"
@@ -5213,7 +5216,7 @@ multicast_restore_by_dd() {
     start_time="$(date +%s%N)"
     $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
     LC_ALL=C dd bs=1M of=$part 2>&1 | tee $dd_img_info_tmp
-    rc="$?"
+    rc="${PIPESTATUS[0]}"
     end_time="$(date +%s%N)"
     kill -9 $dd_report_sig_pid &>/dev/null
     get_dd_image_info $dd_img_info_tmp $start_time $end_time
@@ -7104,7 +7107,7 @@ task_saveparts() {
       # Legacy MBR (LBA 0), Partition table header (LBA 1), Partition entries (LBA 2-33)
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       echo "Saving the primary GPT of $ihd as $target_dir_fullpath/$(to_filename ${ihd})-gpt-1st by dd..." | tee --append ${OCS_LOGFILE}
-      LC_ALL=C dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-gpt-1st bs=512 count=34 | tee --append ${OCS_LOGFILE}
+      LC_ALL=C dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-gpt-1st bs=512 count=34 2>&1 | tee --append ${OCS_LOGFILE}
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       # There is a redundant GPT (secondary GPT) in the last block: LBA -34, -33... -1. Ref: http://developer.apple.com/technotes/tn2006/tn2166.html#SECLASTBLOCK
       # We need to get the total size of disk so that we can skip and dump the last block:
@@ -7122,7 +7125,7 @@ task_saveparts() {
       echo "Saving the secondary GPT of $ihd as $target_dir_fullpath/$(to_filename ${ihd})-gpt-2nd by dd..." | tee --append ${OCS_LOGFILE}
       disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $target_dir_fullpath/$(to_filename ${ihd})-pt.parted | awk -F":" '{print $2}' | sed -e "s/s$//g")"
       to_skip="$((${disk_size_sec}-33+1))"
-      LC_ALL=C dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-gpt-2nd skip=${to_skip} bs=512 count=33 | tee --append ${OCS_LOGFILE}
+      LC_ALL=C dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-gpt-2nd skip=${to_skip} bs=512 count=33 2>&1 | tee --append ${OCS_LOGFILE}
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       if type sgdisk &>/dev/null; then
 	echo "Saving the GPT of $ihd as $target_dir_fullpath/$(to_filename ${ihd})-gpt.gdisk by gdisk..." | tee --append ${OCS_LOGFILE}
@@ -7163,7 +7166,7 @@ task_saveparts() {
     # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
     # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
     echo "Saving the MBR data for $ihd..." | tee --append $OCS_LOGFILE
-    dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-mbr count=1 bs=512 | tee --append ${OCS_LOGFILE}
+    dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-mbr count=1 bs=512 2>&1 | tee --append ${OCS_LOGFILE}
   done
 
   do_LVM_save="no"
@@ -9530,11 +9533,11 @@ init_mbr_part_table_if_not_existing() {
   local dest_dsk="$1"  # e.g. /dev/sdc
   if ! LC_ALL=C parted -s $dest_dsk unit s print &>/dev/null; then
     # Try to create a partition table so that we can read the size via parted -s $dev unit s print
-    echo -n "No partition table exists in target disk $dest_dsk, try to initialize one so that we can get the disk size by parted... "
+    echo -n "No partition table exists in target disk $dest_dsk, try to initialize one so that we can get the disk size by parted... " | tee --append $OCS_LOGFILE
     #echo 1,,83 | sfdisk -f $dest_dsk &>/dev/null
-    echo "Running: parted -s $dest_dsk mklabel msdos"
-    parted -s $dest_dsk mklabel msdos
-    echo "done!"
+    echo "Running: parted -s $dest_dsk mklabel msdos" | tee --append $OCS_LOGFILE
+    parted -s $dest_dsk mklabel msdos | tee --append $OCS_LOGFILE
+    echo "done!" | tee --append $OCS_LOGFILE
   fi
 } # init_mbr_part_table_if_not_existing
 
