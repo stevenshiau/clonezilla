@@ -29,39 +29,12 @@ USAGE() {
 # check available partitions
 rm_udev_persistent_record() {
   local select_disk="$*"  # select_disk is like hda or sda
-  local partition_list=""
-  local fs target_p sort_V_opt
-  gen_proc_partitions_map_file
-  partition_list=""
-  get_sort_V_opt  # Get option $sort_V_opt
-  if [ -n "$select_disk" ]; then
-    # Search only on the select_disk
-    for i in $select_disk; do
-      if [ -n "$i" ]; then
-        # we have target disk, parsing it.
-	# (1) For partitions. From partitions list we choose the partition based on disk, e.g.
-	# "sda1 sda2 sdb1 sdb5" with "sda" -> "sda1 sda2"
-        partition_list="$partition_list $(LC_ALL=C awk "/${i}[0-9]+/ { print \$4; }" $partition_table | sort $sort_V_opt)"
-	# (2) For LVM, the output of "pvs -o+lv_name" is like:
-	# $ pvs -o+lv_name
-	#  PV         VG           Fmt  Attr PSize PFree  LV
-	#  /dev/sda5  lucid-server lvm2 a-   7.76g 32.00m root
-	#  /dev/sda5  lucid-server lvm2 a-   7.76g 32.00m swap_1
-	#  /dev/sda5  lucid-server lvm2 a-   7.76g 32.00m
-	#  /dev/sdb5  squeeze      lvm2 a-   7.76g     0  root
-	#  /dev/sdb5  squeeze      lvm2 a-   7.76g     0  swap_1
-	#  /dev/sdb5  squeeze      lvm2 a-   7.76g     0  home
-	# We want the output as like "/lucid-server/root/" (/dev will be added later). Here we do not use something like "/dev/dm-0" since the output of pvs is not that style.
-	partition_list="$partition_list $(LC_ALL=C pvs -o+lv_name | grep -E "/dev/${i}[0-9]+" | awk -F" " '{print $2"/"$7}')"
-      fi
-    done
-  else
-    # Search whole system, not only hda, sda, vda, but also dm-0, dm-1 (LVM).
-    # For LVM here we use something like /dev/dm-0 (not /dev/squeeze/root) since it's directly from /proc/partitions. This is easier.
-    partition_list="$(LC_ALL=C awk '/([hsv]d[a-z][0-9]+|dm-[0-9]+)/ { print $4; }' $partition_table | sort $sort_V_opt)"
-  fi
-  # Make them in 1 line
-  partition_list="$(echo $partition_list)"
+  local fs target_p
+
+  # Here we also search LVM, since udev persistent record could be inside that.
+  get_partition_list true "$select_disk"
+  # partition_list is got from get_partition_list
+
   echo "Trying to remove udev persistent files. Searching in devices: $partition_list... "
   for ipartition in $partition_list; do
     target_p="/dev/$ipartition"

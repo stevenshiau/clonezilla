@@ -28,6 +28,7 @@ USAGE() {
     echo "$ocs [OPTION] IMAGE_NAME DEVICE"
     echo "Options:"
     echo "-b, --batch-mode   Run image checking in batch mode"
+    echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone or Partimage, use text only"
     echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
     echo "IMAGE_NAME is the image dir name, not absolute path"
     echo "DEVICE is the device name, e.g. sda1, sda2..."
@@ -472,7 +473,7 @@ task_checkimage() {
     # Master Boot Record (MBR) is the 512-byte boot sector:
     # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
     # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
-    if [ ! -e "$target_dir_fullpath/${ihd}-mbr" ]; then
+    if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-mbr" ]; then
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
        echo "$msg_mbr_img_of_this_hd_not_found: ${ihd}"
        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -484,14 +485,21 @@ task_checkimage() {
   done
 
   echo $msg_delimiter_star_line
+  PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
   do_LVM_restore="no"
   rct=0
   for partition in $target_parts; do
     # hda1 -> hda
     hd_tmp="$(get_diskname $partition)"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
-     if [ -n "$(grep -Ew "$partition" $target_dir_fullpath/lvm_vg_dev.list 2>/dev/null)" ]; then
-      # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
+    if [ -e $PV_PARSE_CONF ]; then
+      for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
+        if [ "$partition" = "$(get_master_dev_of_multipath $i)" ]; then
+          do_LVM_restore="yes"
+          continue
+        fi
+      done
+    elif check_LVM_partition /dev/$partition; then
       do_LVM_restore="yes"
       continue
     fi
