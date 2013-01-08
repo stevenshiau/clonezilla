@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.2.0, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.56, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.2.1, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.56, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,7 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jan 08 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.6-drbl1
 - All "hsv" related codes of Clonezilla were converted to multipath compatible.
+- The multipath codes from Miracle Linux were merged.
 
 * Sat Jan 05 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.5-drbl1
 - Put the output of restore_hidden_data_after_MBR to log file, too.

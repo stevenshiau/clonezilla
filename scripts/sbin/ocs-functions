@@ -141,10 +141,8 @@ check_md5_sha1_sums() {
 get_disk_from_part() {
   # Function to get disk name from partition name, e.g. /dev/sda1 -> /dev/sda
   local ipart=$1  # ipart is like /dev/sda1
-  local parttmp hdtmp
-  parttmp="$(basename $ipart)"
-  hdtmp="$(get_diskname $parttmp)"
-  hdtmp=/dev/$hdtmp
+  local hdtmp
+  hdtmp="/dev/$(get_diskname $ipart)"
   echo "$hdtmp"
 } # end of get_disk_from_part
 #
@@ -228,7 +226,7 @@ inform_kernel_partition_table_changed() {
   local ptype=$1  # e.g. mbr, gpt
   local tdisk=$2  # e.g. /dev/sda
   if [ -z "$ptype" -o -z "$tdisk" ]; then
-    echo "No ptype or tdisk parameter was assigned in function inform_kernel_partition_table_changed. Program terminated." | tee --append ${OCS_LOGFILE}
+    echo "No ptype or tdisk parameter was assigned in function inform_kernel_partition_table_changed. Program terminated."
     copy_error_log
     exit 1
   fi
@@ -491,6 +489,7 @@ restore_hidden_data_after_MBR() {
 } # end of restore_hidden_data_after_MBR
 #
 cciss_dev_map_if_necessary() {
+  #//NOTE// This function is no more used after applied the multipath patch from Miracle Linux on Jan/08/2013.
   # Function to map the cciss dev (/dev/cciss/c0d0p1, /dev/cciss/c0d0p2...) as normal block dev (Ex, /dev/sda, /dev/sdb...)
   # Provided by Ron Kelley in June/2007
   # Modified by Steven Shiau in Aug/2008
@@ -548,7 +547,7 @@ gen_proc_partitions_map_file() {
      # The devfs is not compiled into kernel, good!
      # We'd better not use "cp -a /proc/partitions $partition_table", use cat to get the kernel param
      cat /proc/partitions > $partition_table
-     cciss_dev_map_if_necessary $partition_table
+     #cciss_dev_map_if_necessary $partition_table
   fi
 } # end of gen_proc_partitions_map_file
 #
@@ -1838,21 +1837,11 @@ check_grub_partition() {
   local partition_list=""
   local fs grub_p p_type rc
   # found_grub_partition is a global variable
-  gen_proc_partitions_map_file
-  partition_list=""
-  get_sort_V_opt
-  if [ -n "$select_disk" ]; then
-    # Search only on the select_disk
-    for i in $select_disk; do
-      if [ -n "$i" ]; then
-        # we have target disk, parsing it.
-        partition_list="$partition_list $(LC_ALL=C awk "/${i}[0-9]+/ { print \$4; }" $partition_table | sort $sort_V_opt)"
-      fi
-    done
-  else
-    # Search whole system
-    partition_list="$(get_part_list $partition_table)"
-  fi
+
+  # Here we do not search LVM, since grub partition won't be on LVM.
+  get_partition_list false "$select_disk"
+  # The partition_list is got from get_partition_list.
+
   found_grub_partition=""
   for ipartition in $partition_list; do
     grub_p="/dev/$ipartition"
@@ -3091,7 +3080,7 @@ create_partition() {
   # $create_par is a global variable
   local tgt_hd_file="$1"
   local tgt_dir="$2"
-  local tgt_hd_name="$(basename $tgt_hd_file)"
+  local tgt_hd_name="${tgt_hd_file#/dev/*}"
   local pt_type=""
   local src_disk_size_sec src_disk_size_GB tgt_disk_size_sec tgt_disk_size_GB to_seek do_gpt_dd gdisk_tmp sgdisk_rc
 
@@ -3102,13 +3091,11 @@ create_partition() {
   # The following actions must be after turn_off_swap_and_LVM2, since if swap and LVM2 is not off, partimage or ntfsclone will not be able to write the busy partitions. 
 
   echo "Creating partition in $tgt_hd_file..." | tee --append $OCS_LOGFILE
-  check_if_source_dev_busy_before_create_partition $tgt_hd_file
+  check_if_disk_busy_before_create_partition $tgt_hd_file
 
-  #
-  src_disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $tgt_dir/${tgt_hd_name}-pt.parted | awk -F":" '{print $2}' | sed -r -e "s/s$//g" -e "s/^[[:space:]]*//g")"
-  src_disk_size_GB="$(LC_ALL=C echo "scale=1; $src_disk_size_sec*512/1000.0^3" | bc -l)"
-  tgt_disk_size_sec="$(LC_ALL=C cat /sys/block/$tgt_hd_name/size)"
-  tgt_disk_size_GB="$(LC_ALL=C echo "scale=1; $tgt_disk_size_sec*512/1000.0^3" | bc -l)"
+  # src_disk_size_sec, src_disk_size_GB, tgt_disk_size_sec, tgt_disk_size_GB will be got from get_dsk_size_from_img_and_tgt_dsk_size_from_machine 
+  get_dsk_size_from_img_and_tgt_dsk_size_from_machine "$tgt_dir" "${tgt_hd_name}" "${tgt_hd_name}"
+
   if [ "$chk_tgt_disk_size_bf_mk_pt" = "yes" ]; then
     if [ "$src_disk_size_sec" -gt "$tgt_disk_size_sec" ]; then
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
@@ -3129,7 +3116,7 @@ create_partition() {
     LC_ALL=C sgdisk --zap-all $tgt_hd_file &>/dev/null
     sleep 1
     echo "Informing kernel the partition table has changed..." | tee --append ${OCS_LOGFILE}
-    inform_kernel_partition_table_changed mbr $tgt_hd_file
+    inform_kernel_partition_table_changed mbr $tgt_hd_file | tee --append ${OCS_LOGFILE}
   fi
 
   # From the output file of parted, we can decide if the partition is gpt or mbr
@@ -3245,6 +3232,13 @@ create_partition() {
               copy_error_log
               exit 1
             fi
+            if [ -f $tgt_dir/$(to_filename ${tgt_hd_name})-multipath ]; then
+              for i in $(cat $tgt_dir/$(to_filename ${tgt_hd_name})-multipath); do
+                echo -n "Making kernel re-read the partition table of /dev/$i... " | tee --append $OCS_LOGFILE
+                inform_kernel_partition_table_changed mbr /dev/$i | tee --append ${OCS_LOGFILE}
+                echo "done." | tee --append $OCS_LOGFILE
+              done
+            fi
             # Add another checking mechanism by parted, since sfdisk with -f won't return correct code.
             check_created_partition_table $tgt_hd_file $tgt_dir
 	    ;;
@@ -3258,7 +3252,7 @@ create_partition() {
       ocs-lvm2-stop
     fi
     echo "Informing kernel the partition table has changed..."
-    inform_kernel_partition_table_changed mbr $tgt_hd_file
+    inform_kernel_partition_table_changed mbr $tgt_hd_file | tee --append ${OCS_LOGFILE}
     ;;
   gpt)
     echo $msg_delimiter_star_line
@@ -3330,7 +3324,7 @@ create_partition() {
     fi
 
     echo "Informing kernel the partition table has changed..." | tee -a $OCS_LOGFILE
-    inform_kernel_partition_table_changed gpt $tgt_hd_file
+    inform_kernel_partition_table_changed gpt $tgt_hd_file | tee --append ${OCS_LOGFILE}
     sleep 1
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_the_partition_in_the_system_now:" | tee -a $OCS_LOGFILE
@@ -3920,7 +3914,7 @@ get_not_busy_disks_or_parts() {
     # CDROM won't be listed in /proc/partitions, so we do not have to worry about that when cloning.
     # Leave only selected disk
     if [ -n "$chosen_disk" ]; then
-      LC_ALL=C perl -i -ne "print if /^.*$chosen_disk/ .. /.*$/" $partition_table
+      LC_ALL=C perl -i -ne "print if m!^.*[[:space:]]+${chosen_disk}p?[0-9]*[[:space:]].*\$!" $partition_table
     fi
 
     # strip those busy/mounted partitions and disk.
@@ -3954,15 +3948,15 @@ get_not_busy_disks_or_parts() {
         # hda1 -> hda
         hdtmp="$(get_diskname $ipart)"
 	# strip disk
-        LC_ALL=C perl -i -ne "print unless /^.*$hdtmp[[:space:]]+/ .. /.*$/" $partition_table
+        LC_ALL=C perl -i -ne "print unless m!^.*${hdtmp}[[:space:]]+!" $partition_table
 	# strip parititon
-        LC_ALL=C perl -i -ne "print unless /^.*$ipart[[:space:]]+/ .. /.*$/" $partition_table
+        LC_ALL=C perl -i -ne "print unless m!^.*${ipart}[[:space:]]+!" $partition_table
       fi
     done
 
     # Strip those excluding devs
     for ipart in $dev_to_be_exclude; do
-      LC_ALL=C perl -i -ne "print unless /^.*$ipart[[:space:]]+/ .. /.*$/" $partition_table
+      LC_ALL=C perl -i -ne "print unless m!^.*${ipart}[[:space:]]+!" $partition_table
     done
 
     case "$dev_type" in
@@ -4070,8 +4064,9 @@ get_input_dev_name() {
       esac
     fi
 
+    :> $TMP # Clean the TMP file
     # prepare the dialog menu info
-    for p in $dev_list; do
+    for p in $(reduce_multipath_dev $dev_list); do
        DEV_MODEL=""
        #FILE="$(LC_ALL=C file -Ls "/dev/$p")"
        FILE="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null)"
@@ -4098,6 +4093,7 @@ get_input_dev_name() {
        esac
        HARDDEVS="$HARDDEVS $p $DEV_MODEL $dev_chosen_def"
     done
+    :> $TMP # Clean the TMP file
     # If large number of devices, we must allow it to be scrolled down.
     if [ "$NUMDEV" -lt "$MAX_DIALOG_HEIGHT" ]; then
        height="$NUMDEV"
@@ -5290,7 +5286,7 @@ do_unicast_stdin_restore() {
   # Informing kernel that the OS that partition table has changed since for BSD system, the partitions info exists in the slice
   hdtmp="$(get_disk_from_part $part)"
   pt_type="$(get_partition_table_type_from_disk $hdtmp)"
-  inform_kernel_partition_table_changed $pt_type $hdtmp
+  inform_kernel_partition_table_changed $pt_type $hdtmp | tee --append ${OCS_LOGFILE}
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   #copy_log $target_d $img_file
   return $rc
@@ -5334,7 +5330,7 @@ do_multicast_udpcast_restore() {
   # Informing kernel that the OS that partition table has changed since for BSD system, the partitions info exists in the slice
   hdtmp="$(get_disk_from_part $part)"
   pt_type="$(get_partition_table_type_from_disk $hdtmp)"
-  inform_kernel_partition_table_changed $pt_type $hdtmp
+  inform_kernel_partition_table_changed $pt_type $hdtmp | tee --append ${OCS_LOGFILE}
   
   # note! We must sleep a while to let the udp-receiver to finish their jobs then start the next ones.
   echo -n "Preparing the next... " | tee --append ${OCS_LOGFILE}
@@ -5673,22 +5669,14 @@ save_logv() {
     # vg /dev/hda2 qdlt6U-M4bo-xExy-XG9Q-U7pg-bOXN-n54i5Y
     # ----------------------------------------------------
     # Ex: target: hda1 hda2 hda3, DEV maybe: /dev/hda2
-    # MERGE_TO_DO: MSS's multipath
-    # If the device is CCISS RAID, we have to follow the file links since they
-    # are linkded by create-cciss-mapping
-    # Therefore here we use stat to get the real device name
-    # Before we use: if [ -n "$(echo "$target" | grep -E "\<${DEV##*/}\>")" ]; then
-    FND_PV="no"
-    for i in $target; do
-      if [ -n "$(LC_ALL=C stat --printf="%N\n" /dev/$i | awk -F" " '{print $NF}' | sed -r -e "s|\`||g" -e "s|'||g" | grep -Ew "${DEV##*/}")" ]; then
-        FND_PV="yes"
-        break
-      fi 
+    # New way to deal with CCISS RAID from Miracle Linux
+    tgt_parts=$(expand_multipath_dev "$target")
+    for pt in $tgt_parts; do
+      if [ -n "$(echo "$pt" | grep -E "\<${DEV##*/}\>")" ]; then
+        UUID="$(LC_ALL=C pvdisplay $DEV 2>/dev/null | grep "PV UUID" | awk -F" " '{print $3}')"
+        echo "$VG $DEV $UUID" | tee -a $PV_PARSE_CONF | tee --append $OCS_LOGFILE
+      fi
     done
-    if [ "$FND_PV" = "yes" ]; then
-      UUID="$(LC_ALL=C pvdisplay $DEV | grep "PV UUID" | awk -F" " '{print $3}')"
-      echo "$VG $DEV $UUID" | tee -a $PV_PARSE_CONF | tee --append $OCS_LOGFILE
-    fi
   done
 
   if [ ! -e "$PV_PARSE_CONF" ]; then
@@ -5812,7 +5800,7 @@ restore_logv() {
   local tgt_parts="$1"  # tgt_parts is like: hda1 hda2 hda5
   local mode="$2"
   local port="$3"
-  local volg is_in_chosen_partition lvm_tmp
+  local volg is_in_chosen_partition lvm_tmp ipt
   # target_dir_fullpath is local (in function task_saveparts) global variable, since restore_logv is used in function task_restoreparts 
   if [ -z "$mode" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -5942,11 +5930,17 @@ restore_logv() {
    #     vg3 /dev/hda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
    is_in_chosen_partition="no"
    for ipt in $tgt_parts; do
-     if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
-       # Found the chosen partitions is in the VG
-       is_in_chosen_partition="yes"
-       break
-     fi
+     for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
+       if [ "$ipt" = "$(get_master_dev_of_multipath $i)" ]; then
+         is_in_chosen_partition="yes"
+         continue
+       fi
+     done
+     #if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
+     #  # Found the chosen partitions is in the VG
+     #  is_in_chosen_partition="yes"
+     #  break
+     #fi
    done
    # If not in the chosen partition, skip this, continue with the next.
    [ "$is_in_chosen_partition" = "no" ] && continue
@@ -7084,6 +7078,11 @@ task_saveparts() {
   # create the image directory
   mkdir -p $target_dir_fullpath
 
+  # save multipath infomation file
+  if ls ${MULTIPATH_INFODIR}/*-multipath >/dev/null 2>&1; then
+    cp -f ${MULTIPATH_INFODIR}/*-multipath $target_dir_fullpath
+  fi
+
   # save partition table
   for ihd in $target_hd; do
     check_integrity_of_partition_table_in_disk /dev/$ihd
@@ -7500,16 +7499,23 @@ task_restoreparts() {
     done
   fi
 
+  PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
   do_LVM_restore="no"
   for partition in $target_parts; do
     # hda1 -> hda
     hd_tmp="$(get_diskname $partition)"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
-     if [ -n "$(grep -Ew "$partition" $target_dir_fullpath/lvm_vg_dev.list 2>/dev/null)" ]; then
-      # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
+    if [ -e $PV_PARSE_CONF ]; then
+      for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
+        if [ "$partition" = "$(get_master_dev_of_multipath $i)" ]; then
+          do_LVM_restore="yes"
+          continue
+        fi
+      done
+     elif check_LVM_partition /dev/$partition; then
       do_LVM_restore="yes"
       continue
-    fi
+     fi
     echo "Restoring partition /dev/$partition..." | tee --append $OCS_LOGFILE
     # From partimage 0.6.6, batch mode won't stop if checkInodeForDevice is not run. Therefore comment it.
     # checkInodeForDevice /dev/$partition
@@ -7680,7 +7686,7 @@ task_restoreparts() {
       dd if=$target_dir_fullpath/$(to_filename ${ihd})-mbr of=/dev/$ihd bs=512 count=1 &>/dev/null
       echo "done." | tee --append $OCS_LOGFILE
       echo -n "Making kernel re-read the partition table of /dev/$ihd... " | tee --append $OCS_LOGFILE
-      inform_kernel_partition_table_changed mbr /dev/$ihd
+      inform_kernel_partition_table_changed mbr /dev/$ihd | tee --append ${OCS_LOGFILE}
       echo "done." | tee --append $OCS_LOGFILE
       echo "The partition table of /dev/$ihd is:" | tee --append $OCS_LOGFILE
       fdisk -l /dev/$ihd
@@ -8285,7 +8291,7 @@ USAGE_common_general() {
     echo " -o0, --run-prerun-dir    Run the script in the direcoty $OCS_POSTRUN_DIR before clone is started. The command will be run before MBR is created or saved."
     echo " -o1, -o, --run-postrun-dir    Run the script in the direcoty $OCS_POSTRUN_DIR when clone is finished. The command will be run before that assigned in -p or --postaction."
     echo " -w, --wait-time TIME     Wait for TIME secs before saving/restoring"
-    echo " --nogui                  Do not show GUI of partimage, use text only"
+    echo " -nogui, --nogui          Do not show GUI (TUI) of Partclone or Partimage, use text only"
     echo " -a, --no-force-dma-on    Do not force to turn on HD DMA"
     echo " -mp, --mount-point MOUNT_POINT Use NFS to mount MOUNT_POINT as directory ocsroot (ocsroot is assigned in drbl.conf)"
     echo " -or, --ocsroot DIR       Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
@@ -8341,10 +8347,13 @@ check_if_target_dev_busy_before_restoring() {
   fi
 } # end of check_if_target_dev_busy_before_restoring
 #
-check_if_source_dev_busy_before_create_partition() {
+check_if_disk_busy_before_create_partition() {
+  # Check disk is busy or not. E.g. 
+  # /dev/sda is busy due to /dev/sda1 is mounted.
+  # /dev/cciss/c0d0 is busy due to /dev/cciss/c0d0p1 is mounted.
   local src_dev=$1
   [ -z "$src_dev" ] && return 1
-  mounted_parts="$(mount | grep -Ew "^${src_dev}[0-9]*")"
+  mounted_parts="$(LC_ALL=C mount | grep -Ew -- "^${src_dev}([0-9]*|(p[0-9]+))")"
   if [ -n "$mounted_parts" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "$src_dev is busy. Some partition is mounted." | tee --append ${OCS_LOGFILE}
@@ -8357,7 +8366,7 @@ check_if_source_dev_busy_before_create_partition() {
     copy_error_log
     exit 1
   fi
-} # end of check_if_source_dev_busy_before_create_partition
+} # end of check_if_disk_busy_before_create_partition
 #
 is_spawned_by_drbl_ocs() {
   local ppid_="$1" 
@@ -9081,7 +9090,7 @@ edd_id_map_by_capacity() {
   local disk_="$(basename $1)"  # e.g. hda
   local capacity edd_mapdev
   [ ! -e "$1" ] && return 1
-  capacity="$(< /sys/block/$disk_/size)"
+  capacity="$(< /sys/block/$(to_sysblock_name $disk_)/size)"
   if [ -n "$capacity" ]; then
     for i in /sys/firmware/edd/int13_*; do
       if grep -q "$capacity" $i/sectors 2>/dev/null; then
@@ -9570,6 +9579,7 @@ check_mbr_disk_size_gt_2TiB() {
 # Functions from Miracle Linux
 # ############################
 is_supported_dev() {
+  # //NOTE// If new RE* is added, remember to check the function check_if_disk_busy_before_create_partition has to be modified, too.
   local disk=${1#/dev/*}
   local RE1='[hsv]d[a-z]+[0-9]*'
   local RE2='i2o/hd[a-z]+[0-9]*'
@@ -9584,6 +9594,7 @@ is_supported_dev() {
 } # end of is_supported_dev
 #
 is_partition() {
+  # //NOTE// If new RE* is added, remember to check the function check_if_disk_busy_before_create_partition has to be modified, too.
   local disk=${1#/dev/*}
   local RE1='[hsv]d[a-z]+[0-9]+'
   local RE2='i2o/hd[a-z]+[0-9]+'
@@ -9650,6 +9661,8 @@ to_filename() {
 } # end of to_filename
 #
 to_sysblock_name() {
+  # Function to convert /sys/ file name, e.g. the cciss/c0d0 file name under /sys is /sys/block/cciss!c0d0/size
+  # We have convert to /sys/block/cciss!c0d0/size
   local src=$1
   echo "$src" | sed -e 's:/:!:g'
 } # end of to_sysblock_name
@@ -9766,6 +9779,179 @@ is_domain(){
   domain=$1
   perl -MData::Validate::Domain -e "if (Data::Validate::Domain::is_domain(\"$domain\")) { exit 0 } else { exit 1 }"
 } # end of is_domain
+#
+select_VG() {
+  local target_hd="$*"
+  local pvscan_tmp tmp disk vg new_target_hd disk_of_vg
+
+  pvscan_tmp="$(mktemp /tmp/pvscan_tmp.XXXXXX)"
+  pvscan 2>/dev/null 3<&- 4<&- | grep -v Total > $pvscan_tmp
+
+  tmp="$(mktemp /tmp/tmp.XXXXXX)"
+  for disk in $(expand_multipath_dev $target_hd); do
+    echo "$disk" >> $tmp
+    if grep "${disk}" $pvscan_tmp 2>/dev/null | grep -q "VG"; then
+      vg="$(grep "${disk}" $pvscan_tmp | awk '{ print $4 }')"
+      grep "$vg" $pvscan_tmp \
+      | awk '{ print $2 }' \
+      | while read disk_of_vg; do
+        get_master_dev_of_multipath "$(get_diskname $disk_of_vg)"
+      done >> $tmp
+    fi
+  done
+  new_target_hd="$(LC_ALL=C sort $tmp | uniq | tr '\n' ' ' | sed -e 's/ $//g')"
+  reduce_multipath_dev $new_target_hd
+
+  [ -f "$tmp" ] && rm -f $tmp
+  [ -f "$target_hd_tmp" ] && rm -f $target_hd_tmp
+  [ -f "$pvscan_tmp" ] && rm -f $pvscan_tmp
+} # end of select_VG
+#
+# Functions for multipath
+#
+pseudo_get_disk_serial_no() {
+  local disk="$1"
+  local pseudo_serialno="${MSS_PSEUDO}/${FUNCNAME}/$(to_filename ${disk})-serialno"
+
+  if [ -e "$pseudo_serialno" ]; then
+    cat "$pseudo_serialno"
+  else
+    get_disk_serial_no "$disk"
+  fi
+} # end of pseudo_get_disk_serial_no
+#
+get_master_dev_of_multipath() {
+  local disk="$(get_diskname $1)"
+  local pt=$(get_part_number "$1")
+  local i master_dev multipath_infodir
+
+  if [ -e "$ocsroot/$target_dir" ]; then
+    multipath_infodir="${ocsroot}/${target_dir}"
+  else
+    multipath_infodir="${MULTIPATH_INFODIR}"
+  fi
+  for i in ${multipath_infodir}/*-multipath; do
+    if [ ! -e "$i" ]; then
+      master_dev=$disk
+      break
+    fi
+    if grep -q "$disk" $i ; then
+      master_dev=$(basename $i | sed -e 's/-multipath//g')
+    fi
+  done
+  echo "$master_dev$pt"
+} # end of get_master_dev_of_multipath
+# Function Name: 
+#   expand_multipath_dev
+# Description:
+#   Return the device names associated with the multipath
+# Global Variables:
+#   MULTIPATH_INFODIR
+# Arguments:
+#   $@ - Device name (eg. sda)
+# Output String:
+#   multipath device names
+# Return Value:
+#   0 - Success
+#   1 - Fail
+#
+expand_multipath_dev() {
+  local target="$@"
+  local tgt_dsk tgt_ptnum tgt_parts dsk multipath_list i
+  local rc=1
+
+  tgt_parts="$target"
+  for i in $target; do
+    tgt_dsk=$(get_diskname "$i")
+    tgt_ptnum=""
+    if is_partition $i; then
+      tgt_ptnum=$(get_part_number "$i")
+    fi
+    if [ -n "$ocsroot" ] && [ -e "$ocsroot/$target_dir" ]; then
+      multipath_list="${ocsroot}/${target_dir}/$(to_filename ${tgt_dsk})-multipath"
+    else
+      multipath_list="${MULTIPATH_INFODIR}/$(to_filename ${tgt_dsk})-multipath"
+    fi
+
+    if [ -f "$multipath_list" ]; then
+      if [ -s "$multipath_list" ]; then
+        for dsk in $(cat "$multipath_list"); do
+          tgt_parts="$tgt_parts ${dsk}${tgt_ptnum}"
+          rc=0
+        done
+      fi
+    fi
+  done
+
+  echo $(echo "$tgt_parts" | tr ' ' '\n' | sort)
+  return $rc
+} # end of expand_multipath_dev
+# Function Name: 
+#   reduce_multipath_dev
+# Description:
+#   Eliminate duplicate path
+# Global Variables:
+#   MULTIPATH_INFODIR
+#   TMP - Temporary file name
+# Arguments:
+#   $@ - Device names (e.g. sda sdb)
+# Output String:
+#   Device names
+# Return Value:
+#   none
+#
+reduce_multipath_dev() {
+  local dev_list="$@"
+  local new_dev_list=""
+  local dup_list=""
+  local serialno multipath_list pt p file
+
+  cp /dev/null $TMP
+  for p in $dev_list; do
+    disk=$(get_diskname "$p")
+    pt=""
+    if is_partition $p; then
+      pt=$(get_part_number "$p")
+    fi
+    serialno=$(pseudo_get_disk_serial_no "$disk")
+    if [ -n "$serialno" ]; then
+      serialno_tbl=$(grep "$serialno" $TMP 2>/dev/null)
+      if [ $? -eq 0 ]; then
+        checked_disk=$(echo $serialno_tbl | awk '{ print $1 }')
+        multipath_list="${MULTIPATH_INFODIR}/$(to_filename ${checked_disk})-multipath"
+        if [ -n "$pt" ]; then
+          if [ "${checked_disk}" = "${disk}" ]; then
+            new_dev_list="${new_dev_list} ${disk}${pt}"
+          else
+            dup_list=$(echo "$(cat ${multipath_list}) ${disk}" | sed -e 's/^ //g')
+            echo $dup_list > $multipath_list
+          fi
+        else
+          dup_list=$(echo "$(cat ${multipath_list}) ${disk}" | sed -e 's/^ //g')
+          echo $dup_list > $multipath_list
+        fi
+      else
+        if [ -n "$pt" ]; then
+          new_dev_list="${new_dev_list} ${disk}${pt}"
+        else
+          new_dev_list="${new_dev_list} ${disk}"
+        fi
+        echo "${disk} ${serialno}" >> $TMP
+        cp /dev/null "${MULTIPATH_INFODIR}/$(to_filename ${disk})-multipath"
+      fi
+    else
+      new_dev_list="${new_dev_list} ${disk}${pt}"
+    fi
+  done
+  for file in ${MULTIPATH_INFODIR}/*-multipath; do
+    [ -e "$file" ] || continue
+    if [ $(stat -c "%s" $file) -eq 0 ]; then
+      rm -f $file
+    fi
+  done
+  cp /dev/null $TMP
+  echo "${new_dev_list}" | sed -e 's/^ //g'
+} # end of reduce_multipath_dev
 # ############################
 # End of functions from Miracle Linux
 # ############################
@@ -9798,3 +9984,84 @@ ocs_log_rotate() {
     mv -f ${file_} ${file_}.0
   fi
 } # end of ocs_log_rotate
+#
+get_dsk_size_from_img_and_tgt_dsk_size_from_machine() {
+  local path_to="$1"     # e.g. /home/partimag/my-img/
+  local src_dsk_n="$2"    # e.g. "sda" in the $path_to, so it becomes /home/partimag/my-img/sda-pt.parted
+  local tgt_dsk_f="$3"   # e.g. /dev/sda or /dev/cciss/c0d0
+  # src_disk_size_sec, src_disk_size_GB, tgt_disk_size_sec, tgt_disk_size_GB are global variables.
+
+  # Reset the global variables
+  src_disk_size_sec=""
+  src_disk_size_GB=""
+  tgt_disk_size_sec=""
+  tgt_disk_size_GB=""
+  # Do not use parted here since if no partition table on disk, it shows no disk size info.
+  #tgt_disk_size_sec="$(LC_ALL=C parted -s /dev/$target_hd unit s print | grep -E "^Disk /dev/" | awk -F":" '{print $2}' | sed -e "s/s$//g" -e "s/^[[:space:]]*//g")"
+  src_disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $path_to/$(to_filename ${src_dsk_n})-pt.parted | awk -F":" '{print $2}' | sed -r -e "s/s$//g" -e "s/^[[:space:]]*//g")"
+  src_disk_size_GB="$(LC_ALL=C echo "scale=1; $src_disk_size_sec*512/1000.0^3" | bc -l)"
+  tgt_disk_size_sec="$(LC_ALL=C cat /sys/block/$(to_sysblock_name ${tgt_dsk_f})/size)"
+  tgt_disk_size_GB="$(LC_ALL=C echo "scale=1; $tgt_disk_size_sec*512/1000.0^3" | bc -l)"
+  # Checking if the number got or not.
+  if [ -z "$src_disk_size_sec" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Disk ($tgt_hd_name) size from image $tgt_dir NOT found." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    copy_error_log
+    exit 1
+  fi
+  if [ -z "$tgt_disk_size_sec" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to find the disk ($tgt_hd_name) size on this machine." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    copy_error_log
+    exit 1
+  fi
+} # end of get_dsk_size_from_img_and_tgt_dsk_size_from_machine
+#
+get_partition_list() {
+  # Function to get the partitions list on the system.
+  local LVM_FLAG="$1"  # Searching LVM or not. use true or false
+  local select_disk="$2"  # select_disk is like sda, sdb, or c0d0. If not assigned, the available disks on the system will be searched.
+  local partition_list_all
+  # partition_list is global variable
+
+  # Reset global variable
+  partition_list=""
+  gen_proc_partitions_map_file
+  get_sort_V_opt
+  # First we search the whole system
+  partition_list_all="$(get_part_list $partition_table)"
+  if [ -n "$select_disk" ]; then
+    # list only on the select_disk
+    for i in $select_disk; do
+	# we have target disk, parsing it. //NOTE// multipath (i.e. with "/"), like cciss/c0d0p1 should be considered here. The output should like:
+        # cciss/c0d0p1 cciss/c0d0p2 cciss/c0d0p5 cciss/c0d0p6 sda1
+        partition_list="$partition_list $(LC_ALL=C echo $partition_list_all | grep -Eo "([^[:space:]]+/$i[^[:space:]]+|$i[^[:space:]]+)" | sort $sort_V_opt )"
+        partition_list="$(echo $partition_list)"  # Make it in 1 line
+      if [ "$LVM_FLAG" = "true" ]; then
+	# (2) For LVM, the output of "pvs -o+lv_name" is like:
+	# $ pvs -o+lv_name
+	#  PV         VG           Fmt  Attr PSize PFree  LV
+	#  /dev/sda5  lucid-server lvm2 a-   7.76g 32.00m root
+	#  /dev/sda5  lucid-server lvm2 a-   7.76g 32.00m swap_1
+	#  /dev/sda5  lucid-server lvm2 a-   7.76g 32.00m
+	#  /dev/sdb5  squeeze      lvm2 a-   7.76g     0  root
+	#  /dev/sdb5  squeeze      lvm2 a-   7.76g     0  swap_1
+	#  /dev/sdb5  squeeze      lvm2 a-   7.76g     0  home
+	# We want the output as like "/lucid-server/root/" (/dev will be added later). Here we do not use something like "/dev/dm-0" since the output of pvs is not that style.
+	partition_list="$partition_list $(LC_ALL=C pvs -o+lv_name | grep -E "/dev/${i}[0-9]+" | awk -F" " '{print $2"/"$7}')"
+      fi
+    done
+  else
+    # Search whole system
+    partition_list="$partition_list_all"
+    if [ "$LVM_FLAG" = "true" ]; then
+      # Search whole system, not only hda, sda, vda, but also dm-0, dm-1 (LVM).
+      # For LVM here we use something like /dev/dm-0 (not /dev/squeeze/root) since it's directly from /proc/partitions. This is easier.
+      partition_list="$partition_list $(LC_ALL=C awk '/dm-[0-9]/ { print $4; }' $partition_table | sort $sort_V_opt)"
+    fi
+  fi
+} # end of get_partition_list

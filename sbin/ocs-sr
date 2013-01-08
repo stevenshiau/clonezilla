@@ -990,6 +990,7 @@ turn_off_swap_and_LVM2
 case "$ocs_sr_type" in
   "savedisk")
     task_preprocessing "$ocs_sr_type"
+    MULTIPATH_INFODIR="$(mktemp -d /tmp/multipath_info.XXXXXX)"
 
     if [ "$ocs_sr_img_name" = "ask_user" ]; then
       get_target_dir_name_when_saving  # get $target_dir
@@ -1039,6 +1040,7 @@ case "$ocs_sr_type" in
     if [ "$ocs_sr_dev" = "ask_user" ]; then
       # To get $target_hd
       get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
+      target_hd="$(select_VG "$target_hd")"
     elif [ "$ocs_sr_dev" = "all" ]; then
       get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
       target_hd="$dev_list"
@@ -1059,6 +1061,7 @@ case "$ocs_sr_type" in
     run_ocs_sr_again_prompt "$target_dir" "$target_hd"
 
     task_savedisk "$target_dir" "$target_hd"
+    [ -n "$MULTIPATH_INFODIR" ] && rm -rf "$MULTIPATH_INFODIR"
     if [ "$?" -eq 0 -a "$chk_img_restoreable" = "yes" ]; then
       check_image_if_restorable
     fi
@@ -1068,6 +1071,7 @@ case "$ocs_sr_type" in
     ;;
   "restoredisk")
     task_preprocessing "$ocs_sr_type"
+    MULTIPATH_INFODIR="$(mktemp -d /tmp/multipath_info.XXXXXX)"
 
     if [ "$ocs_sr_img_name" = "ask_user" ]; then
       get_target_dir_name_when_restoring_disk  # get $target_dir
@@ -1100,6 +1104,7 @@ case "$ocs_sr_type" in
 
     run_ocs_sr_again_prompt "$target_dir" "$target_hd"
     task_restoredisk "$target_dir" "$target_hd"
+    [ -n "$MULTIPATH_INFODIR" ] && rm -rf "$MULTIPATH_INFODIR"
     task_postprocessing "$ocs_sr_type" "$target_dir"
     ;;
   "saveparts")

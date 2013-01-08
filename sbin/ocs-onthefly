@@ -88,12 +88,12 @@ check_pt_then_run_create_part_table() {
     fdisk_ans="yes"
   fi
 
-  # Do not use parted here since if no partition table on disk, it shows no disk size info.
-  #tgt_disk_size_sec="$(LC_ALL=C parted -s /dev/$target_hd unit s print | grep -E "^Disk /dev/" | awk -F":" '{print $2}' | sed -e "s/s$//g" -e "s/^[[:space:]]*//g")"
-  src_disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $tgt_parted_info | awk -F":" '{print $2}' | sed -r -e "s/s$//g" -e "s/^[[:space:]]*//g")"
-  src_disk_size_GB="$(LC_ALL=C echo "scale=1; $src_disk_size_sec*512/1000.0^3" | bc -l)"
-  tgt_disk_size_sec="$(LC_ALL=C cat /sys/block/$target_hd/size)"
-  tgt_disk_size_GB="$(LC_ALL=C echo "scale=1; $tgt_disk_size_sec*512/1000.0^3" | bc -l)"
+  # src_disk_size_sec, src_disk_size_GB, tgt_disk_size_sec, tgt_disk_size_GB will be got from get_dsk_size_from_img_and_tgt_dsk_size_from_machine 
+  # Since tgt_parted_info is definted as:
+  # tgt_parted_info="$hd_tgt_tmp/tgt-pt.parted"
+  # the device name is always "tgt".
+  get_dsk_size_from_img_and_tgt_dsk_size_from_machine "$(dirname $tgt_parted_info)" "tgt" "${target_hd}"
+
   if [ "$chk_tgt_disk_size_bf_mk_pt" = "yes" ]; then
     if [ "$src_disk_size_sec" -gt "$tgt_disk_size_sec" ]; then
      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -445,7 +445,7 @@ prepare_local_clone_dev_info() {
   tgt_dsk_mbr="$hd_tgt_tmp/${target_hd}-mbr"
   tgt_dsk_chs="$hd_tgt_tmp/${target_hd}-chs.sf"
   tgt_pt_info="$hd_tgt_tmp/target_partition.info"
-  tgt_parted_info="$hd_tgt_tmp/tgt_pt.parted"
+  tgt_parted_info="$hd_tgt_tmp/tgt-pt.parted"
   tgt_1st_gpt="$hd_tgt_tmp/tgt-gpt-1st.img"
   tgt_2nd_gpt="$hd_tgt_tmp/tgt-gpt-2nd.img"
   tgt_gpt_gdisk="$hd_tgt_tmp/tgt-gpt.gdisk"
@@ -836,7 +836,7 @@ ADVAN_PARAM_END
     # For target dik
     tgt_pt_tmp="$hd_tgt_tmp/tgt_pt.sf"
     tgt_pt_info="$hd_tgt_tmp/tgt_partition.info"
-    tgt_parted_info="$hd_tgt_tmp/tgt_pt.parted"
+    tgt_parted_info="$hd_tgt_tmp/tgt-pt.parted"
     tgt_1st_gpt="$hd_tgt_tmp/tgt-gpt-1st.img"
     tgt_2nd_gpt="$hd_tgt_tmp/tgt-gpt-2nd.img"
     tgt_gpt_gdisk="$hd_tgt_tmp/tgt-gpt.gdisk"
@@ -1622,7 +1622,7 @@ USAGE() {
     echo "-f, --source DEV         Specify the source device as DEV (sda, sda1...)"
     echo "-g, --grub-install GRUB_PARTITION     Install grub in the MBR of the disk containing partition GRUB_PARTITION with root grub directory in the same GRUB_PARTITION when restoration finishs, GRUB_PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the grub root partition automatically). If \"auto\" is assigned, it will work if grub partition and root partition are not in the same partition."
     echo "-i, --filter PROGRAM     Use the PROGRAM (gzip/lzop/bzip2/cat) before sending partition data to netcat (only in network clone mode). The default action is gzip. Use \"cat\" if you do not want to compress (Good for fast internode network)."
-    echo "-nogui, --nogui          Do NOT show GUI of partimage, use text only"
+    echo "-nogui, --nogui          Do not show GUI (TUI) of Partclone or Partimage, use text only"
     echo "-rescue, --rescue        Turn on rescue mode, i.e. try to skip bad sectors."
     echo "-irhr, --irhr            Skip removing the Linux udev hardware records on the restored GNU/Linux."
     echo "-ius, --ius              Skip updating syslinux-related files on the restored GNU/Linux."
@@ -1797,8 +1797,8 @@ set_ocs_onthefly_extra_param() {
     "-e2 "      "$msg_ocs_onthefly_param_e2" on \
     "-j2 "      "$msg_ocs_onthefly_param_j2" on \
     "-r "       "$msg_ocs_onthefly_param_e" on \
-    "-q1 "      "$msg_ocs_onthefly_param_q1" off \
     "-nogui "   "$msg_ocs_onthefly_param_nogui" off \
+    "-q1 "      "$msg_ocs_onthefly_param_q1" off \
     "-m "       "$msg_ocs_onthefly_param_m" off \
     "-rescue "  "$msg_ocs_onthefly_param_rescue" off \
     "-irhr "    "$msg_ocs_onthefly_param_irhr" off \
