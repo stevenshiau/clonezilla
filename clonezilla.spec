@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Function active_proc_partitions was moved to ocs-functions from drbl-functions.
+
 * Wed Jan 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.8-drbl1
 - Program create-ocs-tmp-img has been improved to be multipath compatible.
 

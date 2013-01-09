@@ -10065,3 +10065,18 @@ get_partition_list() {
     fi
   fi
 } # end of get_partition_list
+#
+active_proc_partitions() {
+  # Function to active the /proc/partitions. For SCSI devices, even when device
+  # modules is loaded, the device is not shown in /proc/partitions if no program
+  # like fdisk or sg_map runs... We also do it for /dev/hdx.
+  local disk_proc
+  disk_proc="$(get_disk_list /proc/partitions)"
+  echo -n "Activating the partition info in /proc... "
+  for ihd in $disk_proc; do
+     fdisk -l /dev/$ihd &> /dev/null
+     # Just in case, use another program. Also for GPT disk.
+     parted -s /dev/$ihd print &> /dev/null
+  done
+  echo "done!"
+} # end of active_proc_partitions
