@@ -38,6 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 - Function active_proc_partitions was moved to ocs-functions from drbl-functions.
+- Bug fixed: Swap partition of cciss partition was not saved.
 
 * Wed Jan 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.8-drbl1
 - Program create-ocs-tmp-img has been improved to be multipath compatible.

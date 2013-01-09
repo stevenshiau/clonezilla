@@ -1797,7 +1797,6 @@ get_known_partition_proc_format() {
        # Skip swap and extended partition
        # We do not use the output of fdisk -l, it's type mabe like Extended, Ext'd, it's not easy to tell... We do not use file to get the partition type, either, since in newer version (e.g. in Debian lenny) it won't show anything about extended.
        echo -n "."
-       #part_type="$(LC_ALL=C file -Ls "/dev/$p" 2>/dev/null)"
        part_type="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null | sort)"
        rc=$?
        [ "$rc" -gt 0 ] && continue 
@@ -1808,20 +1807,10 @@ get_known_partition_proc_format() {
          if [ "$skip_lvm" = "yes" ]; then
            case "$part_type" in *[Ll][Vv][Mm]*) continue ;; esac
          fi
-         # For some version of file (e.g. 4.25-1 in Debian lenny), file -Ls will give extended partiton as something like: /dev/hda2: x86 boot sector; partition 1: ID=0x82, starthead 1, startsector 63, 819252 sectors
-         # i.e. No "extended" keyword.
-         # Therefore here we use parted to check it again.
-         # Ex: parted -s /dev/hda print | grep -i -A10000 "^Number" | grep -iEw "^[[:space:]]*2" | grep -io 'extended'
-	 [ -n "$(LC_ALL=C parted -s /dev/$(get_diskname $p) print | grep -i -A10000 "^Number" | grep -iEw "^[[:space:]]*$(get_part_number $p)" | grep -ioE 'extended')" ] && continue
          ;;
        swap)
          # We want swap partition only, so only include swap.
          [ -z "$(echo "$part_type" | grep -i swap)" ] && continue
-         # For some version of file (e.g. 4.25-1 in Debian lenny), file -Ls will give extended partiton as something like: /dev/hda2: x86 boot sector; partition 1: ID=0x82, starthead 1, startsector 63, 819252 sectors
-         # i.e. No "extended" keyword.
-         # Therefore here we use parted to check it again.
-         # Ex: parted -s /dev/hda print | grep -i -A10000 "^Number" | grep -iEw "^[[:space:]]*2" | grep -io 'extended'
-	 [ -z "$(LC_ALL=C parted -s /dev/$(get_diskname $p) print | grep -i -A10000 "^Number" | grep -iEw "^[[:space:]]*$(get_part_number $p)" | grep -ioE 'swap')" ] && continue
          ;;
        esac
        BACKUP_DEVS="$BACKUP_DEVS $p"
@@ -5506,8 +5495,8 @@ udp_send_part_img() {
   # part is like: hda1 or lv0l0
   # imagedir, port and ipart are global variable
   local target_d="$1"
-  local img_file="$2"  # e.g. hda1
-  local part="$3"      # e.g. hda1
+  local img_file="$(to_filename $2)"  # e.g. sda1.ext4-ptcl-img.gz.aa or cciss-c0d0p1.ext4-ptcl-img.gz.aa
+  local part="$3"      # e.g. sda1
   local n split_by
   # for the 2nd and other partition, we should shorten the preparation time
   [ -n "$mcast_wait_time" -a $ipart -gt 1 ] && udpcast_hold_opt1="--min-wait $PART_PREPARE_TIME" 
@@ -5779,7 +5768,7 @@ save_logv() {
    # skip swap or extended partition
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*)
-       output_swap_partition_uuid_label $lv $target_dir_fullpath/swappt-${fn}.info
+       output_swap_partition_uuid_label $lv $target_dir_fullpath/swappt-$(to_filanema ${fn}).info
        continue ;;
      *extended*) 
        continue ;;
@@ -5950,13 +5939,13 @@ restore_logv() {
      *[Ss][Ww][Aa][Pp]*)
         echo $msg_delimiter_star_line
         echo "Found the swap partition $lv info, create it by:"
-        # read LABEL, UUID info for $partition if swappt-${fn}.info exists
+	# read LABEL, UUID info for $partition if swappt-$(to_filename ${fn}).info exists
         uuid_opt=""
         label_opt=""
-        if [ -e "$target_dir_fullpath/swappt-${fn}.info" ]; then
+	if [ -e "$target_dir_fullpath/swappt-$(to_filename ${fn}).info" ]; then
           UUID=""
           LABEL=""
-          . "$target_dir_fullpath/swappt-${fn}.info"
+	  . "$target_dir_fullpath/swappt-$(to_filename ${fn}).info"
           [ -n "$UUID" ] && uuid_opt="-U $UUID"
           [ -n "$LABEL" ] && label_opt="-L $LABEL"
         fi
@@ -6038,9 +6027,9 @@ feed_LVM_multicast() {
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*) continue;; 
    esac
-   if [ -z "$(unalias ls 2>/dev/null; ls $imagedir/$target_dir/$fn* 2>/dev/null)" ]; then
+   if [ -z "$(unalias ls 2>/dev/null; ls $imagedir/$target_dir/$(to_filename $fn)* 2>/dev/null)" ]; then
      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "$imagedir/$target_dir/$fn* was not found! The restored OS might be uncompleted!"
+     echo "$imagedir/$target_dir/$(to_filename $fn)* was not found! The restored OS might be uncompleted!"
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
      echo -n "$msg_press_enter_to_continue..."
      read
@@ -6954,8 +6943,8 @@ task_savedisk() {
     target_swap_parts="$target_swap_parts $BACKUP_DEVS"
   done
 
-  [ -n "$target_parts" ] && echo "The data partition to be saved: $target_parts" | tee --append $OCS_LOGFILE
-  [ -n "$target_swap_parts" ] && echo "The swap partition to be saved: $target_swap_parts" | tee --append $OCS_LOGFILE
+  [ -z "$target_parts" ] || echo "The data partition to be saved: $target_parts" | tee --append $OCS_LOGFILE
+  [ -z "$target_swap_parts" ] || echo "The swap partition to be saved: $target_swap_parts" | tee --append $OCS_LOGFILE
   # Let task_saveparts do the real job. However, we do not generate md5sums, sha1sums in task_saveparts, since there are some files will be created later. We will generate them in the end of this function.
   gen_md5sum_status="$gen_md5sum"; gen_sha1sum_status="$gen_sha1sum" # save values
   gen_md5sum="no"; gen_sha1sum="no"
@@ -6967,8 +6956,8 @@ task_savedisk() {
   # save swap partition UUID/LABEL if it exists.
   echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   for isp in $target_swap_parts; do
-    echo "Saving swap partition $isp info in $ocsroot/$target_dir/swappt-${isp}.info if it exists..." | tee --append $OCS_LOGFILE
-    output_swap_partition_uuid_label /dev/$isp $ocsroot/$target_dir/swappt-${isp}.info
+    echo "Saving swap partition $isp info in $ocsroot/$target_dir/swappt-$(to_filename ${isp}).info if it exists..." | tee --append $OCS_LOGFILE
+    output_swap_partition_uuid_label /dev/$isp $ocsroot/$target_dir/swappt-$(to_filename ${isp}).info
   done
 
   # The target_dir is local variable, so we put leading $ocsroot to save the disk
@@ -7564,13 +7553,13 @@ task_restoreparts() {
           echo "Creating swap partition /dev/$partition..." | tee --append $OCS_LOGFILE
           check_specify_part_exists $partition
           echo "Found the swap partition /dev/$partition info in the image dir, create it by:" | tee --append $OCS_LOGFILE
-          # read LABEL, UUID info for $partition if swappt-$partition.info exists
+	  # read LABEL, UUID info for $partition if swappt-$(to_filename $partition).info exists
           uuid_opt=""
           label_opt=""
-          if [ -e "$target_dir_fullpath/swappt-$partition.info" ]; then
+	  if [ -e "$target_dir_fullpath/swappt-$(to_filename $partition).info" ]; then
             UUID=""
             LABEL=""
-            . "$target_dir_fullpath/swappt-$partition.info"
+	    . "$target_dir_fullpath/swappt-$(to_filename $partition).info"
             [ -n "$UUID" ] && uuid_opt="-U $UUID"
             [ -n "$LABEL" ] && label_opt="-L $LABEL"
           fi
@@ -7586,13 +7575,13 @@ task_restoreparts() {
           echo "Creating swap partition /dev/$partition..." | tee --append $OCS_LOGFILE
           check_specify_part_exists $partition
           echo "Found the swap partition /dev/$partition info in the image dir, create it by:" | tee --append $OCS_LOGFILE
-          # read LABEL, UUID info for $partition if swappt-$partition.info exists
+	  # read LABEL, UUID info for $partition if swappt-$(to_filename $partition).info exists
           uuid_opt=""
           label_opt=""
-          if [ -e "$target_dir_fullpath/swappt-$partition.info" ]; then
+	  if [ -e "$target_dir_fullpath/swappt-$(to_filename $partition).info" ]; then
             UUID=""
             LABEL=""
-            . "$target_dir_fullpath/swappt-$partition.info"
+	    . "$target_dir_fullpath/swappt-$(to_filename $partition).info"
             [ -n "$UUID" ] && uuid_opt="-U $UUID"
             [ -n "$LABEL" ] && label_opt="-L $LABEL"
           fi
