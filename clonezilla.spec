@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: ocs-get-part-info failed to identify the cciss partition type.
+
 * Tue Jan 08 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.6-drbl1
 - All "hsv" related codes of Clonezilla were converted to multipath compatible.
 - The multipath codes from Miracle Linux were merged.

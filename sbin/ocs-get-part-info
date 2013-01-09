@@ -50,6 +50,20 @@ check_col_idx() {
   # 2      210MB   38.3GB  38.1GB  hfs+         Untitled
   # 3      38.4GB  41.6GB  3221MB  fat32        Untitled
   #
+  # For multipath device (e.g. cciss):
+  #root@cciss:~# parted -s /dev/cciss/c0d0 print
+  #Model: Compaq Smart Array (cpqarray)
+  #Disk /dev/cciss/c0d0: 440GB
+  #Sector size (logical/physical): 512B/512B
+  #Partition Table: msdos
+  #
+  #Number  Start   End    Size    Type      File system     Flags
+  # 1      1049kB  107GB  107GB   primary   ext4
+  # 2      107GB   440GB  333GB   extended
+  # 5      107GB   161GB  53.7GB  logical   reiserfs
+  # 6      161GB   172GB  10.7GB  logical   linux-swap(v1)
+  # 7      172GB   440GB  269GB   logical   xfs
+  #
   # Different version of parted has different output format, that's why it's so complicated here.
   local DEV=$1
   local wanted=$2
@@ -72,10 +86,10 @@ check_col_idx() {
 
 #
 get_from_parted() {
-  p="$(basename $part)"
-  target_hd="/dev/$(get_diskname $p)"
-  part_index="$(get_part_number $p)"
   local part_info
+  target_hd="/dev/$(get_diskname $part)"
+  # For cciss partition, e.g. /dev/cciss/c0d0p2 will be "p2" which is got from $(get_part_number /dev/cciss/c0d0p2)", here the part_index we want is only number, hence we need to trip the leading characters.
+  part_index="$(LC_ALL=C get_part_number $part | sed -r -e "s|^[^[:digit:]]*||g")"
   
   part_info="$(mktemp /tmp/part.XXXXXX)"
   [ -n "$unit" ] && unit_opt="unit $unit"
