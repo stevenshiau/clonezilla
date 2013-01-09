@@ -39,6 +39,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 %changelog
 - Bug fixed: ocs-get-part-info failed to identify the cciss partition type.
 - Bug fixed: failed to identify logical partitioin in ocs-expand-mbr-pt.
+- Program cnvt-ocs-dev has been improved to be multipath compatible.
 
 * Tue Jan 08 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.6-drbl1
 - All "hsv" related codes of Clonezilla were converted to multipath compatible.
