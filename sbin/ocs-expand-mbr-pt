@@ -84,6 +84,15 @@ if [ "$batch_mode" != "yes" ]; then
   esac
 fi
 
+# Check if GPT disk, if yes, exit
+if `is_gpt_partitition_table_disk $target_disk`; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Disk $target_disk is GPT format. This program only works for MBR format."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
 # No size info in hda-pt.sf, we have to use hda-pt.parted.
 orig_parted_tab="${orig_sf/.sf/.parted}"
 orig_parted_dir="$(dirname $orig_sf)"
@@ -91,7 +100,7 @@ if [ ! -e "$orig_parted_tab" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "$orig_parted_tab was not found! It is required so that we know the original disk size! Maybe your Clonezilla image is too old ? You can try to create such an file in your source machine by: \"parted -s /dev/$SOURCE_DEV unit s print > $orig_parted_tab\" (Replace $SOURCE_DEV with your device name)"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "Program terminated!"
+  echo "$msg_program_stop!"
   exit 1
 fi
 
@@ -208,7 +217,9 @@ append_to_next="0"
 # Initial gap for the 1st partition. After this, it should be 0.
 logical_part_gap="2"
 while read dev start start_no size size_no id flag; do
-  if `is_partition $dev`; then
+  if `is_partition $dev` && \
+  [ "$(LC_ALL=C get_part_number $dev | \
+    sed -r -e "s|^[^[:digit:]]*||g")" -le 4 ]; then
    # primary/extended partitions
     [ -z "$start_no_keep" ] && start_no_keep=${start_no/,/}  # The 1st one
     [ -z "$size_no_keep" ] && size_no_keep=0
@@ -236,8 +247,8 @@ while read dev start start_no size size_no id flag; do
         fi
       fi
       # For newer Clonezilla (>=2.4.36-1drbl), a tag file (sda1.info) might exist
-      if [ -e "$orig_parted_dir/$(basename $dev).info" ]; then
-	. $orig_parted_dir/$(basename $dev).info
+      if [ -e "$orig_parted_dir/$(to_filename ${dev}).info" ]; then
+	. $orig_parted_dir/$(to_filename ${dev}).info
 	if [ "$PARTITION_TYPE" = "Win_boot_reserved" ]; then
           expand="false"
 	fi
