@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.2.8
+Version:	3.2.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jan 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.9-drbl1
 - Function active_proc_partitions was moved to ocs-functions from drbl-functions.
 - Bug fixed: Swap partition of cciss partition was not saved and restored.
 
