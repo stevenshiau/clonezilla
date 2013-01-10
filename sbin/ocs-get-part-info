@@ -166,6 +166,30 @@ get_fs_from_blkid() {
     # /dev/VolGroup00/LogVol00: UUID="110bc035-6920-4732-b117-5124843b93b9" SEC_TYPE="ext2" TYPE="ext3" 
     # /dev/VolGroup00/LogVol01: TYPE="swap" UUID="af85b756-39fa-48f0-80e7-b2128d5c87ab"
     # We want to filter to filter them as: TYPE="ext3" only
+    # If $part_ is /dev/dm-1 in /proc/partitions, blkid still can get the correct type for /dev/dm-1 even the output of blkid is /dev/mapper/...:
+    # ===============
+    # root@fakeraid:~# cat /proc/partitions 
+    # major minor  #blocks  name
+    # 
+    #   8        0  976762584 sda
+    #   8        1  104857600 sda1
+    #   8        2  314572800 sda2
+    #   8        3  524288000 sda3
+    #   8       16  976762584 sdb
+    #  11        0    1048575 sr0
+    #   7        0      90452 loop0
+    # 254        0 1953519872 dm-0
+    # 254        1  104857600 dm-1
+    # 254        2  314572800 dm-2
+    # 254        3  524288000 dm-3
+    # ===============
+    # The output of blkid:
+    # root@fakeraid:~#  blkid
+    # /dev/sdb: TYPE="isw_raid_member" 
+    # /dev/mapper/isw_deaeieebih_Volume01: UUID="d2350cad-2c66-4ac5-accb-bec596522958" TYPE="xfs" 
+    # /dev/mapper/isw_deaeieebih_Volume02: UUID="300ed329-7dff-4b55-bb50-a3fab87d24b3" TYPE="xfs" 
+    # /dev/mapper/isw_deaeieebih_Volume03: UUID="ab6cf10a-c74d-43e4-91d5-18817ff3d03f" TYPE="xfs" 
+    # /dev/loop0: TYPE="squashfs" 
     LC_ALL=C blkid -c /dev/null $part_ | grep -o -E '\<TYPE="[^[:space:]]*"($|[[:space:]]+)' > $blkinfo
     TYPE=""
     . $blkinfo
