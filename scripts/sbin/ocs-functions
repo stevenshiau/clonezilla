@@ -9615,12 +9615,19 @@ is_ide_disk() {
 } # end of is_ide_disk
 #
 get_part_number() {
-  local disk=${1#/dev/*}
+  local dev_=${1#/dev/*}
   local num=""
 
-  if [ -n "$disk" ]; then
-    num=$(echo "$disk" | sed -e 's/^[^0-9]*\([0-9]*\)$/\1/g' \
-                             -e 's/^.*[0-9]\{1,\}\(p[0-9]\{1,\}\)$/\1/g')
+  if [ -n "$dev_" ]; then
+    # Just in case. User might use /dev/cciss/c0d0 to get the part number.
+    # Here we will continue only if $dev_ is a partition
+    # Otherwise
+    # echo cciss/c0d0 | sed -r -e 's/^.*[0-9]{1,}(p[0-9]{1,})$/\1/g'
+    # will get "cciss/c0d0". However, it should be "".
+    if is_partition "$dev_"; then
+      num=$(echo "$dev_" | sed -r -e 's/^[^0-9]*([0-9]*)$/\1/g' \
+                                  -e 's/^.*[0-9]{1,}(p[0-9]{1,})$/\1/g')
+    fi
   fi
 
   echo $num
@@ -9630,8 +9637,8 @@ get_diskname() {
   local disk=${1#/dev/*}
 
   if [ -n "$disk" ]; then
-    echo "$disk" | sed -e 's/^\([^0-9]*\)[0-9]*$/\1/g' \
-                       -e 's/^\(.*[0-9]\{1,\}\)p[0-9]\{1,\}$/\1/g'
+    echo "$disk" | sed -r -e 's/^([^0-9]*)[0-9]*$/\1/g' \
+                          -e 's/^(.*[0-9]{1,})p[0-9]{1,}$/\1/g'
   fi
 } # end of get_diskname
 #

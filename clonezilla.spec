@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.2.10
+Version:	3.2.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jan 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.11-drbl1
+- Bug fixed: failed to parse cciss/c0d0's partition number. It should be nothing.
+
 * Wed Jan 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.10-drbl1
 - Bug fixed: Typos in ocs-chkimg and ocs-functions were fixed.
 
