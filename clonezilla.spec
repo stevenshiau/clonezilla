@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Using the mapping file instead of /proc/partitions in ocs-chnthn-functions and ocs-functions.
+- Using the get_disk_list in ocs-chnthn.
+
 * Fri Jan 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.12-drbl1
 - Commets about using blkid to get file system was added in ocs-get-part-info.
 - Bug fixed: drbl-ocs-live-prep failed to identify the new, different arch of iso for the alternative testing Clonezilla live on the repository.

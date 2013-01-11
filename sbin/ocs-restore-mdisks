@@ -47,8 +47,9 @@ separate_fdisk_in_another_step_first() {
   # If -k option of ocs-sr is chosen, skip repartition. Otherwise, do it.
   if [ -z "$(LC_ALL=C echo $OCS_OPTS | grep -Ew -- "-k")" ]; then
     # Create partition table first. If we do not do this first, sfdisk will wait for the lock file to be released, so the 2nd clone won't start in any case.
+    gen_proc_partitions_map_file
     for i in $tgt_dsks; do
-      if [ -z "$(grep -Ew "$i" /proc/partitions)" ]; then
+      if [ -z "$(grep -Ew "$i" $partition_table)" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "Disk /dev/$i not found. Skip restoring it."
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -98,6 +99,7 @@ separate_fdisk_in_another_step_first() {
     # -k* exists
     OCS_OPTS="$(echo $OCS_OPTS | sed -r -e "s/-k[[:digit:]]+/-k/g")"
   fi
+  [ -f "$partition_table" ] && rm -f $partition_table
 } # end of separate_fdisk_in_another_step_first
 
 ####################
@@ -267,15 +269,17 @@ fi
 if [ -z "$(LC_ALL=C echo $OCS_OPTS | grep -Ew -- "-nogui")" ]; then
   OCS_OPTS="$OCS_OPTS -nogui"
 fi
+gen_proc_partitions_map_file
 for i in $tgt_dsks; do
   # Clean the stale file
   rm -f /tmp/${image_name}_cnvt_${i}.log
-  [ -z "$(grep -Ew "$i" /proc/partitions)" ] && continue
+  [ -z "$(grep -Ew "$i" $partition_table)" ] && continue
   echo "Restoring image for disk $i..."
   # use -k to skip sfdisk since we have done that in the previous step.
   #ocs-sr -g auto -nogui -b -k -e1 auto -e2 -r -j2 -p true restoredisk "${image_name}_cnvt_${i}" "$i" &
   ocs-sr --ocsroot $ocsroot $OCS_OPTS restoredisk "${image_name}_cnvt_${i}" "$i" 2>&1 | tee /tmp/${image_name}_cnvt_${i}.log &
 done
+[ -f "$partition_table" ] && rm -f $partition_table
 
 # wait for all processes to finish before exit
 wait 

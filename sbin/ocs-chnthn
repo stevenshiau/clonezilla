@@ -60,7 +60,6 @@ declare DEFAULT_WIN_ROOT="WINDOWS WINNT"			# windows root directory
 declare WIN_SYSTEM_SAM="system32/config/system"		# System-specific part (HKEY_LOCAL_MACHINE\System)
 declare WIN_SOFTWARE_SAM="system32/config/software"	# Software-Specific part (HKEY_LOCAL_MACHINE\SOFTWARE)
 declare REAL_WIN_SOFTWARE_SAM REAL_WIN_SOFTWARE_SAM
-declare HDDEV=$(Get_Hd_List)
 declare IF_SYNC_WINROLL_CONFIG=1
 declare DRBL_WINROLL_CONFIG='cygwin/drbl_winroll-config/winroll.conf'
 
@@ -84,7 +83,7 @@ while [ $# -gt 0 ]; do
 		;;
 		-d|--device)
 				shift;
-				if [ -e $1 ]; then HDDEV="${1:5}"
+				if [ -e $1 ]; then HDDEV="${1#/dev/*}"
 				else echo "Device fail , aborted !!" ;exit 1;
 				fi
 				shift
@@ -137,6 +136,11 @@ Select_ntfsmount_prog $NTFSMOUNTPROG
 Perpare_Env	# check fuse for kernel
 
 # Real start
+if [ -z "$HDDEV" ]; then
+  gen_proc_partitions_map_file
+  HDDEV=$(get_disk_list $partition_table)
+  [ -f "$partition_table" ] && rm -f $partition_table
+fi
 
 # Print program header
 PrintHeader
