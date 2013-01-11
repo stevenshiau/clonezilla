@@ -15,7 +15,6 @@ mode="install"
 client_arch=""
 # The method for netboot's root file system. "fetch" means the client will download the filesystem.squashfs from tftpd server, "nfsroot" means client will mount the nfs server. By default we use "nfsroot" in Clonezilla SE.
 rootfs_location="nfsroot"
-client_arch_def="i486"
 clonezilla_iso_branch_def="stable"
 
 # Functions
@@ -23,7 +22,7 @@ USAGE() {
   echo "Prepare the Clonezilla SE (Server Edtion) to use Clonezilla live as the OS of client."
   echo "Usage: $0 [OPTION]"
   echo "OPTION:"
-  echo "-a, --client-arch ARCH:  Force to use the CPU arch for the client. E.g. if i686 is assigned, the i686 version of Clonezilla live will be downloaded and use for the clients. Available arch are: i486, i686, amd64. //NOTE// By using this, the original file name assigned in the option '-i' will be changed as appropriate file name."
+  echo "-a, --client-arch ARCH:  Force to use the CPU arch for the client. E.g. if i686 is assigned, the i686 version of Clonezilla live will be downloaded and use for the clients. Available arch are: i386, i486, i686, amd64. //NOTE// By using this, the original file name assigned in the option '-i' will be changed as appropriate file name."
   echo "-b, --branch NAME: Force to use the Clonezilla live from branch NAME (stable, testing, alternative, alternative_testing). If not assigned, stable will be used."
   echo "-s, --server-ip IP_ADDR:  Assign the tftp or NFS server's IP address to be used."
   echo "-t, --use-fetch      By default the boot parameter to load the root file system (e.g. filesystem.squashfs) is nfsroot. With this option, fetch is used. //NOTE// This function only works for live-initramfs based system. E.g. Clonezilla live or GParted live."
@@ -42,10 +41,7 @@ download_clonezilla_live() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "The CPU arch for client was assigned as: $client_arch"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  case "$client_arch" in
-   generic) arch_tag="" ;;
-      *)    arch_tag="-$client_arch" ;;
-  esac
+  arch_tag="-$client_arch"
 
   # iso_url_for_pxe_ocs_live is from drbl-ocs.conf. e.g. 
   # (1) http://downloads.sourceforge.net/clonezilla/clonezilla-live-1.2.6-24-i686.iso
@@ -204,15 +200,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# For Ubuntu-based (alternative) Clonezilla live, default is i386, while for Debian-based, it's i386.
+case "$clonezilla_iso_branch" in
+  alternative*) client_arch_def="i386";;
+  *)            client_arch_def="i486";;
+esac
+
 # Use the default settings if not assigned.
 [ -z "$client_arch" ] && client_arch="$client_arch_def"
 [ -z "$clonezilla_iso_branch" ] && clonezilla_iso_branch="$clonezilla_iso_branch_def"
-
-# For Alternative Clonezilla live, only one arch.
-case "$clonezilla_iso_branch" in
-  # generic is only a tag, we won't use in the file name for ubuntu-based clonezill alive iso file.
-  alternative*) client_arch="generic" ;;
-esac
 
 #
 case "$mode" in 
