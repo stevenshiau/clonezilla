@@ -349,28 +349,30 @@ fi
 } # end of clone_boot_loader_in_target
 #
 create_partition_table_in_target(){
-if [ "$create_part" != "no" ]; then
-  echo "$msg_delimiter_star_line"
-  if [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then 
-    # try to see if the partition table exists in the target 
-    #if [ -n "$(LC_ALL=C fdisk -l /dev/$target_hd 2>/dev/null | grep -E "/dev/[sh]d[a-z][0-9]+")" ] ; then
-    if [ -n "$(LC_ALL=C grep -Eo "$target_hd[[:digit:]]+" /proc/partitions)" ]; then
-      partition_table_exist_in_target="yes"
-    else
-      partition_table_exist_in_target="no"
-    fi
-    check_pt_then_run_create_part_table | tee --append ${OCS_LOGFILE}
-    # After partition table is created, we can dump the hidden data which is between MBR and 1st partition.
-    # Not GPT type of disk. We only deal with MBR for this hidden data
-    if `is_mbr_partitition_table_disk /dev/$target_hd`; then
-      echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
-      if [ "$clone_hidden_data" = "yes" ]; then
-        restore_hidden_data_after_MBR $target_hd $tgt_hidden_img
+  if [ "$create_part" != "no" ]; then
+    echo "$msg_delimiter_star_line"
+    if [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then 
+      # try to see if the partition table exists in the target 
+      #if [ -n "$(LC_ALL=C fdisk -l /dev/$target_hd 2>/dev/null | grep -E "/dev/[sh]d[a-z][0-9]+")" ] ; then
+      gen_proc_partitions_map_file
+      if [ -n "$(LC_ALL=C grep -Eo "$target_hd[[:digit:]]+" $partition_table)" ]; then
+        partition_table_exist_in_target="yes"
+      else
+        partition_table_exist_in_target="no"
       fi
-      echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
+      check_pt_then_run_create_part_table | tee --append ${OCS_LOGFILE}
+      # After partition table is created, we can dump the hidden data which is between MBR and 1st partition.
+      # Not GPT type of disk. We only deal with MBR for this hidden data
+      if `is_mbr_partitition_table_disk /dev/$target_hd`; then
+        echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
+        if [ "$clone_hidden_data" = "yes" ]; then
+          restore_hidden_data_after_MBR $target_hd $tgt_hidden_img
+        fi
+        echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
+      fi
+      [ -f "$partition_table" ] && rm -f $partition_table
     fi
   fi
-fi
 } # end of create_partition_table_in_target
 #
 confirm_do_it_in_target_dev() {
@@ -525,7 +527,8 @@ prepare_local_clone_dev_info() {
   #   8    16  244198584 sdb
   #   8    17  244196001 sdb1
   #for part in `grep -i "Id=" $pt_tmp | cut -d" " -f1 | sed -e "s/:$//g"`; do
-  part_in_hd="$(LC_ALL=C grep -Eo "$source_hd[[:digit:]]+" /proc/partitions)"
+  gen_proc_partitions_map_file
+  part_in_hd="$(LC_ALL=C grep -Eo "$source_hd[[:digit:]]+" $partition_table)"
   for part in $part_in_hd; do
     echo "Collecting partition /dev/$part info..." | tee --append ${OCS_LOGFILE}
     filesystem="$(LC_ALL=C ocs-get-part-info /dev/$part filesystem)"
@@ -592,6 +595,7 @@ prepare_local_clone_dev_info() {
     # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
     load_HD_geometry_opt_from_image $hd_tgt_tmp/ $target_hd
   fi
+  [ -f "$partition_table" ] && rm -f $partition_table
 } # end of prepare_local_clone_dev_info
 #
 prepare_network_clone_dev_info() {
@@ -719,7 +723,8 @@ prepare_network_clone_dev_info() {
     #   8    16  244198584 sdb
     #   8    17  244196001 sdb1
     #for part in `grep -i "Id=" $pt_tmp | cut -d" " -f1 | sed -e "s/:$//g"`; do
-    part_in_hd="$(LC_ALL=C grep -Eo "$source_hd[[:digit:]]+" /proc/partitions)"
+    gen_proc_partitions_map_file
+    part_in_hd="$(LC_ALL=C grep -Eo "$source_hd[[:digit:]]+" $partition_table)"
     for part in $part_in_hd; do
       echo "Collecting partition /dev/$part info..." | tee --append ${OCS_LOGFILE}
       filesystem="$(LC_ALL=C ocs-get-part-info /dev/$part filesystem)"
@@ -864,7 +869,7 @@ ADVAN_PARAM_END
     # swap partition info
     for iswap in $hd_tgt_tmp/swappt-*.info; do
       # $hd_tgt_tmp/swappt-${partition}.info
-      s_swpname="$(basename $iswap)"
+      s_swpname="${iswap#/dev/*}"
       if [ "$target_hd" != "$source_hd" ]; then
         t_swpname="$(echo $s_swpname | sed -e "s|-[hsv]d[a-z]|-$target_hd|g")"
         cp -f $hd_tgt_tmp/$s_swpname $hd_tgt_tmp/$t_swpname
@@ -962,8 +967,9 @@ local_partition_to_partiton_clone() {
   # From partimage 0.6.6, batch mode won't stop if checkInodeForDevice is not run. Therefore comment it.
   # checkInodeForDevice $tgt_p
   # Before we start to clone, check if kernel can find /dev/$partition
-  partition="$(basename $tgt_p)"
-  if [ -z "$(grep -Ew "$partition" /proc/partitions 2>/dev/null)" ]; then
+  partition="${tgt_p#/dev/*}"
+  gen_proc_partitions_map_file
+  if [ -z "$(grep -Ew "$partition" $partition_table 2>/dev/null)" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "$msg_failed_to_find_this_partition: /dev/$partition" | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -1377,7 +1383,7 @@ clone_over_net() {
         # "/dev/$part $filesystem $pt_size" 
         exec 5< $src_pt_info
         while read -u 5 ipart part_fs size; do
-          spart="$(basename $ipart)"
+          spart="${ipart#/dev/*}"
           if [ -z "$part_fs" ]; then
              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
              echo "No file system was found in /dev/$spart!" | tee --append $OCS_LOGFILE
@@ -1395,7 +1401,7 @@ clone_over_net() {
         # "/dev/$part $filesystem $pt_size" 
         exec 6< $tgt_pt_info
         while read -u 6 ipart part_fs size; do
-          t_part="$(basename $ipart)"
+          t_part="${ipart#/dev/*}"
           if [ -z "$part_fs" ]; then
              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
              echo "No file system was found in /dev/$t_part!" | tee --append $OCS_LOGFILE

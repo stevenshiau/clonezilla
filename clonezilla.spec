@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.2.12
+Version:	3.2.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 14 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.13-drbl1
 - Using the mapping file instead of /proc/partitions in ocs-chnthn-functions, ocs-functions and ocs-restore-mdisks.
 - Using the get_disk_list in ocs-chnthn.
 
