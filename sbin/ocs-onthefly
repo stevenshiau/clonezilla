@@ -200,7 +200,7 @@ check_pt_then_run_create_part_table() {
              /bin/bash
             ;;
            *)
-             # Create partition table by sfdisk and [hsv]d[a-z]-pt.sf
+             # Create partition table by sfdisk and x?[hsv]d[a-z]-pt.sf
              # If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
 	     init_mbr_part_table_if_not_existing /dev/$target_hd
              check_mbr_disk_size_gt_2TiB /dev/$target_hd warning 
@@ -542,17 +542,17 @@ prepare_local_clone_dev_info() {
     check_if_windows_boot_reserve_part /dev/$part
     rc_boot_reserve="$?"
     if [ "$rc_boot_reserve" -eq 0 ]; then
-      target_part_info="$(echo ${part}.info | sed -e "s|[hsv]d[a-z]|$target_hd|g")"
+      target_part_info="$(echo ${part}.info | sed -r -e "s|x?[hsv]d[a-z]|$target_hd|g")"
       echo "PARTITION_TYPE=Win_boot_reserved" > $local_tmp/$target_part_info
     fi
   done
   # SWAP partition info, maybe more than 1
   #for partition in `cat $pt_tmp | grep "Id=82" | cut -d" " -f1 | sed -e 's/\/dev\///g'`
-  swap_in_hd="$(awk -F" " '/swap/ {print $1}' $src_pt_info | sed -e 's|/dev/||g')"
+  swap_in_hd="$(awk -F" " '/swap/ {print $1}' $src_pt_info | sed -r -e 's|/dev/||g')"
   for partition in $swap_in_hd; do
     echo "Outputing swap UUID/LABEL of $partition..." | tee --append ${OCS_LOGFILE}
     # change the target swap partition, like hda2 -> hdb2
-    target_swap_part_info="$(echo swappt-${partition}.info | sed -e "s|[hsv]d[a-z]|$target_hd|g")"
+    target_swap_part_info="$(echo swappt-${partition}.info | sed -r -e "s|x?[hsv]d[a-z]|$target_hd|g")"
     output_swap_partition_uuid_label /dev/$partition $local_tmp/$target_swap_part_info
   done
   # change the dev to target in the $pt_tmp and $pt_info
@@ -565,9 +565,9 @@ prepare_local_clone_dev_info() {
   [ -f "$src_hidden_img" ] && cp -f $src_hidden_img $tgt_hidden_img
   [ -f "$src_dsk_mbr" ] && cp -f $src_dsk_mbr $tgt_dsk_mbr
   [ -f "$src_dsk_chs" ] && cp -f $src_dsk_chs $tgt_dsk_chs
-  [ -e "$tgt_pt_tmp" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_tmp
-  [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_parted_info
-  [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_info
+  [ -e "$tgt_pt_tmp" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_tmp
+  [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_parted_info
+  [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_info
 
   # Decide use_HD_CHS_from_EDD
   # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
@@ -871,7 +871,7 @@ ADVAN_PARAM_END
       # $hd_tgt_tmp/swappt-${partition}.info
       s_swpname="${iswap#/dev/*}"
       if [ "$target_hd" != "$source_hd" ]; then
-        t_swpname="$(echo $s_swpname | sed -e "s|-[hsv]d[a-z]|-$target_hd|g")"
+        t_swpname="$(echo $s_swpname | sed -r -e "s|-x?[hsv]d[a-z]|-$target_hd|g")"
         cp -f $hd_tgt_tmp/$s_swpname $hd_tgt_tmp/$t_swpname
       fi
     done
@@ -886,9 +886,9 @@ ADVAN_PARAM_END
     [ -f "$src_hidden_img" ] && cp -f $src_hidden_img $tgt_hidden_img
     [ -f "$src_dsk_mbr" ] && cp -f $src_dsk_mbr $tgt_dsk_mbr
     [ -f "$src_dsk_chs" ] && cp -f $src_dsk_chs $tgt_dsk_chs
-    [ -e "$tgt_pt_tmp" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_tmp
-    [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_info
-    [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/[hsv]d[a-z]|/dev/$target_hd|g" $tgt_parted_info
+    [ -e "$tgt_pt_tmp" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_tmp
+    [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_info
+    [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_parted_info
 
     # Decide use_HD_CHS_from_EDD
     # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
