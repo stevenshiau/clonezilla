@@ -157,7 +157,7 @@ get_from_parted() {
 
 #
 get_fs_from_blkid() {
-  local part_="$1" 
+  local part_="$1"  # e.g. sda1, cciss/c0d0p1, dm-1
   local blkinfo TYPE hdtmp ptno pt_id ptype pt_info
   if type blkid &>/dev/null; then
     blkinfo="$(mktemp /tmp/blkinfo.XXXXXX)"
@@ -380,7 +380,7 @@ get_fs_from_blkid() {
 } # end of get_fs_from_blkid
 #
 get_fs_from_partclone_fstype() {
-  local part_="$1" 
+  local part_="$1"  # e.g. sda1, cciss/c0d0p1, dm-1
   local fstypeinfo TYPE
   if type partclone.fstype &>/dev/null; then
     fstypeinfo="$(mktemp /tmp/fstypeinfo.XXXXXX)"
@@ -395,6 +395,14 @@ get_fs_from_partclone_fstype() {
     [ -f "$fstypeinfo" ] && rm -f $fstypeinfo
   fi
 } # end of get_fs_from_partclone_fstype
+#
+get_size_from_lsblk() {
+  local part_="$1"  # e.g. sda1, cciss/c0d0p1, dm-1
+  if type lsblk &>/dev/null; then
+    part_size="$(LC_ALL=C lsblk -n -o size ${part_} | sed -r -e "s/^[[:space:]]*//g")"
+    echo "$part_size"
+  fi
+} # end of get_size_from_lsblk
 
 # Some notes:
 # First priority is to use blkid to get filesystem, 2 reasons:
@@ -456,6 +464,14 @@ for wanted in $request; do
          get_from_parted
        else
          echo "$fs"
+       fi
+       ;;
+    size)
+       psize="$(get_size_from_lsblk $part)"
+       if [ -z "$psize" ]; then
+         get_from_parted
+       else
+         echo "$psize"
        fi
        ;;
     *)

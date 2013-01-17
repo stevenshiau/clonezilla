@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- The size of a partition will be got from lsblk first in ocs-get-part-info if program lsblk exists.
+
 * Thu Jan 17 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.14-drbl1
 - Adding Xen disk (/dev/xvd[a-z]) in the support device.
 - Adding one more info file "Info-lsblk.txt", lsblk output.
