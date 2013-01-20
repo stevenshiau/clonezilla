@@ -15,10 +15,10 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 export LC_ALL=C
 
 USAGE() {
-   echo "Usage: [OPTION] harddrive partition"
+   echo "Usage: [OPTION] device"
    echo "OPTION:"
-   echo "-b, --batch  Run program in batch mode, i.e. without any prompt or wait to press enter. DANGEROUS!!!"
-   echo "Example: $0 hda 1"
+   echo "-b, --batch  Run program in batch mode, i.e. without any prompt or wait to press enter."
+   echo "Example: $0 /dev/sdc1"
 }
 
 # Parse command-line options
@@ -34,19 +34,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ $# -ne 2 ] && USAGE && exit 1
-target_hd="$1"
-DEST_PART="$2"
+[ $# -ne 1 ] && USAGE && exit 1
+partition="$1"
 
 ######
 ## main script
 ######
 #
 #
-check_input_hd $target_hd
-
-target_hd="/dev/$target_hd"
-partition="${target_hd}${DEST_PART}"
+check_input_partition ${partition#/dev/*}
 
 if [ -n "$(grep -Ew "^$partition" /proc/mounts)" ]; then
   echo "Partition $partition is already mounted! You must unmount it first! Program terminated!"
@@ -76,13 +72,15 @@ case "$part_fs" in
               ;;
    vfat|fat16|fat32)
               if ! which parted &> /dev/null; then
-                 echo "Unable to find program parted! Skip this partition ${partition}"
+                 echo "Program parted not found! Skip this partition ${partition}"
 		 exit 1
 	      fi
 	      [ "$batch_mode" = "yes" ] && parted_resize_opt="-s"
+	      target_hd="/dev/$(get_diskname $partition)"
+	      part_num="$(get_part_number $partition)"
               #  resize MINOR START END
-              echo "parted $parted_resize_opt $target_hd resize $DEST_PART $part_start $part_end"
-              parted $parted_resize_opt $target_hd resize $DEST_PART $part_start $part_end
+              echo "parted $parted_resize_opt $target_hd resize $part_num $part_start $part_end"
+              parted $parted_resize_opt $target_hd resize $part_num $part_start $part_end
               ;;
    ext2|ext3|ext4)
               if ! which e2fsck &> /dev/null || ! which resize2fs &> /dev/null ; then
