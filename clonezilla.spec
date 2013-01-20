@@ -40,6 +40,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 - The size of a partition will be got from lsblk first in ocs-get-part-info if program lsblk exists.
 - The options of ocs-resize-part have been changed. No more separating them as "ocs-resize-part sda 1", now using "ocs-resize-part /dev/sda1" so that we can use that for dm in the future.
 - The output file Info-lsblk.txt has been renamed to blkdev.list with formatted output.
+- Using file system info from lsblk (blkdev.list) since it's much easier to use than the output of parted if it's device mapper devices.
 
 * Thu Jan 17 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.14-drbl1
 - Adding Xen disk (/dev/xvd[a-z]) in the support device.
