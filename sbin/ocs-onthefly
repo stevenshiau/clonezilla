@@ -436,7 +436,8 @@ prepare_local_clone_dev_info() {
   src_dsk_mbr="$hd_src_tmp/src-mbr"
   src_dsk_chs="$hd_src_tmp/src-chs.sf"
   src_pt_info="$hd_src_tmp/source_partition.info"
-  src_parted_info="$hd_src_tmp/src_pt.parted"
+  src_parted_info="$hd_src_tmp/src-pt.parted"
+  src_blkdev_info="$hd_src_tmp/src-blkdev.list"
   src_1st_gpt="$hd_src_tmp/src-gpt-1st.img"
   src_2nd_gpt="$hd_src_tmp/src-gpt-2nd.img"
   src_gpt_gdisk="$hd_src_tmp/src-gpt.gdisk"
@@ -448,6 +449,7 @@ prepare_local_clone_dev_info() {
   tgt_dsk_chs="$hd_tgt_tmp/${target_hd}-chs.sf"
   tgt_pt_info="$hd_tgt_tmp/target_partition.info"
   tgt_parted_info="$hd_tgt_tmp/tgt-pt.parted"
+  tgt_blkdev_info="$hd_tgt_tmp/tgt-blkdev.list"
   tgt_1st_gpt="$hd_tgt_tmp/tgt-gpt-1st.img"
   tgt_2nd_gpt="$hd_tgt_tmp/tgt-gpt-2nd.img"
   tgt_gpt_gdisk="$hd_tgt_tmp/tgt-gpt.gdisk"
@@ -472,6 +474,7 @@ prepare_local_clone_dev_info() {
   check_mbr_gpt_partition_table $source_hd
   
   LC_ALL=C parted -s /dev/$source_hd unit s print > $src_parted_info
+  output_blkdev_info $src_blkdev_info /dev/$source_hd
 
   # From the output file of parted, we can decide if the partition is gpt or mbr
   if `is_gpt_partitition_table_file $src_parted_info`; then
@@ -558,6 +561,7 @@ prepare_local_clone_dev_info() {
   # change the dev to target in the $pt_tmp and $pt_info
   [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
   [ -f "$src_parted_info" ] && cp -f $src_parted_info $tgt_parted_info
+  [ -f "$src_blkdev_info" ] && cp -f $src_blkdev_info $tgt_blkdev_info
   [ -f "$src_pt_info" ] && cp -f $src_pt_info $tgt_pt_info
   [ -f "$src_1st_gpt" ] && cp -f $src_1st_gpt $tgt_1st_gpt
   [ -f "$src_2nd_gpt" ] && cp -f $src_2nd_gpt $tgt_2nd_gpt
@@ -567,6 +571,7 @@ prepare_local_clone_dev_info() {
   [ -f "$src_dsk_chs" ] && cp -f $src_dsk_chs $tgt_dsk_chs
   [ -e "$tgt_pt_tmp" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_tmp
   [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_parted_info
+  [ -e "$tgt_blkdev_info" ] && LC_ALL=C perl -pi -e "s|x?[hsv]d[a-z]|$target_hd|g" $tgt_blkdev_info
   [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_info
 
   # Decide use_HD_CHS_from_EDD
@@ -650,7 +655,8 @@ prepare_network_clone_dev_info() {
     src_dsk_mbr="$hd_src_tmp/src-mbr"
     src_dsk_chs="$hd_src_tmp/src-chs.sf"
     src_pt_info="$hd_src_tmp/src_partition.info"
-    src_parted_info="$hd_src_tmp/src_pt.parted"
+    src_parted_info="$hd_src_tmp/src-pt.parted"
+    src_blkdev_info="$hd_src_tmp/src-blkdev.list"
     src_1st_gpt="$hd_src_tmp/src-gpt-1st.img"
     src_2nd_gpt="$hd_src_tmp/src-gpt-2nd.img"
     src_gpt_gdisk="$hd_src_tmp/src-gpt.gdisk"
@@ -665,6 +671,7 @@ prepare_network_clone_dev_info() {
     #/dev/hda12: start=  1867383, size= 14909202, Id=83
     # Therefor later we have to use  "sed -e "s/:$//g" to clean that.
     LC_ALL=C parted -s /dev/$source_hd unit s print > $src_parted_info
+    output_blkdev_info $src_blkdev_info /dev/$source_hd
 
     # From the output file of parted, we can decide if the partition is gpt or mbr
     if `is_gpt_partitition_table_file $src_parted_info`; then
@@ -831,7 +838,8 @@ ADVAN_PARAM_END
     # For source dik
     src_pt_tmp="$hd_tgt_tmp/src_pt.sf"
     src_pt_info="$hd_tgt_tmp/src_partition.info"
-    src_parted_info="$hd_tgt_tmp/src_pt.parted"
+    src_parted_info="$hd_tgt_tmp/src-pt.parted"
+    src_blkdev_info="$hd_tgt_tmp/src-blkdev.list"
     src_1st_gpt="$hd_tgt_tmp/src-gpt-1st.img"
     src_2nd_gpt="$hd_tgt_tmp/src-gpt-2nd.img"
     src_gpt_gdisk="$hd_tgt_tmp/src-gpt.gdisk"
@@ -842,6 +850,7 @@ ADVAN_PARAM_END
     tgt_pt_tmp="$hd_tgt_tmp/tgt_pt.sf"
     tgt_pt_info="$hd_tgt_tmp/tgt_partition.info"
     tgt_parted_info="$hd_tgt_tmp/tgt-pt.parted"
+    tgt_blkdev_info="$hd_tgt_tmp/tgt-blkdev.list"
     tgt_1st_gpt="$hd_tgt_tmp/tgt-gpt-1st.img"
     tgt_2nd_gpt="$hd_tgt_tmp/tgt-gpt-2nd.img"
     tgt_gpt_gdisk="$hd_tgt_tmp/tgt-gpt.gdisk"
@@ -879,6 +888,7 @@ ADVAN_PARAM_END
     # change the dev to target in the $pt_tmp nd $pt_info
     [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
     [ -f "$src_parted_info" ] && cp -f $src_parted_info $tgt_parted_info
+    [ -f "$src_blkdev_info" ] && cp -f $src_blkdev_info $tgt_blkdev_info
     [ -f "$src_pt_info" ] && cp -f $src_pt_info $tgt_pt_info
     [ -f "$src_1st_gpt" ] && cp -f $src_1st_gpt $tgt_1st_gpt
     [ -f "$src_2nd_gpt" ] && cp -f $src_2nd_gpt $tgt_2nd_gpt
@@ -889,6 +899,7 @@ ADVAN_PARAM_END
     [ -e "$tgt_pt_tmp" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_tmp
     [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_info
     [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_parted_info
+    [ -e "$tgt_blkdev_info" ] && LC_ALL=C perl -pi -e "s|x?[hsv]d[a-z]|$target_hd|g" $tgt_blkdev_info
 
     # Decide use_HD_CHS_from_EDD
     # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.

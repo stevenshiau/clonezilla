@@ -339,13 +339,6 @@ dump_hardware_software_info() {
     echo "'lspci -n' results:" >> $img_dir/Info-lspci.txt
     LC_ALL=C lspci -n >> $img_dir/Info-lspci.txt
   fi
-  if type lsblk &>/dev/null; then
-    echo "Saving block devices info..."
-    echo "This image was saved from this machine with block device info at $save_time:" > $img_dir/Info-lsblk.txt
-    echo "'lsblk' results:" >> $img_dir/Info-lsblk.txt
-    LC_ALL=C lsblk >> $img_dir/Info-lsblk.txt
-    echo $msg_delimiter_star_line >> $img_dir/Info-lsblk.txt
-  fi
   #
   echo "Saving package info..."
   if grep -qE "clientdir=" /proc/cmdline; then
@@ -7073,15 +7066,61 @@ task_saveparts() {
   # Turn off swap and LVM2, unlock the busy partitions.
   turn_off_swap_and_LVM2
 
-  # create the image directory
+  # Create the image directory
   mkdir -p $target_dir_fullpath
 
-  # save multipath infomation file
+  # Save multipath infomation file
   if ls ${MULTIPATH_INFODIR}/*-multipath >/dev/null 2>&1; then
     cp -f ${MULTIPATH_INFODIR}/*-multipath $target_dir_fullpath
   fi
 
-  # save partition table
+  # Save device mapper info file. We want to output a table listing:
+  # dmraid (disk): dm (partition)
+  # E.g. the following layoutput will give a table:
+  # dm-0: dm-1 dm-3
+  #
+  # lsblk output example:
+  #  NAME                              MAJ:MIN RM   SIZE RO TYPE   MOUNTPOINT
+  #  sdb                                 8:16   0 931.5G  0 disk   
+  #  └─isw_jdbgiifhb_Volume0 (dm-0)    254:0    0   1.8T  0 dmraid 
+  #    ├─isw_jdbgiifhb_Volume01 (dm-1) 254:1    0   244M  0 dmraid 
+  #    └─isw_jdbgiifhb_Volume05 (dm-3) 254:3    0   1.8T  0 dmraid 
+  #      ├─sars--007-root (dm-2)       254:2    0   1.8T  0 lvm    
+  #      └─sars--007-swap_1 (dm-4)     254:4    0   3.9G  0 lvm    
+  #  sda                                 8:0    0 931.5G  0 disk   
+  #  ├─sda1                              8:1    0   244M  0 part   
+  #  ├─sda2                              8:2    0     1K  0 part   
+  #  └─isw_jdbgiifhb_Volume0 (dm-0)    254:0    0   1.8T  0 dmraid 
+  #    ├─isw_jdbgiifhb_Volume01 (dm-1) 254:1    0   244M  0 dmraid 
+  #    └─isw_jdbgiifhb_Volume05 (dm-3) 254:3    0   1.8T  0 dmraid 
+  #      ├─sars--007-root (dm-2)       254:2    0   1.8T  0 lvm    
+  #      └─sars--007-swap_1 (dm-4)     254:4    0   3.9G  0 lvm    
+  #  sdc                                 8:32   1   3.7G  0 disk   
+  #  └─sdc1                              8:33   1   3.7G  0 part   
+  #  sr0                                11:0    1  1024M  0 rom    
+  #  loop0                               7:0    0  88.3M  1 loop   
+  if type lsblk &>/dev/null; then
+    if grep -qE "dm-[[:digit:]]+" /proc/partitions; then
+      echo "Dumping the device mapper table in $target_dir_fullpath/dmraid.table..." | tee --append $OCS_LOGFILE
+      echo "# dmraid: dm" > $target_dir_fullpath/dmraid.table
+      # First find all the devices with type "dmraid"
+      dmraid_dev="$(LC_ALL=C lsblk -n -o type,kname | awk -F" " '/^dmraid/ {print $2}' | sort | uniq)"
+      for i in $dmraid_dev; do
+        # Check if the "dmraid" contains other "dmraid", "dm" or "part". If yes, then it's really a dmraid (disk), and its slaves are dm (partition)
+        dm_p="$(LC_ALL=C lsblk -n -o type,kname /dev/${i} | awk -F" " '/^(dmraid|dm|part)/ {print $2}' | sort | uniq | grep -v -Ew "${i}")"
+        dm_p="$(echo $dm_p)"    # make them in a line
+        if [ -n "$dm_p" ]; then
+          # dmraid $i contains at least one or more dm. $i is a "disk", and $dm_p must be partitions.
+          echo "$i: $dm_p" >> $target_dir_fullpath/dmraid.table
+        fi
+      done
+    fi
+
+    echo "Saving block devices info in $target_dir_fullpath/blkdev.list..." | tee --append $OCS_LOGFILE
+    output_blkdev_info $target_dir_fullpath/blkdev.list
+  fi
+
+  # Save partition table
   for ihd in $target_hd; do
     check_integrity_of_partition_table_in_disk /dev/$ihd
     echo -n "Reading the partition table for /dev/$ihd..." | tee --append $OCS_LOGFILE
@@ -9634,10 +9673,9 @@ get_part_number() {
     # Otherwise
     # echo cciss/c0d0 | sed -r -e 's/^.*[0-9]{1,}(p[0-9]{1,})$/\1/g'
     # will get "cciss/c0d0". However, it should be "".
-    if is_partition "$dev_"; then
-      num=$(echo "$dev_" | sed -r -e 's/^[^0-9]*([0-9]*)$/\1/g' \
-                                  -e 's/^.*[0-9]{1,}(p[0-9]{1,})$/\1/g')
-    fi
+    # It's easier we use: sed -r -e 's|cciss/c[0-9]+d[0-9]+||g' for cciss/c0d0p3 cases
+    num=$(echo "$dev_" | sed -r -e 's/^[^0-9]*-?([0-9]*)$/\1/g' \
+                                -e 's|cciss/c[0-9]+d[0-9]+||g')
   fi
 
   echo $num
@@ -10102,3 +10140,9 @@ active_proc_partitions() {
   done
   echo "done!"
 } # end of active_proc_partitions
+#
+output_blkdev_info() {
+  local output_f="$1"
+  local dev_="$2" # if dev_ is mssing, then it means the whole system.
+  LC_ALL=C lsblk -o KNAME,NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL $dev_ > $output_f
+} # end of output_blkdev_info
