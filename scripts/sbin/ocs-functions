@@ -1,5 +1,5 @@
 #!/bin/bash
-# Author: Steven Shiau <steven _at_ nchc org tw>
+# Authors: Steven Shiau <steven _at_ nchc org tw>, Ceasar Sun <ceasar _at_ nchc org tw>
 # License: GPL
 
 ###
@@ -2609,6 +2609,8 @@ install_grub_hd() {
     # From OpenSuSE 10.3 or later, the original grub-install is renamed as grub-install.unsupported, and OpenSuSE uses a script to run grub-install by yast2. Bad! Very bad idea! They should use another name for this grub-install.
     if [ -e /etc/SuSE-release -a -e /usr/sbin/grub-install.unsupported ]; then
       grub_install_exec="grub-install.unsupported"
+    elif type grub2-install &>/dev/null; then
+      grub_install_exec="grub2-install"
     else
       grub_install_exec="grub-install"
     fi
@@ -8451,7 +8453,8 @@ is_spawned_by_drbl_ocs() {
     fi
     ocs_pproc="$(LC_ALL=C ps -eo pid,ucmd | grep -Ew "^[[:space:]]*$ppid_" | awk -F" " '{print $2}')"
     rc=1
-    if [ -n "$(LC_ALL=C echo "$ocs_pproc" | grep -Ew "S[0-9][0-9]ocs-run$")" ]; then
+    if [ -n "$(LC_ALL=C echo "$ocs_pproc" | grep -Ew "(S[0-9][0-9])*ocs-run$")" ]; then
+      # Systemd env in Fedora use "/etc/init.d/ocs-run start" to start up ocs-run
       echo "$ocs_file was spawned by $ocs_pproc"
       rc=0
     fi

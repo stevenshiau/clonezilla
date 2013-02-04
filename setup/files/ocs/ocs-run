@@ -1,5 +1,5 @@
 #!/bin/bash
-# Author: Steven Shiau <steven _at_ nchc org tw>
+# Authors: Steven Shiau <steven _at_ nchc org tw>, Ceasar Sun <ceasar_dot_sun_at_ gmail com>
 # License: GPL 
 
 ### BEGIN INIT INFO
@@ -59,7 +59,14 @@ wait_for_press_enter_then_abort() {
 wait_for_udevd() {
   local TIMEOUT="300"  # Unit: 0.1 sec, time to wait for udevd to be started
   local DELAY_T="3"   # Unit: sec, time to wait for block device to be started
-  if ! type udevd &>/dev/null; then
+  # For Fedora, as it uses /usr/lib/udev/udevd instead of udevd
+  local _chk_udevd_path="udevd /usr/lib/udev/udevd"
+  local _miss_udevd="y"
+  for _chk_path in $_chk_udevd_path ; do 
+    type $_chk_path &>/dev/null && _miss_udevd="n"
+  done  
+
+  if [ "$_miss_udevd" == "y" ] ; then 
     echo "Program udevd does not exist. Assume it's using old dev mechanism."
     echo "Skipping waiting for udevd to be started."    
     return 3
@@ -83,6 +90,16 @@ wait_for_udevd() {
     mount -a -t nfs
     echo "Delay a few secs to let block devices to be deteted..."
     countdown $DELAY_T
+  elif [ -e "/bin/systemctl" ]; then 
+    # make sure nfs mount be already done, FC17 
+    while [ -z "$(LC_ALL=C mount -t nfs | grep -E "^.*:/home on /home type nfs .*$")" ]; do
+      sleep 0.1
+      TIMEOUT=$(( $TIMEOUT - 1 ))
+      if [ $TIMEOUT -le 0 ]; then
+        echo "NFS mount checking timeout."
+        break
+      fi
+    done
   fi
 } # end of wait_for_udevd
 do_start_ocs_run() {

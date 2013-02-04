@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- The patches from Ceasar Sun for Fedora 17/18 were applied.
+
 * Tue Jan 22 2013 Steven Shiau <steven _at_ nchc org tw> 3.2.17-drbl1
 - Program fail-mbr.bin from partclone instead the one from drbl is used from now on.
 
