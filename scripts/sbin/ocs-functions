@@ -7580,13 +7580,18 @@ task_restoreparts() {
       for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
         if [ "$partition" = "$(get_master_dev_of_multipath $i)" ]; then
           do_LVM_restore="yes"
+          # This continue is to skip the multipath do loop, not the partition do loop
           continue
         fi
       done
-     elif check_LVM_partition /dev/$partition; then
+    elif check_LVM_partition /dev/$partition; then
       do_LVM_restore="yes"
+    fi
+    #If do_LVM_restore is yes, we should skip the rest...
+    if [ "$do_LVM_restore" = "yes" ]; then
+      # This continue is to skip the rest of this partition do loop
       continue
-     fi
+    fi
     echo "Restoring partition /dev/$partition..." | tee --append $OCS_LOGFILE
     # From partimage 0.6.6, batch mode won't stop if checkInodeForDevice is not run. Therefore comment it.
     # checkInodeForDevice /dev/$partition

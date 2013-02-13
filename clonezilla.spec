@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.4
+Version:	3.3.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Feb 13 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.5-drbl1
+- Bug fixed: multipath restoring for LVM failed due to do loop problem.
+
 * Tue Feb 12 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.4-drbl1
 - Option "-m 1024" is used in ocs-onthefly, too.
 
