@@ -227,7 +227,7 @@ inform_kernel_partition_table_changed() {
   local tdisk=$2  # e.g. /dev/sda
   if [ -z "$ptype" -o -z "$tdisk" ]; then
     echo "No ptype or tdisk parameter was assigned in function inform_kernel_partition_table_changed. Program terminated."
-    copy_error_log
+    [ "$save_restore_error_log" = "yes" ] && copy_error_log
     exit 1
   fi
   # if tdisk is not a disk (e.g. LVM), skip.
@@ -379,7 +379,8 @@ save_hidden_data_after_MBR() {
     if [ -z "$real_i" ]; then
       echo "You have to assign $i in function save_hidden_data_after_MBR." | tee --append ${OCS_LOGFILE}
       echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-      copy_error_log
+      # Saving mode, always copy error log to image dir.
+      copy_error_log 
       exit 1
     fi
   done
@@ -409,6 +410,7 @@ save_hidden_data_after_MBR() {
     echo "The hidden data size can NOT be found." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    # Saving mode, always copy error log to image dir.
     copy_error_log
     exit 1
   fi
@@ -441,7 +443,7 @@ restore_hidden_data_after_MBR() {
     if [ -z "$real_i" ]; then
       echo "You have to assign $i in function restore_hidden_data_after_MBR!" | tee --append ${OCS_LOGFILE}
       echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      copy_error_log
+      [ "$save_restore_error_log" = "yes" ] && copy_error_log
       exit 1
     fi
   done
@@ -759,7 +761,7 @@ get_image_cat_zip_cmd() {
       echo "$imgf not found." | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-      copy_error_log
+      [ "$save_restore_error_log" = "yes" ] && copy_error_log
       exit 1
     fi
     if [ -n "$(file -Ls $imgf | grep -i "gzip compressed data")" ]; then
@@ -866,7 +868,7 @@ get_image_cat_zip_cmd() {
     echo "Unknown format for $imgf." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-    copy_error_log
+    [ "$save_restore_error_log" = "yes" ] && copy_error_log
     exit 1
   fi
 } # end of get_image_cat_zip_cmd
@@ -927,6 +929,7 @@ disk_full_test() {
     [ -f "$diskfull_test" ] && rm -f $diskfull_test
     echo -n "$msg_press_enter_to_continue..."
     read
+    # Saving mode, always copy error log to image dir.
     copy_error_log
     exit 1
   fi
@@ -1104,6 +1107,7 @@ save_part_by_partclone() {
   if [ -z "$fs_save" ]; then
     echo "///ERROR/// The filesystem must be assigned in function save_part_by_partclone." | tee --append ${OCS_LOGFILE}
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    # Saving mode, always copy error log to image dir.
     copy_error_log
     exit 1
   fi
@@ -1518,6 +1522,7 @@ image_save() {
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
      echo "$msg_press_enter_to_continue..."
      read
+     # Saving mode, always copy error log to image dir.
      copy_error_log
   fi
   # We put the complete log in clonezilla-img file, not here.
@@ -1531,7 +1536,9 @@ check_input_hd() {
     if [ -z "$target_hd" ]; then
       echo "No device selected." | tee --append ${OCS_LOGFILE}
       echo "$msg_program_stop."  | tee --append ${OCS_LOGFILE}
-      copy_error_log
+      if [ -n "$(echo $ocs_mode_prompt | grep -iw "restore")" ]; then
+        [ "$save_restore_error_log" = "yes" ] && copy_error_log
+      fi
       exit 1
     fi
     for idisk in $target_hd; do
@@ -1541,7 +1548,9 @@ check_input_hd() {
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         echo -n "Press Enter to exit..." | tee --append ${OCS_LOGFILE}
         read
-        copy_error_log
+        if [ -n "$(echo $ocs_mode_prompt | grep -iw "restore")" ]; then
+          [ "$save_restore_error_log" = "yes" ] && copy_error_log
+        fi
         exit 1
       fi
     done
@@ -1556,7 +1565,9 @@ check_input_partition() {
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         echo -n "Press Enter to exit..."
         read
-        copy_error_log
+        if [ -n "$(echo $ocs_mode_prompt | grep -iw "restore")" ]; then
+          [ "$save_restore_error_log" = "yes" ] && copy_error_log
+        fi
         exit 1
       fi
     done
@@ -1615,7 +1626,7 @@ check_specify_part_exists() {
      echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
      echo -n "$msg_press_enter_to_continue..."
      read
-     copy_error_log
+     [ "$save_restore_error_log" = "yes" ] && copy_error_log
      exit 1
   fi
   [ -f "$partition_table" ] && rm -f $partition_table
@@ -1996,6 +2007,7 @@ check_if_input_device_exist() {
     echo "No inputted devices found!" | tee --append ${OCS_LOGFILE}
     echo "$msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    # Saving mode, always copy error log to image dir.
     copy_error_log
     exit 1
   fi
@@ -2027,6 +2039,7 @@ check_ntfs_partition_integrity() {
            echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
            echo -n "$msg_press_enter_to_continue..."
            read
+           # Saving mode, always copy error log to image dir.
            copy_error_log
            exit 1
 	   ;;
@@ -2184,7 +2197,7 @@ test_run_grub1_from_restored_os(){
   if [ -z "$root_prt" ]; then
     echo "Variable root_prt not assigned in function test_run_grub2_from_restored_os." | tee --append ${OCS_LOGFILE}
     echo "Program terminated." | tee --append ${OCS_LOGFILE}
-    copy_error_log
+    [ "$save_restore_error_log" = "yes" ] && copy_error_log
     exit 1
   fi
   mnt_pnt="$(mktemp -d /tmp/root_reinst.XXXXXX)"
@@ -2296,7 +2309,7 @@ test_run_grub2_from_restored_os(){
   if [ -z "$root_prt" ]; then
     echo "Variable root_prt not assigned in function test_run_grub2_from_restored_os." | tee --append ${OCS_LOGFILE}
     echo "Program terminated." | tee --append ${OCS_LOGFILE}
-    copy_error_log
+    [ "$save_restore_error_log" = "yes" ] && copy_error_log
     exit 1
   fi
   mnt_pnt="$(mktemp -d /tmp/root_reinst.XXXXXX)"
@@ -2332,7 +2345,7 @@ run_grub2_from_restored_os() {
     if [ -z "$ivar" ]; then
       echo "No \"$i\" assigned in function run_grub2_from_restored_os." | tee --append ${OCS_LOGFILE}
       echo "Program terminated." | tee --append ${OCS_LOGFILE}
-      copy_error_log
+      [ "$save_restore_error_log" = "yes" ] && copy_error_log
       exit 1
     fi
   done
@@ -2573,7 +2586,7 @@ install_grub_hd() {
            if [ -z "$selected_hd" ]; then
              echo "-s is used, but no selected_hd assigned."
              echo "$msg_program_stop"
-             copy_error_log
+             [ "$save_restore_error_log" = "yes" ] && copy_error_log
              exit 1
            fi
            ;;
@@ -2587,7 +2600,7 @@ install_grub_hd() {
            if [ -z "$selected_parts" ]; then
              echo "-p is used, but no selected_parts assigned."
              echo "$msg_program_stop"
-             copy_error_log
+             [ "$save_restore_error_log" = "yes" ] && copy_error_log
              exit 1
            fi
            ;;
@@ -2599,7 +2612,7 @@ install_grub_hd() {
         -*)     echo "${0}: ${1}: invalid option"
                 USAGE >& 2
                 echo "$msg_program_stop"
-                copy_error_log
+                [ "$save_restore_error_log" = "yes" ] && copy_error_log
                 exit 2 ;;
         *)      break ;;
       esac
@@ -2966,6 +2979,7 @@ check_integrity_of_partition_table_in_disk() {
   if [ -z "$disk_file" ]; then
     echo "To check partition table, you have to assign disk." | tee --append ${OCS_LOGFILE}
     echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+    # Saving mode, always copy error log to image dir.
     copy_error_log
     exit 1
   fi
@@ -2999,6 +3013,7 @@ check_integrity_of_partition_table_in_disk() {
          *)
             echo "Smart choice."      | tee --append ${OCS_LOGFILE}
             echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+            # Saving mode, always copy error log to image dir.
             copy_error_log
             exit 1
     esac
@@ -3052,6 +3067,7 @@ check_blocks_per_group_of_ext2_3(){
   if [ -z "$ $part_" ]; then
     echo "To check the blocks per group of ext2/ext3, you have to assign the partition." | tee --append $OCS_LOGFILE
     echo "$msg_program_stop." | tee --append $OCS_LOGFILE
+    # Saving mode, always copy error log to image dir.
     copy_error_log
     exit 1
   fi
@@ -3131,7 +3147,7 @@ create_partition() {
       echo "$msg_src_disk_size_from_image: $src_disk_size_sec sectors ($src_disk_size_GB GB)" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      copy_error_log
+      [ "$save_restore_error_log" = "yes" ] && copy_error_log
       exit 1
     fi
   fi
@@ -3217,7 +3233,7 @@ create_partition() {
           echo "Unable to use dd to dump the partition table in $tgt_hd_file!" | tee --append $OCS_LOGFILE
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
           echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-          copy_error_log
+          [ "$save_restore_error_log" = "yes" ] && copy_error_log
           exit 1
         fi
         ;;
@@ -3255,7 +3271,7 @@ create_partition() {
               echo "$msg_is_this_disk_too_small: $tgt_hd_file?" | tee -a $OCS_LOGFILE
               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
               echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
-              copy_error_log
+              [ "$save_restore_error_log" = "yes" ] && copy_error_log
               exit 1
             fi
             if [ -f $tgt_dir/$(to_filename ${tgt_hd_name})-multipath ]; then
@@ -3707,7 +3723,7 @@ check_input_target_image() {
     echo "The directory $tgt_dir for the inputed name does NOT exist!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
-    copy_error_log
+    [ "$save_restore_error_log" = "yes" ] && copy_error_log
     exit 1
   fi
 } # end of check_input_target_image
@@ -5925,7 +5941,7 @@ restore_logv() {
   echo "done." | tee --append $OCS_LOGFILE
   if [ $rc -ne 0 ]; then
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-    copy_error_log
+    [ "$save_restore_error_log" = "yes" ] && copy_error_log
     exit 1
   fi
   #
@@ -6009,7 +6025,7 @@ restore_logv() {
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
      echo "$msg_program_stop"      | tee --append ${OCS_LOGFILE}
      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-     copy_error_log
+     [ "$save_restore_error_log" = "yes" ] && copy_error_log
      exit 1
    fi
   done
@@ -6889,6 +6905,7 @@ check_mbr_gpt_partition_table() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_please_fix_this_issue_then_restart_clonezilla_again" | tee --append ${OCS_LOGFILE}
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    # Saving mode, always copy error log to image dir.
     copy_error_log
     exit 1
   fi
@@ -8313,6 +8330,8 @@ USAGE_common_restore(){
     echo " --max-time-to-wait TIME   When not enough clients have connected (but at least one), start anyways when TIME seconds since first client connection have pased. This option is used with --clients-to-wait"
     echo " -cm, --check-md5sum   Check the MD5 checksum for the image. To use this option, you must enable -gm|--gen-md5sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
     echo " -cs, --check-sha1sum  Check the SHA1 checksum for the image. To use this option, you must enable -gs|--gen-sha1sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
+    echo " -srel, --save-restore-error-log  Save the error log file in the image dir. By default the log file won't be saved when error occurs."
+
 } # end of USAGE_common_restore
 #
 USAGE_reserved_word_for_restore() {
@@ -8402,6 +8421,7 @@ check_if_source_dev_busy_before_saving() {
     fi
     echo "done."              | tee --append ${OCS_LOGFILE}
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    # Saving mode, always copy error log to image dir.
     copy_error_log
     exit 1
   fi
@@ -8415,7 +8435,7 @@ check_if_target_dev_busy_before_restoring() {
     echo "$tgt_dev is mounted. You have to unmount the $tgt_dev." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-    copy_error_log
+    [ "$save_restore_error_log" = "yes" ] && copy_error_log
     exit 1
   fi
 } # end of check_if_target_dev_busy_before_restoring
@@ -8436,7 +8456,7 @@ check_if_disk_busy_before_create_partition() {
     echo "You have to unmount them first. Or you can choose '-k' to skip partition recreation when you start clonezilla!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-    copy_error_log
+    [ "$save_restore_error_log" = "yes" ] && copy_error_log
     exit 1
   fi
 } # end of check_if_disk_busy_before_create_partition
@@ -8493,7 +8513,7 @@ convert_ocs_format_from_1.5_to_2.0_or_newer() {
         echo "Unknown clonezilla image format! The format is in a mess?" | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
-        copy_error_log
+        [ "$save_restore_error_log" = "yes" ] && copy_error_log
         exit 1
       fi
     elif [ -f "$img_path/parts" ]; then
@@ -9267,14 +9287,14 @@ run_ntfsreloc_part() {
            if [ -z "$selected_parts" ]; then
              echo "-p is used, but no selected_parts assigned." | tee --append ${OCS_LOGFILE}
              echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
-             copy_error_log
+             [ "$save_restore_error_log" = "yes" ] && copy_error_log
              exit 1
            fi
            ;;
         -*)     echo "${0}: ${1}: invalid option" | tee --append ${OCS_LOGFILE} >&2
                 USAGE | tee --append ${OCS_LOGFILE} >& 2
                 echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
-                copy_error_log
+                [ "$save_restore_error_log" = "yes" ] && copy_error_log
                 exit 2 ;;
         *)      break ;;
       esac
@@ -10107,7 +10127,7 @@ get_dsk_size_from_img_and_tgt_dsk_size_from_machine() {
     echo "Disk ($tgt_hd_name) size from image $tgt_dir NOT found." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-    copy_error_log
+    [ "$save_restore_error_log" = "yes" ] && copy_error_log
     exit 1
   fi
   if [ -z "$tgt_disk_size_sec" ]; then
@@ -10115,7 +10135,7 @@ get_dsk_size_from_img_and_tgt_dsk_size_from_machine() {
     echo "Failed to find the disk ($tgt_hd_name) size on this machine." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-    copy_error_log
+    [ "$save_restore_error_log" = "yes" ] && copy_error_log
     exit 1
   fi
 } # end of get_dsk_size_from_img_and_tgt_dsk_size_from_machine

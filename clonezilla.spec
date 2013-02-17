@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- An option -srel|--save-restore-error-log to force saving error log in the image dir was added in ocs-sr and drbl-ocs. By default we do not save that in the image dir when restoring. Only when saving it will be saved in the image dir. Thanks to futuremonkey for this suggestion.
+
 * Wed Feb 13 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.5-drbl1
 - Bug fixed: multipath restoring for LVM failed due to do loop problem.
 
