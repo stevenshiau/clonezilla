@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.6
+Version:	3.3.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.3.6, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.58, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.3.8, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.58, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Feb 21 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.7-drbl1
+- Bug fixed: failed to locate grub partition on cciss disk.
+
 * Sun Feb 17 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.6-drbl1
 - An option -srel|--save-restore-error-log to force saving error log in the image dir was added in ocs-sr and drbl-ocs. By default we do not save that in the image dir when restoring. Only when saving it will be saved in the image dir. Thanks to futuremonkey for this suggestion.
 
@@ -201,7 +204,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 
 * Tue Nov 20 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.19-drbl1
 - Bug fixed: ocs-lvm2-stop did not work on Ubuntu Linux due to the udevd rules 85-lvm2.rules from Ubuntu.
-- File system exfat was removed from supporting list in drbl-ocs.conf due to patent concern.
+- File system exfat was removed from supporting list in drbl-ocs.conf due to some concern.
 
 * Thu Nov 08 2012 Steven Shiau <steven _at_ nchc org tw> 3.1.18-drbl1
 - Suppress the stderr messages of ocs-lvm2-start and ocs-lvm2-stop.
