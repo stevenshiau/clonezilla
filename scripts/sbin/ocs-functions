@@ -2657,7 +2657,7 @@ install_grub_hd() {
          # selected_hd e.g.: sda sdb
          for i in $found_grub_partition; do
            for j in $selected_hd; do
-             if [ "$(echo $(basename $i) | sed -r -e "s/[[:digit:]]+$//g")" = "$j" ]; then
+             if [ "$(get_diskname $i)" = "$j" ]; then
               grub_partition="$i"  # e.g. /dev/sda1
               break
              fi
@@ -2682,10 +2682,12 @@ install_grub_hd() {
        # Check if grub_partition is on the list of target partitions
        if [ -n "$selected_parts" ]; then
          # Only if we assign the selected partitions, we have to check...
-         if [ -n "$(echo $selected_parts | grep -Ewo "$(basename $grub_partition)")" ]; then
+	 # E.g.
+	 # grub_partition=/dev/sda1
+         # echo "sda1 sda3" | grep -Ewo "${grub_partition#/dev/*}"
+         if [ -n "$(echo $selected_parts | grep -Ewo "${grub_partition#/dev/*}")" ]; then
            echo "Found grub partition \"$grub_partition\", which is on the restored partitions list ($selected_parts). Will run $grub_install_exec later."
          else
-           # E.g. echo "sda1 sda3" | grep -Ewo "$(basename /dev/sda1)"
            echo "The found grub partition \"$grub_partition\" is _NOT_ on the restored partitions list ($selected_parts). Skip running $grub_install_exec."
            return 3
          fi

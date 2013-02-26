@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Minor improvement in function install_grub_hd.
+
 * Fri Feb 21 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.8-drbl1
 - Bug fixed: duplicated function get_partition_list in ocs-functions was removed.
 - Bug fixed: local part to local part clone failed.
