@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.9
+Version:	3.3.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.10-drbl1
+- Bug fixed: ocs-chkimg failed to check the swap partition of cciss devices.
+
 * Tue Feb 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.9-drbl1
 - Minor improvement in function install_grub_hd.
 - Bug fixed: grub2-install failed to install the correct path in some cases.
