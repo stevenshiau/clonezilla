@@ -22,7 +22,7 @@ TARBALL_ORIG=${PKG}_${VER}.orig.tar.bz2
 rm -rf debforge
 mkdir debforge
 (cd debforge; ln -fs ../$TARBALL $TARBALL_ORIG)
-tar -xvjf $TARBALL -C debforge/
+tar -xjf $TARBALL -C debforge/
 cp -a debian debforge/$PKG-$VER/
 cd debforge/$PKG-$VER
 debuild
