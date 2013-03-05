@@ -7047,6 +7047,7 @@ task_saveparts() {
   local target_parts="$2"
   local disk_size_sec to_skip dev_to_be_saved_shown_in_warning rc_saveparts
   local target_dir_fullpath
+  local minix_subpt_start minix_subpt_end minix_subpt_size cmd_save_minix_sub_parts_table
 
   # target_hd will be extracted from $target_parts, maybe we will have one more
   local target_hd=""
@@ -7225,6 +7226,33 @@ task_saveparts() {
       if [ "$clone_hidden_data" = "yes" ]; then
 	save_hidden_data_after_MBR $ihd $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr
       fi
+      # Find if the 1st partition (e.g. /dev/sda1) is minix device (Id=81).
+      # We do not care about multipath device (e.g. cciss, i.e. /dev/cciss/c0d0p1), since we believe no one will install Minix on multipath device.
+      if [ -n "$(grep -Ew "^/dev/$(to_filename ${ihd})1" $target_dir_fullpath/$(to_filename ${ihd})-pt.sf 2>/dev/null | grep -Ewi "Id=81")" ]; then
+        # It's minix slice, we only have to dump the sub-partition table, i.e. 32 sectors.
+	# The slices, sub-partitions list is like:
+	# partx -b -P -o nr,type,scheme,start,end /dev/sda
+	# NR="1" TYPE="0x81" SCHEME="dos" START="63" END="16771859"
+	# NR="5" TYPE="0x81" SCHEME="minix" START="95" END="131166"
+	# NR="6" TYPE="0x81" SCHEME="minix" START="131167" END="3233886"
+	# NR="7" TYPE="0x81" SCHEME="minix" START="3233887" END="16771859"
+	minix_subpt_start="$(LC_ALL=C partx -g -b -o start /dev/$(to_filename ${ihd})1 2>/dev/null)"
+	minix_subpt_end="$(LC_ALL=C partx -g -b -o start /dev/$(to_filename ${ihd})5 2>/dev/null)"
+	if [ -n "$minix_subpt_start" -a -n "$minix_subpt_end" ]; then
+	  minix_subpt_size="$((minix_subpt_end - minix_subpt_start))"
+        fi
+	if [ "$minix_subpt_size" -gt 0 ]; then
+	  cmd_save_minix_sub_parts_table="dd if=/dev/$(to_filename ${ihd})1 of=$target_dir_fullpath/$(to_filename ${ihd})1-sub-pt.dd bs=512 count=$minix_subpt_size"
+	  echo "Saving the Minix sub-partition table on /dev/$(to_filename ${ihd})1 by:" | tee --append ${OCS_LOGFILE}
+	  echo $cmd_save_minix_sub_parts_table | tee --append ${OCS_LOGFILE}
+          LC_ALL=C eval "(${cmd_save_minix_sub_parts_table} && exit \${PIPESTATUS[0]})"
+	  rc=$?
+	  if [ "$rc" -eq 0 ]; then
+	    # Removing "$(to_filename ${ihd})1" from target_parts, we do not have to save it since this will be duplicated with other sub partitions
+	    target_parts="$(echo $target_parts | sed -r -e "s|$(to_filename ${ihd})1[[:space:]]+||g")"
+	  fi
+	fi
+      fi
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     else
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -7401,6 +7429,7 @@ task_restoreparts() {
   local continue_choice
   local ptype
   local whole_disk=""
+  local cmd_restore_minix_sub_parts_table
 
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -7582,6 +7611,17 @@ task_restoreparts() {
 	  echo "File $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr not found!" | tee --append $OCS_LOGFILE
           echo "Skip restoring hidden data after MBR for disk $ihd." | tee --append $OCS_LOGFILE
         fi
+        echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+	# For minix sub-partition table
+        if [ -n "$(grep -Ew "^/dev/$(to_filename ${ihd})1" $target_dir_fullpath/$(to_filename ${ihd})-pt.sf 2>/dev/null | grep -Ewi "Id=81")" ]; then
+	  if [ -e "$target_dir_fullpath/$(to_filename ${ihd})1-sub-pt.dd" ]; then
+	    cmd_restore_minix_sub_parts_table="dd if=$target_dir_fullpath/$(to_filename ${ihd})1-sub-pt.dd of=/dev/$(to_filename ${ihd})1"
+	    echo "Restoring the Minix sub-partition table to /dev/$(to_filename ${ihd})1 by:" | tee --append ${OCS_LOGFILE}
+	    echo $cmd_restore_minix_sub_parts_table | tee --append ${OCS_LOGFILE}
+            LC_ALL=C eval "(${cmd_restore_minix_sub_parts_table} && exit \${PIPESTATUS[0]})"
+	    inform_kernel_partition_table_changed mbr /dev/${ihd} | tee --append ${OCS_LOGFILE}
+	  fi
+	fi
         echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
       fi
     done
