@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.14
+Version:	3.3.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,9 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Mar 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.15-drbl1
+- Program grub-install won't be run for grub1 on ext4 file system when grub-install is from Debian.
+
 * Mon Mar 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.14-drbl1
 - Typo in ocs-tux-postprocess was fixed.
-- Program grub-install won't be run for grub1 on ext4 file system when grub-install is from Debian.
 
 * Mon Mar 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.13-drbl1
 - Bug fixed: for cloning partition mode, "-g auto" should not be turned on by default. 
