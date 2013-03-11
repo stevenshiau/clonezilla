@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: for cloning partition mode, "-g auto" should not be turned on by default. 
+- Program ocs-tux-postprocess was modified to process partition, not disk. It will be more specific when using with disk or partition restoring/cloning.
+
 * Tue Mar 05 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.12-drbl1
 - Improvement: Minix slice and sub-partition won't be imaged twice.
 

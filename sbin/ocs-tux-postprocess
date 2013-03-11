@@ -14,29 +14,32 @@ USAGE() {
     echo "$ocs - To remove the Linux udev persistent files"
     echo "Usage:"
     echo "To run $ocs:"
-    echo "$ocs [OPTION] [DISK]"
+    echo "$ocs [OPTION] [PARTITION]"
     echo "Options:"
     echo "-c, --cd-only    Remove Linux udev persistent CD file only."
     echo "-n, --net-only   Remove Linux udev persistent net file only."
-    echo "DISK is the disk device name, e.g. sda, sdb... If it's not assigned, all the disks on the system will be searched."
+    echo "PARTITION is the FAT partition device name, e.g. sda1, sdb1... If it's not assigned, all the partitions on the system will be searched."
     echo "By default both CD and net persistent files will be removed."
     echo "Ex:"
-    echo "To remove both CD and net persistent files in disk sda, run"
-    echo "   $ocs sda"
+    echo "To remove both CD and net persistent files in disk sda1, run"
+    echo "   $ocs sda1"
     echo
 } # end of USAGE
 
 # check available partitions
 rm_udev_persistent_record() {
-  local select_disk="$*"  # select_disk is like hda or sda
+  local selected_dev="$*"  # selected_dev is like "sda1 sda2"
   local fs target_p
 
-  # Here we also search LVM, since udev persistent record could be inside that.
-  get_partition_list true "$select_disk"
-  # partition_list is got from get_partition_list
+  if [ -z "$selected_dev" ]; then
+    # Here we also search LVM, since udev persistent record could be inside that.
+    get_partition_list true
+    # partition_list is got from get_partition_list
+    selected_dev="$partition_list"
+  fi
 
-  echo "Trying to remove udev persistent files. Searching in devices: $partition_list... "
-  for ipartition in $partition_list; do
+  echo "Trying to remove udev persistent files. The devices to be searched: $selected_dev... "
+  for ipartition in $selected_dev; do
     target_p="/dev/$ipartition"
     # Skip swap, FAT, NTFS, HFS+ partition...
     fs="$(LC_ALL=C ocs-get-part-info $target_p filesystem)"
@@ -46,7 +49,7 @@ rm_udev_persistent_record() {
 	echo "Skip $target_p ($fs)."
 	;;
       *)
-        echo "$target_p..."
+        echo "Now searching possible device $target_p..."
         hd_img="$(mktemp -d /tmp/hd_img.XXXXXX)"
         mount $target_p $hd_img >/dev/null 2>&1
         mrc=$?
@@ -87,7 +90,6 @@ rm_udev_persistent_record() {
     esac
   done
   echo "done!"
-  [ -f "$partition_table" ] && rm -f $partition_table
 } # end of rm_udev_persistent_record
 #
 

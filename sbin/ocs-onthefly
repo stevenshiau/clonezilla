@@ -1507,10 +1507,17 @@ post_process_in_target_dev() {
 
     # Remove the udev MAC address records on the restored GNU/Linux
     if [ "$do_rm_hardware_record" = "yes" ]; then
-      ocs-tux-postprocess $target_hd | tee --append $OCS_LOGFILE
+      ocs-tux-postprocess $target_parts | tee --append $OCS_LOGFILE
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     fi
 
+    # re-install syslinux
+    if [ "$do_update_syslinux" = "yes" ]; then
+      ocs-update-syslinux -b $target_parts | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    fi
+
+    # re-install grub here
     if [ "$install_grub" = "on" ]; then
       # Since it's local clone, we must assign the target hardisk, otherwise it might find the source hardisk. For example, hda -> hdc local clone, if no "-s $target_hd" is assigned, it will find hda as grub target.
       tgt_disk_select_opt="-s $target_hd"
@@ -1518,6 +1525,8 @@ post_process_in_target_dev() {
       install_grub_hd $tgt_disk_select_opt $grub_partition | tee --append $OCS_LOGFILE
     fi
     echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
+
+    #
     if [ "$change_ntfs_boot_chs" = "on" ]; then
       echo "Try to run partclone.ntfsfixboot for NTFS boot partition if it exists. Scanning partition(s): $target_parts..." | tee --append $OCS_LOGFILE
       run_ntfsreloc_part -p "$target_parts" $ntfs_boot_partition | tee --append $OCS_LOGFILE
@@ -1801,14 +1810,23 @@ get_onthefly_input_param() {
   esac
 } # end of get_onthefly_input_param
 set_ocs_onthefly_extra_param() {
+  local mode_="$1"  # mode_ is one of: disk_to_local_disk, disk_to_remote_disk, part_to_local_part, part_to_remote_part
   local fdisk_opt
+  local inst_grub_opt
   # This function is used to be called inside ocs-onthefly, not from other program.
   local OCS_PARAM_TMP="$(mktemp /tmp/onthefly-extramenu.XXXXXX)"
+
+  # If the mode is only for parts, we won't turn on "-g auto" option by default
+  case "$mode_" in
+    *part) inst_grub_opt="off";;
+        *) inst_grub_opt="on";;
+  esac
+
   if [ "$ocs_user_mode" = "expert" ]; then
     $DIA --separate-output --backtitle "$msg_nchc_free_software_labs" --title  \
     "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --checklist "$msg_choose_param_to_set:" \
     0 0 0 $DIA_ESC \
-    "-g auto "  "$msg_ocs_onthefly_param_g" on \
+    "-g auto "  "$msg_ocs_onthefly_param_g" $inst_grub_opt \
     "-e1 auto " "$msg_ocs_onthefly_param_e1" on \
     "-e2 "      "$msg_ocs_onthefly_param_e2" on \
     "-j2 "      "$msg_ocs_onthefly_param_j2" on \
@@ -1827,7 +1845,11 @@ set_ocs_onthefly_extra_param() {
     "-v "       "$msg_ocs_onthefly_param_v" off \
     2> $OCS_PARAM_TMP
   else
-    echo "-g auto" "-e1 auto" "-e2" "-r" "-j2" > $OCS_PARAM_TMP
+    if [ "$inst_grub_opt" = "on" ]; then
+      echo "-g auto" "-e1 auto" "-e2" "-r" "-j2" > $OCS_PARAM_TMP
+    else
+      echo "-e1 auto" "-e2" "-r" "-j2" > $OCS_PARAM_TMP
+    fi
   fi
 
   # Question about fsck the source partition
@@ -2188,7 +2210,7 @@ if [ "$ocs_onthefly_mode" = "interactive" ]; then
   [ -z "$ocs_user_mode" ] && ask_if_beginner_or_expert_mode
   get_onthefly_input_param      # get src_dev, tgt_dev, for example.
   check_source_and_target_type
-  set_ocs_onthefly_extra_param  # get OCS_PARAM_TMP
+  set_ocs_onthefly_extra_param $ocs_otf_type # get OCS_PARAM_TMP
   [ -n "$tgt_dev" ] && tgt_dev_opt="-t $tgt_dev"
   [ "$STATUS" = "clone_server" ] && net_clone_opt="-a"
   run_again_fname="/tmp/ocs-onthefly-`date +%F-%H-%M`"
