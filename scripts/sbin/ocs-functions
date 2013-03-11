@@ -2470,26 +2470,30 @@ install_grub_hd() {
     } # end of do_run_grub1_from_restored_os
     do_run_grub1_from_running_os() {
       local grub1_patch_flag=""
+      local rc_grub1_ext4
       prepare_grub1_files_if_required
       show_grub1_ext4_warning $grub_partition
-      [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
-      echo "Trying to use the grub1 from the running OS..."
-      check_grub_install_version 1
-      rc_grub_check=$?
-      if [ "$rc_grub_check" -eq 0 ]; then
-        echo "Running: $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd"
-        $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd
-        rc="$?"
-        # Remove the device.map in case it provents the restored OS fails to run update-grub due to different boot device name (e.g. sda <-> hda issue)
+      rc_grub1_ext4=$?
+      if [ "$rc_grub1_ext4" -eq 0 ]; then
         [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
-        
-        check_grub1_config_file $hd_img
-      else
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "The required version of grub-install for grub 1 was not found!"
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "Command grub-install is skipped!"
-        rc=1
+        echo "Trying to use the grub1 from the running OS..."
+        check_grub_install_version 1
+        rc_grub_check=$?
+        if [ "$rc_grub_check" -eq 0 ]; then
+          echo "Running: $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd"
+          $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd
+          rc="$?"
+          # Remove the device.map in case it provents the restored OS fails to run update-grub due to different boot device name (e.g. sda <-> hda issue)
+          [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
+          
+          check_grub1_config_file $hd_img
+        else
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "The required version of grub-install for grub 1 was not found!"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "Command grub-install is skipped!"
+          rc=1
+        fi
       fi
 
       unmount_wait_and_try $grub_partition 2>/dev/null
@@ -2557,11 +2561,29 @@ install_grub_hd() {
     show_grub1_ext4_warning () {
       local grub_pt_="$1"
       local grub_part_fs
+      local DISTRIB_ID
       grub_part_fs="$(LC_ALL=C ocs-get-part-info $grub_pt_ filesystem)"
       if [ "$grub_part_fs" = "ext4" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "Warning! Found grub partition ($grub_pt_) file system is ext4! Not all versions of grub 1 supports file system ext4!"
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        # Check if it's Debian Linux
+        [ -e /etc/lsb-release ] && . /etc/lsb-release
+        if [ "$DISTRIB_ID" = "Ubuntu" ] ;then
+          # Ubuntu linux. Its grub1 has been patched to support ext4.
+	  return 0
+	else
+          if [ -e /etc/debian_version ]; then
+            # It's Debian. Its grub1 does not support ext4 for sure.
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Warning! Found grub partition ($grub_pt_) file system is ext4! The grub 1 from Debian Linux does not support file system ext4! Skip installing grub..."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    return 3
+          else
+            # Otherwise distributios...
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Warning! Found grub partition ($grub_pt_) file system is ext4! Not all versions of grub 1 supports file system ext4!"
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    return 0
+          fi
+        fi
       fi
     } # end of show_grub1_ext4_warning
     # -s or -p option is used to pass the selected device, which means only these device will be searched for grub partition. If no assigning, all the available partitions on the system will be searched.
