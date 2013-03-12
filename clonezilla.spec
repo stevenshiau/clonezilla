@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Prompt about skip re-installing grub 1 in ocs-functions was improved.
+
 * Mon Mar 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.15-drbl1
 - Program grub-install won't be run for grub1 on ext4 file system when grub-install is from Debian.
 
