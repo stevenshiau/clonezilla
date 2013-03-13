@@ -5979,6 +5979,7 @@ restore_logv() {
     return 1
   fi
 
+  # Log the target_logv so that later we can used. target_logv is global variable
   # To avoid the stdin/stdout in ntfsclone/partimage/partclone ( do_unicast_stdin_restore $target_dir_fullpath $fn $lv; do_multicast_udpcast_restore $target_dir_fullpath $fn $lv) conflict with "while read", here we use different file descriptor  (3)
   exec 3< $LOGV_PARSE_CONF
   while read -u 3 lv fs; do
@@ -6007,7 +6008,10 @@ restore_logv() {
    done
    # If not in the chosen partition, skip this, continue with the next.
    [ "$is_in_chosen_partition" = "no" ] && continue
+   # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
    fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
+   # Log the logical volume which is restored. The leading "/dev/" is removed, i.e. the results might be: lucid-server/root lucid-server/usr
+   target_logv="$target_logv ${lv#/dev/*}"
    # create the swap if it's swap partition
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*)
@@ -7443,7 +7447,7 @@ task_restoreparts() {
   local target_dir="$1"
   local target_parts="$2"
   local port="$3" # we use the port to identify it's unicast or multicast.
-  local dev_to_be_overwrite parts_included target_dir_fullpath source_hd
+  local dev_to_be_overwrite parts_included target_dir_fullpath source_hd target_logv
   local target_hd=""
   local thd_tmp=""
   local source_hd=""
@@ -7762,6 +7766,7 @@ task_restoreparts() {
   fi
 
   # We have to do restore LVM (PV/VG/LV) together, not follow every partition
+  target_logv=""
   if [ "$do_LVM_restore" = "yes" ]; then
     # LVM exists, restore PV/VG/LV.
     echo "LVM exists, restoring PV/VG/LV." | tee --append ${OCS_LOGFILE}
@@ -7802,7 +7807,7 @@ task_restoreparts() {
 
   # Remove the udev MAC address records on the restored GNU/Linux
   if [ "$do_rm_hardware_record" = "yes" ]; then
-    ocs-tux-postprocess $target_parts| tee --append $OCS_LOGFILE
+    ocs-tux-postprocess $target_parts $target_logv | tee --append $OCS_LOGFILE
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 

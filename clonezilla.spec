@@ -38,6 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 - Prompt about skipping re-installing grub 1 in ocs-functions was improved.
+- Bug fixed: Program ocs-tux-postprocess should search LV, too.
 
 * Mon Mar 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.15-drbl1
 - Program grub-install won't be run for grub1 on ext4 file system when grub-install is from Debian.
