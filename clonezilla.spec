@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.15
+Version:	3.3.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Mar 13 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.16-drbl1
 - Prompt about skipping re-installing grub 1 in ocs-functions was improved.
 - Bug fixed: Program ocs-tux-postprocess should search LV, too.
 
