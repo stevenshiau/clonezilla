@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.17
+Version:	3.3.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Mar 14 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.18-drbl1
+- The progress bar of resize2fs was turned on in ocs-resize-part.
+
 * Thu Mar 14 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.17-drbl1
 - Bug fixed: ocs-onthefly failed to use with optioin "-k1" (http://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/6933289). Thanks to Sebastien for reporting this issue.
 
