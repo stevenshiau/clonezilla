@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: When using Clonezilla live as Clonezilla SE's client, the option "-y1" won't work for select-in-client mode.
+
 * Thu Mar 14 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.18-drbl1
 - The progress bar of resize2fs was turned on in ocs-resize-part.
 

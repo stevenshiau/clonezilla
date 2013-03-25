@@ -34,6 +34,7 @@ our %config = (
   tftpboot => '/tftpboot/nbi_img',
   script_to_exec => '',
   nocheck => 0,
+  write_pxe_cfg => 0,
 );
 
 while ( $_ = shift ) {
@@ -46,6 +47,8 @@ while ( $_ = shift ) {
     $config{script_to_exec} = shift;
   } elsif(/--nocheck/) {
     $config{nocheck} = 1;
+  } elsif(/--nopxecfg/) {
+    $config{write_pxe_cfg} = 1;
   }
 }
 
@@ -147,7 +150,9 @@ sub start_server(%) {
           # add code to parse if it is IP ? or other keyword to check...
           print "Client $peeraddr ($peermac) finished cloning. Stats: $peermsg\n";
           &client_joblog("client $peeraddr ($peermac) finished cloning. Stats: $peermsg");
-          gen_pxe_cfg("$peeraddr", "$peermac");
+	  if ( "$config{write_pxe_cfg}" eq "0" ) {
+            gen_pxe_cfg("$peeraddr", "$peermac");
+          }
           &log("connection closed: ".$fh->peerhost());
           $fh->close();
         }

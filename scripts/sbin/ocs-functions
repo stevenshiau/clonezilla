@@ -6266,6 +6266,7 @@ start_ocs_service() {
   local tgt_img=""
   local tgt_dev=""
   local regen_opt
+  local mgrd_opt
   while [ $# -gt 0 ]; do
     case "$1" in
       -t|--task)
@@ -6430,7 +6431,11 @@ start_ocs_service() {
   # after start/stop cloning, we will remove $ocs_lock_dir/clonezilla.lock
   touch $ocs_lock_dir/clonezilla.lock
   # UDPCAST MODIFY
-  ocsmgrd &
+  if [ "$always_restore" = "yes" ]; then
+    # If it's always_restore, we do not generate client's PXE config when receiving job is done message from client.
+    mgrd_opt="--nopxecfg"
+  fi
+  ocsmgrd $mgrd_opt &
   ocs_log_file="$(LC_ALL=C grep -F "joblogfile =>" `which ocsmgrd` | awk -F" " '{print $3}')"
   echo "$msg_client_job_are_logged_in: $ocs_log_file"
   if [ -n "$(echo $task | grep -i "restore")" ]; then
@@ -8131,6 +8136,7 @@ do_startparts () {
 
 #
 do_select_in_client() {
+  local mgrd_opt
   # Note! We can not use "for ihost in $drblroot/*; do" since we have to create every pxelinux config for client. If we use that, it will fail in DRBL SSI and Clonezilla box.
   #for ihost in $drblroot/*; do
   for node_ip in `get-client-ip-list`; do
@@ -8154,6 +8160,9 @@ do_select_in_client() {
   # Set the single user mode password if not setting for client...This will be safer..."
   set_clients_rc1_passwd $IP_LIST
 
+  # before start the ocsmgrd, kill the stale one
+  kill_ps_by_killall_9 ocsmgrd
+
   # If the mode is in always_restore, and PXE default menu is assigned to local (-y0), we will set local boot as default. Since the always_restore mode is only useful with local OS exists. But if in some scenario, such as production clone flow, maybe pxe_menu_default_mode=clone is useful, since a lot of hardisks will be replaced one by one.
   if [ "$always_restore" = "yes" ]; then
    case "$pxe_menu_default_mode" in
@@ -8171,10 +8180,14 @@ do_select_in_client() {
   # after start/stop cloning, we will remove $ocs_lock_dir/clonezilla.lock
   touch $ocs_lock_dir/clonezilla.lock
   # UDPCAST MODIFY
-  ocsmgrd &
+  if [ "$always_restore" = "yes" ]; then
+    # If it's always_restore, we do not generate client's PXE config when receiving job is done message from client.
+    mgrd_opt="--nopxecfg"
+  fi
+  ocsmgrd $mgrd_opt &
   ocs_log_file="$(LC_ALL=C grep -F "joblogfile =>" `which ocsmgrd` | awk -F" " '{print $3}')"
   echo "$msg_client_job_are_logged_in: $ocs_log_file"
-} # end of do_select_in_client() {
+} # end of do_select_in_client
 
 #
 prompt_to_turn_on_client() {
