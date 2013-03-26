@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: Clonezilla SE client did not report the clonezilla job message when drbl-ocs is run with "-y1" option.
+
 * Mon Mar 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.19-drbl1
 - Bug fixed: When using Clonezilla live as Clonezilla SE's client, the option "-y1" won't work for select-in-client mode.
 - Message msg_etherboot_5_4_is_required in ocs-functions was disabled.
