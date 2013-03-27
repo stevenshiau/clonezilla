@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: GParted live an DRBL live were not isohybrided. Thanks to cvbn for reporting this issue.
+
 * Wed Mar 27 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.21-drbl1
 - Bug fixed: GParted live an DRBL live were not isohybrided. Thanks to cvbn for reporting this issue.
 - Bug fixed: fluxbox menu key function failed to start in GParted live.
