@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.20
+Version:	3.3.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Mar 27 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.21-drbl1
+- Bug fixed: GParted live an DRBL live were not isohybrided. Thanks to cvbn for reporting this issue.
+- Bug fixed: fluxbox menu key function failed to start in GParted live.
+
 * Tue Mar 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.20-drbl1
 - Bug fixed: Clonezilla SE client did not report the clonezilla job message when drbl-ocs is run with "-y1" option.
 

@@ -74,13 +74,23 @@ gparted_desktop_rep="/root/gparted-live/"
 
 cp -af $gparted_desktop_rep/ideskrc $live_auto_login_id_home/.ideskrc
 cp -af $gparted_desktop_rep/idesktop $live_auto_login_id_home/.idesktop
-cp -af $gparted_desktop_rep/apps $live_auto_login_id_home/
+
+# Overwrite the settings in system for later use with fluxbox
+cp -af $gparted_desktop_rep/apps /etc/X11/fluxbox/
+# Enable the menu key
+# Ref: https://bugzilla.gnome.org/show_bug.cgi?id=578842#c8
+if ! grep -Eq "^Menu :RootMenu" /etc/X11/fluxbox/keys; then
+  cat <<-FLUX_KEY >> /etc/X11/fluxbox/keys
+
+# Modified by GParted live. Enabling the menu key.
+# Ref: https://bugzilla.gnome.org/show_bug.cgi?id=578842#c8"
+Menu :RootMenu
+FLUX_KEY
+fi
 
 #
 cat <<-XINITRC_END >> $live_auto_login_id_home/.xinitrc
 #!/bin/bash
-exec fluxbox &
-
 [ -e /etc/gparted-live/gparted-live.conf ] && . /etc/gparted-live/gparted-live.conf
 # Force to load system keymap in X if "keyb" and "live_keyboard_layouts" is not set, otherwise the default in xorg.conf is "us".
 # 2012/6/29 Actually "keyb" is deprecated. We should let live-config.keyboard-layouts=*|keyboard-layouts=* of live-config take care of the keymap. Therefore the following is only for backward compability. User shoud be able to use live-config.keyboard-layouts=*|keyboard-layouts=* to configure the keymap in console and X. Live-config will take care of that.
@@ -98,20 +108,9 @@ elif [ -n "\$keyb" ]; then
   setxkbmap -layout \$keyb
 fi
 
-#
-action=""
-while [ -z "\$action" ]; do
-  if [ -d "\$HOME/.fluxbox" ]; then
-    mv -f ~/apps \$HOME/.fluxbox/
-    # Ref: https://bugzilla.gnome.org/show_bug.cgi?id=578842#c8
-    echo "# Ref: https://bugzilla.gnome.org/show_bug.cgi?id=578842#c8" >> \$HOME/.fluxbox/keys
-    echo "Menu :RootMenu" >> \$HOME/.fluxbox/keys
-    action="done"
-  else
-    echo "Waiting for \$HOME/.fluxbox to be created..."
-    sleep 0.1
-  fi
-done
+# Actually start fluxlbox
+exec startfluxbox &
+
 idesk &
 # Do not start gparted immediately, wait a sec so that it can read the setting of ~/.fluxbox/apps.
 sleep 1
