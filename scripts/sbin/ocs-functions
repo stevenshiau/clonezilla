@@ -6845,7 +6845,9 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   tgtdisk_exist_flag=0
   for i in $target_hd; do
     if [ -z "$(echo $dsksname_from_img | grep -iEw $i)" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "Target disk $i does not exist in the image saved from disk(s) \"$dsksname_from_img\"."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       tgtdisk_exist_flag=1
       break
     fi
@@ -6856,14 +6858,14 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
     # (2) Unicast clone with batch mode (Since maybe there will be more than 1 restoration, and they will create the same temp image, which will be in a mess.
     # (3) source hardisk number is >= 2
     if [ -n "$port" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "$msg_create_cvrt_img_for_different_not_supported_in_multicast_mode $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
       exit 1
     fi
     if [ "$src_dsk_no" -ge 2 ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "$msg_create_cvrt_img_for_more_than_2_disks_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
@@ -6872,7 +6874,9 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
     is_spawned_by_drbl_ocs $ocs_ppid
     rc=$?
     if [ "$rc" -eq 0 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "$msg_create_cvrt_img_for_clonezilla_server_edition_client_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
       exit 1
     fi
@@ -8558,11 +8562,18 @@ is_spawned_by_drbl_ocs() {
       return 1
     fi
     ocs_pproc="$(LC_ALL=C ps -eo pid,ucmd | grep -Ew "^[[:space:]]*$ppid_" | awk -F" " '{print $2}')"
+    # Initialized rc value as 1
     rc=1
     # Systemd env in Fedora use "/etc/init.d/ocs-run start" to start up ocs-run, so no S[0-9][0-9], while ocs-live is for select-in-client mode, since it spawns command "clonezilla" then use "ocs-live" to run the real job.
-    if [ -n "$(LC_ALL=C echo "$ocs_pproc" | grep -Ew "(S[0-9][0-9])*(ocs-run|ocs-live)$")" ]; then
+    if [ -n "$(LC_ALL=C echo "$ocs_pproc" | grep -Ew "(S[0-9][0-9])*ocs-run$")" ]; then
       echo "$ocs_file was spawned by $ocs_pproc"
       rc=0
+    elif [ -n "$(LC_ALL=C echo "$ocs_pproc" | grep -Ew "ocs-live$")" ]; then
+      # If we found it's ocs-live, we have to check if "ocs_opt" and "select_in_client" in /proc/cmdline
+      if [ -n "$(LC_ALL=C grep -iEw "ocs_opt" /proc/cmdline | grep -Ew "select_in_client")" ]; then
+        echo "$ocs_file was spawned by $ocs_pproc"
+        rc=0
+      fi
     fi
   fi
   return $rc

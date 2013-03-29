@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: the implemented method in is_spawned_by_drbl_ocs wrongly parsed clonezilla live case.
+
 * Fri Mar 29 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.23-drbl1
 - Typo in drbl-ocs.conf fixed.
 
