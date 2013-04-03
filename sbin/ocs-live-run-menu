@@ -127,7 +127,30 @@ if [ -n "$(LC_ALL=C grep -iE "ocs_server" /proc/cmdline)" ]; then
   LANG=C perl -pi -e 's|(^[^#][[:space:]]*)(sudo -i ocs-live-run-menu)|$1 true # $2 # commented after clonezilla job is done.|g' $live_auto_login_id_home/.bash_profile
 else
   # Case 2: Clonezilla live interactive mode
-  # At this point, it's not in bterm/jfbterm, only text console. Use English. 
-  ask_and_load_lang_set en_US.UTF-8
-  run_post_cmd_when_clonezilla_live_end
+  if [ "$use_bterm" = "yes" ];then
+    case "$fb_term" in
+     "bterm")
+         # Since bterm can only use one parameter (i.e. not working if we run 'bterm -l zh_TW.UTF-8 -f $uni_font ls -alF /etc/', i.e. only ls will be respected. There is no such issue for jfbterm). Here we use a workaround to make it work for bterm, i.e. use a tmp file to run it.
+         ocs_live_run_tmp="$(mktemp /tmp/ocs_live_run_tmp.XXXXXX)"
+         echo "ocs-live-final-action" > $ocs_live_run_tmp
+         chmod 755 $ocs_live_run_tmp
+         export TERM=bterm
+         set +e
+         # bterm need full path command even it's in the PATH already.
+         bterm -l $LANG -f $uni_font $ocs_live_run_tmp
+         EXIT=$?
+         [ -e "$ocs_live_run_tmp" ] && rm -f $ocs_live_run_tmp
+         ;;
+    "jfbterm")
+         export TERM=jfbterm
+         set +e
+         jfbterm -q -e ocs-live-final-action
+         EXIT=$?
+         ;;
+    esac
+  else
+    # At this point, it's not in bterm/jfbterm, only text console. Use English. 
+    ask_and_load_lang_set en_US.UTF-8
+    ocs-live-final-action
+  fi
 fi

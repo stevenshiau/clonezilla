@@ -371,12 +371,16 @@ if [ "$count" -gt 1 ]; then
   dev_model=""
   link_status=""
   for DEVICE in $NETDEVICES; do
-    dev_model="$(grep "^.*$DEVICE\>" $hw_scan_tmp | sed -e "s/^.*$DEVICE[[:space:]]*network[[:space:]]*//g" | sed -e "s/ /_/g")"
+    dev_model="$(LC_ALL=C grep -Ew "$DEVICE" $hw_scan_tmp | sed -e "s/^.*$DEVICE[[:space:]]*network[[:space:]]*//g" | sed -e "s/ /_/g")"
     [ -z "$dev_model" ] && dev_model="Unknown_NIC"
     # only first 26 characters.
-    dev_model="${dev_model:0:25}..."
-    link_status="$(ethtool $DEVICE | grep -i "Link detected:" | cut -d":" -f2 | sed -e "s/ //g")"
-    DEVICELIST="$DEVICELIST ${DEVICE} $(rep_whspc_w_udrsc "$msg_link_detected"):${link_status}(${dev_model})"
+    dev_model="${dev_model:0:25}.."
+    link_status="$(LC_ALL=C ethtool $DEVICE | grep -i "Link detected:" | cut -d":" -f2 | sed -e "s/ //g")"
+    if [ -z "$link_status" ]; then
+      link_status="Unknown"	     
+    fi
+    hwaddr="$(drbl-get-macadd $DEVICE)"
+    DEVICELIST="$DEVICELIST ${DEVICE} $(rep_whspc_w_udrsc "$msg_link_detected"):${link_status}(${dev_model}|${hwaddr})"
   done
   rm -f "$TMP"
   [ -f "$hw_scan_tmp" -a -n "$hw_scan_tmp" ] && rm -f $hw_scan_tmp
