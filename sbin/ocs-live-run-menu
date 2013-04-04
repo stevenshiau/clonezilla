@@ -80,7 +80,7 @@ done
 # Pre run
 ocs-live-pre-run
 
-# Do not ask powerer/reboot/choose (-p) in $ocs_live_run (ocs-live-save/ocs-live-restore), just use "-p true" in $ocs_live_run (ocs-live-save/ocs-live-restore). Since it might be in bterm, and Debian live "Press Enter" message when poweroff/shutdown might be coverd by bterm and user will not have any idea what's happening after choose poweroff/reboot. We will ask it when bterm is done, i.e. in the end of this program.
+#
 if [ "$use_bterm" = "yes" ];then
   case "$fb_term" in
    "bterm")
@@ -128,11 +128,13 @@ if [ -n "$(LC_ALL=C grep -iE "ocs_server" /proc/cmdline)" ]; then
 else
   # Case 2: Clonezilla live interactive mode
   if [ "$use_bterm" = "yes" ];then
+    # The result got from ocs-live-final-action will be saved in file $ocs_live_run_rlt.
+    ocs_live_run_rlt="$(mktemp /tmp/ocs_live_run_rlt.XXXXXX)"
     case "$fb_term" in
      "bterm")
          # Since bterm can only use one parameter (i.e. not working if we run 'bterm -l zh_TW.UTF-8 -f $uni_font ls -alF /etc/', i.e. only ls will be respected. There is no such issue for jfbterm). Here we use a workaround to make it work for bterm, i.e. use a tmp file to run it.
          ocs_live_run_tmp="$(mktemp /tmp/ocs_live_run_tmp.XXXXXX)"
-         echo "ocs-live-final-action" > $ocs_live_run_tmp
+         echo "ocs-live-final-action $ocs_live_run_rlt" > $ocs_live_run_tmp
          chmod 755 $ocs_live_run_tmp
          export TERM=bterm
          set +e
@@ -144,7 +146,7 @@ else
     "jfbterm")
          export TERM=jfbterm
          set +e
-         jfbterm -q -e ocs-live-final-action
+         jfbterm -q -e ocs-live-final-action $ocs_live_run_rlt
          EXIT=$?
          ;;
     esac
@@ -153,4 +155,39 @@ else
     ask_and_load_lang_set en_US.UTF-8
     ocs-live-final-action
   fi
+  # //NOTE// Do not put poweroff/reboot in this program since it's run in jfbterm/bterm. We separate the final action from ocs-live-final-action. Otherwise if the poweroff command run in jfbterm/bterm, the Debian live "Press Enter to continue" message after poweroff/shutdown command is issued might be coverd by jfbterm/bterm and user will not have any idea what's happening after choose poweroff/reboot. 
+  final_action="$(cat $ocs_live_run_rlt)"
+  [ -e "$ocs_live_run_rlt" ] && rm -f $ocs_live_run_rlt
+  [ -n "$final_action" ] && echo "The next step: $final_action"
+  case "$final_action" in
+    poweroff) unmount_mounted_fs_before_ocs_live_reboot
+       echo -n 'Will poweroff... '
+       countdown 5
+       poweroff $HALT_REBOOT_OPT ;;
+    reboot) unmount_mounted_fs_before_ocs_live_reboot
+       echo -n 'Will reboot... '
+       countdown 5
+       reboot $HALT_REBOOT_OPT ;;
+    rerun*) # umount the clonezilla home dir
+       if [ "$final_action" = "rerun1" ]; then
+         echo "Completely start over, so umounting $ocsroot..."
+         unmount_mounted_fs_before_ocs_live_reboot
+       else
+         echo "Keep the mounted image repository $ocsroot..."
+       fi
+       echo -n 'Run Clonezilla live again... '
+       # since we are not in login shell, it's useless to use "exit" or "logout" to force logout bash. Use kill to terminate the login shell in tty1. The clonezilla live main menu will be run again.
+       if [ -n "$ocs_live_run_tty" ]; then
+         # ocs_live_run_tty is like: /dev/tty2, /dev/pts/2 (very unlikely)
+         ttys="$(LC_ALL=C echo $ocs_live_run_tty | sed -e "s|/dev/||g")"
+       else
+         ttys="tty1"
+       fi
+       for i in $ttys; do
+         tty_bash_id="$(LC_ALL=C ps -t $i | grep bash | awk -F" " '{print $1}')"
+         kill -9 $tty_bash_id
+       done
+       ;;
+    *) echo ;;
+  esac
 fi

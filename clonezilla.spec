@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.28
+Version:	3.3.30
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Apr 04 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.30-drbl1
+- Bug fixed: "Press ENTER to continue" message after poweroff/reboot command is issued was not shown.
+
+* Wed Apr 03 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.29-drbl1
+- Dialog menu prompt about final action of Clonezilla live was improved.
+
 * Wed Apr 03 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.28-drbl1
 - Dialog menu is used in the final action of Clonezilla live.
 
