@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Some comments about "--retries-until-drop 50" for udp-sender was added in drbl-ocs.conf.
+
 * Thu Apr 04 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.30-drbl1
 - Bug fixed: "Press ENTER to continue" message after poweroff/reboot command is issued was not shown.
 
