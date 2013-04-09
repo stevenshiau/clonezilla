@@ -126,10 +126,10 @@ if [ -n "$(LC_ALL=C grep -iE "ocs_server" /proc/cmdline)" ]; then
   get_live_auto_login_id_home
   LANG=C perl -pi -e 's|(^[^#][[:space:]]*)(sudo -i ocs-live-run-menu)|$1 true # $2 # commented after clonezilla job is done.|g' $live_auto_login_id_home/.bash_profile
 else
+  # The result got from ocs-live-final-action will be saved in file $ocs_live_run_rlt.
+  ocs_live_run_rlt="$(mktemp /tmp/ocs_live_run_rlt.XXXXXX)"
   # Case 2: Clonezilla live interactive mode
   if [ "$use_bterm" = "yes" ];then
-    # The result got from ocs-live-final-action will be saved in file $ocs_live_run_rlt.
-    ocs_live_run_rlt="$(mktemp /tmp/ocs_live_run_rlt.XXXXXX)"
     case "$fb_term" in
      "bterm")
          # Since bterm can only use one parameter (i.e. not working if we run 'bterm -l zh_TW.UTF-8 -f $uni_font ls -alF /etc/', i.e. only ls will be respected. There is no such issue for jfbterm). Here we use a workaround to make it work for bterm, i.e. use a tmp file to run it.
@@ -153,7 +153,7 @@ else
   else
     # At this point, it's not in bterm/jfbterm, only text console. Use English. 
     ask_and_load_lang_set en_US.UTF-8
-    ocs-live-final-action
+    ocs-live-final-action $ocs_live_run_rlt
   fi
   # //NOTE// Do not put poweroff/reboot in this program since it's run in jfbterm/bterm. We separate the final action from ocs-live-final-action. Otherwise if the poweroff command run in jfbterm/bterm, the Debian live "Press Enter to continue" message after poweroff/shutdown command is issued might be coverd by jfbterm/bterm and user will not have any idea what's happening after choose poweroff/reboot. 
   final_action="$(cat $ocs_live_run_rlt)"

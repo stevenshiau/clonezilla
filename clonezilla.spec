@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.32
+Version:	3.3.33
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Apr 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.33-drbl1
+- Bug fixed: ocs-live-run-menu failed to get final action when not in jfbterm or bterm mode.
+
 * Tue Apr 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.32-drbl1
 - The sample file "custom-ocs-1" was updated.
 - Bug fixed: Programs ocs-iso and ocs-live-dev were not updated to reflect the new file name of Ubuntu-based Clonezilla live with "-i386" in the file name.
