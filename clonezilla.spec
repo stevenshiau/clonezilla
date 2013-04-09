@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.31
+Version:	3.3.32
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Apr 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.32-drbl1
+- The sample file "custom-ocs-1" was updated.
+- Bug fixed: Programs ocs-iso and ocs-live-dev were not updated to reflect the new file name of Ubuntu-based Clonezilla live with "-i386" in the file name.
+
 * Tue Apr 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.31-drbl1
 - Some comments about "--retries-until-drop 50" for udp-sender was added in drbl-ocs.conf.
 - The options "-j" of ocs-iso and ocs-live-dev were reverted because we need this option when using Clonezilla live environment to create Clonezilla live otherwise the template iso won't be assigned.
