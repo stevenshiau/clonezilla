@@ -47,6 +47,7 @@ USAGE() {
     echo "-k, --ocs-live-keymap KEYBOARD_LAYOUT Assign the keyboard layout when using clonezilla live. You can find the keyboard layout in /usr/share/X11/xkb/rules/base.lst. e.g. use '-k fr' for French keyboard layout. If 'NONE' is used, the default one (US keyboard) will be use. For more info, please check the live manual on Debian Live website."
     echo "-m, --custom-ocs  PATH/custom-ocs  Use the customized ocs program 'custom-ocs' instead of the default one. Note! PATH should be assigned so that it can be found. This is advanced mode."
     echo "-t, --ocs-live-batch  Set clonezilla live to run in batch mode, usually it's for restoring. If this mode is set, some dialog question will be ignored."
+    echo "-j, --debian-iso ISO_FILE  Assign Debian live template iso file name as ISO_FILE to be used to create Clonezilla live. By default the ISO_FILE is \"$DEBIAN_ISO_DEF\"."
     echo "-p, --image-path   Assign the clonezilla image source path where CLONEZILLA_IMAGE_NAME exists in this server.  Default = $ocsroot"
     echo "-d, --dev DEV      Write the output to DEV (such as /dev/sda1)"
     echo "-a, --boot-loader [grub|syslinux]  Force to use grub or syslinux as boot loader in target device"
@@ -212,6 +213,16 @@ while [ $# -gt 0 ]; do
     -c|--create-release)
             target_mode="release_file"
             shift ;;
+    -j|--debian-iso)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              DEBIAN_ISO="$1"
+	      template_mode="from-download-live-media"
+              shift
+            fi
+	    [ -z "$DEBIAN_ISO" ] && USAGE && exit 1
+            ;;
     -x|--extra-boot-param)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -255,6 +266,7 @@ fi
 [ -z "$image_path" ] && image_path=$ocsroot
 [ -z "$bg_mode" ] && bg_mode="$BG_MODE_DEF"
 [ -z "$output_dev" -a "$target_mode" = "boot_dev" ] && USAGE && exit 1
+[ -z "$DEBIAN_ISO" ] && DEBIAN_ISO="$DEBIAN_ISO_DEF"
 [ -n "$ocs_live_boot_menu_option" ] && ocs_live_boot_menu_option="-$ocs_live_boot_menu_option"
 md5_file_url="$DEBIAN_ISO_ETC_PATH/$md5_file"
 
@@ -773,7 +785,9 @@ echo "$prog $prog_option" >> $USB_TMP/Clonezilla-Live-Version
 get_live_boot_param $DEBIAN_ISO_TMP/isolinux
 
 # Build the EFI boot image. This is especially for iso file. Not for USB stick. However, here we still prepare the file so that later it's easier to use genisoimage to create the EFI-enabled iso.
-# The following codes are referred from Fedora 
+# The following codes are referred from Fedora anaconda's mk-images.efi
+# http://fedorapeople.org/cgit/karsten/public_git/anaconda.git/plain/scripts/mk-images.efi
+# Ref: https://fedoraproject.org/wiki/User:Pjones/BootableCDsForBIOSAndUEFI#New_UEFI.2FBIOS_hybrid_method
 EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
 EFI_BOOTTREE="$DEBIAN_ISO_TMP/EFI"
 EFI_IMGTREE="$USB_TMP/EFI-imgs"

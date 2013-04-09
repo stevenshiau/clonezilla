@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.30
+Version:	3.3.31
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Apr 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.31-drbl1
 - Some comments about "--retries-until-drop 50" for udp-sender was added in drbl-ocs.conf.
+- The options "-j" of ocs-iso and ocs-live-dev were reverted because we need this option when using Clonezilla live environment to create Clonezilla live otherwise the template iso won't be assigned.
 
 * Thu Apr 04 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.30-drbl1
 - Bug fixed: "Press ENTER to continue" message after poweroff/reboot command is issued was not shown.
