@@ -37,8 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Package f2fs-tools was added for GParted live in create-gparted-live.
+
 * Wed Apr 17 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.35-drbl1
-- Bug fixed: when first menu (start_clonezilla or enter_shell) was cancelled, it still continue.
+- Bug fixed: when first menu (start_clonezilla or enter_shell) was cancelled, it still continued.
 
 * Wed Apr 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.34-drbl1
 - The sample file "custom-ocs-1" was updated.
