@@ -160,7 +160,10 @@ fi
 # disk hda1.aa hda3.aa hda-chs.sf hda-mbr hda-pt.sf parts swappt-hda2.info hda-pt.parted
 # chs.sf is not necessary to be modified.
 # In this example, just modify: disk parts pt.sf hda-pt.sf, actually pt.sf only exists in clonezilla 1.x, and hda-pt.sf only exists in clonezilla 2.x. Anyway, if it is found, just modify that.
-files_2_be_mod="disk parts pt.sf $(to_filename ${src_dev})-pt.sf $(to_filename ${src_dev})-pt.parted $(to_filename ${src_dev})-pt.parted.compact"
+# files_2_be_mod_about_disk means the content of file contains disk name, e.g. sda, cciss/c0d0
+# files_2_be_mod_about_parts means the content of file contains partition name, e.g. sda1, cciss/c0d0p1
+files_2_be_mod_about_disk="disk $(to_filename ${src_dev})-pt.parted $(to_filename ${src_dev})-pt.parted.compact"
+files_2_be_mod_about_parts="parts pt.sf $(to_filename ${src_dev})-pt.sf"
 
 if [ -n "$(unalias ls 2>/dev/null; ls $ocsroot/$image_name/$(to_filename ${tgt_dev})* 2>/dev/null)" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -168,26 +171,54 @@ if [ -n "$(unalias ls 2>/dev/null; ls $ocsroot/$image_name/$(to_filename ${tgt_d
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   wait_for_confirm
 fi
-for ifile in $files_2_be_mod; do
+for ifile in $files_2_be_mod_about_disk; do
   if [ -f "$ocsroot/$image_name/$ifile" ]; then
     echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
     LC_ALL=C perl -pi -e "s|$src_dev|$tgt_dev|g" $ocsroot/$image_name/$ifile
     echo "done!"
   fi
 done
+for ifile in $files_2_be_mod_about_parts; do
+  if [ -f "$ocsroot/$image_name/$ifile" ]; then
+    echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
+    case $tgt_dev in
+    cciss*)
+      # sda1 -> cciss/c0d0p1
+      # How about cciss/c0d0p1 -> cciss/c0d1p1 
+      LC_ALL=C perl -pi -e "s|$src_dev[p]?|${tgt_dev}p|g" $ocsroot/$image_name/$ifile
+      ;;
+    *)
+      # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda, i.e. cciss/c0d0p1 -> sda1
+      LC_ALL=C perl -pi -e "s|$src_dev[p]?|$tgt_dev|g" $ocsroot/$image_name/$ifile
+      ;;
+    esac
+    echo "done!"
+  fi
+done
 # There are 3 files (lvm_etch.conf  lvm_logv.list  lvm_vg_dev.list) about LVM devices in Clonezilla image, and only lvm_vg_dev.list is necessary to be modified. We separate this from the above is because it's format is like "/dev/hda" instead of "hda".
 if [ -f "$ocsroot/$image_name/lvm_vg_dev.list" ]; then
   echo -n "Change /dev/$src_dev to /dev/$tgt_dev in $ocsroot/$image_name/lvm_vg_dev.list... "
-  LC_ALL=C perl -pi -e "s|/dev/$src_dev|/dev/$tgt_dev|g" $ocsroot/$image_name/lvm_vg_dev.list
+  case $tgt_dev in
+  cciss*)
+    LC_ALL=C perl -pi -e "s|/dev/$src_dev[p]?|/dev/${tgt_dev}p|g" $ocsroot/$image_name/lvm_vg_dev.list
+    ;;
+  *)
+    # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
+    # cciss/c0d0p1 -> sda1
+    LC_ALL=C perl -pi -e "s|/dev/$src_dev[p]?|/dev/$tgt_dev|g" $ocsroot/$image_name/lvm_vg_dev.list
+    ;;
+  esac
   echo "done!"
 fi
 
+# Change the file names
 # hda, hda1.ntfs-img...
 # hda1.ntfs-img -> sda1.ntfs-img
 # For clonezilla 2.x format, hda-mbr, hda-pt.sf, hda-pt.parted, hda-chs.sf also will be processed here: hda-mbr -> sda-mbr...
-for im in $ocsroot/$image_name/$(to_filename ${src_dev})*; do
-  imname="$(basename $im)"
-  newname="$(echo $imname| sed -e "s/$(to_filename ${src_dev})/$(to_filename ${tgt_dev})/g")"
+filenames_2_be_mod_about_disk="$(to_filename ${src_dev})-pt.sf $(to_filename ${src_dev})-chs.sf $(to_filename ${src_dev})-hidden-data-after-mbr $(to_filename ${src_dev})-mbr $(to_filename ${src_dev})-pt.parted $(to_filename ${src_dev})-pt.parted.compact"
+filenames_2_be_mod_about_parts="$(to_filename ${src_dev})*.*-img*"
+for imname in $filenames_2_be_mod_about_disk; do
+  newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})/$(to_filename ${tgt_dev})/g")"
   if [ -z "$newname" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "Name converted failed!"
@@ -195,13 +226,42 @@ for im in $ocsroot/$image_name/$(to_filename ${src_dev})*; do
     echo "Program terminated!"
     exit 1
   fi
-  mv -f $ocsroot/$image_name/$imname $ocsroot/$image_name/$newname
+  mv -vf $ocsroot/$image_name/$imname $ocsroot/$image_name/$newname
+done
+for imname in $filenames_2_be_mod_about_parts; do
+  # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
+  # cciss/c0d0p1 -> sda1
+  case $tgt_dev in
+  cciss*)
+    newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
+    ;;
+  *)
+    newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})/g")"
+    ;;
+  esac
+  if [ -z "$newname" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Name converted failed!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated!"
+    exit 1
+  fi
+  mv -vf $ocsroot/$image_name/$imname $ocsroot/$image_name/$newname
 done
 # For swappt-*.info
 for im in $ocsroot/$image_name/swappt-$(to_filename ${src_dev})*.info; do
   [ ! -e "$im" ] && continue
-  imname="$(basename $im)"
-  newname="$(echo $imname| sed -e "s/$(to_filename ${src_dev})/$(to_filename ${tgt_dev})/g")"
+  imname="$(LC_ALL=C basename $im)"
+  case $tgt_dev in
+  cciss*)
+   newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
+   ;;
+  *)
+   # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
+   # cciss/c0d0p1 -> sda1
+   newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})/g")"
+   ;;
+  esac
   if [ -z "$newname" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "Name converted failed!"

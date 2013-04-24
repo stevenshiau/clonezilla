@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.36
+Version:	3.3.37
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Apr 24 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.37-drbl1
+- Bug fixed: cnvt-ocs-dev failed to convert cciss-related device. Thanks to Andy Smith <a.smith _at_ ldex co uk> for reporting this issue.
+
 * Sat Apr 20 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.36-drbl1
 - Package f2fs-tools was added for GParted live in create-gparted-live.
 
