@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: cnvt-ocs-dev failed to convert GPT disk names.
+
 * Thu Apr 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.39-drbl1
 - Bug fixed: cnvt-ocs-dev did not change the file name correctly.
 
