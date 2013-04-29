@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.39
+Version:	3.3.40
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Apr 29 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.40-drbl1
 - Bug fixed: cnvt-ocs-dev failed to convert GPT disk names.
 
 * Thu Apr 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.39-drbl1
