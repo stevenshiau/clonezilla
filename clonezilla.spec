@@ -37,7 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-- Using variable sys_pxelinux_v5p_required_c32 instead of sys_pxelinux_required_c32.
+- Using variable sys_pxelinux_v5p_required_c32 instead of sys_pxelinux_required_c32 for related programs.
 
 * Mon May 06 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.41-drbl1
 - Functioin disable_lvm2_udevd_rules is used in ocs-lvm2-stop.
