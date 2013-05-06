@@ -19,17 +19,7 @@ then
 	# functionality as described in this forum thread
 	#https://www.redhat.com/archives/linux-lvm/2001-May/msg00523.html
 
-	# 2012/Nov/20 Ubuntu's lvm2 has a udevd rules will automatically active VG, therefore before using "vgchange -an" to deactive the VG, we have to disable it, then restore it later.
-	auto_active_rules="$(LC_ALL=C grep -Ew "^[^#].*vgchange -a y" /lib/udev/rules.d/*.rules 2>/dev/null | awk -F":" '{print $1}')"
-	if [ -n "$auto_active_rules" ]; then
-          echo "Found udevd rule causes block devices with LVM signatures to be automatically added to their volume group."
-	  echo "Temporarily disable it otherwise the partition tool won't be able to inform the kernel the changes of partition table..."
-          for i in $auto_active_rules; do
-            mv -v "${i}" "${i}.drblsave"
-	  done
-	  # Reload the rules for udevd
-	  udevadm control --reload-rules
-        fi
+        disable_lvm2_udevd_rules
 
 	# 2012/Nov/19 For newer version of lvdisplay (>=2.02.95 in Ubuntu 12.10), "LV Path"  instead of "LV Name" is the one we want. "LV Name" in the older version output does not contain the full path:
 	# root@quantal:/tmp# lvdisplay
