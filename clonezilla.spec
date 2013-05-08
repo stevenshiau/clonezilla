@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.42
+Version:	3.3.43
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed May 06 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.43-drbl1
 - Bug fixed: ocs-lvm2-stop did not load function disable_lvm2_udevd_rules from drbl-functions.
 - Bug fixed: Function reduce_multipath_dev should use its own temp file.
 
