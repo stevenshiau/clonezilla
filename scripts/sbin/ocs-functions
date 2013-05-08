@@ -10079,7 +10079,6 @@ expand_multipath_dev() {
 #   Eliminate duplicate path
 # Global Variables:
 #   MULTIPATH_INFODIR
-#   TMP - Temporary file name
 # Arguments:
 #   $@ - Device names (e.g. sda sdb)
 # Output String:
@@ -10091,9 +10090,9 @@ reduce_multipath_dev() {
   local dev_list="$@"
   local new_dev_list=""
   local dup_list=""
-  local serialno multipath_list pt p file
+  local serialno multipath_list pt p file TMP
+  TMP="$(mktemp /tmp/ocs_mp.XXXXXX)"
 
-  cp /dev/null $TMP
   for p in $dev_list; do
     disk=$(get_diskname "$p")
     pt=""
@@ -10136,8 +10135,8 @@ reduce_multipath_dev() {
       rm -f $file
     fi
   done
-  cp /dev/null $TMP
   echo "${new_dev_list}" | sed -e 's/^ //g'
+  [ -e "$TMP" ] && rm -f $TMP
 } # end of reduce_multipath_dev
 # ############################
 # End of functions from Miracle Linux

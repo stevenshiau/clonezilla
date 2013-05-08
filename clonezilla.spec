@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: ocs-lvm2-stop did not load function disable_lvm2_udevd_rules from drbl-functions.
+- Bug fixed: Function reduce_multipath_dev should use its own temp file.
+
 * Mon May 06 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.42-drbl1
 - Using variable sys_pxelinux_v5p_required_c32 instead of sys_pxelinux_required_c32 for related programs.
 
