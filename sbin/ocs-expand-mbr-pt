@@ -11,6 +11,10 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . /etc/drbl/drbl-ocs.conf
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
+# Settings
+# Flag to check target disk size before creating partition table
+chk_tgt_disk_size_bf_mk_pt="yes"
+
 #
 cmd_name="$(basename $0)"
 #
@@ -22,6 +26,7 @@ USAGE() {
     echo "OPTION:"
     echo " -b, --batch     Run $cmd_name in batch mode, i.e. without any prompt or wait to press enter. VERY DANGEROUS!"
     echo "$cmd_name will honor experimental variable EXTRA_SFDISK_OPT and use it as the option for sfdisk."
+    echo " -icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
     echo "Example:"
     echo "  To create a proportional partition table on disk /dev/hda based on /home/partimag/IMAGE/hda-pt.sf, use:"
     echo "$cmd_name /home/partimag/IMAGE/hda-pt.sf /dev/hda"
@@ -32,6 +37,9 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -b|--batch)
             batch_mode="yes"
+	    shift;;
+    -icds|--ignore-chk-dsk-size-pt)
+	    chk_tgt_disk_size_bf_mk_pt="no"
 	    shift;;
     -*)     echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
@@ -137,13 +145,15 @@ check_mbr_disk_size_gt_2TiB $target_disk exit
 #
 ratio=$(echo "scale=4; $tgt_disk_size / $ori_disk_size" | bc -l) || exit 1
 echo "The ratio for target disk size to original disk size is $ratio."
-if [ "$(LC_ALL=C echo "$ratio < 1" | bc -l)" = "1" ]; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "The target disk (size=$tgt_disk_size sectors) is smaller than the source disk (size=$ori_disk_size sectors)!"
-  echo "Clonezilla won't be able to restore a partition image to smaller partition!" 
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "Program terminated!"
-  exit 1
+if [ "$chk_tgt_disk_size_bf_mk_pt" = "yes" ]; then
+  if [ "$(LC_ALL=C echo "$ratio < 1" | bc -l)" = "1" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "The target disk (size=$tgt_disk_size sectors) is smaller than the source disk (size=$ori_disk_size sectors)!"
+    echo "Clonezilla won't be able to restore a partition image to smaller partition!" 
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated!"
+    exit 1
+  fi
 fi
 
 new_sf="$(mktemp /tmp/new_sf.XXXXXX)" || exit 1
