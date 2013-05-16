@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.3.46
+Version:	3.3.47
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu May 16 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.47-drbl1
+- VGA card blacklists in boot parameters were removed.
+
 * Wed May 15 2013 Steven Shiau <steven _at_ nchc org tw> 3.3.46-drbl1
 - Bug fixed: Option -icds of ocs-sr and ocs-onthefly should be passed to ocs-expand-mbr-pt. Thanks to Jerome Charaoui for reporting this issue (http://sourceforge.net/p/clonezilla/bugs/175/).
 
