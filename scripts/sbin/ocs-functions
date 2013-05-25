@@ -7475,6 +7475,7 @@ task_restoreparts() {
   local ptype
   local whole_disk=""
   local cmd_restore_minix_sub_parts_table
+  local resize_ntfsfix_opt
 
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -7816,10 +7817,15 @@ task_restoreparts() {
 
   # resize partition if necessary
   if [ "$resize_partition" = "on" ]; then
+    resize_ntfsfix_opt=""
+    if [ "$chk_tgt_disk_size_bf_mk_pt" = "no" ]; then
+      # Force to run ntfsfix before running ntfsresize. This is specially for when forcing to restore an image from larger partition to smaller one. Then the NTFS partition has to be fixed by ntfsfix first before resizing.
+      resize_ntfsfix_opt="--ntfsfix"
+    fi
     for partition in $target_parts; do
       is_whole_disk $partition && continue
       echo "Now tuning the file system size on partition /dev/$partition to fit the partition size..." | tee --append $OCS_LOGFILE
-      ocs-resize-part --batch /dev/$partition | tee --append $OCS_LOGFILE
+      ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition | tee --append $OCS_LOGFILE
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     done
   fi

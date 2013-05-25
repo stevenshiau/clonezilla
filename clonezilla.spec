@@ -38,6 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 - Comments and coding about -k1/-k2 and -r in ocs-onthefly was improved.
+- Command ntfsfix will be run before resizing a NTFS partition if option "-icds" is assigned.
 
 * Sat May 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.1-drbl1
 - The option "-m" of partclone (v 0.2.61) is deprecated, and now "-z" is used.

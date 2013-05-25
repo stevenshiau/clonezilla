@@ -11,6 +11,10 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . /etc/drbl/drbl-ocs.conf
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
+# Settings
+# By default we won't run ntfsfix before resizing it.
+run_ntfsfix="no"
+
 #
 export LC_ALL=C
 
@@ -18,6 +22,7 @@ USAGE() {
    echo "Usage: [OPTION] device"
    echo "OPTION:"
    echo "-b, --batch  Run program in batch mode, i.e. without any prompt or wait to press enter."
+   echo "-n, --ntfsfix  Run ntfsfix before resizing a NTFS partition."
    echo "Example: $0 /dev/sdc1"
 }
 
@@ -26,6 +31,9 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -b|--batch)
             batch_mode="yes"
+	    shift;;
+    -n|--ntfsfix)
+            run_ntfsfix="yes"
 	    shift;;
     -*)     echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
@@ -63,7 +71,7 @@ part_end="$(ocs-get-part-info $partition end)"
 case "$part_fs" in
    reiserfs)
               if ! which resize_reiserfs &> /dev/null; then
-                 echo "Unable to find program resize_reiserfs! Skip this partition ${partition}"
+                 echo "resize_reiserfs: command not found! Skip resizing this partition ${partition}"
 		 exit 1
 	      fi
 	      [ "$batch_mode" = "yes" ] && resize_reiserfs_opt="-f"
@@ -84,7 +92,7 @@ case "$part_fs" in
               ;;
    ext2|ext3|ext4)
               if ! which e2fsck &> /dev/null || ! which resize2fs &> /dev/null ; then
-                 echo "Unable to find program e2fsck! Skip this partition ${partition}"
+                 echo "e2fsck: command not found! Skip resizing this partition ${partition}"
 		 exit 1
 	      fi
 	      [ "$batch_mode" = "yes" ] && resize2fs_opt="-f"
@@ -94,16 +102,19 @@ case "$part_fs" in
               ;;
         ntfs)
               if ! which ntfsresize &> /dev/null; then
-                 echo "Unable to find program ntfsresize! Skip this partition ${partition}"
+                 echo "ntfsresize: command not found! Skip resizing this partition ${partition}"
 		 exit 1
 	      fi
 	      [ "$batch_mode" = "yes" ] && ntfsresize_opt="-f"
+              if [ "$run_ntfsfix" ="yes" ]; then
+                ntfsfix ${partition}
+	      fi
               echo "ntfsresize $ntfsresize_opt ${partition}"
               ntfsresize $ntfsresize_opt ${partition}
               ;;
         xfs)
               if ! type xfs_growfs &> /dev/null; then
-                 echo "xfs_growfs was NOT found! Skip growing this partition ${partition}"
+                 echo "xfs_growfs: command not found! Skip growing this partition ${partition}"
 		 exit 1
 	      fi
 	      XFS_TMP="$(mktemp -d /tmp/xfsmnt.XXXXXX)"
@@ -148,7 +159,7 @@ case "$part_fs" in
               ;;
         btrfs)
               if ! type btrfs &> /dev/null; then
-                 echo "Program btrfs NOT found! Skip growing this partition ${partition}"
+                 echo "btrfs: command not found! Skip growing this partition ${partition}"
 		 exit 1
 	      fi
 	      BTRFS_TMP="$(mktemp -d /tmp/btrfsmnt.XXXXXX)"
