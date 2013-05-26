@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.4.2
+Version:	3.4.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun May 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.3-drbl1
+- Bug fixed: an error command in ocs-resize-part was fixed.
+
 * Sun May 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.2-drbl1
 - Comments and coding about -k1/-k2 and -r in ocs-onthefly was improved.
 - Command ntfsfix will be run before resizing a NTFS partition if option "-icds" is assigned.
