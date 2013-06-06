@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.4.4
+Version:	3.4.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jun 06 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.5-drbl1
+- Bug fixed: A better method was implemented to detect the finishing of live-config in S00ocs-start.
+
 * Wed Jun 05 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.4-drbl1
 - Bug fixed: S00ocs-start failed to deal with upstart services with same index number.
 
