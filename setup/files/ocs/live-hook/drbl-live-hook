@@ -112,6 +112,7 @@ NET_END
 assing_default_dns_server
 
 # we need real /sbin/start-stop-daemon. This has to be run before drblpush is run, since for clients they will use files in the dir /tftpboot/node_root/sbin/.
+# //NOTE// After drblpush, we have to set it back so the rest of chroot_dpkg of live-build v3.x won't remove the real /sbin/start-stop-daemon.
 remove_start_stop_daemon_diverts
 
 # Run drbl setup, we use DRBL SSI mode and clonezilla box mode
@@ -152,6 +153,9 @@ mknod -m 600 /dev/loop0 b 7 0
 # The IP address 192.168.111.254 is an arbitrary one. It will be automatically updated when DRBL live is booted on the server machine.
 yes "" | LC_ALL=en_US.UTF-8 drblpush -i -r 1 -z 1 -p 1 --not-add-start-drbl-srvi --drbl-ocs-live-server 192.168.111.254
 rm -f /dev/loop0
+
+# Since before drblpush, we remove_start_stop_daemon_diverts, therefore we have to set it back so the rest of chroot_dpkg of live-build v3.x won't remove the real /sbin/start-stop-daemon.
+set_start_stop_daemon_diverts
 
 # post process
 # The /tftpboot/node_root/bin/hostname was renamed as hostname.orig by lh_chroot_hostname. Although later lh_chroot will deconfigure it, but we already copy them to /tftpboot/node_root/bin by drblpush. We have to move it back so that later drbl client can use the real hostname.

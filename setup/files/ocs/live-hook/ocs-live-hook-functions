@@ -222,31 +222,49 @@ PROFILE_END
 }
 #
 remove_start_stop_daemon_diverts(){
- # we have to use the real start-stop-daemon, therefore remove cdebootstrap-helper-diverts
- # live:~# ls -alF /sbin/start-stop-daemon*
- # -rwxr-xr-x 1 root root    10 2006-10-20 16:07 /sbin/start-stop-daemon*
- # -rwxr-xr-x 1 root root 18504 2007-01-01 23:02 /sbin/start-stop-daemon.REAL*
- # By doing apt-get --purge remove cdebootstrap-helper-diverts, it will
- # Removing `diversion of /sbin/start-stop-daemon to /sbin/start-stop-daemon.REAL by cdebootstrap-helper-diverts'
- # Removing `diversion of /usr/sbin/invoke-rc.d to /usr/sbin/invoke-rc.d.REAL by cdebootstrap-helper-diverts'
- if [ -e /sbin/start-stop-daemon.REAL ]; then
-   apt-get -y --purge remove cdebootstrap-helper-diverts
- fi
- # For live-build v2.x, the file name is /sbin/start-stop-daemon.orig, and no more cdebootstrap-helper-diverts in lb_chroot_dpkg. We just restore it. Otherwise the file start-stop-daemon copied to /tftpboot/node_root/sbin/ will be the temp fake one.
- if [ -e /sbin/start-stop-daemon.orig ]; then
-   mv -v /sbin/start-stop-daemon.orig /sbin/start-stop-daemon
- fi
- # For live-build v3.x, the file name is renamed as start-stop-daemon.distrib by
- # dpkg-divert in /usr/lib/live/build/chroot_dpkg:
- # dpkg-divert --rename --add /sbin/start-stop-daemon
- # Adding 'local diversion of /sbin/start-stop-daemon to /sbin/start-stop-daemon.distrib'
- # root@debian:/sbin# ls -alFh start-stop-da*
- # -rwxr-xr-x 1 root root 27K Mar 18 06:16 start-stop-daemon.distrib*
- if [ -e /sbin/start-stop-daemon.distrib ]; then
-   # remove the existing text exec script file, otherwise dpkg-divert won't revert.
-   rm -f /sbin/start-stop-daemon
-   dpkg-divert --rename --remove /sbin/start-stop-daemon
- fi
+  # we have to use the real start-stop-daemon, therefore remove cdebootstrap-helper-diverts
+  # live:~# ls -alF /sbin/start-stop-daemon*
+  # -rwxr-xr-x 1 root root    10 2006-10-20 16:07 /sbin/start-stop-daemon*
+  # -rwxr-xr-x 1 root root 18504 2007-01-01 23:02 /sbin/start-stop-daemon.REAL*
+  # By doing apt-get --purge remove cdebootstrap-helper-diverts, it will
+  # Removing `diversion of /sbin/start-stop-daemon to /sbin/start-stop-daemon.REAL by cdebootstrap-helper-diverts'
+  # Removing `diversion of /usr/sbin/invoke-rc.d to /usr/sbin/invoke-rc.d.REAL by cdebootstrap-helper-diverts'
+  if [ -e /sbin/start-stop-daemon.REAL ]; then
+    apt-get -y --purge remove cdebootstrap-helper-diverts
+  fi
+  # For live-build v2.x, the file name is /sbin/start-stop-daemon.orig, and no more cdebootstrap-helper-diverts in lb_chroot_dpkg. We just restore it. Otherwise the file start-stop-daemon copied to /tftpboot/node_root/sbin/ will be the temp fake one.
+  if [ -e /sbin/start-stop-daemon.orig ]; then
+    mv -v /sbin/start-stop-daemon.orig /sbin/start-stop-daemon
+  fi
+  # For live-build v3.x, the file name is renamed as start-stop-daemon.distrib by
+  # dpkg-divert in /usr/lib/live/build/chroot_dpkg:
+  # dpkg-divert --rename --add /sbin/start-stop-daemon
+  # Adding 'local diversion of /sbin/start-stop-daemon to /sbin/start-stop-daemon.distrib'
+  # root@debian:/sbin# ls -alFh start-stop-da*
+  # -rwxr-xr-x 1 root root 27K Mar 18 06:16 start-stop-daemon.distrib*
+  lb_3_start_stop_daemon_revert_flag="false"
+  if [ -e /sbin/start-stop-daemon.distrib ]; then
+    # Remove the existing text exec script file, otherwise dpkg-divert won't revert.
+    # Then dpkg-divert will rename /sbin/start-stop-daemon.distrib as /sbin/start-stop-daemon
+    # //NOTE// For live-build v3.x, after drblpush, we have to revert the status to fake, temp one, so the rest of chroot_dpkg command won't remove the real /sbin/start-stop-daemon.
+    rm -f /sbin/start-stop-daemon
+    dpkg-divert --rename --remove /sbin/start-stop-daemon
+    lb_3_start_stop_daemon_revert_flag="true"
+  fi
+}
+#
+set_start_stop_daemon_diverts(){
+  # For live-build v3.x, after drblpush, we have to revert the status to fake, temp one, so the rest of chroot_dpkg command won't remove the real /sbin/start-stop-daemon.
+  # Ref: /usr/lib/live/build/chroot_dpkg
+  if [ "$lb_3_start_stop_daemon_revert_flag" = "true" ]; then
+    dpkg-divert --rename --add /sbin/start-stop-daemon
+    cat > /sbin/start-stop-daemon << EOF
+#!/bin/sh
+
+exit 0
+EOF
+    chmod 755 /sbin/start-stop-daemon
+  fi
 }
 #
 remove_service_in_system() {
