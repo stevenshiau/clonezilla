@@ -232,9 +232,18 @@ remove_cdebootstrap-helper-diverts(){
  if [ -e /sbin/start-stop-daemon.REAL ]; then
    apt-get -y --purge remove cdebootstrap-helper-diverts
  fi
- # For live-build, the file name is /sbin/start-stop-daemon.orig, and no more cdebootstrap-helper-diverts in lb_chroot_dpkg. We just restore it. Otherwise the file start-stop-daemon copied to /tftpboot/node_root/sbin/ will be the temp fake one.
+ # For live-build v2.x, the file name is /sbin/start-stop-daemon.orig, and no more cdebootstrap-helper-diverts in lb_chroot_dpkg. We just restore it. Otherwise the file start-stop-daemon copied to /tftpboot/node_root/sbin/ will be the temp fake one.
  if [ -e /sbin/start-stop-daemon.orig ]; then
    mv -v /sbin/start-stop-daemon.orig /sbin/start-stop-daemon
+ fi
+ # For live-build v3.x, the file name is renamed as start-stop-daemon.distrib by
+ # dpkg-divert in /usr/lib/live/build/chroot_dpkg:
+ # dpkg-divert --rename --add /sbin/start-stop-daemon
+ # Adding 'local diversion of /sbin/start-stop-daemon to /sbin/start-stop-daemon.distrib'
+ # root@debian:/sbin# ls -alFh start-stop-da*
+ # -rwxr-xr-x 1 root root 27K Mar 18 06:16 start-stop-daemon.distrib*
+ if [ -e /sbin/start-stop-daemon.distrib ]; then
+   dpkg-divert --rename --remove /sbin/start-stop-daemon
  fi
 }
 #
