@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.4.6
+Version:	3.4.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.7-drbl1
+- Function remove_cdebootstrap-helper-diverts was renamed as remove_start_stop_daemon_diverts in the live-hook directory.
+
 * Mon Jun 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.6-drbl1
 - Bug fixed: the reverted file for /sbin/start-stop-daemon is /sbin/start-stop-daemon.distrib for live-build v3.x. We have to reverted back before running "drblpush -i" when creating DRBL live.
 
