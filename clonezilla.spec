@@ -38,7 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 * Mon Jun 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.6-drbl1
-- Bug fixed: the reverted file for /sbin/start-stop-daemon is /sbin/start-stop-daemon.distrib. We have to reverted back before running "drblpush -i" when creating DRBL live.
+- Bug fixed: the reverted file for /sbin/start-stop-daemon is /sbin/start-stop-daemon.distrib for live-build v3.x. We have to reverted back before running "drblpush -i" when creating DRBL live.
 
 * Thu Jun 06 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.5-drbl1
 - Bug fixed: A better method was implemented to detect the finishing of live-config in S00ocs-start.
