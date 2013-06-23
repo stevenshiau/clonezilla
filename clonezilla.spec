@@ -1,7 +1,7 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.4.10
-Release:	drbl2
+Version:	3.4.11
+Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.bz2
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jun 22 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.11-drbl1
+- A summary of ocs-chkimg will be shown after image is checked.  Thanks to Elke Moritz <moritz _at_ linuxtag org> for this suggestion.
+
 * Tue Jun 19 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.10-drbl2
 - Required partclone version was updated to 0.2.62 due to a jfs bug has been fixed.
 
