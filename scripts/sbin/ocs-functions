@@ -3981,7 +3981,18 @@ get_not_busy_disks_or_parts() {
     gen_proc_partitions_map_file
     # Leave only selected disk
     if [ -n "$chosen_disk" ]; then
-      LC_ALL=C perl -i -ne "print if m!^.*[[:space:]]+${chosen_disk}p?[0-9]*[[:space:]].*\$!" $partition_table
+      # //NOTE// If we do not separate cciss device and others, we might choose sda1, sda2, sdap1, sdap2 for $chosen_disk is "sda". Apparently sdap1 is not the partition of sda.
+      # i.e. we can not use the following command for all cases:
+      # LC_ALL=C perl -i -ne "print if m!^.*[[:space:]]+${chosen_disk}p?[0-9]*[[:space:]].*\$!" $partition_table
+      # Ref: https://sourceforge.net/p/clonezilla/bugs/179/
+      case "${chosen_disk}" in
+      cciss*)
+            LC_ALL=C perl -i -ne "print if m|^.*[[:space:]]+${chosen_disk}p?[0-9]*[[:space:]].*\$|" $partition_table
+            ;;
+      *)
+            LC_ALL=C perl -i -ne "print if m!^.*[[:space:]]+${chosen_disk}[0-9]*[[:space:]].*\$!" $partition_table
+            ;;
+      esac
     fi
 
     # strip those busy/mounted partitions and disk.
@@ -9766,7 +9777,7 @@ check_mbr_disk_size_gt_2TiB() {
 # Functions from Miracle Linux
 # ############################
 is_supported_dev() {
-  # //NOTE// If new RE* is added, remember to check the function check_if_disk_busy_before_create_partition has to be modified, too.
+  # //NOTE// If new RE* is added, remember to check the function check_if_disk_busy_before_create_partition and get_not_busy_disks_or_parts have to be modified, too.
   # IDE and SCSI disk: /dev/hda, /dev/hdb, /dev/sda, /dev/sdb...
   # KVM virtual disk: /dev/vda, /dev/vdb
   # Xen virtual disk: /dev/xvda, /dev/xvdb, /dev/xdvc...
@@ -9785,7 +9796,7 @@ is_supported_dev() {
 } # end of is_supported_dev
 #
 is_partition() {
-  # //NOTE// If new RE* is added, remember to check the function check_if_disk_busy_before_create_partition has to be modified, too.
+  # //NOTE// If new RE* is added, remember to check the function check_if_disk_busy_before_create_partition and get_not_busy_disks_or_parts have to be modified, too.
   # IDE and SCSI disk partition: /dev/hda1, /dev/hdb1, /dev/sda1, /dev/sdb1...
   # KVM virtual disk partition: /dev/vda1, /dev/vdb1
   # Xen virtual disk partition: /dev/xvda1, /dev/xvdb1, /dev/xdvc1...
