@@ -4295,6 +4295,7 @@ get_existing_disk_image() {
    local tgt_file="" ans_
    local ASK_IMGNAME=1
    local TMP="$(mktemp /tmp/ocs.XXXXXX)"
+   local disk_size_ ihd disk_size_sum
 
    echo -n "Searching for images..."
    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
@@ -4311,6 +4312,17 @@ get_existing_disk_image() {
      [ ! -f "$imagedir/$file/disk" ] && continue
      fileinfo="$(LC_ALL=C ls -l --time-style=+%Y-%m%d-%H%M $imagedir/$file/disk 2>/dev/null| awk '{ print $6; }')"
      fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/disk 2>/dev/null)
+     #
+     disk_size_sum=""
+     if [ -e "$imagedir/$file/disk" ]; then
+       for ihd in `cat $imagedir/$file/disk` ; do 
+         if [ -e "$imagedir/$file/$(to_filename ${ihd})-pt.parted.compact" ]; then
+           disk_size_="$(LC_ALL=C grep -E "^Disk /dev/" $imagedir/$file/$(to_filename ${ihd})-pt.parted.compact | awk -F":" '{print $2}' | sed -r -e "s/[[:space:]]//g")"
+         fi
+	 [ -n "$disk_size_" ] && disk_size_sum="$(LC_ALL=C echo "${disk_size_sum}_${disk_size_}" | tr ' ' _)"
+       done
+     fi
+     [ -n "$disk_size_sum" ] && fileinfo=${fileinfo}""${disk_size_sum}
      filelist="$filelist $file $fileinfo"
      numfiles="$(LC_ALL=C expr $numfiles + 1)"
    done

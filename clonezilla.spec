@@ -38,6 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 - Bug fixed: sdap1 is not the partition of sda disk. Thanks to julienb35 for supporting this issue. Ref: https://sourceforge.net/p/clonezilla/bugs/179/
+- The disk size info will be shown when selecting the images during restoring.
 
 * Sat Jun 22 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.11-drbl1
 - A summary of ocs-chkimg will be shown after image is checked.  Thanks to Elke Moritz <moritz _at_ linuxtag org> for this suggestion.
