@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.4.11
+Version:	3.4.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jun 30 2013 Steven Shiau <steven _at_ nchc org tw> 3.4.12-drbl1
 - Bug fixed: sdap1 is not the partition of sda disk. Thanks to julienb35 for supporting this issue. Ref: https://sourceforge.net/p/clonezilla/bugs/179/
 - The disk size info will be shown when selecting the images during restoring.
 
