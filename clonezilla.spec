@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- More info will be shown in the output for ocs-chkimg.
+
 * Wed Jul 03 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.1-drbl1
 - Bug fixed: *sda-img.info should not be included in the partition image to be restored.
 - Modification of ocs-functions and ocs-onthefly was done according to the changes in partclone 0.2.66.
