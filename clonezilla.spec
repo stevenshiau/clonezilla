@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.3
+Version:	3.5.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jul 23 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.4-drbl1
+- Formating the output of update-nvram-efi-boot-entry.
+
 * Tue Jul 23 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.3-drbl1
 - A program update-nvram-efi-boot-entry was added for updating the booting device in EFI NVRAM. Thanks to Les Mikesell (lesmikesell _at_ gmail com), Laszlo Ersek (lacos _at_ caesar elte hu) and Peter Sun (PeterSun _at_ ememory com tw) for reporting this issue.
 - An option "-iefi" was added in in the restoring dialog menu.
