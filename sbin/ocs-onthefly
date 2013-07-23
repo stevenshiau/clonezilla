@@ -1543,6 +1543,15 @@ post_process_in_target_dev() {
       run_ntfsreloc_part -p "$target_parts" $ntfs_boot_partition | tee --append $OCS_LOGFILE
     fi
     echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
+
+    # Updating EFI NVRAM for the boot device
+    if [ "$update_efi_nvram" = "yes" ]; then
+      for ihd in $target_hd; do
+        if `is_gpt_partitition_table_disk /dev/$ihd`; then
+          update-nvram-efi-boot-entry /dev/$ihd | tee --append $OCS_LOGFILE
+        fi
+      done
+    fi
   fi
 } # end of post_process_in_target_dev
 #
@@ -1661,6 +1670,7 @@ USAGE() {
     echo "-irhr, --irhr            Skip removing the Linux udev hardware records on the restored GNU/Linux."
     echo "-ius, --ius              Skip updating syslinux-related files on the restored GNU/Linux."
     echo "-icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
+    echo "-iefi, --ignore-update-efi-nvram  Skip updating boot entries in EFI NVRAm after cloning."
     echo "-k, --no-sfdisk          Do NOT create partition table in boot sector in target machine"
     echo "-k1,                     Create partition table in the target disk proportionally."
     echo "-k2,                     Enter command line prompt to create partition table manually before restoring image."
@@ -1849,6 +1859,7 @@ set_ocs_onthefly_extra_param() {
     "-irhr "    "$msg_ocs_onthefly_param_irhr" off \
     "-ius "     "$msg_ocs_onthefly_param_ius" off \
     "-icds "    "$msg_ocs_onthefly_param_icds" off \
+    "-iefi "    "$msg_ocs_onthefly_param_iefi" off \
     "-fsck-src-part "   "$msg_ocs_onthefly_param_fsck_src_part" off \
     "-fsck-src-part-y " "$msg_ocs_onthefly_param_fsck_src_part_yes" off \
     "-o "       "$msg_ocs_onthefly_param_o" off \
@@ -2082,6 +2093,7 @@ parse_ocs_onthefly_cmd_options() {
       -irhr|--irhr) shift; do_rm_hardware_record="no";;
       -ius|--ius) shift; do_update_syslinux="no";;
       -icds|--ignore-chk-dsk-size-pt) shift; chk_tgt_disk_size_bf_mk_pt="no";;
+      -iefi|--ignore-update-efi-nvram) shift; update_efi_nvramt="no";;
       -fsck-src-part|--fsck-src-part) shift; fsck_src_part_intr="yes";;
       -fsck-src-part-y|--fsck-src-part-y) shift; fsck_src_part_auto="yes";;
       -v|--verbose) shift; verbose="on" ;;
@@ -2190,6 +2202,8 @@ do_rm_hardware_record="yes"
 do_update_syslinux="yes"
 # Flag to check target disk size before creating partition table
 chk_tgt_disk_size_bf_mk_pt="yes"
+# Flag to update EFI NVRAM after restoring a disk
+update_efi_nvram="yes"
 # Load PARTCLONE_RESTORE_ONTHEFLY_OPT_INIT from drbl-ocs.conf
 PARTCLONE_RESTORE_ONTHEFLY_OPT="$PARTCLONE_RESTORE_ONTHEFLY_OPT_INIT"
 #

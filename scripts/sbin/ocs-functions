@@ -7906,6 +7906,15 @@ task_restoreparts() {
     done
   fi
 
+  # Updating EFI NVRAM for the boot device
+  if [ "$update_efi_nvram" = "yes" ]; then
+    for ihd in $target_hd; do
+      if `is_gpt_partitition_table_disk /dev/$ihd`; then
+        update-nvram-efi-boot-entry /dev/$ihd | tee --append $OCS_LOGFILE
+      fi
+    done
+  fi
+
   # Remove the temp converted image. //NOTE// Now target_dir is *-tmp-cnvted. img_cnvt_flag is just for insurance.
   rm_tmp_cnvt_img
 
@@ -8439,6 +8448,7 @@ USAGE_common_restore(){
     echo " -irhr, --irhr            Skip removing the Linux udev hardware records on the restored GNU/Linux."
     echo " -ius, --ius              Skip updating syslinux-related files on the restored GNU/Linux."
     echo " -icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
+    echo "-iefi, --ignore-update-efi-nvram  Skip updating boot entries in EFI NVRAM after restoring."
     echo " -k1,                     Create partition table in the target disk proportionally."
     echo " -k2,                     Enter command line prompt to create partition table manually before restoring image."
     echo " -t, --no-restore-mbr Do NOT restore the MBR (Mater Boot Record) when restoring image. If this option is set, you must make sure there is an existing MBR in the current restored harddisk. Default is Yes"

@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.4.19, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.4.20, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -39,6 +39,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 %changelog
 * Tue Jul 23 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.3-drbl1
 - A program update-nvram-efi-boot-entry was added for updating the booting device in EFI NVRAM. Thanks to Les Mikesell (lesmikesell _at_ gmail com), Laszlo Ersek (lacos _at_ caesar elte hu) and Peter Sun (PeterSun _at_ ememory com tw) for reporting this issue.
+- An option "-iefi" was added in in the restoring dialog menu.
 
 * Tue Jul 16 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.2-drbl1
 - More info will be shown in the output for ocs-chkimg.
