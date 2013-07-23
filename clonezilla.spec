@@ -37,7 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-- A program update-nvram-efi-boot-entry was added for updating the booting device in EFI NVRAM. Thanks to Les Mikesell and (lesmikesell _at_ gmail com) and Peter Sun (PeterSun _at_ ememory com tw) for reporting this issue.
+- A program update-nvram-efi-boot-entry was added for updating the booting device in EFI NVRAM. Thanks to Les Mikesell (lesmikesell _at_ gmail com), Laszlo Ersek (lacos _at_ caesar elte hu) and Peter Sun (PeterSun _at_ ememory com tw) for reporting this issue.
 
 * Thu Jul 16 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.2-drbl1
 - More info will be shown in the output for ocs-chkimg.
