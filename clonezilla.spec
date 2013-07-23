@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Using the warning color for skipping running update-nvram-efi-boot-entry on Mac machine.
+
 * Tue Jul 23 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.4-drbl1
 - Formating the output of update-nvram-efi-boot-entry.
 
