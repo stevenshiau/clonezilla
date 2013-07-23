@@ -32,6 +32,21 @@ USAGE() {
     echo
 } # end of USAGE
 #
+check_if_apple_mac() {
+  # Function to check if it's Apple Mac machine.
+  local system_manufac product_nm ret_mac
+  system_manufac="$(LC_ALL=C dmidecode -s system-manufacturer)"
+  product_nm="$(LC_ALL=C dmidecode -s system-product-name)"
+  if [ -n "$(echo $product_nm | grep -i "Mac")" ]; then
+    echo "This machine is Mac."
+    return 0
+  elif [ -n "$(echo $system_manufac | grep -i "Apple")" ]; then
+    echo "This machine was made by Apple."
+    return 0
+  fi
+  return 1
+} # end of check_if_apple_mac
+#
 get_efi_system_part() {
   # root@debian:/tmp# sgdisk -p /dev/sda
   # Disk /dev/sda: 125829120 sectors, 60.0 GiB
@@ -195,6 +210,13 @@ find_efi_boot_loader_file() {
 
   if [ -n "$(LC_ALL=C mount | awk -F" " '{print $1}' | grep -Ew ${efi_system_part})" ]; then
     umount ${efi_system_part}
+    if [ "$?" -gt 0 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Failed to umount ${efi_system_part}."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      exit 1
+    fi
   fi
   mnt_pnt="$(mktemp -d /tmp/efi_sys_part.XXXXXX)"
   mount -o ro $efi_system_part $mnt_pnt
@@ -276,13 +298,25 @@ fi
 #
 ask_and_load_lang_set $specified_lang
 
+# Check if it's Apple Mac machine
+if check_if_apple_mac; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Due to an issue of efibootmgr on Mac machine, EFI NVRAM boot entry update is skipped."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
 echo "Updating boot entry of EFI NVRAM..."
 # Check if it meets required kernel and module
 if [ ! -d "/sys/firmware/efi/efivars/" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "Directory /sys/firmware/efi/efivars/ _NOT_ found!"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "Make sure you are using Linux kernel >= 3.9, and module efivars is loaded (modprobe efivars)!"
+  echo "Please make sure:"
+  echo "1. This machine uses UEFI, not legacy BIOS,"
+  echo "2. You are using Linux kernel >= 3.9,"
+  echo "3. The Linux kernel module efivars is loaded (modprobe efivars)."
   echo "$msg_program_stop!"
 fi
 efi_system_part_no="$(get_efi_system_part ${disk_})"
@@ -303,6 +337,7 @@ ret="$?"
 # 1: UUID does not exist, need to update boot entry.
 # 2: UUID exists, not match, need to update boot entry.
 if [ "$ret" -eq 2 ]; then
+  # 2: UUID exists, not match, need to update boot entry.
   # Updating the boot entry for EFI NVRAM
   # Before updating, we need to remove the stale one if it exist
   efi_sys_part_boot_order_in_nvram="$(LC_ALL=C efibootmgr -v | grep -iE "^Boot[[:digit:]]+.*[[:space:]]+HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g")"
@@ -325,31 +360,43 @@ if [ "$ret" -eq 2 ]; then
     boot_order_removed="1"
   fi
   find_efi_boot_loader_file $efi_system_part # We will get $efi_sys_part_boot_file
-  if [ "$boot_order_removed" -eq 0 ]; then
-    if [ -n "${efi_system_part_no}" -a -n "$efi_sys_part_boot_file" ]; then
-      cmd_update_boot_entry="efibootmgr -c -d ${disk_} -p ${efi_system_part_no} -L \"OS on hard drive\" -l \"$efi_sys_part_boot_file\""
-      echo "Updating the boot entry $efi_sys_part_boot_order_in_nvram by command:"
-      echo "$cmd_update_boot_entry"
-      LC_ALL=C eval "(${cmd_update_boot_entry} && exit \${PIPESTATUS[0]})"
-    fi
-  fi
-  # For Mac...
-elif [ "$ret" -eq 1 ]; then
-  find_efi_boot_loader_file $efi_system_part # We will get $efi_sys_part_boot_file
-  if [ -n "${efi_system_part_no}" -a -n "$efi_sys_part_boot_file" ]; then
-    cmd_add_boot_entry="efibootmgr -c -d ${disk_} -p ${efi_system_part_no} -L \"OS on hard drive\" -l \"$efi_sys_part_boot_file\""
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Adding the boot entry in EFI NVRAM by command:"
+  if [ -z "$efi_sys_part_boot_file" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "EFI boot file in partition $efi_system_part was _NOT_ found."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$cmd_add_boot_entry"
-    LC_ALL=C eval "(${cmd_add_boot_entry} && exit \${PIPESTATUS[0]})"
+    echo "$msg_program_stop!"
+    exit 2
   fi
+  if [ "$boot_order_removed" -eq 0 ]; then
+    cmd_update_boot_entry="efibootmgr -c -d ${disk_} -p ${efi_system_part_no} -L \"OS on hard drive\" -l \"$efi_sys_part_boot_file\""
+    echo "Updating the boot entry $efi_sys_part_boot_order_in_nvram by command:"
+    echo "$cmd_update_boot_entry"
+    LC_ALL=C eval "(${cmd_update_boot_entry} && exit \${PIPESTATUS[0]})"
+  fi
+elif [ "$ret" -eq 1 ]; then
+  # 1: UUID does not exist, need to update boot entry.
+  find_efi_boot_loader_file $efi_system_part # We will get $efi_sys_part_boot_file
+  if [ -z "$efi_sys_part_boot_file" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "EFI boot file in partition $efi_system_part was _NOT_ found."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 2
+  fi
+  cmd_add_boot_entry="efibootmgr -c -d ${disk_} -p ${efi_system_part_no} -L \"OS on hard drive\" -l \"$efi_sys_part_boot_file\""
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Adding the boot entry in EFI NVRAM by command:"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$cmd_add_boot_entry"
+  LC_ALL=C eval "(${cmd_add_boot_entry} && exit \${PIPESTATUS[0]})"
 elif [ "$ret" -eq 0 ]; then
+  # 0: UUID exists, match, no need to update boot entry.
   # EFI system partition UUID in EFI NVRAM matches the one on this system
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "No need to update the boot entry of EFI NVRAM."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 else
+  # Unknown mode...
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Unknown mode. No idea how to update EFI NVRAM for the EFI system partition."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
