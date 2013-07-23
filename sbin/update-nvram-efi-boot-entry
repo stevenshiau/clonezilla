@@ -13,6 +13,12 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
+# Settings
+# For the known full path file to EFI boot file list:
+known_efi_boot_file_chklist="/EFI/ubuntu/grubx64.efi /EFI/fedora/shim.efi /EFI/fedora/grubx64.efi /EFI/Boot/bootx64.efi"
+# For the unknown full path file to EFI boot file list, which we will find the full path:
+unknown_efi_boot_file_chklist="bootx64.efi grubx64.efi"
+
 #
 USAGE() {
     echo "$ocs - To update the UEFI NVRAM with EFI system partition on hard drive"
@@ -56,6 +62,15 @@ get_efi_system_part() {
   #   2          616448          819199   99.0 MiB    EF00  EFI system partition
   #   3          819200         1081343   128.0 MiB   0C01  Microsoft reserved part
   #   4         1081344       125827071   59.5 GiB    0700  Basic data partition
+  #
+  # For Mac
+  # root@mac:~# efibootmgr -v
+  # BootCurrent: 0000
+  # Timeout: 5 seconds
+  # BootOrder: 0080
+  # Boot0080*       ACPI(a0341d0,0)PCI(1f,2)03120a00000000000000HD(2,64028,3a1ec0c0,00006572-1fb9-0000-5d0a-000037290000)File(\System\Library\CoreServices\boot.efi)
+  # BootFFFF*       ACPI(a0341d0,0)PCI(1f,2)03120a00000000000000HD(2,64028,3a1ec0c0,00006572-1fb9-0000-5d0a-000037290000)File(\System\Library\CoreServices\boot.efi)
+
   local test_disk_="$1"
   local start_n efi_part
   if [ -z "${test_disk_}" ]; then
@@ -103,8 +118,8 @@ check_if_nvram_efi_boot_partition_exist() {
   # 1: UUID does not exist, need to update boot entry.
   # 2: UUID exists, not match, need to update boot entry.
   
-  efi_sys_part_no_in_nvram="$(LC_ALL=C efibootmgr -v | grep -iE "^Boot[[:digit:]]+.*[[:space:]]+HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:digit:]]+,[[:digit:]]+,[[:alnum:]-]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $1}')"
-  efi_sys_part_uuid_in_nvram="$(LC_ALL=C efibootmgr -v | grep -iE "^Boot[[:digit:]]+.*[[:space:]]+HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:digit:]]+,[[:digit:]]+,[[:alnum:]-]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $4}' | tr '[:upper:]' '[:lower:]')"
+  efi_sys_part_no_in_nvram="$(LC_ALL=C efibootmgr -v | grep -iE "^Boot[[:digit:]]+.*[[:space:]]+HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]]+,[[:alnum:]-]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $1}')"
+  efi_sys_part_uuid_in_nvram="$(LC_ALL=C efibootmgr -v | grep -iE "^Boot[[:digit:]]+.*[[:space:]]+HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]]+,[[:alnum:]-]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $4}' | tr '[:upper:]' '[:lower:]')"
   
   efi_sys_part_uuid_in_harddrive="$(LC_ALL=C udevadm info -q env -n $efi_system_part | grep -E "^UDISKS_PARTITION_UUID=" | sed -r -e "s/^UDISKS_PARTITION_UUID=//g" | tr '[:upper:]' '[:lower:]')"
   ret_code=""
@@ -112,18 +127,18 @@ check_if_nvram_efi_boot_partition_exist() {
     if [ "$efi_sys_part_uuid_in_nvram" != "$efi_sys_part_uuid_in_harddrive" ]; then
       ret_code="2"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "The EFI system partition UUID $efi_sys_part_uuid_in_nvram in EFI NVRAM does _NOT_ match the one on hard drive! UUID of $efi_system_part is: $efi_sys_part_uuid_in_harddrive"
+      echo "The EFI system partition UUID $efi_sys_part_uuid_in_nvram in EFI NVRAM does _NOT_ match the one on partition $efi_system_part. UUID of $efi_system_part is: $efi_sys_part_uuid_in_harddrive"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     else
       ret_code="0"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "EFI system partition UUID $efi_sys_part_uuid_in_nvram in EFI NVRAM matches the one on this system!"
+      echo "EFI system partition UUID $efi_sys_part_uuid_in_nvram in EFI NVRAM matches the one on partition $efi_system_part."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
   else
     ret_code="1"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "No partition boot entry from hard drive exists in EFI NVRAM!"
+    echo "No partition boot entry from hard drive exists in EFI NVRAM."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "EFI boot entries on this system:"
     echo $msg_delimiter_star_line
@@ -178,6 +193,7 @@ find_efi_boot_loader_file() {
   fi
   mnt_pnt="$(mktemp -d /tmp/efi_sys_part.XXXXXX)"
   mount -o ro $efi_system_part $mnt_pnt
+  efi_sys_part_boot_file=""
   if [ -n "$efi_sys_part_boot_file_in_nvram" ]; then
     # Revert the \ as / e.g. \EFI\fedora\shim.efi -> /EFI/fedora/shim.efi
     efi_sys_part_boot_file_unix_format="$(echo "$efi_sys_part_boot_file_in_nvram" | sed -r -e "s/\\\/\//g")"
@@ -196,15 +212,22 @@ find_efi_boot_loader_file() {
     # Fedora 19: /EFI/fedora/shim.efi
     # MS Windows: /EFI/Boot/bootx64.efi
     # TODO: find a better way to deal with this
-    if [ -e "$mnt_pnt/EFI/ubuntu/grubx64.efi" ]; then
-      efi_sys_part_boot_file="$(echo /EFI/ubuntu/grubx64.efi | sed -r -e "s|\/|\\\|g")"
-    elif [ -e "$mnt_pnt/EFI/fedora/shim.efi" ]; then
-      efi_sys_part_boot_file="$(echo /EFI/fedora/shim.efi | sed -r -e "s|\/|\\\|g")"
-    elif [ -e "$mnt_pnt/EFI/fedora/grubx64.efi" ]; then
-      efi_sys_part_boot_file="$(echo /EFI/fedora/grubx64.efi | sed -r -e "s|\/|\\\|g")"
-    elif [ -e "$mnt_pnt/EFI/Boot/bootx64.efi" ]; then
-      efi_sys_part_boot_file="$(echo /EFI/Boot/bootx64.efi | sed -r -e "s|\/|\\\|g")"
+    for i in $known_efi_boot_file_chklist; do
+      if [ -e "$mnt_pnt/$i" ]; then
+        efi_sys_part_boot_file="$(echo "$i" | sed -r -e "s|\/|\\\|g")"
+	break
+      fi
+    done
+    # Last choice, find the full path to "grubx64.efi"
+    if [ -z "$efi_sys_part_boot_file" ]; then
+      for i in $unknown_efi_boot_file_chklist; do
+	efi_sys_part_boot_file="$(LC_ALL=C find $mnt_pnt/EFI/ -iname "$i" -print | sort | uniq | head -n 1 | sed -r -e "s|$mnt_pnt||g" | sed -r -e "s|\/|\\\|g")"
+	[ -n "$efi_sys_part_boot_file" ] && break
+      done
     fi
+  fi
+  if [ -n "$efi_sys_part_boot_file" ]; then
+    echo "EFI boot file \"$efi_sys_part_boot_file\" in partition $efi_system_part was found."
   fi
 
   # Clean stale dir
@@ -278,13 +301,17 @@ if [ "$ret" -eq 2 ]; then
   # Updating the boot entry for EFI NVRAM
   # Before updating, we need to remove the stale one if it exist
   efi_sys_part_boot_order_in_nvram="$(LC_ALL=C efibootmgr -v | grep -iE "^Boot[[:digit:]]+.*[[:space:]]+HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g")"
-  boot_order_removed=""
+  boot_order_removed="0"
   if [ -n "$efi_sys_part_boot_order_in_nvram" ]; then
-    cmd_rm_boot_entry="efibootmgr -B -b $efi_sys_part_boot_order_in_nvram"
-    echo "Removing the stale boot entry $efi_sys_part_boot_order_in_nvram by command:"
-    echo "$cmd_rm_boot_entry"
-    LC_ALL=C eval "(${cmd_rm_boot_entry} && exit \${PIPESTATUS[0]})"
-    boot_order_removed="$?"
+    ret_rm="0"
+    for i in $efi_sys_part_boot_order_in_nvram; do
+      cmd_rm_boot_entry="efibootmgr -B -b $i"
+      echo "Removing the stale boot entry $i by command:"
+      echo "$cmd_rm_boot_entry"
+      LC_ALL=C eval "(${cmd_rm_boot_entry} && exit \${PIPESTATUS[0]})"
+      ret_rm="$?"
+      boot_order_removed="$((boot_order_removed + ret_rm))"
+    done
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "EFI system partition boot order was _NOT_ found in EFI NVRAM!"
