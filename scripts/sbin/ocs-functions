@@ -7910,7 +7910,7 @@ task_restoreparts() {
   if [ "$update_efi_nvram" = "yes" ]; then
     for ihd in $target_hd; do
       if `is_gpt_partitition_table_disk /dev/$ihd`; then
-        update-nvram-efi-boot-entry /dev/$ihd | tee --append $OCS_LOGFILE
+        update-efi-nvram-boot-entry /dev/$ihd | tee --append $OCS_LOGFILE
       fi
     done
   fi
@@ -10339,3 +10339,51 @@ output_blkdev_info() {
   local dev_="$2" # if dev_ is mssing, then it means the whole system.
   LC_ALL=C lsblk -o KNAME,NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL $dev_ > $output_f
 } # end of output_blkdev_info
+#
+get_latest_kernel_ver_in_repository() {
+  # Since we might run this on gutsy to create hardy live, so we can not use apt-cache to search that. Another approach is to use apt-file to do that. However, it looks like the file http://opensource.nchc.org.tw/ubuntu/dists/hardy/Contents-i386.gz which apt-file fetched is not updated with repository.
+  local ktmp kver dist_path_chklist
+  # release_kernel_ver is global variable
+
+  ktmp="$(mktemp -d /tmp/live_kver.XXXXXX || exit 1)"
+  if [ -n "$(echo $mirror_url | grep -i "ubuntu")" ]; then
+    # For Ubuntu path, we can check update one (e.g. raring-updates) first
+    dist_path_chklist="$debian_dist-updates $debian_dist"
+  else
+    # Debian, no path with "*-updates"
+    dist_path_chklist="$debian_dist"
+  fi
+  for i in $dist_path_chklist; do
+    echo "Downloading $mirror_url/dists/$i/main/binary-i386/Packages.bz2 to finding latest kernel version..."
+    LC_ALL=C wget $wget_opt -P $ktmp/ $mirror_url/dists/$i/main/binary-i386/Packages.bz2
+    # The info in the Packges.gz is like:
+    # Package: linux-image-2.6.24-10-386
+    # Package: linux-image-2.6.24-10-generic
+    # Package: linux-image-2.6.24-10-server
+    # Package: linux-image-2.6.24-10-virtual
+    # Package: linux-image-2.6.24-11-386
+    # Package: linux-image-2.6.24-11-generic
+    # Package: linux-image-2.6.24-11-server
+    # Package: linux-image-2.6.24-11-virtual
+    kver="$(LC_ALL=C bzgrep -E "^Package: linux-image-(2\.6\.|3\.)[[:digit:]]+.*-" $ktmp/Packages.bz2 | sort -r -V | uniq | head -n 1 | sed -e "s|^Package: linux-image-||g" -e "s|-generic$||g" -e "s|-amd64||g" -e "s|686.*||g" -e "s|486.*||g")"
+    if [ -z "$kver" ]; then
+      # Clean Packages.bz2 to avoid wget using another name like Packages.bz2.1 then search the next again
+      rm -f $ktmp/Packages.bz2
+    else
+      # Found! Use it. 
+      break
+    fi
+  done
+  if [ -n "$kver" ]; then
+    release_kernel_ver="$kver"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Warning!"
+    echo "Unable to find the latest kernel version in $mirror_url/dists/$i/main/binary-i386/Packages.bz2. Use the pre-defined one."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo -n "$msg_press_enter_to_continue"
+    read 
+    eval release_kernel_ver="\$${i}_release_kernel_ver_def"
+  fi
+  [ -d "$ktmp" -a -n "$(echo $ktmp | grep "live_kver")" ] && rm -rf $ktmp
+} # end of get_latest_kernel_ver_in_repository

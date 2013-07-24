@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.4
+Version:	3.5.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jul 24 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.6-drbl1
+- Rename function get_latest_kernel_in_repository in create-ubuntu-live as get_latest_kernel_ver_in_repository, and move it to ocs-functions so it can be reused.
+
+* Wed Jul 24 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.5-drbl1
 - Using the warning color for skipping running update-nvram-efi-boot-entry on Mac machine.
+- Program update-nvram-efi-boot-entry was renamed as update-efi-nvram-boot-entry.
+- Add more files (/EFI/redhat/grub.efi and /EFI/opensuse/grubx64.efi) in check lists of update-efi-nvram-boot-entry..
 
 * Tue Jul 23 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.4-drbl1
 - Formating the output of update-nvram-efi-boot-entry.

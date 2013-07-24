@@ -25,19 +25,6 @@ cpu_flavor_default="386"
 workdir="ubuntu-live"
 bootstrap_default="debootstrap"
 
-# No more required.
-# UGLY... but we have to semi hard coded them... since live helper won't work in Ubuntu if we do not assign version number. It's because the kernel package name in Ubuntu is like linux-image-2.6.24-7-generic, and if we do not assign version number, live-helper will try to install linux-image-2.6-generic, which does not exist in ubuntu. In Ubuntu, it's linux-image-generic.
-# This is only set as default, later we will use get_latest_kernel_in_repository to find the latest kernel in repository.
-#gutsy_release_kernel_ver_def="2.6.22-14"
-#hardy_release_kernel_ver_def="2.6.24-15"
-#intrepid_release_kernel_ver_def="2.6.27-7"
-#jaunty_release_kernel_ver_def="2.6.28-8"
-#karmic_release_kernel_ver_def="2.6.31-14"
-#lucid_release_kernel_ver_def="2.6.32-14"
-#maverick_release_kernel_ver_def="2.6.35-22"
-#natty_release_kernel_ver_def="2.6.37-6"
-#oneiric_release_kernel_ver_def="3.0.0-7"
-
 # The files in dir $ocs_live_script_dir/ will be copied to the dir /live-hook-dir in dir chroot. The file "ocs-live-hook" is in $ocs_live_script_dir
 # We put some files in dir ocs_minimal_hook/ to do some jobs, like clean unnecessary files, set locales...
 ocs_live_script_dir="$DRBL_SCRIPT_PATH/setup/files/ocs/live-hook"
@@ -75,45 +62,6 @@ USAGE() {
     echo "-t, --batch     Run in batch mode"
     echo "-v, --verbose   Run live build in verbose mode"
 }
-#
-get_latest_kernel_in_repository() {
-  # Since we might run this on gutsy to create hardy live, so we can not use apt-cache to search that. Another approach is to use apt-file to do that. However, it looks like the file http://opensource.nchc.org.tw/ubuntu/dists/hardy/Contents-i386.gz which apt-file fetched is not updated with repository.
-  local ktmp kver
-  ktmp="$(mktemp -d /tmp/live_kver.XXXXXX || exit 1)"
-  for i in $debian_dist-updates $debian_dist; do
-    echo "Downloading $mirror_url/dists/$i/main/binary-i386/Packages.gz  to finding latest kernel version..."
-    LC_ALL=C wget $wget_opt -P $ktmp/ $mirror_url/dists/$i/main/binary-i386/Packages.gz
-    # The info in the Packges.gz is like:
-    # Package: linux-image-2.6.24-10-386
-    # Package: linux-image-2.6.24-10-generic
-    # Package: linux-image-2.6.24-10-server
-    # Package: linux-image-2.6.24-10-virtual
-    # Package: linux-image-2.6.24-11-386
-    # Package: linux-image-2.6.24-11-generic
-    # Package: linux-image-2.6.24-11-server
-    # Package: linux-image-2.6.24-11-virtual
-    kver="$(zgrep -E "^Package: linux-image-(2\.6\.|3\.)[[:digit:]]+.*-generic" $ktmp/Packages.gz  | pkg-ver-latest | sed -e "s|^Package: linux-image-||g" -e "s|-generic$||g")"
-    if [ -z "$kver" ]; then
-      # Clean Packages.gz to avoid wget using another name like Packages.gz.1 then search the next again
-      rm -f $ktmp/Packages.gz
-    else
-      # Found! Use it. 
-      break
-    fi
-  done
-  if [ -n "$kver" ]; then
-    release_kernel_ver="$kver"
-  else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Warning!"
-    echo "Unable to find the latest kernel version in $mirror_url/dists/$i/main/binary-i386/Packages.gz. Use the pre-defined one."
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo -n "$msg_press_enter_to_continue"
-    read 
-    eval release_kernel_ver="\$${i}_release_kernel_ver_def"
-  fi
-  [ -d "$ktmp" -a -n "$(echo $ktmp | grep "live_kver")" ] && rm -rf $ktmp
-} # end of get_latest_kernel_in_repository
 
 batch_mode="off"
 # Parse command-line options
@@ -385,7 +333,7 @@ $pref lb config --initramfs live-initramfs
 $pref lb config --linux-flavours generic
 
 # get the latest kernel ver "release_kernel_ver"
-get_latest_kernel_in_repository
+get_latest_kernel_ver_in_repository
 [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
 echo "The kernel version in this live CD will be: $release_kernel_ver"
 [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
