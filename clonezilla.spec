@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Two more functions get_efi_hd_boot_entry_info and get_part_uuid_in_harddrive were addded in ocs-functions.
+
 * Wed Jul 24 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.6-drbl1
 - Rename function get_latest_kernel_in_repository in create-ubuntu-live as get_latest_kernel_ver_in_repository, and move it to ocs-functions so it can be reused.
 

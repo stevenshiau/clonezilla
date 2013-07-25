@@ -137,16 +137,14 @@ check_if_nvram_efi_boot_partition_exist() {
   #  # We could use udevadm info to get the partition UUID:
   #  root@debian:~# LC_ALL=C udevadm info -q env -n /dev/sda2 | grep "UDISKS_PARTITION_UUID="
   #  UDISKS_PARTITION_UUID=E72DCE29-EA6A-4235-9EAA-FC11605559CA
-  local efi_sys_part_no_from_nvram efi_sys_part_uuid_from_nvram efi_sys_part_uuid_from_harddrive ret_code
+  local efi_sys_part_uuid_in_nvram efi_sys_part_uuid_in_harddrive ret_code
   # Return code: 
   # 0: UUID exists, match, no need to update boot entry.
   # 1: UUID does not exist, need to update boot entry.
   # 2: UUID exists, not match, need to update boot entry.
   
-  efi_sys_part_no_in_nvram="$(LC_ALL=C efibootmgr -v | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]]+,[[:alnum:]-]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $1}' | sort | uniq)"
-  efi_sys_part_uuid_in_nvram="$(LC_ALL=C efibootmgr -v | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]]+,[[:alnum:]-]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $4}' | tr '[:upper:]' '[:lower:]')"
-  
-  efi_sys_part_uuid_in_harddrive="$(LC_ALL=C udevadm info -q env -n $efi_system_part | grep -E "^UDISKS_PARTITION_UUID=" | sed -r -e "s/^UDISKS_PARTITION_UUID=//g" | tr '[:upper:]' '[:lower:]')"
+  efi_sys_part_uuid_in_nvram="$(get_efi_hd_boot_entry_info nvram uuid)"
+  efi_sys_part_uuid_in_harddrive="$(get_part_uuid_in_harddrive $efi_system_part)"
   ret_code=""
   if [ -n "$efi_sys_part_uuid_in_nvram" ]; then
     if [ "$efi_sys_part_uuid_in_nvram" != "$efi_sys_part_uuid_in_harddrive" ]; then
@@ -211,7 +209,7 @@ find_efi_boot_loader_file() {
   # efi_sys_part_boot_file is global variable
 
   [ -z "$efi_sys_part_" ] && return 1
-  efi_sys_part_boot_file_in_nvram="$(LC_ALL=C efibootmgr -v | grep -iE "^Boot[[:digit:]]+.*[[:space:]]+HD\(.*\)FILE\(.*\)" | grep -o -iE "FILE\(.*\)" | sed -r -e "s/^File\(//g" -e "s/\)$//g")"
+  efi_sys_part_boot_file_in_nvram="$(get_efi_hd_boot_entry_info nvram boot_file)"
 
   if [ -n "$(LC_ALL=C mount | awk -F" " '{print $1}' | grep -Ew ${efi_system_part})" ]; then
     umount ${efi_system_part}
@@ -345,7 +343,7 @@ if [ "$ret" -eq 2 ]; then
   # 2: UUID exists, not match, need to update boot entry.
   # Updating the boot entry for EFI NVRAM
   # Before updating, we need to remove the stale one if it exist
-  efi_sys_part_boot_order_in_nvram="$(LC_ALL=C efibootmgr -v | grep -iE "^Boot[[:digit:]]+.*[[:space:]]+HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g")"
+  efi_sys_part_boot_order_in_nvram="$(get_efi_hd_boot_entry_info nvram boot_order)"
   boot_order_removed="0"
   if [ -n "$efi_sys_part_boot_order_in_nvram" ]; then
     ret_rm="0"
