@@ -7387,7 +7387,7 @@ task_saveparts() {
   # Save EFI NVRAM info. What we need is actually the label
   # Only if dir /sys/firmware/efi/efivars exists, the data exist in EFI NVRAM 
   if [ -d "/sys/firmware/efi/efivars" ]; then
-    LC_ALL=C efibootmgr -v 2>/dev/null > $target_dir_fullpath/efi-nvram.data
+    LC_ALL=C efibootmgr -v 2>/dev/null > $target_dir_fullpath/efi-nvram.dat
   fi
 
   # Dump hardware info
@@ -10396,11 +10396,11 @@ get_latest_kernel_ver_in_repository() {
 #
 get_efi_hd_boot_entry_info() {
   # This function is used to get some variables for boot entry in EFI NVRAM or the saved file. E.g. it's used to get the following variables in Boot0004 for CentOS 6.
-  # Usage: get_efi_hd_boot_entry_info (nvram|file) (boot_order|label|part_no|uuid|boot_file)
+  # Usage: get_efi_hd_boot_entry_info (nvram|full_path_to_image) (boot_order|label|part_no|uuid|boot_file)
   # E.g. to get the "boot_order" in the EFI NVRAM, use:
   # get_efi_hd_boot_entry_info nvram boot_order
-  # To get the label from the saved file (it's from the saved image $target_dir_fullpath/efi-nvram.data):
-  # get_efi_hd_boot_entry_info file label
+  # To get the label from the saved file (it's from the saved image full_path_to_image/efi-nvram.dat):
+  # get_efi_hd_boot_entry_info full_path_to_image label
 
   # A normal output for "efibootmgr -v":
   # root@debian:~# efibootmgr -v
@@ -10411,15 +10411,15 @@ get_efi_hd_boot_entry_info() {
   # Boot0002* EFI Network   ACPI(a0341d0,0)PCI(11,0)PCI(1,0)MAC(000c297f5675,0)
   # Boot0003* EFI Internal Shell (Unsupported option)       MM(b,3f055000,3f3b5fff)
   # Boot0004* CentOS 6	HD(1,800,64000,e8d785ed-a65f-4ea1-adf0-cc61e75677eb)File(\EFI\redhat\grub.efi)
-  local type_="$1" # nvram, file
+  local type_="$1" # nvram, full_path_to_image
   local term_="$2" # boot_order, label, no, uuid, boot_file
   local cmd_ boot_order label part_no uuid boot_file
 
   case "$type_" in
     nvram) cmd_="efibootmgr -v 2>/dev/null" ;;
-    file)  
-           if [ -e "$target_dir_fullpath/efi-nvram.data" ]; then
-              cmd_="cat $target_dir_fullpath/efi-nvram.data"
+    *)  
+           if [ -e "${type_}/efi-nvram.dat" ]; then
+              cmd_="cat ${type_}/efi-nvram.dat"
            else
               return 2
            fi

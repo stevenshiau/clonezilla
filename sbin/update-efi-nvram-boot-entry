@@ -23,14 +23,20 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 known_efi_boot_file_chklist="/EFI/ubuntu/grubx64.efi /EFI/fedora/shim.efi /EFI/fedora/grubx64.efi /EFI/Boot/bootx64.efi /EFI/redhat/grub.efi /EFI/opensuse/grubx64.efi"
 # For the unknown full path file to EFI boot file list, which we will find the full path:
 unknown_efi_boot_file_chklist="bootx64.efi grubx64.efi grub.efi"
+# Default label name
+label_def="OS on hard drive"
 
 #
 USAGE() {
     echo "$ocs - To update the UEFI NVRAM with EFI system partition on hard drive"
     echo "Usage:"
     echo "To run $ocs:"
-    echo "$ocs DISK"
-    echo "DEVICE is the hard drive name, e.g. /dev/sda, /dev/sda2..."
+    echo "$ocs [OPTION] DISK"
+    echo "Options:"
+    echo "-l, --label LABEL     Use LABEL when writing label in EFI NVRAM."
+    echo "-r, --full-path-to-ref-image  FULL_PATH_TO_IMAGE   Use the label in image FULL_PATH_TO_IMAGE/efi-nvram.dat, which is the output of command \"efibootmgr -v\"."
+    echo "//NOTE// The options -l and -r conflict with eath other. Use one of them only."
+    echo "DEVICE is the hard drive name, e.g. /dev/sda, /dev/sda..."
     echo "Ex:"
     echo "To update the UEFI NVRAM with existing EFI system partition on hard drive /dev/sda, run"
     echo "   $ocs /dev/sda"
@@ -279,6 +285,24 @@ ocs=`basename $ocs_file`
 
 while [ $# -gt 0 ]; do
  case "$1" in
+   -l|--label)
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             label_assigned="$1"
+             shift;
+           fi
+           [ -z "$label_assigned" ] && USAGE && exit 1
+           ;;
+   -r|--full-path-to-ref-image)
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             full_path_to_ref_image="$1"
+             shift;
+           fi
+           [ -z "$full_path_to_ref_image" ] && USAGE && exit 1
+           ;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
            exit 2 ;;
@@ -300,6 +324,16 @@ if ! is_whole_disk ${disk_}; then
 fi
 #
 ask_and_load_lang_set $specified_lang
+
+#
+if [ -n "$full_path_to_ref_image" -o \
+     -e "$full_path_to_ref_image/efi-nvram.dat" ]; then
+  label="$(get_efi_hd_boot_entry_info $full_path_to_ref_image label)"
+elif [ -n "$label_assigned" ]; then
+  label="$label_assigned"
+else
+  label="$label_def"
+fi
 
 # Check if it's Apple Mac machine
 if check_if_apple_mac; then
@@ -372,7 +406,7 @@ if [ "$ret" -eq 2 ]; then
     exit 2
   fi
   if [ "$boot_order_removed" -eq 0 ]; then
-    cmd_update_boot_entry="efibootmgr -c -d ${disk_} -p ${efi_system_part_no} -L \"OS on hard drive\" -l \"$efi_sys_part_boot_file\""
+    cmd_update_boot_entry="efibootmgr -c -d ${disk_} -p ${efi_system_part_no} -L \"$label\" -l \"$efi_sys_part_boot_file\""
     echo "Updating the boot entry $efi_sys_part_boot_order_in_nvram by command:"
     echo "$cmd_update_boot_entry"
     LC_ALL=C eval "(${cmd_update_boot_entry} && exit \${PIPESTATUS[0]})"
@@ -388,7 +422,7 @@ elif [ "$ret" -eq 1 ]; then
     echo "$msg_program_stop!"
     exit 2
   fi
-  cmd_add_boot_entry="efibootmgr -c -d ${disk_} -p ${efi_system_part_no} -L \"OS on hard drive\" -l \"$efi_sys_part_boot_file\""
+  cmd_add_boot_entry="efibootmgr -c -d ${disk_} -p ${efi_system_part_no} -L \"$label\" -l \"$efi_sys_part_boot_file\""
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Adding the boot entry in EFI NVRAM by command:"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL

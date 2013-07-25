@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.6
+Version:	3.5.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jul 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.7-drbl1
 - Two more functions get_efi_hd_boot_entry_info and get_part_uuid_in_harddrive were addded in ocs-functions.
+- File containing the output of "efibootmgr -v" will be saved as efi-nvram.data in image dir.
+- By default Clonezilla will try to use the label saved from EFI NVRAM when updating the EFI NVRAM after the the image is restored on destination machine.
 
 * Wed Jul 24 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.6-drbl1
 - Rename function get_latest_kernel_in_repository in create-ubuntu-live as get_latest_kernel_ver_in_repository, and move it to ocs-functions so it can be reused.
