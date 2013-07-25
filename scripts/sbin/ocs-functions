@@ -10387,3 +10387,61 @@ get_latest_kernel_ver_in_repository() {
   fi
   [ -d "$ktmp" -a -n "$(echo $ktmp | grep "live_kver")" ] && rm -rf $ktmp
 } # end of get_latest_kernel_ver_in_repository
+#
+get_efi_hd_boot_entry_info() {
+  # This function is used to get some variables for boot entry in EFI NVRAM or the saved file. E.g. it's used to get the following variables in Boot0004 for CentOS 6.
+  # Usage: get_efi_hd_boot_entry_info (nvram|file) (boot_order|label|part_no|uuid|boot_file)
+  # E.g. to get the "boot_order" in the EFI NVRAM, use:
+  # get_efi_hd_boot_entry_info nvram boot_order
+  # To get the label from the saved file (it's from the saved image $target_dir_fullpath/efi-nvram.data):
+  # get_efi_hd_boot_entry_info file label
+
+  # A normal output for "efibootmgr -v":
+  # root@debian:~# efibootmgr -v
+  # BootCurrent: 0001
+  # BootOrder: 0004,0000,0001,0002,0003
+  # Boot0000* EFI VMware Virtual SCSI Hard Drive (0.0)      ACPI(a0341d0,0)PCI(10,0)SCSI(0,0)
+  # Boot0001* EFI VMware Virtual IDE CDROM Drive (IDE 1:0)  ACPI(a0341d0,0)PCI(7,1)ATAPI(1,0,0)
+  # Boot0002* EFI Network   ACPI(a0341d0,0)PCI(11,0)PCI(1,0)MAC(000c297f5675,0)
+  # Boot0003* EFI Internal Shell (Unsupported option)       MM(b,3f055000,3f3b5fff)
+  # Boot0004* CentOS 6	HD(1,800,64000,e8d785ed-a65f-4ea1-adf0-cc61e75677eb)File(\EFI\redhat\grub.efi)
+  local type_="$1" # nvram, file
+  local term_="$2" # boot_order, label, no, uuid, boot_file
+  local cmd_ boot_order label part_no uuid boot_file
+
+  case "$type_" in
+    nvram) cmd_="efibootmgr -v 2>/dev/null" ;;
+    file)  
+           if [ -e "$target_dir_fullpath/efi-nvram.data" ]; then
+              cmd_="cat $target_dir_fullpath/efi-nvram.data"
+           else
+              return 2
+           fi
+	   ;;
+  esac
+
+  case "$term_" in
+    boot_order)
+      LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g"
+      ;;
+    label)
+      LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)FILE\(.*\)" | sed -r -e "s|^Boot[[:alnum:]]+[*][[:space:]]+||g" -e "s|[[:space:]]+HD\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]]+,[[:alnum:]-]+\).*||g"
+      ;;
+    part_no)
+      LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]]+,[[:alnum:]-]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $1}' | sort | uniq
+      ;;
+    uuid)
+      LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]]+,[[:alnum:]-]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $4}' | tr '[:upper:]' '[:lower:]'
+      ;;
+    boot_file)
+      LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)FILE\(.*\)" | grep -o -iE "FILE\(.*\)" | sed -r -e "s/^File\(//g" -e "s/\)$//g"
+      ;;
+  esac
+} # end of get_efi_hd_boot_entry_info
+#
+get_part_uuid_in_harddrive() {
+  # Function to get partition UUID in hard drive. The output strings will be lowercase.
+  local part_="$1"
+  [ -z "${part_}" ] && return 2
+  LC_ALL=C udevadm info -q env -n ${part_} 2>/dev/null | grep -E "^UDISKS_PARTITION_UUID=" | sed -r -e "s/^UDISKS_PARTITION_UUID=//g" | tr '[:upper:]' '[:lower:]'
+} # end of get_uuid_in_harddrive
