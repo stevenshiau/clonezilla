@@ -34,7 +34,7 @@ USAGE() {
     echo "$ocs [OPTION] DISK"
     echo "Options:"
     echo "-l, --label LABEL     Use LABEL when writing label in EFI NVRAM."
-    echo "-r, --full-path-to-ref-image  FULL_PATH_TO_IMAGE   Use the label in image FULL_PATH_TO_IMAGE/efi-nvram.dat, which is the output of command \"efibootmgr -v\"."
+    echo "-r, --full-path-to-efi-file  FULL_PATH_TO_EFI_FILE   Use the label in FULL_PATH_TO_EFI_FILE, which is the output of command \"efibootmgr -v\"."
     echo "//NOTE// The options -l and -r conflict with eath other. Use one of them only."
     echo "DEVICE is the hard drive name, e.g. /dev/sda, /dev/sda..."
     echo "Ex:"
@@ -294,14 +294,14 @@ while [ $# -gt 0 ]; do
            fi
            [ -z "$label_assigned" ] && USAGE && exit 1
            ;;
-   -r|--full-path-to-ref-image)
+   -r|--full-path-to-efi-file)
            shift; 
            if [ -z "$(echo $1 |grep ^-.)" ]; then
              # skip the -xx option, in case 
-             full_path_to_ref_image="$1"
+             full_path_to_efi_file="$1"
              shift;
            fi
-           [ -z "$full_path_to_ref_image" ] && USAGE && exit 1
+           [ -z "$full_path_to_efi_file" ] && USAGE && exit 1
            ;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
@@ -326,9 +326,9 @@ fi
 ask_and_load_lang_set $specified_lang
 
 #
-if [ -n "$full_path_to_ref_image" -o \
-     -e "$full_path_to_ref_image/efi-nvram.dat" ]; then
-  label="$(get_efi_hd_boot_entry_info $full_path_to_ref_image label)"
+if [ -n "$full_path_to_efi_file" -a \
+     -e "$full_path_to_efi_file" ]; then
+  label="$(get_efi_hd_boot_entry_info $full_path_to_efi_file label)"
 elif [ -n "$label_assigned" ]; then
   label="$label_assigned"
 else

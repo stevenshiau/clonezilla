@@ -448,6 +448,7 @@ prepare_local_clone_dev_info() {
   src_gpt_gdisk="$hd_src_tmp/src-gpt.gdisk"
   # hidden data is between mbr and 1st partition.
   src_hidden_img="$hd_src_tmp/src-hidden-data.img"  
+  src_efi_nvram_data="$hd_src_tmp/src-efi-nvram.dat"  
   # For target disk
   tgt_pt_tmp="$hd_tgt_tmp/tgt-pt.sf"
   tgt_dsk_mbr="$hd_tgt_tmp/${target_hd}-mbr"
@@ -460,6 +461,7 @@ prepare_local_clone_dev_info() {
   tgt_gpt_gdisk="$hd_tgt_tmp/tgt-gpt.gdisk"
   # hidden data is between mbr and 1st partition.
   tgt_hidden_img="$hd_tgt_tmp/tgt-hidden-data.img"
+  tgt_efi_nvram_data="$hd_tgt_tmp/tgt-efi-nvram.dat"  
 
   local part_in_hd swap_in_hd
 
@@ -563,6 +565,12 @@ prepare_local_clone_dev_info() {
     target_swap_part_info="$(echo swappt-${partition}.info | sed -r -e "s|x?[hsv]d[a-z]|$target_hd|g")"
     output_swap_partition_uuid_label /dev/$partition $local_tmp/$target_swap_part_info
   done
+  # Save EFI NVRAM info. What we need is actually the label
+  # Only if dir /sys/firmware/efi/efivars exists, the data exist in EFI NVRAM 
+  if [ -d "/sys/firmware/efi/efivars" ]; then
+    LC_ALL=C efibootmgr -v 2>/dev/null > $src_efi_nvram_data
+  fi
+
   # change the dev to target in the $pt_tmp and $pt_info
   [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
   [ -f "$src_parted_info" ] && cp -f $src_parted_info $tgt_parted_info
@@ -578,6 +586,7 @@ prepare_local_clone_dev_info() {
   [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_parted_info
   [ -e "$tgt_blkdev_info" ] && LC_ALL=C perl -pi -e "s|x?[hsv]d[a-z]|$target_hd|g" $tgt_blkdev_info
   [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_info
+  [ -f "$src_efi_nvram_data" ] && cp -f $src_efi_nvram_data $tgt_efi_nvram_data
 
   # Decide use_HD_CHS_from_EDD
   # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
@@ -1544,13 +1553,16 @@ post_process_in_target_dev() {
     fi
     echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
 
-    # Updating EFI NVRAM for the boot device
-    if [ "$update_efi_nvram" = "yes" ]; then
-      for ihd in $target_hd; do
-        if `is_gpt_partitition_table_disk /dev/$ihd`; then
-          update-efi-nvram-boot-entry /dev/$ihd | tee --append $OCS_LOGFILE
-        fi
-      done
+    # We will only update EFI NVRAM when the mode is local disk to remote disk, since if it's local cloning, there is no need to update EFI NVRAM.
+    if [ "$STATUS" = "clone_client" -a "$target_type" = "disk" ]; then
+      # Updating EFI NVRAM for the boot device
+      if [ "$update_efi_nvram" = "yes" ]; then
+        for ihd in $target_hd; do
+          if `is_gpt_partitition_table_disk /dev/$ihd`; then
+            update-efi-nvram-boot-entry -r $tgt_efi_nvram_data /dev/$ihd | tee --append $OCS_LOGFILE
+          fi
+        done
+      fi
     fi
   fi
 } # end of post_process_in_target_dev

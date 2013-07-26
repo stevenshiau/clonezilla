@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.7
+Version:	3.5.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jul 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.8-drbl1
+- Bug fixed: the reference image option was not passed to update-efi-nvram-boot-entry after image is restored.
+- Bug fixed: ocs-onthefly should not run update-efi-nvram-boot-entry when cloning disks locally.
+- By default the lable name saved in efi-nvram.data will be used when running update-efi-nvram-boot-entry.
+
 * Thu Jul 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.7-drbl1
 - Two more functions get_efi_hd_boot_entry_info and get_part_uuid_in_harddrive were addded in ocs-functions.
 - File containing the output of "efibootmgr -v" will be saved as efi-nvram.data in image dir.
@@ -46,7 +51,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 - Rename function get_latest_kernel_in_repository in create-ubuntu-live as get_latest_kernel_ver_in_repository, and move it to ocs-functions so it can be reused.
 
 * Wed Jul 24 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.5-drbl1
-- Using the warning color for skipping running update-nvram-efi-boot-entry on Mac machine.
+- Using the warning color for skipping running update-efi-nvram-boot-entry on Mac machine.
 - Program update-nvram-efi-boot-entry was renamed as update-efi-nvram-boot-entry.
 - Add more files (/EFI/redhat/grub.efi and /EFI/opensuse/grubx64.efi) in check lists of update-efi-nvram-boot-entry..
 
