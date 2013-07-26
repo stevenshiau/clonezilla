@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.9
+Version:	3.5.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jul 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.10-drbl1
+- Adding saucy support in create-ubuntu-live.
+
 * Fri Jul 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.9-drbl1
 - Bug fixed: ocs-onthefly local disk to remote disk failed to update the EFI nvram on remote machine.
 
