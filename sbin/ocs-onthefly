@@ -448,7 +448,7 @@ prepare_local_clone_dev_info() {
   src_gpt_gdisk="$hd_src_tmp/src-gpt.gdisk"
   # hidden data is between mbr and 1st partition.
   src_hidden_img="$hd_src_tmp/src-hidden-data.img"  
-  src_efi_nvram_data="$hd_src_tmp/src-efi-nvram.dat"  
+  #src_efi_nvram_data="$hd_src_tmp/src-efi-nvram.dat" # no need for local EFI/GPT disk cloning 
   # For target disk
   tgt_pt_tmp="$hd_tgt_tmp/tgt-pt.sf"
   tgt_dsk_mbr="$hd_tgt_tmp/${target_hd}-mbr"
@@ -461,7 +461,7 @@ prepare_local_clone_dev_info() {
   tgt_gpt_gdisk="$hd_tgt_tmp/tgt-gpt.gdisk"
   # hidden data is between mbr and 1st partition.
   tgt_hidden_img="$hd_tgt_tmp/tgt-hidden-data.img"
-  tgt_efi_nvram_data="$hd_tgt_tmp/tgt-efi-nvram.dat"  
+  #tgt_efi_nvram_data="$hd_tgt_tmp/tgt-efi-nvram.dat" # no need for local EFI/GPT disk cloning 
 
   local part_in_hd swap_in_hd
 
@@ -565,11 +565,12 @@ prepare_local_clone_dev_info() {
     target_swap_part_info="$(echo swappt-${partition}.info | sed -r -e "s|x?[hsv]d[a-z]|$target_hd|g")"
     output_swap_partition_uuid_label /dev/$partition $local_tmp/$target_swap_part_info
   done
-  # Save EFI NVRAM info. What we need is actually the label
-  # Only if dir /sys/firmware/efi/efivars exists, the data exist in EFI NVRAM 
-  if [ -d "/sys/firmware/efi/efivars" ]; then
-    LC_ALL=C efibootmgr -v 2>/dev/null > $src_efi_nvram_data
-  fi
+  # No need for local EFI/GPT disk cloning
+  ## Save EFI NVRAM info. What we need is actually the label
+  ## Only if dir /sys/firmware/efi/efivars exists, the data exist in EFI NVRAM 
+  #if [ -d "/sys/firmware/efi/efivars" ]; then
+  #  LC_ALL=C efibootmgr -v 2>/dev/null > $src_efi_nvram_data
+  #fi
 
   # change the dev to target in the $pt_tmp and $pt_info
   [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
@@ -586,7 +587,7 @@ prepare_local_clone_dev_info() {
   [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_parted_info
   [ -e "$tgt_blkdev_info" ] && LC_ALL=C perl -pi -e "s|x?[hsv]d[a-z]|$target_hd|g" $tgt_blkdev_info
   [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_info
-  [ -f "$src_efi_nvram_data" ] && cp -f $src_efi_nvram_data $tgt_efi_nvram_data
+  # [ -f "$src_efi_nvram_data" ] && cp -f $src_efi_nvram_data $tgt_efi_nvram_data # no need for local EFI/GPT disk cloning
 
   # Decide use_HD_CHS_from_EDD
   # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
@@ -675,6 +676,7 @@ prepare_network_clone_dev_info() {
     src_2nd_gpt="$hd_src_tmp/src-gpt-2nd.img"
     src_gpt_gdisk="$hd_src_tmp/src-gpt.gdisk"
     src_hidden_img="$hd_src_tmp/src_hidden-data.img"
+    src_efi_nvram_data="$hd_src_tmp/src-efi-nvram.dat"  
 
     # partition table
     # Note! In Ubuntu 6.10, sfdisk output abnormal format for >= 10 partitions, like
@@ -759,6 +761,12 @@ prepare_network_clone_dev_info() {
       echo "Outputing swap UUID/LABEL..."
       output_swap_partition_uuid_label /dev/$partition $hd_src_tmp/swappt-${partition}.info
     done
+    # Save EFI NVRAM info. What we need is actually the label
+    # Only if dir /sys/firmware/efi/efivars exists, the data exist in EFI NVRAM 
+    if [ -d "/sys/firmware/efi/efivars" ]; then
+      LC_ALL=C efibootmgr -v 2>/dev/null > $src_efi_nvram_data
+    fi
+
     # LVM
     PV_PARSE_CONF="$hd_src_tmp/lvm_vg_dev.list"
     LOGV_PARSE_CONF="$hd_src_tmp/lvm_logv.list"
@@ -860,6 +868,7 @@ ADVAN_PARAM_END
     src_hidden_img="$hd_tgt_tmp/src_hidden-data.img"
     src_dsk_mbr="$hd_tgt_tmp/src-mbr"
     src_dsk_chs="$hd_tgt_tmp/src-chs.sf"
+    src_efi_nvram_data="$hd_tgt_tmp/src-efi-nvram.dat"  
     # For target dik
     tgt_pt_tmp="$hd_tgt_tmp/tgt-pt.sf"
     tgt_pt_info="$hd_tgt_tmp/tgt_partition.info"
@@ -871,6 +880,7 @@ ADVAN_PARAM_END
     tgt_hidden_img="$hd_tgt_tmp/tgt_hidden-data.img"
     tgt_dsk_mbr="$hd_tgt_tmp/${target_hd}-mbr"
     tgt_dsk_chs="$hd_tgt_tmp/${target_hd}-chs.sf"
+    tgt_efi_nvram_data="$hd_tgt_tmp/tgt-efi-nvram.dat"  
 
     # Get the pt and mbr... from server
     $NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT > $hd_tgt_tmp/ocs-onthefly-info.tgz
@@ -914,6 +924,7 @@ ADVAN_PARAM_END
     [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_pt_info
     [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/x?[hsv]d[a-z]|/dev/$target_hd|g" $tgt_parted_info
     [ -e "$tgt_blkdev_info" ] && LC_ALL=C perl -pi -e "s|x?[hsv]d[a-z]|$target_hd|g" $tgt_blkdev_info
+    [ -f "$src_efi_nvram_data" ] && cp -f $src_efi_nvram_data $tgt_efi_nvram_data
 
     # Decide use_HD_CHS_from_EDD
     # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.

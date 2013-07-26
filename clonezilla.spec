@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.8
+Version:	3.5.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jul 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.9-drbl1
+- Bug fixed: ocs-onthefly local disk to remote disk failed to update the EFI nvram on remote machine.
+
 * Fri Jul 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.8-drbl1
 - Bug fixed: the reference image option was not passed to update-efi-nvram-boot-entry after image is restored.
 - Bug fixed: ocs-onthefly should not run update-efi-nvram-boot-entry when cloning disks locally.
