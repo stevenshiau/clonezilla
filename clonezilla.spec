@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Moved the dir /EFI-imgs in live CD/USB under the dir /EFI/, and renamed it as images (so now it's /EFI/images/).
+
 * Fri Jul 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.10-drbl1
 - Adding saucy support in create-ubuntu-live.
 
