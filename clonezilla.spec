@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.10
+Version:	3.5.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.4.20, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.4.22, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,7 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jul 28 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.11-drbl1
 - Moved the dir /EFI-imgs in live CD/USB under the dir /EFI/, and renamed it as images (so now it's /EFI/images/).
+- An option "sec=ntlm" was added in prep-ocsroot. Thanks to Jack and Dave Higton for reporting this issue.
+- Cancel action in prep-ocsroot should work now.
+- Use default DNS server 8.8.8.8 in ocs-live-netcfg.
 
 * Fri Jul 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.10-drbl1
 - Adding saucy support in create-ubuntu-live.
