@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: partclone.log should not be appended to clonezilla log right after partclone is run in the background in local disk to remote disk mode.
+
 * Sun Jul 28 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.11-drbl1
 - Moved the dir /EFI-imgs in live CD/USB under the dir /EFI/, and renamed it as images (so now it's /EFI/images/).
 - An option "sec=ntlm" was added in prep-ocsroot. Thanks to Jack and Dave Higton for reporting this issue.
