@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.11
+Version:	3.5.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Aug 07 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.12-drbl1
+- SD card device (/dev/mmcblk0) is supported.
 - Bug fixed: partclone.log should not be appended to clonezilla log right after partclone is run in the background in local disk to remote disk mode.
 
 * Sun Jul 28 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.11-drbl1
