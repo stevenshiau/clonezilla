@@ -28,8 +28,8 @@ USAGE() {
     echo "$cmd_name will honor experimental variable EXTRA_SFDISK_OPT and use it as the option for sfdisk."
     echo " -icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
     echo "Example:"
-    echo "  To create a proportional partition table on disk /dev/hda based on /home/partimag/IMAGE/hda-pt.sf, use:"
-    echo "$cmd_name /home/partimag/IMAGE/hda-pt.sf /dev/hda"
+    echo "  To create a proportional partition table on disk /dev/sda based on /home/partimag/IMAGE/sda-pt.sf, use:"
+    echo "$cmd_name /home/partimag/IMAGE/sda-pt.sf /dev/sda"
 }         
           
 # Parse command-line options
@@ -49,8 +49,8 @@ while [ $# -gt 0 ]; do
 done
 
 # Original sfdisk format file
-orig_sf=$1   # orig_sf is like: /home/partimag/IMAGE/hda-pt.sf
-target_disk=$2  # target_disk is like: /dev/hda
+orig_sf=$1   # orig_sf is like: /home/partimag/IMAGE/sda-pt.sf
+target_disk=$2  # target_disk is like: /dev/sda
 
 #
 ask_and_load_lang_set $specified_lang
@@ -101,7 +101,7 @@ if `is_gpt_partitition_table_disk $target_disk`; then
   exit 1
 fi
 
-# No size info in hda-pt.sf, we have to use hda-pt.parted.
+# No size info in sda-pt.sf, we have to use sda-pt.parted.
 orig_parted_tab="${orig_sf/.sf/.parted}"
 orig_parted_dir="$(dirname $orig_sf)"
 if [ ! -e "$orig_parted_tab" ]; then
@@ -113,7 +113,7 @@ if [ ! -e "$orig_parted_tab" ]; then
 fi
 
 # parted output format example:
-#  Disk /dev/hda: 16777215s
+#  Disk /dev/sda: 16777215s
 #  Sector size (logical/physical): 512B/512B
 #  Partition Table: msdos
 #  
@@ -128,8 +128,8 @@ fi
 
 ori_disk_size="$(LC_ALL=C grep -E "^Disk /dev" $orig_parted_tab | awk -F":" '{print $2}' | sed -e "s/s$//g")"
 # If nothing in target disk, parted will show like this:
-# sudo parted -s /dev/hda unit s print
-# Error: Unable to open /dev/hda - unrecognised disk label.
+# sudo parted -s /dev/sda unit s print
+# Error: Unable to open /dev/sda - unrecognised disk label.
 
 if ! LC_ALL=C parted -s $target_disk unit s print &>/dev/null; then
   # Try to create a partition table so that we can read the size via parted -s $dev unit s print
@@ -159,23 +159,23 @@ fi
 new_sf="$(mktemp /tmp/new_sf.XXXXXX)" || exit 1
 new_sf_tmp="$(mktemp /tmp/new_sf_tmp.XXXXXX)" || exit 1
 # Increase. Example for sfdisk format:
-#  # partition table of /dev/hda
+#  # partition table of /dev/sda
 #  unit: sectors
 #  
-#  /dev/hda1 : start=       63, size=   586782, Id=83, bootable
-#  /dev/hda2 : start=   586845, size=   391230, Id=82
-#  /dev/hda3 : start=   978075, size=   977130, Id=83
-#  /dev/hda4 : start=  1955205, size= 14821380, Id= 5
-#  /dev/hda5 : start=  1955268, size=   196497, Id=83
-#  /dev/hda6 : start=  2151828, size=   391167, Id=83
-#  /dev/hda7 : start=  2543058, size= 14233527, Id=83
+#  /dev/sda1 : start=       63, size=   586782, Id=83, bootable
+#  /dev/sda2 : start=   586845, size=   391230, Id=82
+#  /dev/sda3 : start=   978075, size=   977130, Id=83
+#  /dev/sda4 : start=  1955205, size= 14821380, Id= 5
+#  /dev/sda5 : start=  1955268, size=   196497, Id=83
+#  /dev/sda6 : start=  2151828, size=   391167, Id=83
+#  /dev/sda7 : start=  2543058, size= 14233527, Id=83
 #  
 # Or
-#  /dev/hda1 : start=       63, size=   196497, Id=83
-#  /dev/hda2 : start=   196560, size= 16580025, Id= 5
-#  /dev/hda3 : start=        0, size=        0, Id= 0
-#  /dev/hda4 : start=        0, size=        0, Id= 0
-#  /dev/hda5 : start=   196623, size= 16579962, Id=83
+#  /dev/sda1 : start=       63, size=   196497, Id=83
+#  /dev/sda2 : start=   196560, size= 16580025, Id= 5
+#  /dev/sda3 : start=        0, size=        0, Id= 0
+#  /dev/sda4 : start=        0, size=        0, Id= 0
+#  /dev/sda5 : start=   196623, size= 16579962, Id=83
 
 # We only need those required info
 grep -E "^/dev" $orig_sf > $new_sf_tmp
@@ -263,6 +263,14 @@ while read dev start start_no size size_no id flag; do
           expand="false"
 	fi
       fi
+      # For Linux Swap partition
+      if [ -n "$(echo $id | grep -iE "id=82")" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	echo "Linux swap partition \"$id\" found. Not to expand this partition."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        expand="false"
+      fi
+
       if [ "$expand" = "true" ]; then
         start_no="$(echo "scale=0; ($start_no_keep + $size_no_keep)/1" | bc -l)"
         size_no="$(echo "scale=0; ${size_no/,/}*$ratio/1 + $append_to_next" | bc -l)"
@@ -271,7 +279,8 @@ while read dev start start_no size size_no id flag; do
       else
         start_no="$(echo "scale=0; ($start_no_keep + $size_no_keep)/1" | bc -l)"
         size_no="${size_no/,/}"
-	# Since we do not expand this "system reserved partition", we append the space to the next partition.
+	# Since we do not expand this "system reserved partition" or "swap partition", 
+	# we append the space to the next partition.
 	append_to_next="$(echo "scale=0; ${size_no}*$ratio/1 - ${size_no}" | bc -l)"
       fi
     fi
@@ -295,9 +304,27 @@ while read dev start start_no size size_no id flag; do
       start_no=0
       size_no=0
     else
-      start_no="$(echo "scale=0; ($start_no_keep+$size_no_keep+$logical_part_gap)/1" | bc -l)"
-      size_no="$(echo "scale=0; ${size_no/,/}*$ratio/1" | bc -l)"
-      logical_part_gap="0"
+      expand="true"
+      # For Linux Swap partition
+      if [ -n "$(echo $id | grep -iE "id=82")" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	echo "Linux swap partition \"$id\" found. Not to expand this partition."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        expand="false"
+      fi
+
+      if [ "$expand" = "true" ]; then
+        start_no="$(echo "scale=0; ($start_no_keep+$size_no_keep+$logical_part_gap)/1" | bc -l)"
+        size_no="$(echo "scale=0; ${size_no/,/}*$ratio/1 + $append_to_next" | bc -l)"
+        logical_part_gap="0"
+	# Reset the space append_to_next.
+	append_to_next="0"
+      else
+        start_no="$(echo "scale=0; ($start_no_keep+$size_no_keep+$logical_part_gap)/1" | bc -l)"
+        size_no="${size_no/,/}"
+	# Since we do not expand the "swap partition", we append the space to the next partition.
+	append_to_next="$(echo "scale=0; ${size_no}*$ratio/1 - ${size_no}" | bc -l)"
+      fi
     fi
     echo $dev : $start $start_no, $size $size_no, $id $flag >> $new_sf
     [ "$start_no" -ne 0 ] && start_no_keep="${start_no/,/}"

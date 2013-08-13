@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.12
+Version:	3.5.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.4.25, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.4.28, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Aug 13 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.15-drbl1
+- Program ocs-expand-mbr-pt will keep linux swap. Thanks to Fabien Voland for this suggestion.
+
+* Sat Aug 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.14-drbl1
+- Bug fixed: function get_latest_kernel_ver_in_repository in ocs-functions failed to get correct kernel version number in Debian repository when linux kernel package name like linux-image-3.10-2-rt-686-pae-dbg exists.
+
 * Sat Aug 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.13-drbl1
 - Program drbl-ocs-live-prep now supports Clonezilla live iso from local path, e.g. file:///usr/share/iso/clonezilla-live-2.1.2-35-amd64.iso. Thanks to Chris S for this suggestion.
 
