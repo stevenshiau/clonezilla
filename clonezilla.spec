@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.15
+Version:	3.5.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Aug 15 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.16-drbl1
+- Options "-f -f" is used for ntfsresize in ocs-resize-part. Thanks to Jerome Charaoui for this suggestion (https://sourceforge.net/p/clonezilla/bugs/185/).
+
 * Tue Aug 13 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.15-drbl1
 - Program ocs-expand-mbr-pt will keep linux swap. Thanks to Fabien Voland for this suggestion.
 
