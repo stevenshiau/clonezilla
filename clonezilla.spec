@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.17
+Version:	3.5.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Aug 20 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.18-drbl1
+- Bug fixed: the mode in $live_auto_login_id_home/Desktop/Display.desktop for DRBL live should be 755.
+
 * Mon Aug 19 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.17-drbl1
 - Skipping xfce4 panel question when 1st login in DRBL live.
 
