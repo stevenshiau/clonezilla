@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.18
+Version:	3.5.19
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Aug 24 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.19-drbl1
+- A dummy file /etc/ocs/ocs-live.conf is put during DRBL live is created.
+- Program ocs-srv-live supports 2nd mode in the parameters.
+- A control variable ocs_prep_ocsroot_ask_dir was added in prep-ocsroot.
+- Two control variables, ocs_net_show_pppoe and ocs_net_show_enter_shell, were added in ocs-live-netcfg.
+- A control variable ocs_fsck_src_part was added in ocs-onthefly.
+
 * Tue Aug 20 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.18-drbl1
 - Bug fixed: the mode in $live_auto_login_id_home/Desktop/Display.desktop for DRBL live should be 755.
 
