@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.20
+Version:	3.5.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Aug 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.21-drbl1
+- Bug fixed: ocs-srv-live should hide client's DRBL PXE boot menu.
+
 * Sun Aug 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.20-drbl1
 - Variable clonezilla_client_menu_label_prefix is used in ocs-functions.
 
