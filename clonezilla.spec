@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Giving more specific error messages when searching the unmounted partitions in get_input_dev_name.
+
 * Mon Aug 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.21-drbl1
 - Bug fixed: ocs-srv-live should hide client's DRBL PXE boot menu.
 
