@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.22
+Version:	3.5.23
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Aug 27 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.23-drbl1
+- The disabled service in upstart (/etc/init/) is named as *.conf.ocs-disabled instead of previous .conf.disabled.
+
 * Mon Aug 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.22-drbl1
 - Giving more specific error messages when searching the unmounted partitions in get_input_dev_name.
 
