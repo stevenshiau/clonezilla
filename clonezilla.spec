@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- The prompt about inserting USB flash drive when mounting image repository was improved.
+
 * Tue Aug 27 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.23-drbl1
 - The disabled service in upstart (/etc/init/) is named as *.conf.ocs-disabled instead of previous .conf.disabled.
 
