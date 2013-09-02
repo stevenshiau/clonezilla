@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.25
+Version:	3.5.26
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Sep 02 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.26-drbl1
+- The small font size in KMS mode has been improved.
+
 * Sun Sep 01 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.25-drbl1
 - The extra ":' in function get_input_dev_name of ocs-functions was removed.
 - The procedure about mounting local device as image repository in prep-ocsroot was improved.
