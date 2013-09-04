@@ -39,7 +39,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 %changelog
 - Comments about using local clonezilla live copy for iso_url_for_pxe_ocs_live_default was added in drbl-ocs.conf.
 - Using variable for the dialog title in program "clonezilla" and ocs-sr.
-- Only when "$ocs_x_mode" is not "save_only" the menu about restoring image will be shown in ocs-sr interactive mode.
+- Only when "$ocs_sr_extra_restore_mode" is not "no" the other menus about restoring image (1-2-mdisk, check image...) will be shown in ocs-sr interactive mode.
 - Removing the duplicated 'select the mode' prompt in ocs-sr interactive mode.
 
 * Mon Sep 02 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.26-drbl1
