@@ -34,30 +34,43 @@ confirm_continue_or_default_quit() {
 } # end of confirm_continue_or_default_quit
 #
 confirm_continue_no_default_answer() {
-  local ans_continue continue_choice
+  local ans_ ans_continue continue_choice
   local job_before_quit="$1"
   continue_choice=""
   while [ -z "$continue_choice" ]; do
-    echo -n "$msg_are_u_sure_u_want_to_continue ? (y/n) "
-    read ans_continue
-    case "$ans_continue" in
-         y|Y|[yY][eE][sS])
-            continue_choice="yes"
-            echo "$msg_ok_let_do_it!"
-            ;;
-         n|N|[nN][oO])
-            continue_choice="no"
-            echo "$msg_program_stop!"
-            [ -n "$job_before_quit" ] && $job_before_quit
-            exit 1
-            ;;
-         *)
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-            echo "$msg_you_have_to_enter_yes_or_no!"
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-            echo $msg_delimiter_star_line
-            ;;
-    esac
+   if [ "$messages_shown_preference" = "tui" ]; then
+     $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+     --yesno "$msg_are_u_sure_u_want_to_continue ?" 0 0 
+     ans_="$?"
+     # Convert ans_ to ans_continue
+     case "$ans_" in
+       0) # yes is chosen
+          ans_continue="yes";;
+       1) # no is chosen
+          ans_continue="no";;
+     esac
+   else
+     echo -n "$msg_are_u_sure_u_want_to_continue ? (y/n) "
+     read ans_continue
+   fi
+   case "$ans_continue" in
+        y|Y|[yY][eE][sS])
+           continue_choice="yes"
+           echo "$msg_ok_let_do_it!"
+           ;;
+        n|N|[nN][oO])
+           continue_choice="no"
+           echo "$msg_program_stop!"
+           [ -n "$job_before_quit" ] && $job_before_quit
+           exit 1
+           ;;
+        *)
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+           echo "$msg_you_have_to_enter_yes_or_no!"
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+           echo $msg_delimiter_star_line
+           ;;
+   esac
   done
 } # end of confirm_continue_no_default_answer
 #

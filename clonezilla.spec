@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.26
+Version:	3.5.27
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,10 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Sep 04 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.27-drbl1
 - Comments about using local clonezilla live copy for iso_url_for_pxe_ocs_live_default was added in drbl-ocs.conf.
 - Using variable for the dialog title in program "clonezilla" and ocs-sr.
 - Only when "$ocs_sr_extra_restore_mode" is not "no" the other menus about restoring image (1-2-mdisk, check image...) will be shown in ocs-sr interactive mode.
 - Removing the duplicated 'select the mode' prompt in ocs-sr interactive mode.
+- Variable messages_shown_preference is used in confirm_continue_no_default_answer function of ocs-functions.
 
 * Mon Sep 02 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.26-drbl1
 - The small font size in KMS mode has been improved.
