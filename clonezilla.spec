@@ -38,6 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 - Comments about using local clonezilla live copy for iso_url_for_pxe_ocs_live_default was added in drbl-ocs.conf.
+- Using variable for the dialog title in program "clonezilla".
 
 * Mon Sep 02 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.26-drbl1
 - The small font size in KMS mode has been improved.
