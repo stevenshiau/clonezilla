@@ -10,7 +10,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
 # Settings
 LIVE_MEDIA=""
-ocs_fontface_def="Terminus"
+# console_prefer_font is from drbl-ocs.conf
 #
 get_live_media_mnt_point
 
@@ -117,7 +117,7 @@ if [ -e /dev/fb/0 -o -e /dev/fb0 ]; then
   # FONTSIZE="28x14"
   # From console-setup manual (5):
   # Valid font faces are: VGA (sizes  8x8,  8x14,  8x16,  16x28  and 16x32),  Terminus  (sizes  6x12, 8x14, 8x16, 10x20, 12x24, 14x28 and 16x32), TerminusBold (sizes 8x14, 8x16, 10x20, 12x24,  14x28 and  16x32),  TerminusBoldVGA  (sizes  8x14 and 8x16), and Fixed (sizes  8x13,  8x14,  8x15,  8x16   and   8x18). 
-  # //NOTE// Only when KMS we will use this? checking /proc/fb?
+  # //NOTE// Only when KMS we will use this. Check /proc/fb
   # The content of /proc/fb
   # For vesafb:
   # 0 VESA VGA
@@ -128,17 +128,10 @@ if [ -e /dev/fb/0 -o -e /dev/fb0 ]; then
   # For Radeon fb:
   # 0 radeondrmfb
   if [ -n "$(grep -Ew "(inteldrmfb|nouveaufb|radeondrmfb)" /proc/fb)" ]; then
-    [ -z "$ocs_fontface" ] && ocs_fontface="$ocs_fontface_def"
+    [ -z "$ocs_fontface" ] && ocs_fontface="$console_prefer_font"
     if [ -z "$ocs_fontsize" ] ; then
-      # According to the results of "stty size" to assign a number.
-      rows="$(LC_ALL=C stty size | awk -F" " '{print $1}')"
-      if [ "$rows" -le 26 ]; then
-        ocs_fontsize=12x24
-      elif [ "$rows" -gt 26 -a "$rows" -lt 32 ]; then
-        ocs_fontsize=14x28
-      else
-        ocs_fontsize=16x32
-      fi
+      get_best_console_font_size  # output is $console_font_size
+      ocs_fontsize="$console_font_size"
     fi
     perl -pi -e "s|^FONTFACE=.*|FONTFACE=\"$ocs_fontface\"|g" /etc/default/console-setup
     perl -pi -e "s|^FONTSIZE=.*|FONTSIZE=\"$ocs_fontsize\"|g" /etc/default/console-setup

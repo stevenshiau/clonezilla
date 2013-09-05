@@ -10493,3 +10493,74 @@ get_part_uuid_in_harddrive() {
   [ -z "${part_}" ] && return 2
   LC_ALL=C udevadm info -q env -n ${part_} 2>/dev/null | grep -E "^UDISKS_PARTITION_UUID=" | sed -r -e "s/^UDISKS_PARTITION_UUID=//g" | tr '[:upper:]' '[:lower:]'
 } # end of get_uuid_in_harddrive
+#
+get_best_console_font_size() {
+  # console_prefer_cols (input, from drbl-ocs.conf) and console_font_size (output) are  global variables.
+  local resoluton_cols font_size_cols
+  #
+  # The output of "fbset -s" is like:
+  # mode "1280x1024"
+  #     geometry 1280 1024 1280 1024 32
+  #     timings 0 0 0 0 0 0 0
+  #     accel true
+  #     rgba 8/16,8/8,8/0,0/0
+  #     endmode
+  #
+  # Valid font faces are: VGA (sizes  8x8,  8x14,  8x16,  16x28  and 16x32),  Terminus  (sizes  6x12, 8x14, 8x16, 10x20, 12x24, 14x28 and 16x32), TerminusBold (sizes 8x14, 8x16, 10x20, 12x24,  14x28 and  16x32),  TerminusBoldVGA  (sizes  8x14 and 8x16), and Fixed (sizes  8x13,  8x14,  8x15,  8x16   and   8x18).    If   however CODESET=Ethiopian,  then  the  available font faces are Goha and GohaClassic, each in sizes 8x12, 8x14 and 8x16.
+  
+  resoluton_cols="$(LC_ALL=C fbset -s | grep -Ew "^[[:space:]]*geometry" | awk -F" " '{print $2}')"
+  
+  # [ ! -e "/etc/default/console-setup" ] && exit 1
+  # . /etc/default/console-setup
+  # # FONTSIZE is like: 16, 16x32
+  # font_rows="$(LC_ALL=C echo $FONTSIZE | awk -F"x" '{print $1}')"
+  # size_rows="$(echo "scale=0; ${resoluton_rows}/${font_rows}" | bc -l)"
+  # echo "row size: $size_rows"
+  
+  if [ -n "$resoluton_cols" ]; then
+    font_size_cols="$(echo "scale=0; ${resoluton_cols}/${console_prefer_cols}" | bc -l)"
+    echo "Calculated font column size: $font_size_cols"
+  fi
+  # From Debian Sid (console-setup 1.95), the manual (man 5 console-setup) says:
+  # Terminus  (sizes  6x12, 8x14, 8x16, 10x20, 12x24, 14x28 and 16x32), 
+  # TerminusBold (sizes 8x14, 8x16, 10x20, 12x24,  14x28 and  16x32),  
+  # TerminusBoldVGA  (sizes  8x14 and 8x16), 
+  # Fixed (sizes  8x13,  8x14,  8x15,  8x16   and   8x18)
+  
+  # However, on Ubuntu 13.10, the file /etc/default/console-data says:
+  # Valid font faces are: VGA (sizes 8, 14 and 16), Terminus (sizes
+  # 12x6, 14, 16, 20x10, 24x12, 28x14 and 32x16), TerminusBold (sizes
+  # 14, 16, 20x10, 24x12, 28x14 and 32x16), TerminusBoldVGA (sizes 14
+  # and 16) and Fixed (sizes 13, 14, 15, 16 and 18). 
+  # The file name is actually like: /usr/share/consolefonts/Lat2-TerminusBold20x10.psf.gz, both on Debian Sid and Ubuntu 13.04.
+  # XXX The cols and rows are opposite... weird...
+  # However, for console-setup (1.71) unstable; urgency=low, the changelog mentionied:
+  # setupcon: accept all methods to state font size in the configuration file (8x14, 14x8, 14). Therefore we use the font size it can be accepted in old version.
+  # Since the file names are:
+  # dpkg -L console-setup-linux | grep -i uni2-terminusbold
+  # /usr/share/consolefonts/Uni2-TerminusBold28x14.psf.gz
+  # /usr/share/consolefonts/Uni2-TerminusBold22x11.psf.gz
+  # /usr/share/consolefonts/Uni2-TerminusBold32x16.psf.gz
+  # /usr/share/consolefonts/Uni2-TerminusBoldVGA16.psf.gz
+  # /usr/share/consolefonts/Uni2-TerminusBold24x12.psf.gz
+  # /usr/share/consolefonts/Uni2-TerminusBoldVGA14.psf.gz
+  # /usr/share/consolefonts/Uni2-TerminusBold16.psf.gz
+  # /usr/share/consolefonts/Uni2-TerminusBold20x10.psf.gz
+  # /usr/share/consolefonts/Uni2-TerminusBold14.psf.gz
+  if [ -n "$font_size_cols" ]; then
+    if [ "$font_size_cols" -le 6 ]; then
+      console_font_size=12x6
+    elif [ "$font_size_cols" -le 8 ]; then
+      console_font_size=16x8
+    elif [ "$font_size_cols" -le 10 ]; then
+      console_font_size=20x10
+    elif [ "$font_size_cols" -le 12 ]; then
+      console_font_size=24x12
+    elif [ "$font_size_cols" -le 14 ]; then
+      console_font_size=28x14
+    else
+      console_font_size=32x16
+    fi
+  fi
+  echo "Best font size for KMS console: $console_font_size"
+} # end of get_best_console_font_size
