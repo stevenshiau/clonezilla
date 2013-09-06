@@ -3574,12 +3574,25 @@ run_post_cmd_when_clone_end() {
       reboot $HALT_REBOOT_OPT
       ;;
     choose)
-      echo "$msg_clone_finished_choose_to:"
-      echo "(0) $msg_poweroff"
-      echo "(1) $msg_reboot"
-      echo "(2) $msg_enter_cml"
-      echo -n "[2] "
-      read final_action
+      if [ "$messages_shown_preference" = "tui" ]; then
+        TMP="$(mktemp /tmp/ocslivemode.XXXXXX)"
+        trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+        --menu "$msg_clone_finished_choose_to:" 0 0 0 \
+        "0" "$msg_poweroff" \
+        "1" "$msg_reboot" \
+        "2" "$msg_enter_cml" \
+        2> $TMP
+	final_action="$(cat $TMP)"
+        [ -f "$TMP" ] && rm -f $TMP
+      else
+        echo "$msg_clone_finished_choose_to:"
+        echo "(0) $msg_poweroff"
+        echo "(1) $msg_reboot"
+        echo "(2) $msg_enter_cml"
+        echo -n "[2] "
+        read final_action
+      fi
       case "$final_action" in
         0) echo -n 'Will poweroff... '; countdown 5; poweroff $HALT_REBOOT_OPT ;;
         1) echo -n 'Will reboot... '; countdown 5; reboot $HALT_REBOOT_OPT ;;
@@ -7663,9 +7676,22 @@ task_restoreparts() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     continue_choice=""
     while [ -z "$continue_choice" ]; do
-      echo "$msg_let_me_ask_you_again. $msg_are_u_sure_u_want_to_continue ?" | tee --append $OCS_LOGFILE
-      echo -n "[y/n] " | tee --append $OCS_LOGFILE
-      read continue_restore
+      if [ "$messages_shown_preference" = "tui" ]; then
+        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+        --yesno "$msg_let_me_ask_you_again. $msg_are_u_sure_u_want_to_continue ?" 0 0 
+        ans_="$?"
+        # Convert ans_ to ans_continue
+        case "$ans_" in
+          0) # yes is chosen
+             continue_restore="yes";;
+          1) # no is chosen
+             continue_restore="no";;
+        esac
+      else
+        echo "$msg_let_me_ask_you_again. $msg_are_u_sure_u_want_to_continue ?" | tee --append $OCS_LOGFILE
+        echo -n "[y/n] " | tee --append $OCS_LOGFILE
+        read continue_restore
+      fi
       case "$continue_restore" in
        y|Y|[yY][eE][sS])
          continue_choice="yes"

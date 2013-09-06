@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.28
+Version:	3.5.29
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Sep 06 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.29-drbl1
+- Two more optional TUI prompts were added in ocs-function.
+
 * Thu Sep 05 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.28-drbl1
 - A better mechanism to get font size for KMS console was implemented.
 
