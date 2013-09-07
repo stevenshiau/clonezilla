@@ -21,6 +21,8 @@ DEFAULT_STDOUT_PARTIMAGE_SAVE_OPT="-M -z0 -o -d -b -c -B gui=no --volume=$VOL_ZE
 DEFAULT_STDIN_PARTIMAGE_RESTORE_OPT="-M -f3 -b"
 # port for netcat
 NC_PORT_DEFAULT="9000"
+# Default to do 2nd confirm. If it's "no", by default we will run without 2nd confirmation.
+onthefly_fdisk_2nd_confirm="yes"
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -58,9 +60,10 @@ check_input_param() {
 #
 check_pt_then_run_create_part_table() {
   local dsk_chk_tmp
-  local to_seek gdisk_tmp
+  local to_seek gdisk_tmp ocs_onthefly_fdisk
   local src_disk_size_sec src_disk_size_GB tgt_disk_size_sec tgt_disk_size_GB 
   local ocs_expand_mbr_pt_opt=""
+  # onthefly_fdisk_2nd_confirm and flag_ocs_onthefly_fdisk are global variable
   echo "$msg_creating_partition_in_target"
   if [ ! -f "$tgt_parted_info" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -69,24 +72,29 @@ check_pt_then_run_create_part_table() {
     echo "$msg_program_stop"
     exit 1
   fi
-  echo "$msg_let_me_ask_you_again."
-  echo $msg_delimiter_star_line
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo -e "$dev_model_shown"
-  #LC_ALL=C parted -s /dev/$target_hd print
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo $msg_delimiter_star_line
-
-  if [ "$batch_mode" = "on" ]; then
-    fdisk_ans="yes"
-  else
+  ocs_onthefly_fdisk=""
+  if [ "$onthefly_fdisk_2nd_confirm" = "yes" ]; then
+    echo "$msg_let_me_ask_you_again."
+    echo $msg_delimiter_star_line
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
-    echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten: $target_hd"
+    echo -e "$dev_model_shown"
+    #LC_ALL=C parted -s /dev/$target_hd print
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    confirm_continue_no_default_answer "clean_tmp_dirs"
-    # If not pass here, it already quits.
-    fdisk_ans="yes"
+    echo $msg_delimiter_star_line
+
+    if [ "$batch_mode" = "on" ]; then
+      ocs_onthefly_fdisk="yes"
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
+      echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten: $target_hd"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      confirm_continue_no_default_answer "clean_tmp_dirs"
+      # If not passing here, it already quits.
+      ocs_onthefly_fdisk="yes"
+    fi
+  else
+    ocs_onthefly_fdisk="yes"
   fi
 
   # src_disk_size_sec, src_disk_size_GB, tgt_disk_size_sec, tgt_disk_size_GB will be got from get_dsk_size_from_img_and_tgt_dsk_size_from_machine 
@@ -108,7 +116,8 @@ check_pt_then_run_create_part_table() {
     fi
   fi
 
-  case "$fdisk_ans" in
+  flag_ocs_onthefly_fdisk=""
+  case "$ocs_onthefly_fdisk" in
     [yY]|[yY][eE][sS])
        # Turn off swap and LVM2, unlock the busy partitions.
        turn_off_swap_and_LVM2
@@ -117,6 +126,7 @@ check_pt_then_run_create_part_table() {
        if type sgdisk &>/dev/null; then
          echo "Trying to clean the MBR and GPT partition table on the destination disk first: /dev/$target_hd"
          LC_ALL=C sgdisk --zap-all /dev/$target_hd &>/dev/null
+         flag_ocs_onthefly_fdisk="done"
        fi
 
        # From the output file of parted, we can decide if the partition is gpt or mbr
@@ -314,43 +324,46 @@ kill_clone_prog_nc_process() {
 } # end of kill_clone_prog_nc_process
 #
 clone_boot_loader_in_target() {
-echo "$msg_delimiter_star_line"
-if [ "$CLONE_BOOT_LOADER" = "yes" ] && [ "$source_type" = "disk" ] && [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then
-  if [ "$batch_mode" = "on" ]; then
-    mbr_ans="y"
-  else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_do_you_want_to_clone_the_boot_loader_to: $tgt_dev ?"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo -n "[Y/n] "
-    read mbr_ans
+  # ocs_onthefly_clone_mbr is global variable.
+  echo "$msg_delimiter_star_line"
+  if [ "$CLONE_BOOT_LOADER" = "yes" ] && [ "$source_type" = "disk" ] && [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then
+    if [ -z "$ocs_onthefly_clone_mbr" ]; then
+      if [ "$batch_mode" = "on" ]; then
+        ocs_onthefly_clone_mbr="y"
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "$msg_do_you_want_to_clone_the_boot_loader_to: $tgt_dev ?"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "[Y/n] "
+        read ocs_onthefly_clone_mbr
+      fi
+    fi
+    case "$ocs_onthefly_clone_mbr" in
+      n|N|[nN][oO])
+         echo "OK, $msg_skip_clone_boot_loader." | tee --append ${OCS_LOGFILE}
+         ;;
+      *)
+         if [ "$mode" = "local" ]; then
+           echo "Cloning the boot loader (executable code area) from \"$source_hd\" to \"$target_hd\"..." | tee --append ${OCS_LOGFILE}
+           # boot loader is the first 446 Bytes, the rest part is partition table.
+           dd if=/dev/$source_hd of=/dev/$target_hd bs=446 count=1 &> /dev/null
+           ret=$?
+         elif [ "$STATUS" = "clone_client" ]; then
+           echo "Cloning the boot loader (executable code area) from that in $SOURCE_IP to \"$target_hd\"..." | tee --append ${OCS_LOGFILE}
+           # boot loader is the first 446 Bytes, the rest part is partition table.
+           dd if=$hd_tgt_tmp/src-mbr of=/dev/$target_hd bs=446 count=1 &> /dev/null
+           ret=$?
+         fi
+         if [ "$ret" -ge 1 ]; then
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+           echo "$msg_failed_to_clone_the_boot_loader: \"$target_hd\"" | tee --append ${OCS_LOGFILE}
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+           echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+           exit 1
+         fi
+         ;;
+    esac
   fi
-  case "$mbr_ans" in
-    n|N|[nN][oO])
-       echo "OK, $msg_skip_clone_boot_loader." | tee --append ${OCS_LOGFILE}
-       ;;
-    *)
-       if [ "$mode" = "local" ]; then
-         echo "Cloning the boot loader (executable code area) from \"$source_hd\" to \"$target_hd\"..." | tee --append ${OCS_LOGFILE}
-         # boot loader is the first 446 Bytes, the rest part is partition table.
-         dd if=/dev/$source_hd of=/dev/$target_hd bs=446 count=1 &> /dev/null
-         ret=$?
-       elif [ "$STATUS" = "clone_client" ]; then
-         echo "Cloning the boot loader (executable code area) from that in $SOURCE_IP to \"$target_hd\"..." | tee --append ${OCS_LOGFILE}
-         # boot loader is the first 446 Bytes, the rest part is partition table.
-         dd if=$hd_tgt_tmp/src-mbr of=/dev/$target_hd bs=446 count=1 &> /dev/null
-         ret=$?
-       fi
-       if [ "$ret" -ge 1 ]; then
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-         echo "$msg_failed_to_clone_the_boot_loader: \"$target_hd\"" | tee --append ${OCS_LOGFILE}
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-         exit 1
-       fi
-       ;;
-  esac
-fi
 } # end of clone_boot_loader_in_target
 #
 create_partition_table_in_target(){
@@ -365,7 +378,10 @@ create_partition_table_in_target(){
       else
         partition_table_exist_in_target="no"
       fi
-      check_pt_then_run_create_part_table | tee --append ${OCS_LOGFILE}
+      # //NOTE// Here when we output the stdout to tee, we use "Process Substitution". Otherwise the global veariable "flag_ocs_onthefly_fdisk" won't be changed when running in check_pt_then_run_create_part_table function.
+      # Ref: http://stackoverflow.com/questions/17694953/changing-a-global-variable-inside-a-function-when-using-tee
+      # Ref: http://tldp.org/LDP/abs/html/process-sub.html
+      check_pt_then_run_create_part_table > >(tee --append ${OCS_LOGFILE})
       # After partition table is created, we can dump the hidden data which is between MBR and 1st partition.
       # Not GPT type of disk. We only deal with MBR for this hidden data
       if `is_mbr_partitition_table_disk /dev/$target_hd`; then
@@ -2424,12 +2440,15 @@ fi
 
 #
 echo "$msg_delimiter_star_line"
-# start cloning
-if [ "$batch_mode" != "on" ]; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "$msg_start_to_clone_data_to_target_machine" | tee --append ${OCS_LOGFILE}
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  confirm_continue_no_default_answer "clean_tmp_dirs"
+# Start cloning, last confirmation
+# If fdisk is done, no need to ask, we will just go on since the destination disk is overwritten.
+if [ "$flag_ocs_onthefly_fdisk" != "done" ]; then
+  if [ "$batch_mode" != "on" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_start_to_clone_data_to_target_machine" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    confirm_continue_no_default_answer "clean_tmp_dirs"
+  fi
 fi
 #
 case "$mode" in
@@ -2455,11 +2474,10 @@ elif [ "$STATUS" = "clone_client" ]; then
 fi
 
 # reboot/poweroff/choose...
-if [ -n "$postrun" ]; then
-  echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}
-  sync;sync;sync
-  run_post_cmd_when_clone_end "$postrun"
-fi
+[ -z "$postrun" ] && postrun="choose"
+echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}
+sync;sync;sync
+run_post_cmd_when_clone_end "$postrun"
 
 # Clean tmp dir
 clean_tmp_dirs

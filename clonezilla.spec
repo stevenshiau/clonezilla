@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.30
+Version:	3.5.31
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Sep 07 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.31-drbl1
+- Postrun opton in program "clonezilla" should be passed to ocs-onthefly.
+- If the disk partition on destination disk is created, no need to ask one more confirmation when running ocs-onthefly.
+
 * Sat Sep 07 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.30-drbl1
 - Removing the duplicated question mark after $msg_are_u_sure_u_want_to_continue.
 - Making the interactive menu could be optionally shown for "ocs-onthefly -x".
