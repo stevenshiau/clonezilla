@@ -22,7 +22,7 @@ DEFAULT_STDIN_PARTIMAGE_RESTORE_OPT="-M -f3 -b"
 # port for netcat
 NC_PORT_DEFAULT="9000"
 # Default to do 2nd confirm. If it's "no", by default we will run without 2nd confirmation.
-onthefly_fdisk_2nd_confirm="yes"
+onthefly_2nd_confirm="yes"
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -63,7 +63,6 @@ check_pt_then_run_create_part_table() {
   local to_seek gdisk_tmp ocs_onthefly_fdisk
   local src_disk_size_sec src_disk_size_GB tgt_disk_size_sec tgt_disk_size_GB 
   local ocs_expand_mbr_pt_opt=""
-  # onthefly_fdisk_2nd_confirm and flag_ocs_onthefly_fdisk are global variable
   echo "$msg_creating_partition_in_target"
   if [ ! -f "$tgt_parted_info" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -71,30 +70,6 @@ check_pt_then_run_create_part_table() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop"
     exit 1
-  fi
-  ocs_onthefly_fdisk=""
-  if [ "$onthefly_fdisk_2nd_confirm" = "yes" ]; then
-    echo "$msg_let_me_ask_you_again."
-    echo $msg_delimiter_star_line
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo -e "$dev_model_shown"
-    #LC_ALL=C parted -s /dev/$target_hd print
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo $msg_delimiter_star_line
-
-    if [ "$batch_mode" = "on" ]; then
-      ocs_onthefly_fdisk="yes"
-    else
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
-      echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten: $target_hd"
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      confirm_continue_no_default_answer "clean_tmp_dirs"
-      # If not passing here, it already quits.
-      ocs_onthefly_fdisk="yes"
-    fi
-  else
-    ocs_onthefly_fdisk="yes"
   fi
 
   # src_disk_size_sec, src_disk_size_GB, tgt_disk_size_sec, tgt_disk_size_GB will be got from get_dsk_size_from_img_and_tgt_dsk_size_from_machine 
@@ -116,161 +91,145 @@ check_pt_then_run_create_part_table() {
     fi
   fi
 
-  flag_ocs_onthefly_fdisk=""
-  case "$ocs_onthefly_fdisk" in
-    [yY]|[yY][eE][sS])
-       # Turn off swap and LVM2, unlock the busy partitions.
-       turn_off_swap_and_LVM2
+  # Turn off swap and LVM2, unlock the busy partitions.
+  turn_off_swap_and_LVM2
 
-       # Clean the MBR and GPT partition table on the destination disk first
-       if type sgdisk &>/dev/null; then
-         echo "Trying to clean the MBR and GPT partition table on the destination disk first: /dev/$target_hd"
-         LC_ALL=C sgdisk --zap-all /dev/$target_hd &>/dev/null
-         flag_ocs_onthefly_fdisk="done"
+  # Clean the MBR and GPT partition table on the destination disk first
+  if type sgdisk &>/dev/null; then
+    echo "Trying to clean the MBR and GPT partition table on the destination disk first: /dev/$target_hd"
+    LC_ALL=C sgdisk --zap-all /dev/$target_hd &>/dev/null
+  fi
+
+  # From the output file of parted, we can decide if the partition is gpt or mbr
+  if `is_gpt_partitition_table_file $tgt_parted_info`; then
+    # The type is GPT
+    if [ -e "$tgt_gpt_gdisk" ]; then
+      # Use sgdisk to create that.
+      create_gpt_table_if_no_table /dev/$target_hd
+      gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
+      echo "Running: sgdisk -l $tgt_gpt_gdisk /dev/$target_hd"
+      LC_ALL=C sgdisk -l $tgt_gpt_gdisk /dev/$target_hd
+      sgdisk_rc=$?
+      if [ "$sgdisk_rc" -eq 0 ]; then
+        # There is a bug about sgdisk 0.6.14, i.e.
+        # sgdisk -l /home/partimag/2011-02-27-02-img-hfsplus-gdisk/sda-gpt.gdisk /dev/sdb
+        # Warning! Current disk size doesn't match that of the backup!
+        # Adjusting sizes to match, but subsequent problems are possible!
+        # The justLooking flag is set. This probably means you can't write to the disk.
+        # Aborting write of new partition table.
+        # However, its return code is still 0. Therefore we can not use return code to judge that.
+        if [ -n "$(LC_ALL=C grep -iE "Aborting write of new partition table" $gdisk_tmp)" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Failed to use sgdisk to restore the GPT partition table. Will use dd to restore the GPT partition table."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          do_gpt_dd="yes"
+        else
+          do_gpt_dd="no"
+        fi
+      else
+        do_gpt_dd="yes"
+      fi
+
+      # Somehow "sgdisk -l" (<= version 0.8.4) does not create protective MBR, either. Therefore we have to use the following workaround to write it again.
+      if [ -n "$(LC_ALL=C parted -s /dev/$target_hd print | grep -i "it does not have a valid fake msdos partition table" )" ]; then
+        # FixME. In the future if sgdisk supports an option to do this, we should swith to use sgdisk instead of gdisk+expect.
+        sleep 1
+        LC_ALL=C echo "spawn gdisk /dev/$target_hd; expect Command; send wq\r; expect \"Do you want to proceed? (Y/N)\"; send Y\r; expect eof" | expect -f -
+      fi
+      [ -e "$gdisk_tmp" ] && rm -f $gdisk_tmp
+    else
+      # For old style of image, there is no ${tgt_hd_name}-gpt.gdisk. We have to use dd to create the GPT partition table.
+      do_gpt_dd="yes"
+    fi
+    if [ "$do_gpt_dd" = "yes" ]; then
+      # Use dd to create that.
+      echo "Creating primary GPT info on /dev/$target_hd..."
+      LC_ALL=C dd if=$tgt_1st_gpt of=/dev/$target_hd bs=512 count=34 &>/dev/null
+      # 2nd GPT
+      echo "Creating the secondary GPT to /dev/$target_hd..."
+      to_seek="$((${tgt_disk_size_sec}-33+1))"
+      LC_ALL=C dd if=$tgt_2nd_gpt of=/dev/$target_hd seek=${to_seek} bs=512 count=33 &>/dev/null
+    fi
+
+    #
+    echo "Informing the OS that partition table has changed..."
+    partprobe /dev/$target_hd
+    sfdisk -R /dev/$target_hd
+    sleep 2
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_the_partition_in_the_system_now:"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo $msg_delimiter_star_line
+    LC_ALL=C parted -s /dev/$target_hd print
+    echo $msg_delimiter_star_line
+  elif `is_mbr_partitition_table_file $tgt_parted_info`; then
+    # The type is MBR
+    echo "Creating MBR type's partition table..."
+    case "$create_part_type" in
+     "proportion")
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+       echo "Create the proportional partition table based on $tgt_pt_tmp and the size of /dev/$target_hd..."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       # We use environmental variable EXTRA_SFDISK_OPT so it can be used in ocs-expand-mbr-pt
+       EXTRA_SFDISK_OPT=""
+       [ -n "$sfdisk_opt" ] && EXTRA_SFDISK_OPT="$sfdisk_opt"
+       if [ "$chk_tgt_disk_size_bf_mk_pt" = "no" ]; then
+         ocs_expand_mbr_pt_opt="-icds"
+         PARTCLONE_RESTORE_ONTHEFLY_OPT="$PARTCLONE_RESTORE_ONTHEFLY_OPT -C"
        fi
-
-       # From the output file of parted, we can decide if the partition is gpt or mbr
-       if `is_gpt_partitition_table_file $tgt_parted_info`; then
-         # The type is GPT
-         if [ -e "$tgt_gpt_gdisk" ]; then
-           # Use sgdisk to create that.
-           create_gpt_table_if_no_table /dev/$target_hd
-           gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
-           echo "Running: sgdisk -l $tgt_gpt_gdisk /dev/$target_hd"
-           LC_ALL=C sgdisk -l $tgt_gpt_gdisk /dev/$target_hd
-           sgdisk_rc=$?
-           if [ "$sgdisk_rc" -eq 0 ]; then
-             # There is a bug about sgdisk 0.6.14, i.e.
-             # sgdisk -l /home/partimag/2011-02-27-02-img-hfsplus-gdisk/sda-gpt.gdisk /dev/sdb
-             # Warning! Current disk size doesn't match that of the backup!
-             # Adjusting sizes to match, but subsequent problems are possible!
-             # The justLooking flag is set. This probably means you can't write to the disk.
-             # Aborting write of new partition table.
-             # However, its return code is still 0. Therefore we can not use return code to judge that.
-             if [ -n "$(LC_ALL=C grep -iE "Aborting write of new partition table" $gdisk_tmp)" ]; then
-               [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-               echo "Failed to use sgdisk to restore the GPT partition table. Will use dd to restore the GPT partition table."
-               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-               do_gpt_dd="yes"
-             else
-               do_gpt_dd="no"
-             fi
-           else
-             do_gpt_dd="yes"
-           fi
-
-           # Somehow "sgdisk -l" (<= version 0.8.4) does not create protective MBR, either. Therefore we have to use the following workaround to write it again.
-           if [ -n "$(LC_ALL=C parted -s /dev/$target_hd print | grep -i "it does not have a valid fake msdos partition table" )" ]; then
-             # FixME. In the future if sgdisk supports an option to do this, we should swith to use sgdisk instead of gdisk+expect.
-	     sleep 1
-             LC_ALL=C echo "spawn gdisk /dev/$target_hd; expect Command; send wq\r; expect \"Do you want to proceed? (Y/N)\"; send Y\r; expect eof" | expect -f -
-           fi
-           [ -e "$gdisk_tmp" ] && rm -f $gdisk_tmp
-         else
-           # For old style of image, there is no ${tgt_hd_name}-gpt.gdisk. We have to use dd to create the GPT partition table.
-           do_gpt_dd="yes"
-         fi
-         if [ "$do_gpt_dd" = "yes" ]; then
-           # Use dd to create that.
-           echo "Creating primary GPT info on /dev/$target_hd..."
-           LC_ALL=C dd if=$tgt_1st_gpt of=/dev/$target_hd bs=512 count=34 &>/dev/null
-           # 2nd GPT
-           echo "Creating the secondary GPT to /dev/$target_hd..."
-           to_seek="$((${tgt_disk_size_sec}-33+1))"
-           LC_ALL=C dd if=$tgt_2nd_gpt of=/dev/$target_hd seek=${to_seek} bs=512 count=33 &>/dev/null
-         fi
-
-         #
-         echo "Informing the OS that partition table has changed..."
-         partprobe /dev/$target_hd
-         sfdisk -R /dev/$target_hd
-         sleep 2
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-         echo "$msg_the_partition_in_the_system_now:"
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo $msg_delimiter_star_line
-         LC_ALL=C parted -s /dev/$target_hd print
-         echo $msg_delimiter_star_line
-       elif `is_mbr_partitition_table_file $tgt_parted_info`; then
-         # The type is MBR
-         echo "Creating MBR type's partition table..."
-         case "$create_part_type" in
-          "proportion")
-             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-            echo "Create the proportional partition table based on $tgt_pt_tmp and the size of /dev/$target_hd..."
-             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-            # We use environmental variable EXTRA_SFDISK_OPT so it can be used in ocs-expand-mbr-pt
-            EXTRA_SFDISK_OPT=""
-            [ -n "$sfdisk_opt" ] && EXTRA_SFDISK_OPT="$sfdisk_opt"
-	    if [ "$chk_tgt_disk_size_bf_mk_pt" = "no" ]; then
-	      ocs_expand_mbr_pt_opt="-icds"
-	      PARTCLONE_RESTORE_ONTHEFLY_OPT="$PARTCLONE_RESTORE_ONTHEFLY_OPT -C"
-            fi
-            EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-mbr-pt $ocs_expand_mbr_pt_opt --batch $tgt_pt_tmp /dev/$target_hd
-            ;;
-          "manual")
-            echo "$msg_enter_another_shell_for_fdisk"
-             echo -n "$msg_press_enter_to_continue..."
-             read
-             /bin/bash
-            ;;
-           *)
-             # Create partition table by sfdisk and x?[hsv]d[a-z]-pt.sf
-             # If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
-	     init_mbr_part_table_if_not_existing /dev/$target_hd
-             check_mbr_disk_size_gt_2TiB /dev/$target_hd warning 
-             echo "sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp"
-             LC_ALL=C sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp
-             RETVAL="$?"
-             echo "This was done by \"sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp\""
-             #
-             echo "Informing the OS that partition table has changed..."
-             partprobe /dev/$target_hd
-             sfdisk -R /dev/$target_hd
-             sleep 2
-             # Add another checking mechanism by parted, since sfdisk with -f won't return correct code.
-             echo "Checking the integrity of partition table in the disk /dev/$target_hd... "
-             dsk_chk_tmp="$(mktemp /tmp/ocs_dskchk_tmp.XXXXXX)"
-             LC_ALL=C parted -s /dev/$target_hd print &> $dsk_chk_tmp
-             rc=$?
-             if [ "$rc" -gt 0 ]; then
-               [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-               echo "$msg_the_partition_table_in_disk_is_illegal: /dev/$target_hd"
-               echo "$msg_is_this_disk_too_small ?"
-               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-               if [ -e "$dsk_chk_tmp" ]; then
-                 echo "$msg_error_messages_from_parted_are:"
-                 echo $msg_delimiter_star_line
-                 cat $dsk_chk_tmp
-                 echo $msg_delimiter_star_line
-                 rm -f $dsk_chk_tmp
-               fi
-               [ -e "$dsk_chk_tmp" -a -n "$(echo $dsk_chk_tmp | grep "ocs_dskchk_tmp")" ] && rm -f $dsk_chk_tmp
-               echo "$msg_program_stop!"
-               exit 1
-             fi
-             [ -e "$dsk_chk_tmp" -a -n "$(echo $dsk_chk_tmp | grep "ocs_dskchk_tmp")" ] && rm -f $dsk_chk_tmp
-            ;;
-         esac
-       else
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-         echo "Unknown partition table format from file $tgt_parted_info!"
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo "$msg_program_stop!"
-         exit 1
-       fi
+       EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-mbr-pt $ocs_expand_mbr_pt_opt --batch $tgt_pt_tmp /dev/$target_hd
        ;;
-    *)
-       if [ "$partition_table_exist_in_target" = "no" ]; then
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-         echo "No partition table exists in /dev/$target_hd, and you choose not to create partition table in /dev/$target_hd! We can not go on without partition table in /dev/$target_hd!!!"
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo "$msg_program_stop!"
-         exit 1
-       fi
-       echo "$msg_ok_we_will_keep_old_partition_table"
+     "manual")
+       echo "$msg_enter_another_shell_for_fdisk"
+        echo -n "$msg_press_enter_to_continue..."
+        read
+        /bin/bash
        ;;
-  esac
+      *)
+        # Create partition table by sfdisk and x?[hsv]d[a-z]-pt.sf
+        # If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
+        init_mbr_part_table_if_not_existing /dev/$target_hd
+        check_mbr_disk_size_gt_2TiB /dev/$target_hd warning 
+        echo "sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp"
+        LC_ALL=C sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp
+        RETVAL="$?"
+        echo "This was done by \"sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp\""
+        #
+        echo "Informing the OS that partition table has changed..."
+        partprobe /dev/$target_hd
+        sfdisk -R /dev/$target_hd
+        sleep 2
+        # Add another checking mechanism by parted, since sfdisk with -f won't return correct code.
+        echo "Checking the integrity of partition table in the disk /dev/$target_hd... "
+        dsk_chk_tmp="$(mktemp /tmp/ocs_dskchk_tmp.XXXXXX)"
+        LC_ALL=C parted -s /dev/$target_hd print &> $dsk_chk_tmp
+        rc=$?
+        if [ "$rc" -gt 0 ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "$msg_the_partition_table_in_disk_is_illegal: /dev/$target_hd"
+          echo "$msg_is_this_disk_too_small ?"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          if [ -e "$dsk_chk_tmp" ]; then
+            echo "$msg_error_messages_from_parted_are:"
+            echo $msg_delimiter_star_line
+            cat $dsk_chk_tmp
+            echo $msg_delimiter_star_line
+            rm -f $dsk_chk_tmp
+          fi
+          [ -e "$dsk_chk_tmp" -a -n "$(echo $dsk_chk_tmp | grep "ocs_dskchk_tmp")" ] && rm -f $dsk_chk_tmp
+          echo "$msg_program_stop!"
+          exit 1
+        fi
+        [ -e "$dsk_chk_tmp" -a -n "$(echo $dsk_chk_tmp | grep "ocs_dskchk_tmp")" ] && rm -f $dsk_chk_tmp
+       ;;
+    esac
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Unknown partition table format from file $tgt_parted_info!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
   echo 'done!'
 } # end of check_pt_then_run_create_part_table
 #
@@ -378,10 +337,7 @@ create_partition_table_in_target(){
       else
         partition_table_exist_in_target="no"
       fi
-      # //NOTE// Here when we output the stdout to tee, we use "Process Substitution". Otherwise the global veariable "flag_ocs_onthefly_fdisk" won't be changed when running in check_pt_then_run_create_part_table function.
-      # Ref: http://stackoverflow.com/questions/17694953/changing-a-global-variable-inside-a-function-when-using-tee
-      # Ref: http://tldp.org/LDP/abs/html/process-sub.html
-      check_pt_then_run_create_part_table > >(tee --append ${OCS_LOGFILE})
+      check_pt_then_run_create_part_table | tee --append ${OCS_LOGFILE}
       # After partition table is created, we can dump the hidden data which is between MBR and 1st partition.
       # Not GPT type of disk. We only deal with MBR for this hidden data
       if `is_mbr_partitition_table_disk /dev/$target_hd`; then
@@ -392,6 +348,21 @@ create_partition_table_in_target(){
         echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
       fi
       [ -f "$partition_table" ] && rm -f $partition_table
+    fi
+  else
+    # Not to create partition table on destination disk. Check if partition table exists or not.
+    echo "$msg_delimiter_star_line"
+    if [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then 
+      # try to see if the partition table exists in the target 
+      gen_proc_partitions_map_file
+      if [ -z "$(LC_ALL=C grep -Eo "$target_hd[[:digit:]]+" $partition_table)" ]; then
+        # No any partition found!
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "No partition table exists in /dev/$target_hd, and you choose not to create partition table in /dev/$target_hd! We can not go on without partition table in /dev/$target_hd!!!"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!"
+        exit 1
+      fi
     fi
   fi
 } # end of create_partition_table_in_target
@@ -434,6 +405,16 @@ confirm_do_it_in_target_dev() {
 
     if [ "$batch_mode" != "on" ]; then
       confirm_continue_no_default_answer "clean_tmp_dirs"
+      echo $msg_delimiter_star_line
+      # 2nd confirmation
+      if [ "$onthefly_2nd_confirm" = "yes" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "$msg_let_me_ask_you_again."
+        echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
+        echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten: $target_hd"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        confirm_continue_no_default_answer "clean_tmp_dirs"
+      fi
     fi
   fi
 } # end of confirm_do_it_in_target_dev
@@ -2440,17 +2421,7 @@ fi
 
 #
 echo "$msg_delimiter_star_line"
-# Start cloning, last confirmation
-# If fdisk is done, no need to ask, we will just go on since the destination disk is overwritten.
-if [ "$flag_ocs_onthefly_fdisk" != "done" ]; then
-  if [ "$batch_mode" != "on" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_start_to_clone_data_to_target_machine" | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    confirm_continue_no_default_answer "clean_tmp_dirs"
-  fi
-fi
-#
+# Start cloning
 case "$mode" in
   local) local_dev_clone ;;
   network) clone_over_net ;;
