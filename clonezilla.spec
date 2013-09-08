@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: if somehow grub boot is found, while root does not exist, the boot mounting point should be unmounted before function test_run_grub2_from_restored_os or test_run_grub1_from_restored_os is exited in ocs-functions.
+
 * Sat Sep 07 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.31-drbl1
 - Postrun opton in program "clonezilla" should be passed to ocs-onthefly.
 - If the disk partition on destination disk is created, no need to ask one more confirmation when running ocs-onthefly.
