@@ -157,7 +157,12 @@ do_mount_local_dev() {
    # check if $target_part is ntfs or others
    part_fs="$(LANG=C ocs-get-part-info /dev/$target_part filesystem)"
    echo "/dev/$target_part filesystem: $part_fs"
-   local_dev_mntpt="/tmp/local-dev"
+   # If ocs_prep_ocsroot_ask_dir is not "no", we just mount the partition as $ocsroot. Otherwise it's a little confusing.
+   if [ "$ocs_prep_ocsroot_ask_dir" != "no" ]; then
+     local_dev_mntpt="/tmp/local-dev"
+   else
+     local_dev_mntpt="$ocsroot"
+   fi
    mkdir -p $local_dev_mntpt
    case "$part_fs" in 
      ntfs) 
@@ -220,16 +225,15 @@ do_mount_local_dev() {
            LC_ALL=C mount -t auto -o $def_mount_opt,nodiratime /dev/$target_part $local_dev_mntpt 
 	   ;;
    esac
+   # If ocs_prep_ocsroot_ask_dir is not "no", we just mount the partition as $ocsroot. Therefore there is no need to ask dir here.
    #[ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
    if [ "$ocs_prep_ocsroot_ask_dir" != "no" ]; then
      sel_dir="$(mktemp /tmp/sel_dir.XXXXXX)"
      get_existing_dir $local_dev_mntpt $sel_dir
      real_ocsroot="$(cat $sel_dir)"
+     mount --bind -o $def_mount_opt,nodiratime $local_dev_mntpt/$real_ocsroot $ocsroot
      [ -f "$sel_dir" -a -n "$sel_dir" ] &&  rm -f $sel_dir
-   else
-     real_ocsroot=""
    fi
-   mount --bind -o $def_mount_opt,nodiratime $local_dev_mntpt/$real_ocsroot $ocsroot
    [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
 } # end of do_mount_local_dev
 #
