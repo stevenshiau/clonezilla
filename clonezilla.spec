@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.33
+Version:	3.5.34
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Sep 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.34-drbl1
 - If ocs_prep_ocsroot_ask_dir is not "no" in prep-ocsroot, we just mount the partition as $ocsroot. Otherwise it's a little confusing.
 
 * Sun Sep 08 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.33-drbl1
