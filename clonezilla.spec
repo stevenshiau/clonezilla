@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.34
+Version:	3.5.35
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.35-drbl1
+- The lvm2 service is disabled in GParted live (https://bugzilla.gnome.org/show_bug.cgi?id=702461).
+
 * Mon Sep 09 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.34-drbl1
 - If ocs_prep_ocsroot_ask_dir is not "no" in prep-ocsroot, we just mount the partition as $ocsroot. Otherwise it's a little confusing.
 
