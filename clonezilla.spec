@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.36
+Version:	3.5.37
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Sep 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.37-drbl1
+- Put the extra boot prompt in the 1st line of help text for syslinux/pxelinux boot menu.
+
 * Fri Sep 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.36-drbl1
 - An option "-r" was added in ocs-live-boot-menu so that we can add more prompt in the boot menu.
 
