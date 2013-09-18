@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Forcing to add grub-efi-ia32-bin and grub-efi-amd64-bin when downloading in ocs-gen-grub2-efi-bldr. Otherwise somehow in some cases they won't be downloaded.
+
 * Fri Sep 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.37-drbl1
 - Put the extra boot prompt in the 1st line of help text for syslinux/pxelinux boot menu.
 
