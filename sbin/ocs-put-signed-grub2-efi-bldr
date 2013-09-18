@@ -1,0 +1,82 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# License: GPL
+# Program to put the signed EFI boot loader from Ubuntu
+# Ref: 1. /usr/sbin/grub-install from package grub2-common (verson 2.00-13ubuntu3) on Ubuntu 13.04 (Raring)
+#      2. https://wiki.edubuntu.org/SecurityTeam/SecureBoot
+# Required files from packages on Ubuntu: 
+# shim-signed: /usr/lib/shim/shim.efi.signed
+# grub-efi-amd64-signed: /usr/lib/grub/x86_64-efi-signed/gcdx64.efi.signed
+# //NOTE// The signed packages only exists on AMD64 arch, not IA32 arch. That's why here we only create AMD64 arch files (bootx64.efi and grubx64.efi).
+
+# Settings
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+
+grub_required_files="/usr/share/grub/unicode.pf2"
+# Signed file with full path inside the deb.
+shim_signed=/usr/lib/shim/shim.efi.signed
+# gcdx64.efi was grub-cd.efi, which is the boot loader for removable device, like CD or USB flash drive.
+# while grubx64.efi is for hard drive.
+efi_signed=/usr/lib/grub/x86_64-efi-signed/gcdx64.efi.signed
+
+# Functions
+USAGE() {
+  echo "To create an EFI boot loader from grub2."
+  echo "Usage: $0 OUTPUT_DIR"
+  echo "OUTPUT_DIR is the where the created boot loader will be placed."
+  echo "   E.g.  $0 /tmp/efi/"
+}
+#
+#############
+###  MAIN ###
+#############
+#
+check_if_root
+
+output_dir="$1"
+
+# Checking
+if [ ! -e /etc/debian_version ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "This is not a Debian/Ubuntu Linux system. This program only works on Debian/Ubuntu Linux system."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+if [ -z "$output_dir" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No output dir! Program terminated!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  exit 1
+fi
+if [ ! -d "$output_dir" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "The output dir \"$output_dir\" does not exist, or it's not a directory."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+
+grub_efi_dir="$(mktemp -d /tmp/grub-efi.XXXXXX)"
+for i in shim-signed grub-efi-amd64-signed; do
+  echo "Download $i from deb packages repository..."
+  LC_ALL=C apt-get -d --reinstall -y install $i &>/dev/null
+done
+for i in /var/cache/apt/archives/shim-signed_*.deb /var/cache/apt/archives/grub-efi-amd64-signed_*; do
+  dpkg --extract $i $grub_efi_dir
+done
+
+cp -av "$grub_efi_dir/$shim_signed" "${output_dir}/bootx64.efi"
+cp -av "$grub_efi_dir/$efi_signed" "${output_dir}/grubx64.efi"
+
+# Copy the required files, e.g. fonts to the output dir.
+cp -a $grub_required_files $output_dir
+
+# Clean the temp dir
+if [ -e "$grub_efi_dir" -a -n "$(echo $grub_efi_dir | grep -E "grub-efi")" ]; then
+  rm -rf $grub_efi_dir
+fi

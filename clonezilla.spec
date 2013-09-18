@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.5.37
+Version:	3.6.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.4.38, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.4.39, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,7 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Sep 18 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.1-drbl1
 - Forcing to add grub-efi-ia32-bin and grub-efi-amd64-bin when downloading in ocs-gen-grub2-efi-bldr. Otherwise somehow in some cases they won't be downloaded.
+- The signed EFI 1st and 2nd stage files from Ubuntu are used for secure booting in Ubuntu-based Clonezilla live. While for Debian-based one, we still follow the distribution, i.e. do not support uEFI secure boot.
 
 * Fri Sep 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.5.37-drbl1
 - Put the extra boot prompt in the 1st line of help text for syslinux/pxelinux boot menu.
