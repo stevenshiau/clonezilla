@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.6.3
+Version:	3.6.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 19 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.4-drbl1
+- Hook file efi-binary-hook failed to create files in correct path for Ubuntu-based Clonezilla live.
+
 * Thu Sep 19 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.3-drbl1
 - Programs ocs-iso and ocs-live-dev should allow only one of bootx64.efi and bootx86.efi under /EFI/boot.
 
