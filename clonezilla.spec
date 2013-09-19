@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.6.1
+Version:	3.6.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 19 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.2-drbl1
+- Bug fixed: ocs-put-signed-grub2-efi-bldr run in efi-binary-hook should use chroot environment, not running OS.
+- An option "-c" was added to ocs-put-signed-grub2-efi-bldr.
+
 * Wed Sep 18 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.1-drbl1
 - Forcing to add grub-efi-ia32-bin and grub-efi-amd64-bin when downloading in ocs-gen-grub2-efi-bldr. Otherwise somehow in some cases they won't be downloaded.
 - The signed EFI 1st and 2nd stage files from Ubuntu are used for secure booting in Ubuntu-based Clonezilla live. While for Debian-based one, we still follow the distribution, i.e. do not support uEFI secure boot.

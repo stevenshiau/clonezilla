@@ -16,16 +16,21 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
 
 grub_required_files="/usr/share/grub/unicode.pf2"
+required_packages="shim-signed grub-efi-amd64-signed"
 # Signed file with full path inside the deb.
 shim_signed=/usr/lib/shim/shim.efi.signed
 # gcdx64.efi was grub-cd.efi, which is the boot loader for removable device, like CD or USB flash drive.
 # while grubx64.efi is for hard drive.
 efi_signed=/usr/lib/grub/x86_64-efi-signed/gcdx64.efi.signed
+# Default nameserver for chroot environment
+dns_default="8.8.8.8"
 
 # Functions
 USAGE() {
   echo "To create an EFI boot loader from grub2."
-  echo "Usage: $0 OUTPUT_DIR"
+  echo "Usage: $0 [OPTION] OUTPUT_DIR"
+  echo "Options:"
+  echo "-c, --chroot DIR chroot to DIR for running apt. This allows to use a debootstrap environment for different distributions. E.g. running OS is debian, while Ubuntu environment is required for packages shim-signed and grub-efi-amd64-signed which do not exist on Debian."
   echo "OUTPUT_DIR is the where the created boot loader will be placed."
   echo "   E.g.  $0 /tmp/efi/"
 }
@@ -35,6 +40,26 @@ USAGE() {
 #############
 #
 check_if_root
+
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -c|--chroot)
+           # Use the chroot dir
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             chroot="$1"
+             shift;
+           fi
+           [ -z "$chroot" ] && USAGE && exit 1
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
 
 output_dir="$1"
 
@@ -62,11 +87,46 @@ if [ ! -d "$output_dir" ]; then
 fi
 
 grub_efi_dir="$(mktemp -d /tmp/grub-efi.XXXXXX)"
-for i in shim-signed grub-efi-amd64-signed; do
-  echo "Download $i from deb packages repository..."
-  LC_ALL=C apt-get -d --reinstall -y install $i &>/dev/null
+if [ -n "$chroot" ]; then
+  if [ ! -d "$chroot" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Chroot dir $chroot not found!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated!"
+    exit 1
+  fi
+  # Run in chroot environment
+  grub_efi_tmp_exe="$chroot/tmp/grub-efi-exe.sh"
+  # create a script to be run in chroot
+cat <<-EFI_END > $grub_efi_tmp_exe
+#!/bin/bash
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
+for i in $required_packages; do
+  echo "Download \$i from deb packages repository..."
+  LC_ALL=C apt-get -d --reinstall -y install \$i &>/dev/null
 done
-for i in /var/cache/apt/archives/shim-signed_*.deb /var/cache/apt/archives/grub-efi-amd64-signed_*; do
+EFI_END
+  chmod 755 $grub_efi_tmp_exe
+  chroot $chroot /tmp/grub-efi-exe.sh
+  rm -f $grub_efi_tmp_exe
+else
+  # Run in running OS environment, not chroot.
+  # Check if it's Ubuntu environment
+  [ -e /etc/lsb-release ] && . /etc/lsb-release
+  if [ "$DISTRIB_ID" != "Ubuntu" ] ;then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "This GNU/Linux distribution is not Ubuntu Linux."
+    echo "Packages $required_packages exist only on Ubuntu Linux!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated!"
+    exit 1
+  fi
+  for i in $required_packages; do
+    echo "Download $i from deb packages repository..."
+    LC_ALL=C apt-get -d --reinstall -y install $i &>/dev/null
+  done
+fi
+for i in $chroot/var/cache/apt/archives/shim-signed_*.deb $chroot/var/cache/apt/archives/grub-efi-amd64-signed_*; do
   dpkg --extract $i $grub_efi_dir
 done
 
