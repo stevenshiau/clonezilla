@@ -286,7 +286,10 @@ create_drbl_live_iso(){
     echo -n "[DRBL]" > $ISOSYSLNX_TMP/.disk/info
     
     efi_img_opt="-eltorito-alt-boot -efi-boot EFI/images/efiboot.img -no-emul-boot"
-    efi_img_graft_opt="/.disk/=$ISOSYSLNX_TMP/.disk"
+    # For Ubuntu uEFI secure boot signed grubx64.efi, it will search /boot/grub/grub.cfg instead of what we have (/EFI/boot/grub.cfg). Although we do not use Ubuntu as the underlaying OS, we still keep this for the future just in case.
+    mkdir -p $ISOSYSLNX_TMP/boot/grub/
+    echo "configfile /EFI/boot/grub.cfg" > $ISOSYSLNX_TMP/boot/grub/grub.cfg
+    efi_img_graft_opt="/.disk/=$ISOSYSLNX_TMP/.disk /boot/=$ISOSYSLNX_TMP/boot/ "
   fi
 
   # Create the iso file
@@ -404,6 +407,10 @@ create_drbl_live_zip() {
   # Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
   mkdir $USB_TMP/.disk
   echo -n "[DRBL]" > $USB_TMP/.disk/info
+
+  # For Ubuntu uEFI secure boot signed grubx64.efi, it will search /boot/grub/grub.cfg instead of what we have (/EFI/boot/grub.cfg). Although we do not use Ubuntu as the underlaying OS, we still keep this for the future just in case.
+  mkdir -p $USB_TMP/boot/grub/
+  echo "configfile /EFI/boot/grub.cfg" > $USB_TMP/boot/grub/grub.cfg
 
   # ref: http://syslinux.zytor.com/archives/2006-October/007440.html
   # "-" will be regards as "_" if you want to use "-" for isolinux.

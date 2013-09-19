@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.6.5
+Version:	3.6.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 19 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.6-drbl1
+- An extra dir /boot/grub/ was added so that the signed grubx64.efi from ubuntu could read the grub.cfg.
+
 * Thu Sep 19 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.5-drbl1
 - Programs ocs-iso and ocs-live-dev should allow only one of bootx64.efi and bootx86.efi under /EFI/boot when checking if generating grub.cfg.
 
