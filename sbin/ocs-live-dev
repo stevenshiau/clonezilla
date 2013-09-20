@@ -28,6 +28,8 @@ clonezilla_iso_branch="alternative"
 clonezilla_iso_arch_tag="-i386"
 # Where the MD5SUM could be found for the above iso file. This has to match $clonezilla_iso_branch and $clonezilla_iso_arch_tag
 DEBIAN_ISO_ETC_PATH="http://free.nchc.org.tw/clonezilla-live/alternative/stable/"
+# Flag to put EFI booting image
+enabled_EFI="true"
 
 #
 prog="$(basename $0)"
@@ -476,6 +478,17 @@ else
   mount -o loop,ro $DEBIAN_ISO $DEBIAN_ISO_TMP
 fi
 
+# Check if EFI boot could be supported.
+if [ ! -e "$DEBIAN_ISO_TMP/EFI/boot/bootx64.efi" ]; then
+  # We only check bootx64.efi since bootx86.efi is optional.
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Warning! /EFI/boot/bootx64.efi was not found in template Clonezilla live!"
+  echo "The generated $target_iso will not support EFI boot!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  sleep 5
+  enabled_EFI="false"
+fi
+
 if [ "$target_mode" = "release_file" ]; then
   # assume boot loader as syslinux for release_file mode.
   boot_loader="syslinux"
@@ -796,39 +809,41 @@ echo "$prog $prog_option" >> $USB_TMP/Clonezilla-Live-Version
 # Find the boot param $boot_param
 get_live_boot_param $DEBIAN_ISO_TMP/isolinux
 
-# Build the EFI boot image. This is especially for iso file. Not for USB stick. However, here we still prepare the file so that later it's easier to use genisoimage to create the EFI-enabled iso.
-# The following codes are referred from Fedora anaconda's mk-images.efi
-# http://fedorapeople.org/cgit/karsten/public_git/anaconda.git/plain/scripts/mk-images.efi
-# Ref: https://fedoraproject.org/wiki/User:Pjones/BootableCDsForBIOSAndUEFI#New_UEFI.2FBIOS_hybrid_method
-EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
-EFI_BOOTTREE="$DEBIAN_ISO_TMP/EFI"
-EFI_IMGTREE="$USB_TMP/EFI/images"
-EFI_IMG="$EFI_IMGTREE/efiboot.img"
-mkdir -p $EFI_IMGTREE
-rm -rf $USB_TMP/.disk
-rm -f $EFI_IMG
-
-BOOTDISKSIZE="$(LC_ALL=C du -kcs $EFI_BOOTTREE | tail -n1 | awk '{print $1}')"
-BOOTDISKSIZE="$(LC_ALL=C expr $BOOTDISKSIZE + 100)"
-echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
-mkdosfs -n OCS-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
-mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
-mkdir -p $EFI_BOOTIMG_TMP/EFI/
-cp -R $EFI_BOOTTREE/* $EFI_BOOTIMG_TMP/EFI/
-umount $EFI_BOOTIMG_TMP
-if [ -d "$EFI_BOOTIMG_TMP" -a -n \
-	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
-  rm -rf $EFI_BOOTIMG_TMP
+if [ "$enabled_EFI" = "true" ]; then
+  # Build the EFI boot image. This is especially for iso file. Not for USB stick. However, here we still prepare the file so that later it's easier to use genisoimage to create the EFI-enabled iso.
+  # The following codes are referred from Fedora anaconda's mk-images.efi
+  # http://fedorapeople.org/cgit/karsten/public_git/anaconda.git/plain/scripts/mk-images.efi
+  # Ref: https://fedoraproject.org/wiki/User:Pjones/BootableCDsForBIOSAndUEFI#New_UEFI.2FBIOS_hybrid_method
+  EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
+  EFI_BOOTTREE="$DEBIAN_ISO_TMP/EFI"
+  EFI_IMGTREE="$USB_TMP/EFI/images"
+  EFI_IMG="$EFI_IMGTREE/efiboot.img"
+  mkdir -p $EFI_IMGTREE
+  rm -rf $USB_TMP/.disk
+  rm -f $EFI_IMG
+  
+  BOOTDISKSIZE="$(LC_ALL=C du -kcs $EFI_BOOTTREE | tail -n1 | awk '{print $1}')"
+  BOOTDISKSIZE="$(LC_ALL=C expr $BOOTDISKSIZE + 100)"
+  echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
+  mkdosfs -n OCS-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
+  mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
+  mkdir -p $EFI_BOOTIMG_TMP/EFI/
+  cp -R $EFI_BOOTTREE/* $EFI_BOOTIMG_TMP/EFI/
+  umount $EFI_BOOTIMG_TMP
+  if [ -d "$EFI_BOOTIMG_TMP" -a -n \
+  	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
+    rm -rf $EFI_BOOTIMG_TMP
+  fi
+  
+  # Create an info file for grub2 to autodetect the cd root
+  # Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
+  mkdir $USB_TMP/.disk
+  echo -n "[Clonezilla]" > $USB_TMP/.disk/info
+  
+  # For Ubuntu uEFI secure boot signed grubx64.efi, it will search /boot/grub/grub.cfg instead of what we have (/EFI/boot/grub.cfg). Although we do not use Ubuntu as the underlaying OS, we still keep this for the future just in case.
+  mkdir -p $USB_TMP/boot/grub/
+  echo "configfile /EFI/boot/grub.cfg" > $USB_TMP/boot/grub/grub.cfg
 fi
-
-# Create an info file for grub2 to autodetect the cd root
-# Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
-mkdir $USB_TMP/.disk
-echo -n "[Clonezilla]" > $USB_TMP/.disk/info
-
-# For Ubuntu uEFI secure boot signed grubx64.efi, it will search /boot/grub/grub.cfg instead of what we have (/EFI/boot/grub.cfg). Although we do not use Ubuntu as the underlaying OS, we still keep this for the future just in case.
-mkdir -p $USB_TMP/boot/grub/
-echo "configfile /EFI/boot/grub.cfg" > $USB_TMP/boot/grub/grub.cfg
 
 #
 if [ "$target_mode" = "boot_dev" ]; then

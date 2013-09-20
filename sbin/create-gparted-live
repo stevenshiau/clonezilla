@@ -140,17 +140,6 @@ create_gparted_live_iso(){
      exit 1
   fi
 
-  # Check if genisoimage support -efi-boot option
-  if [ -n "$(LC_ALL=C genisoimage --help 2>&1 | grep -E -- "-efi-boot")" ]; then
-    enabled_EFI="true"
-  else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Warning! Setting EFI boot image name is not supported in genisoimage!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    sleep 5
-    enabled_EFI="false"
-  fi
-  
   if [ "$output_mode" = "cdwriter" -a type wodim &>/dev/null ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "Program wodim is not aviailable! You have to install it."
@@ -385,37 +374,39 @@ create_gparted_live_zip() {
     cp -af $gparted_live_boot_bg_img $USB_TMP/EFI/boot/
   fi
 
-  # Build the EFI boot image. This is especially for iso file. Not for USB stick. However, here we still prepare the file so that later it's easier to use genisoimage to create the EFI-enabled iso.
-  # The following codes are referred from Fedora 
-  EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
-  EFI_BOOTTREE="$stage1_iso_TMP/EFI"
-  EFI_IMGTREE="$USB_TMP/EFI/images"
-  EFI_IMG="$EFI_IMGTREE/efiboot.img"
-  mkdir -p $EFI_IMGTREE
-  rm -rf $USB_TMP/.disk
-  rm -f $EFI_IMG
+  if [ "$enabled_EFI" = "true" ]; then
+    # Build the EFI boot image. This is especially for iso file. Not for USB stick. However, here we still prepare the file so that later it's easier to use genisoimage to create the EFI-enabled iso.
+    # The following codes are referred from Fedora 
+    EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
+    EFI_BOOTTREE="$stage1_iso_TMP/EFI"
+    EFI_IMGTREE="$USB_TMP/EFI/images"
+    EFI_IMG="$EFI_IMGTREE/efiboot.img"
+    mkdir -p $EFI_IMGTREE
+    rm -rf $USB_TMP/.disk
+    rm -f $EFI_IMG
+    
+    BOOTDISKSIZE="$(LC_ALL=C du -kcs $EFI_BOOTTREE | tail -n1 | awk '{print $1}')"
+    BOOTDISKSIZE="$(LC_ALL=C expr $BOOTDISKSIZE + 100)"
+    echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
+    mkdosfs -n GParted-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
+    mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
+    mkdir -p $EFI_BOOTIMG_TMP/EFI/
+    cp -R $EFI_BOOTTREE/* $EFI_BOOTIMG_TMP/EFI/
+    umount $EFI_BOOTIMG_TMP
+    if [ -d "$EFI_BOOTIMG_TMP" -a -n \
+    	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
+      rm -rf $EFI_BOOTIMG_TMP
+    fi
+    
+    # Create an info file for grub2 to autodetect the cd root
+    # Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
+    mkdir $USB_TMP/.disk
+    echo -n "[GParted]" > $USB_TMP/.disk/info
   
-  BOOTDISKSIZE="$(LC_ALL=C du -kcs $EFI_BOOTTREE | tail -n1 | awk '{print $1}')"
-  BOOTDISKSIZE="$(LC_ALL=C expr $BOOTDISKSIZE + 100)"
-  echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
-  mkdosfs -n GParted-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
-  mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
-  mkdir -p $EFI_BOOTIMG_TMP/EFI/
-  cp -R $EFI_BOOTTREE/* $EFI_BOOTIMG_TMP/EFI/
-  umount $EFI_BOOTIMG_TMP
-  if [ -d "$EFI_BOOTIMG_TMP" -a -n \
-  	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
-    rm -rf $EFI_BOOTIMG_TMP
+    # For Ubuntu uEFI secure boot signed grubx64.efi, it will search /boot/grub/grub.cfg instead of what we have (/EFI/boot/grub.cfg). Although we do not use Ubuntu as the underlaying OS, we still keep this for the future just in case.
+    mkdir -p $USB_TMP/boot/grub/
+    echo "configfile /EFI/boot/grub.cfg" > $USB_TMP/boot/grub/grub.cfg
   fi
-  
-  # Create an info file for grub2 to autodetect the cd root
-  # Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
-  mkdir $USB_TMP/.disk
-  echo -n "[GParted]" > $USB_TMP/.disk/info
-
-  # For Ubuntu uEFI secure boot signed grubx64.efi, it will search /boot/grub/grub.cfg instead of what we have (/EFI/boot/grub.cfg). Although we do not use Ubuntu as the underlaying OS, we still keep this for the future just in case.
-  mkdir -p $USB_TMP/boot/grub/
-  echo "configfile /EFI/boot/grub.cfg" > $USB_TMP/boot/grub/grub.cfg
 
   # ref: http://syslinux.zytor.com/archives/2006-October/007440.html
   # "-" will be regards as "_" if you want to use "-" for isolinux.
@@ -890,6 +881,26 @@ trap "[ -d "$stage1_iso_TMP" ] && umount $stage1_iso_TMP &>/dev/null && clean_tm
 ISOSYSLNX_TMP="$(mktemp -d /tmp/isolnx-tmp.XXXXXX)"
 mount -o loop $stage1_target_iso $stage1_iso_TMP
 
+# Check if EFI boot could be supported.
+if [ ! -e "$stage1_iso_TMP/EFI/boot/bootx64.efi" ]; then
+  # We only check bootx64.efi since bootx86.efi is optional.
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Warning! /EFI/boot/bootx64.efi was not found in stage1 GParted live!"
+  echo "The generated $target_iso will not support EFI boot!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  sleep 5
+  enabled_EFI="false"
+elif [ -n "$(LC_ALL=C genisoimage --help 2>&1 | grep -E -- "-efi-boot")" ]; then
+  # Check if genisoimage support -efi-boot option
+  enabled_EFI="true"
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Warning! Setting EFI boot image name is not supported in genisoimage!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  sleep 5
+  enabled_EFI="false"
+fi
+  
 #
 case "$target_media_file" in
   cd|CD|iso|ISO)
