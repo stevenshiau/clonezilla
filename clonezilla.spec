@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.6.7
+Version:	3.6.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Sep 20 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.8-drbl1
+- Program ocs-put-signed-grub2-efi-bldr should also put grub efi modules.
+
 * Fri Sep 20 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.7-drbl1
 - When /EFI/boot/bootx64.efi does not exist in the template iso, those EFI related files won't be included in the created live files.
 

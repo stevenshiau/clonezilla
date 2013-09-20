@@ -16,12 +16,14 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
 
 grub_required_files="/usr/share/grub/unicode.pf2"
-required_packages="shim-signed grub-efi-amd64-signed"
+required_packages="shim-signed grub-efi-amd64-signed grub-efi-amd64-bin"
 # Signed file with full path inside the deb.
 shim_signed=/usr/lib/shim/shim.efi.signed
 # gcdx64.efi was grub-cd.efi, which is the boot loader for removable device, like CD or USB flash drive.
 # while grubx64.efi is for hard drive.
 efi_signed=/usr/lib/grub/x86_64-efi-signed/gcdx64.efi.signed
+# Path to grub x86-64 efi modules. Do not put "/" in the end
+x86_64_mod_path=/usr/lib/grub/x86_64-efi
 # Default nameserver for chroot environment
 dns_default="8.8.8.8"
 
@@ -126,12 +128,16 @@ else
     LC_ALL=C apt-get -d --reinstall -y install $i &>/dev/null
   done
 fi
-for i in $chroot/var/cache/apt/archives/shim-signed_*.deb $chroot/var/cache/apt/archives/grub-efi-amd64-signed_*; do
+for i in $chroot/var/cache/apt/archives/shim-signed_*.deb \
+	 $chroot/var/cache/apt/archives/grub-efi-amd64-signed_* \
+	 $chroot//var/cache/apt/archives/grub-efi-amd64-bin_*
+do
   dpkg --extract $i $grub_efi_dir
 done
 
 cp -av "$grub_efi_dir/$shim_signed" "${output_dir}/bootx64.efi"
 cp -av "$grub_efi_dir/$efi_signed" "${output_dir}/grubx64.efi"
+cp -a  "$grub_efi_dir/$x86_64_mod_path" "${output_dir}/"
 
 # Copy the required files, e.g. fonts to the output dir.
 cp -a $grub_required_files $output_dir
