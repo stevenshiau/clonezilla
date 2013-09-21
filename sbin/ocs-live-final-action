@@ -13,9 +13,34 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Load the options from config file
 [ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
 
+# Functions
+USAGE() {
+    echo "$ocs - To choose the final action (poweroff, reboot, command line prompt...) and put the output in a file"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs OUTPUT_FILE"
+    echo "Ex:"
+    echo "To choose the final action and put the output to the file /tmp/my-selection.txt, run"
+    echo "   $ocs /tmp/my-selection.txt"
+} # end of USAGE
+
+####################
+### Main program ###
+####################
+
+ocs=`basename $0`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
 #
 output_f="$1"
-
 #
 ask_and_load_lang_set $ocs_lang
 
@@ -24,6 +49,7 @@ if [ -z "$output_f" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "Output file was not assigned in $0!"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
   echo "$msg_program_stop!"
   exit 1
 fi	
