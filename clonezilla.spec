@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Help message was added in ocs-langkbdconf-bterm.
+
 * Sat Sep 21 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.10-drbl1
 - Stale files ocs-help, ocs-live-help and ocs-create-gpt were removed.
 - Help message was added in ocs-live-final-action.
