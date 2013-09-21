@@ -16,6 +16,8 @@
 
 #  2005/3/30
 #  use udp-cast, so we won't deal with client_to_wait or time_to_wait, let udp-cast takes are of that!
+#  2013/09/21
+#  Adding help messages.
 
 use strict;
 use IO::Select;
@@ -36,7 +38,16 @@ our %config = (
   nocheck => 0,
   write_pxe_cfg => 0,
 );
-
+#
+our $usage="Usage: $0 [-l|--log LOG_FILE] [-p|--port NO] [-n|--nopxecfg]";
+sub usage_details{
+  die "$usage\n".
+  "-l, --log LOG_FILE  Assign the log file as LOG_FILE. Default log file is $config{logfile}\n".
+  "-p, --port NO       Assign the port number NO. Default port number is $config{port}\n".
+  "-n, --nopxecfg      Do not write PXELinux config for the specific client when receiving job is done\n".
+  ";"
+} # end of usage_details
+#
 while ( $_ = shift ) {
   if (/-p|--port/) { 
     $config{port} = shift;
@@ -47,8 +58,10 @@ while ( $_ = shift ) {
     $config{script_to_exec} = shift;
   } elsif(/--nocheck/) {
     $config{nocheck} = 1;
-  } elsif(/--nopxecfg/) {
+  } elsif(/-n|--nopxecfg/) {
     $config{write_pxe_cfg} = 1;
+  } elsif(/^(-)?(-)?h(elp)?$/) {
+    usage_details();
   }
 }
 
