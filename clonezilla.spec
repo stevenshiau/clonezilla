@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.6.11
+Version:	3.6.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Sep 22 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.12-drbl1
 - Programs ocs-devsort and ocs-socket were added with help messages.
 
 * Sat Sep 21 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.11-drbl1
