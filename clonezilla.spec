@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Programs ocs-devsort and ocs-socket were added with help messages.
+
 * Sat Sep 21 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.11-drbl1
 - Help messages were added in ocs-langkbdconf-bterm and ocsmgrd.
 
