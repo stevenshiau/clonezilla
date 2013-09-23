@@ -152,7 +152,6 @@ create_gparted_live_iso(){
   mkdir -p $ISOSYSLNX_TMP/syslinux $ISOSYSLNX_TMP/isolinux
   # create isolinux menu
   # isolinux should be rw, so we have to copy it, and exclude the one in iso image.
-  rsync -a --exclude f*.txt --exclude boot.cat --exclude isolinux.txt --exclude isolinux.bin --exclude splash.rle --exclude doc $stage1_iso_TMP/isolinux $ISOSYSLNX_TMP/
   # we have to overwrite isolinux.bin since vesamenu.c32 should be same version with that.
   # For isolinux
   cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $gparted_live_boot_bg_img $pxelinux_chain_file $ISOSYSLNX_TMP/isolinux/
@@ -196,7 +195,7 @@ create_gparted_live_iso(){
   # Excluding list for mkisofs
   # We will create it like this:
   # -x $stage1_iso_TMP/isolinux -x $stage1_iso_TMP/md5sum.txt -x $stage1_iso_TMP/casper/memtest 
-  mkiso_exclude_list="isolinux syslinux md5sum.txt doc"
+  mkiso_exclude_list="isolinux syslinux EFI .disk md5sum.txt doc "
   for i in $live_sys_files_dir_list; do
     if [ -e "$stage1_iso_TMP/$i/memtest" ]; then
       mkiso_exclude_list="$mkiso_exclude_list $i/memtest"
@@ -290,20 +289,18 @@ EFI_END
    -A "GParted Live CD" \
    -V "GParted-live" \
    -publisher "GParted http://gparted.org" \
-   -f -r -hide-rr-moved -hide-joliet-trans-tbl -J -l \
+   -f -r -hide-rr-moved -hide-joliet-trans-tbl -J -l -allow-limited-size\
    -b isolinux/isolinux.bin -c isolinux/boot.cat \
    -no-emul-boot -boot-load-size 4 -boot-info-table \
-   -x $stage1_iso_TMP/isolinux \
-   -x $stage1_iso_TMP/md5sum.txt \
-   -x $stage1_iso_TMP/EFI \
-   -x $stage1_iso_TMP/.disk/info \
-   $mkiso_exclude_opt $efi_img_opt \
-   -graft-points $stage1_iso_TMP \
+   $efi_img_opt \
+   $mkiso_exclude_opt \
+   -graft-points \
    $sys_files_dir_graft_point \
    $utils_files_dir_graft_point \
    $efi_img_graft_opt \
    /GPL=$DRBL_SCRIPT_PATH/doc/GPL \
    /GParted-Live-Version=$ISOSYSLNX_TMP/GParted-Live-Version \
+   $stage1_iso_TMP \
    > $real_target_iso
   RC_ISO=$?
   if [ "$RC_ISO" -eq 0 ]; then
@@ -370,8 +367,20 @@ create_gparted_live_zip() {
   cp -af $DRBL_SCRIPT_PATH/doc/GPL $USB_TMP/
   # For syslinux
   cp -af $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $gparted_live_boot_bg_img $pxelinux_chain_file $USB_TMP/syslinux/
+  # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
+  for i in $sys_pxelinux_v5p_required_c32; do
+    if [ -e "$pxelinux_binsrc_dir/$i" ]; then
+      cp -af $pxelinux_binsrc_dir/$i $USB_TMP/syslinux/
+    fi
+  done
   # For isolinux
   cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $gparted_live_boot_bg_img $pxelinux_chain_file $USB_TMP/isolinux/
+  # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
+  for i in $sys_pxelinux_v5p_required_c32; do
+    if [ -e "$pxelinux_binsrc_dir/$i" ]; then
+      cp -af $pxelinux_binsrc_dir/$i $USB_TMP/isolinux/
+    fi
+  done
   # For grub2 efi
   # The EFI/boot/{bootia32.efi,boox64.efi} are copied by the above rsync command from $$stage1_iso_TMP
   if [ -d "$USB_TMP/EFI/boot/" ]; then

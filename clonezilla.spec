@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.6.12
+Version:	3.6.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Sep 23 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.13-drbl1
+- Help message was added in get-latest-ocs-live-ver.
+- The options of genisoimage in ocs-iso was rearranged.
+- Rearranging the options for genisoimage in create-drbl-live and create-gparted-live so that isolinux 5.10 could boot on some real machine. Besides, not all included files are used with -graft-points. This is the key point for the workaround.
+
 * Sun Sep 22 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.12-drbl1
 - Programs ocs-devsort and ocs-socket were added with help messages.
 
