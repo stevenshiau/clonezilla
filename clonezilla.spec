@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Option "-h" was added to ocs-put-signed-grub2-efi-bldr and ocs-gen-grub2-efi-bldr.
+
 * Tue Sep 24 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.16-drbl1
 - "zh_TW" was removed in locale_to_keep_for_no_X of ocs-live-hook.conf since only zh_TW.UTF-8 is used.
 
