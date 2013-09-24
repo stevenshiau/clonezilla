@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.6.15
+Version:	3.6.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Sep 24 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.16-drbl1
+- "zh_TW" was removed in locale_to_keep_for_no_X of ocs-live-hook.conf since only zh_TW.UTF-8 is used.
+
 * Tue Sep 24 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.15-drbl1
 - The function set_localepurge in ocs-live-hook-functions was updated to fit localepurge 0.7.3. It's because the new feature "localepurge/use-dpkg-feature" has to be configured otherwise localepurge won't run.
 
