@@ -565,10 +565,12 @@ cat <<-BOOT_MENU_END > $output_file
 set prefix=/EFI/boot/
 set default="0"
 if loadfont \$prefix/unicode.pf2; then
-  set gfxmode=640x480
-  load_video
+  set gfxmode=auto
+  insmod efi_gop
+  insmod efi_uga
+  insmod gfxterm
+  terminal_output gfxterm
 fi
-terminal_output gfxterm
 set timeout="$timeout_sec"
 set hidden_timeout_quiet=false
 
@@ -584,7 +586,6 @@ fi
 
 menuentry "$output_title (Default settings$vga_default_prompt)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param $vga_default_mode ip=frommedia $quiet_opt $splash_opt $vga_blacklist_opt
   initrd $initrd_file
 }
@@ -593,21 +594,18 @@ if [ "$show_vga_mode" = "3" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 menuentry "$output_title (Default settings$vga_1024x768_prompt)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param $vga_mode_1024x768 ip=frommedia $quiet_opt $splash_opt $vga_blacklist_opt
   initrd $initrd_file
 }
 
 menuentry "$output_title (Default settings$vga_640x480_prompt)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param $vga_mode_640x480 ip=frommedia $quiet_opt $splash_opt $vga_blacklist_opt
   initrd $initrd_file
 }
 
 menuentry "$output_title (Default settings, KMS)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param_rm_nomodeset $vga_mode_1024x768 ip=frommedia $quiet_opt $splash_opt
   initrd $initrd_file
 }
@@ -617,7 +615,6 @@ fi
   cat <<-BOOT_MENU_END >> $output_file
 menuentry "$output_title (To RAM, boot media can be removed later)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param_toram $vga_default_mode toram=filesystem.squashfs ip=frommedia $quiet_opt $splash_opt $vga_blacklist_opt
   initrd $initrd_file
 }
@@ -628,7 +625,6 @@ if [ -n "$lang_locale" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 menuentry "$output_title ($lang_locale, default settings$vga_default_prompt)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param $vga_default_mode locale=$lang_locale ip=frommedia $quiet_opt $splash_opt $vga_blacklist_opt
   initrd $initrd_file
 }
@@ -638,21 +634,18 @@ if [ "$show_vga_mode" = "3" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 menuentry "$output_title ($lang_locale, default settings$vga_1024x768_prompt)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param $vga_mode_1024x768 locale=$lang_locale ip=frommedia $quiet_opt $splash_opt $vga_blacklist_opt
   initrd $initrd_file
 }
 
 menuentry "$output_title ($lang_locale, default settings$vga_640x480_prompt)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param $vga_mode_640x480 locale=$lang_locale ip=frommedia $quiet_opt $splash_opt $vga_blacklist_opt
   initrd $initrd_file
 }
 
 menuentry "$output_title ($lang_locale, default settings, KMS)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param_rm_nomodeset $vga_mode_1024x768 locale=$lang_locale ip=frommedia $quiet_opt $splash_opt
   initrd $initrd_file
 }
@@ -663,7 +656,6 @@ fi
   cat <<-BOOT_MENU_END >> $output_file
 menuentry "$output_title ($lang_locale. To RAM. Boot media can be removed later)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param_toram $vga_default_mode locale=$lang_locale toram=filesystem.squashfs ip=frommedia $quiet_opt $splash_opt $vga_blacklist_opt
   initrd $initrd_file
 }
@@ -674,14 +666,12 @@ fi
   cat <<-BOOT_MENU_END >> $output_file
 menuentry "$output_title Safe graphic settings (vga=normal)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param ip=frommedia nomodeset vga=normal nosplash
   initrd $initrd_file
 }
 
 menuentry "$output_title (Failsafe mode)"{
   search --set -f $kernel_file
-  fakebios
   linux $kernel_file $boot_param acpi=off irqpoll noapic noapm nodma nomce nolapic nosmp ip=frommedia nomodeset vga=normal nosplash
   initrd $initrd_file
 }
@@ -694,7 +684,6 @@ if [ -e "$tmp_sys_files_path/$memtest_filename" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 #menuentry "memtest"{
 #  search --set -f $sys_files_dir/$memtest_filename
-#  fakebios
 #  linux16 $sys_files_dir/$memtest_filename
 #}
 
@@ -716,7 +705,6 @@ if [ -e "$tmp_sys_files_path/eb.zli" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 #menuentry "etherboot"{
 #  search --set -f $sys_files_dir/eb.zli
-#  fakebios
 #  linux16 $sys_files_dir/eb.zli
 #}
 
@@ -726,7 +714,6 @@ if [ -e "$tmp_sys_files_path/gpxe.lkn" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 #menuentry "gPXE"{
 #  search --set -f $sys_files_dir/gpxe.lkn
-#  fakebios
 #  linux16 $sys_files_dir/gpxe.lkn
 #}
 
@@ -736,7 +723,6 @@ if [ -e "$tmp_sys_files_path/ipxe.lkn" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 #menuentry "iPXE"{
 #  search --set -f $sys_files_dir/ipxe.lkn
-#  fakebios
 #  linux16 $sys_files_dir/ipxe.lkn
 #}
 
