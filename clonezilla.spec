@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.6.18
+Version:	3.6.19
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.19-drbl1
+- Only xorg instead of individual X packages is listed in create-gparted-live. Let the Debian dependence decide that.
+- Updating some settings in create-drbl-live-*.
+
 * Wed Sep 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.18-drbl1
 - Package localepurge has to be installed after debconf-set-selections preseeds the config in live hook.
 
