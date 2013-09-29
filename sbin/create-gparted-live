@@ -15,8 +15,8 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # debian_mirror_url_def, debian_mirror_security_url_def, DRBL_REPOSITORY_URL_def and DRBL_GPG_KEY_URL are loaded from drbl-ocs.conf
 
 # debian_type can be minimal (about 67 MB for Etch)/minimal-net (about 85 MB for Etch).
-#debian_type="standard"
-debian_type="minimal"
+# Since from live-build 3.0~a55 "minimal" for debootstrap was removed. We use the option --variant of "debootstrap", i.e. "minbase" for minimal.
+debian_type="minbase"
 DEBIAN_DIST_DEF="wheezy"
 # Do not assign any Xorg packges except xorg here. Let the Debian dependence decide that.
 #Xorg_pkgs="xserver-xorg xfonts-base xserver-xorg-video-all xserver-xorg-input-mouse xserver-xorg-input-kbd xserver-xorg-input-evdev xserver-xorg-input-all-"
@@ -26,10 +26,10 @@ Xorg_pkgs="xorg"
 font_pkgs="fonts-arphic-uming ttf-kochi-gothic"
 # $debian_pkgs_for_gparted is from drbl.conf
 # Use dhcp*-client$ for dhcp3-client, dhcp-client, and isc-dhcp-client (yes, debian will select 'dhcp-client' for regex 'dhcp*-client', then select 'isc-dhcp-client' for regex 'dhcp*-client'. With "$" in the end means we do not want "isc-dhcp-client-dbg"
-pkgs="console-data console-setup console-common kbd grub-pc fluxbox idesk deborphan man testdisk mc less lxterminal zenity xbase-clients feh netpbm nano bogl-bterm xresprobe mdetect lxrandr sdparm hdparm discover lsscsi pciutils ifupdown dhcp*-client$ cryptsetup gpart smartmontools vim-tiny gdisk fsarchiver mdadm dmraid sudo hicolor-icon-theme netbase ssh pppoeconf ethtool whiptail lshw cpufrequtils open-iscsi tree cifs-utils nilfs-tools netsurf gptsync net-tools pcmanfm leafpad tcplay f2fs-tools $debian_pkgs_for_gparted $Xorg_pkgs $font_pkgs"
+pkgs="console-data console-setup console-common kbd file eject user-setup grub-pc fluxbox idesk deborphan man testdisk mc less lxterminal zenity xbase-clients feh netpbm nano bogl-bterm xresprobe mdetect lxrandr sdparm hdparm discover lsscsi pciutils ifupdown dhcp*-client$ cryptsetup gpart smartmontools vim-tiny gdisk fsarchiver mdadm dmraid sudo hicolor-icon-theme netbase ssh pppoeconf ethtool whiptail lshw cpufrequtils open-iscsi tree cifs-utils nilfs-tools netsurf gptsync net-tools pcmanfm leafpad tcplay f2fs-tools partimage $debian_pkgs_for_gparted $Xorg_pkgs $font_pkgs"
 categories_default="main"
 cpu_flavor_default="486"
-bootstrap_default="cdebootstrap"
+bootstrap_default="debootstrap"
 
 # The files in dir in $ocs_live_include_dir will be included to the live-hook-dir/. Here we need some functions in ocs/live-hook so we include files in that dir.
 ocs_live_include_dir="$DRBL_SCRIPT_PATH/setup/files/ocs/live-hook $DRBL_SCRIPT_PATH/setup/files/gparted/live-hook"
@@ -66,7 +66,7 @@ USAGE() {
     echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (cdebootstrap or debootstrap). If not specified, $bootstrap_default will be used."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
     echo "-d, --debian-dist [stable|testing|unstable|lenny|squeeze|wheezy|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
-    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 486 or 686. If it's not assigned, $cpu_flavor_default will be used."
+    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 486, 686 or amd64. If it's not assigned, $cpu_flavor_default will be used."
     echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
     echo "-n, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
@@ -797,17 +797,28 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   (
   cd debian-live
   $pref lb config --archive-areas "$categories"
-  $pref lb config --mirror-binary $mirror_url --mirror-binary-security $mirror_security_url 
+  $pref lb config --parent-mirror-bootstrap $mirror_url --parent-mirror-binary $mirror_url --parent-mirror-binary-updates $mirror_url --parent-mirror-chroot $mirror_url --parent-mirror-chroot-updates $mirror_url --parent-mirror-chroot-security $mirror_security_url --parent-mirror-binary-security $mirror_security_url --parent-mirror-debian-installer $mirror_url
+  # Since we use Debian Sid normally, disable updates.
+  $pref lb config --updates false
+  $pref lb config --mirror-debian-installer $mirror_url
   $pref lb config --mirror-bootstrap $mirror_url
-  $pref lb config --mirror-chroot $mirror_url --mirror-chroot-security $mirror_security_url
-  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs" $pkg_list_opt
-  $pref lb config --apt apt --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
-  $pref lb config --volatile false
+  $pref lb config --mirror-chroot $mirror_url --mirror-chroot-updates $mirror_url --mirror-chroot-security $mirror_security_url
+  # From live-build 3.0~a58-1, no --bootstrap-flavour option.
+  #$pref lb config --bootstrap-flavour $debian_type 
+  $pref lb config --debootstrap-options="${DEBOOTSTRAP_OPTIONS} --variant=$debian_type"
+  $pref lb config --apt apt --apt-recommends false --bootstrap $bootstrap
+  # From live-build 3.0~a59-1, no --volatile option.
+  #$pref lb config --volatile false
   # We want "noswap", which only exists in live-initramfs
+  # Disable the firmware packages automatically inclusion
+  $pref lb config --firmware-binary false --firmware-chroot false
+  $pref lb config --security false
   $pref lb config --initramfs live-boot
-  $pref lb config --username user --bootappend username=user
+  $pref lb config --bootappend-live username=user
   # Enable cache-indices, by doing this, "apt-get upgrade" won't be run in lb chroot_sources after hook since we might assign older package version when building.
-  $pref lb config --cache-indices true
+  #$pref lb config --cache-indices true
+  #$pref lb config --apt-indices none
+  $pref lb config --tasksel none
 
   if [ "$debian_dist" = "lenny" ]; then
     # Force to use iso instead of iso-hybrid. Since the syslinux in lenny comes without isohybrid program.
@@ -820,7 +831,8 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
 
   # This decide_live_kernel_related_pkgs_from_debian function will output "kernel_related_pkgs" and "export MKSQUASHFS_OPTIONS"
   decide_live_kernel_related_pkgs_from_debian
-  $pref lb config --distribution $debian_dist --linux-packages "$kernel_related_pkgs"
+  $pref lb config --distribution $debian_dist --parent-distribution $debian_dist
+  $pref lb config --linux-packages "$kernel_related_pkgs"
 
   # We force to use the specific CPU kernel.
   $pref lb config --linux-flavours $cpu_flavor
@@ -830,41 +842,53 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
     686*|486*) os_arch="i386";;
     amd64) os_arch="amd64";;
   esac
-  $pref lb config --architecture $os_arch
+  $pref lb config --architectures $os_arch
 
   # No memtest from debian, we will use the one from drbl since it's newer.
   $pref lb config --memtest none
+
+  $pref lb config --debian-installer false
+  $pref lb config --win32-loader false
+
+  # Disable zsync, it might fail due to download files after /etc/resolv.conf is deconfigured.
+  $pref lb config --zsync false
 
   # Create a source tarball or not.
   if [ "$gen_source_tarball" = "yes" ]; then
     $pref lb config --source true
     $pref lb config --source-images tar
+    # Since most of the debian packages are compressed, we just use gzip, not the default one xz.
+    $pref lb config --compression gzip
+  else
+    $pref lb config --source false
   fi
 
-  # Put files to be included
-  mkdir -p config/chroot_local-includes/live-hook-dir
+  # Put files to be included in the chroot hook
+  mkdir -p config/includes.chroot/live-hook-dir
   for i in $ocs_live_include_dir; do
-    cp -pr $i/* config/chroot_local-includes/live-hook-dir/
+    cp -pr $i/* config/includes.chroot/live-hook-dir/
   done
-  #cp -a /etc/drbl/{drbl.conf,drbl-ocs.conf} config/chroot_local-includes/live-hook-dir/
-  cp -ar $DRBL_SCRIPT_PATH/setup/files/gparted config/chroot_local-includes/live-hook-dir/
+  cp -a /etc/drbl/{drbl.conf,drbl-ocs.conf} config/includes.chroot/live-hook-dir
+  cp -ar $DRBL_SCRIPT_PATH/setup/files/gparted config/includes.chroot/live-hook-dir/
+
+  # Put packages list in config/package-lists/. //NOTE// Do not use file name like gparted-packages.list. Make it like gparted-packages.list.binary (for lb_binary) or gparted-packages.list.chroot (for lb_chroot). Otherwise lb_binary_package-lists will generate deb repository (/pool). 
+  # Ref: http://lists.debian.org/debian-live/2012/07/msg00119.html
+  echo "$pkgs" > config/package-lists/gparted-packages.list.chroot
 
   # Put hook file to be run
-  mkdir -p config/chroot_local-hooks
-  cp $ocs_live_script_dir/$run_hook_script config/chroot_local-hooks/
+  cp $ocs_live_script_dir/${run_hook_script} config/hooks/${run_hook_script}.chroot
 
   # Put hook file to be run in the binary_local-hooks
-  mkdir -p config/binary_local-hooks
-  cp $ocs_live_script_dir/$run_binary_hook_script config/binary_local-hooks/
+  cp $ocs_live_script_dir/$run_binary_hook_script config/hooks/${run_binary_hook_script}.binary
   
   # prepare drbl source list
-  cat << AddDRBLRepository > config/chroot_sources/drbl.chroot
-  deb $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
-  deb-src $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
+  cat << AddDRBLRepository > config/archives/drbl-repository.list.chroot
+deb $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
+deb-src $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
 AddDRBLRepository
   
   # Prepare drbl key
-  LC_ALL=C wget -O config/chroot_sources/drbl.chroot.gpg $DRBL_GPG_KEY_URL
+  LC_ALL=C wget -O config/archives/drbl-gpg.key $DRBL_GPG_KEY_URL
 
   # Disable apt languages and translations when creating DRBL live. This could reduce apt repository issue.
   disable_apt_lang_translation chroot/etc/apt/apt.conf.d/99lang

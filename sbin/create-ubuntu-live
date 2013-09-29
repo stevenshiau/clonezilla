@@ -16,9 +16,10 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
 # debian_type can be minimal (about 67 MB for Etch)/minimal-net (about 85 MB for Etch).
 # 
-debian_type="minimal"
+# Since from live-build 3.0~a55 "minimal" for debootstrap was removed. We use the option --variant of "debootstrap", i.e. "minbase" for minimal.
+debian_type="minbase"
 #debian_type="standard"
-DEBIAN_DIST_DEF="quantal"
+DEBIAN_DIST_DEF="saucy"
 pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DRBL_FOR_CLONEZILLA_LIVE"
 categories_default="main restricted universe multiverse"
 cpu_flavor_default="386"
@@ -310,26 +311,26 @@ mkdir $workdir
 (
 cd $workdir
 
-$pref lb config --mode ubuntu
+# Force to load debian mode, or it will use ubuntu mode, which might fail in some cases.
+# E.g. tar (child): /usr/share/gfxboot-theme-ubuntu/bootlogo.tar.gz: Cannot open: No such file or directory
+$pref lb config --mode debian
+
 $pref lb config --archive-areas "$categories"
+$pref lb config --parent-archive-areas "$categories"
+$pref lb config --parent-mirror-bootstrap $mirror_url --parent-mirror-binary $mirror_url --parent-mirror-binary-updates $mirror_url --parent-mirror-chroot $mirror_url --parent-mirror-chroot-updates $mirror_url --parent-mirror-chroot-security $mirror_security_url --parent-mirror-binary-security $mirror_security_url --parent-mirror-debian-installer $mirror_url
+$pref lb config --mirror-debian-installer $mirror_url
 $pref lb config --mirror-binary $mirror_url --mirror-binary-security $mirror_security_url 
 $pref lb config --mirror-bootstrap $mirror_url
 $pref lb config --mirror-chroot $mirror_url --mirror-chroot-security $mirror_security_url
-$pref lb config --mirror-chroot-volatile "none"
+# From live-build 3.0~a58-1, no --mirror-chroot-volatile option.
+#$pref lb config --mirror-chroot-volatile "none"
 
-# For Hardy, mkisofs is obsolete. Use genisoimage instead. Since aptitude won't fail if mkisofs (which is listed in drbl.conf) is not found in the repository. We can list mkisofs and genisoimage for pkgs. aptitude, unlike apt, won't exit if mkisofs is not found.
-pkgs="$pkgs genisoimage"
+#
+pkgs="$pkgs genisoimage v86d"
 
 # Disable the volatile repository. No such repository for Ubuntu.
-$pref lb config --volatile false
-
-# Since casper does not support aufs, and we need aufs to avoid this bug: 
-# https://bugs.launchpad.net/ubuntu/+source/linux-ubuntu-modules-2.6.22/+bug/150788. Comment this:
-# //NOTE// We must use the live-initramfs patched by DRBL otherwise the created iso won't boot into command line. Some errors like:
-# init:/etc/event.d/tty1:15: Unknown stanza
-# will occur when booting, so upstart won't run gettty
-$pref lb config --initramfs live-initramfs
-#$pref lb config --linux-flavours generic --linux-packages "linux-restricted-modules"
+$pref lb config --initramfs live-boot
+$pref lb config --bootappend-live "username=user hostname=$debian_dist"
 $pref lb config --linux-flavours generic
 
 # get the latest kernel ver "release_kernel_ver"
@@ -338,61 +339,23 @@ get_latest_kernel_ver_in_repository
 echo "The kernel version in this live CD will be: $release_kernel_ver"
 [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
-if [ "$debian_dist" = "gutsy" ]; then
-  # Updated! 2007/12/27 with the patch from http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448210, now we can use cdebootstrap.
-  # ///OLD/// Here actually we can not use "--bootstrap cdebootstrap" due to this bug:
-  # ///OLD/// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448348&trim=no
-  # Looks like if we use "--apt apt" instead of "--apt aptitude", there are a lot of warning about failing authenticating deb packages.
-  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs" --apt aptitude --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
-  # For Ubuntu 7.10, only unionfs comes with kernel, no aufs. However, we need aufs to avoid a bug (see above). An aufs module provided by DRBL works for this.
-  # $pref lb config --distribution $debian_dist --union-filesystem aufs --linux-packages "linux-image${kernel_extra_tag} aufs-modules${kernel_extra_tag} squashfs-modules${kernel_extra_tag}" 
-  # For gutsy: linux-image-2.6.22-14-386
-  # Live helper auto append "-386" for param from "--linux-packages"
-  # TODO: UGLY! 2.6.22-14 should not be hardcoded in this program. We should find a better solution to work with kernel and aufs module.
-  $pref lb config --distribution $debian_dist
-  $pref lb config --linux-packages "linux-image-$release_kernel_ver linux-ubuntu-modules-$release_kernel_ver aufs-modules-$release_kernel_ver"
-  # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
-  export MKSQUASHFS_OPTIONS="-b 1024k -e boot"
-elif [ "$debian_dist" = "hardy" ]; then
-  # Updated! 2007/12/27 with the patch from http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448210, now we can use cdebootstrap.
-  # ///OLD/// Here actually we can not use "--bootstrap cdebootstrap" due to this bug:
-  # ///OLD/// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448348&trim=no
-  # Looks like if we use "--apt apt" instead of "--apt aptitude", there are a lot of warning about failing authenticating deb packages.
-  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs" --hook /live-hook-dir/$run_hook_script --apt aptitude --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
-  # For hardy, mkisofs was removed. Force to use genisoimage
-  # //NOTE// DO NOT put lb config command option too long, otherwise lb config will fail and show something like: E: internal error
-  # --genisoimage was removed in live-helper 1.0~a37
-  # ///NOTE/// From hardy with kernel 2.6.24-7 or later, linux-ubuntu-modules includes aufs module. Therefore aufs-modules-$release_kernel_ver is not requred anymore.
-  $pref lb config --distribution $debian_dist
-  # $pref lb config --linux-packages "linux-image-$release_kernel_ver linux-ubuntu-modules-$release_kernel_ver aufs-modules-$release_kernel_ver" 
-  $pref lb config --linux-packages "linux-image-$release_kernel_ver linux-ubuntu-modules-$release_kernel_ver" 
-  # $pref lb config --genisoimage genisoimage 
-  # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
-  # Do not use lzma (For Hardy or later). /NOTE/ "-e dir_list" must be the last param for mksquashfs.
-  export MKSQUASHFS_OPTIONS="-b 1024k -nolzma -e boot"
-elif [ "$debian_dist" = "intrepid" -o "$debian_dist" = "jaunty" ]; then
-  # Updated! 2007/12/27 with the patch from http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448210, now we can use cdebootstrap.
-  # ///OLD/// Here actually we can not use "--bootstrap cdebootstrap" due to this bug:
-  # ///OLD/// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448348&trim=no
-  # In Intrepid, "--apt aptitude" does not work since aptitude is not the default one. Use "--apt apt" (default) instead of "--apt aptitude".
-  # Since intrepid uses uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
-  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs v86d" --hook /live-hook-dir/$run_hook_script --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
-  # ///NOTE/// From intrepid with kernel 2.6.26-4 or later, linux-ubuntu-modules no more exists, and aufs is builtin in linux-image (not as a module)
-  $pref lb config --distribution $debian_dist
-  $pref lb config --linux-packages "linux-image-$release_kernel_ver"
-  # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
-  # Do not use lzma (For Hardy or later). /NOTE/ "-e dir_list" must be the last param for mksquashfs.
-  export MKSQUASHFS_OPTIONS="-b 1024k -nolzma -e boot"
-elif [ "$debian_dist" = "karmic" -o "$debian_dist" = "lucid" -o \
-       "$debian_dist" = "maverick" ]; then
+if [ "$debian_dist" = "lucid" ]; then
   # ///OLD/// Updated! 2007/12/27 with the patch from http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448210, now we can use cdebootstrap.
   # ///OLD/// Here actually we can not use "--bootstrap cdebootstrap" due to this bug:
   # ///OLD/// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448348&trim=no
   # In Intrepid, "--apt aptitude" does not work since aptitude is not the default one. Use "--apt apt" (default) instead of "--apt aptitude".
   # Since intrepid uses uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
-  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs v86d" --hook /live-hook-dir/$run_hook_script --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
+  # From live-build 3.0~a58-1, no --bootstrap-flavour option. We use debootstrap options now.
+  # $pref lb config --bootstrap-flavour $debian_type 
+  $pref lb config --debootstrap-options="${DEBOOTSTRAP_OPTIONS} --variant=$debian_type"
+  $pref lb config --apt apt --apt-recommends false --bootstrap $bootstrap
+  # From live-build 3.0~a59-1, no --volatile option.
+  #$pref lb config --volatile false
+  # Disable the firmware packages automatically inclusion
+  $pref lb config --firmware-binary false --firmware-chroot false
+  $pref lb config --security false
   # ///NOTE/// From intrepid with kernel 2.6.26-4 or later, linux-ubuntu-modules no more exists, and aufs is builtin in linux-image (not as a module)
-  $pref lb config --distribution $debian_dist
+  $pref lb config --distribution $debian_dist --parent-distribution $debian_dist
   $pref lb config --linux-packages "linux-image-$release_kernel_ver"
   # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
   # Do not use lzma (For Hardy or later). /NOTE/ "-e dir_list" must be the last param for mksquashfs.
@@ -418,9 +381,17 @@ elif [     "$debian_dist" = "natty" \
      ]; then
     pkgs="$pkgs linux-image-extra-${release_kernel_ver}"
   fi
-  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs v86d" --hook /live-hook-dir/$run_hook_script --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
+  # From live-build 3.0~a58-1, no --bootstrap-flavour option. We use debootstrap options now.
+  # $pref lb config --bootstrap-flavour $debian_type 
+  $pref lb config --debootstrap-options="${DEBOOTSTRAP_OPTIONS} --variant=$debian_type"
+  $pref lb config --apt apt --apt-recommends false --bootstrap $bootstrap
+  # From live-build 3.0~a59-1, no --volatile option.
+  # $pref lb config --volatile false
+  # Disable the firmware packages automatically inclusion
+  $pref lb config --firmware-binary false --firmware-chroot false
+  $pref lb config --security false
   # ///NOTE/// From intrepid with kernel 2.6.26-4 or later, linux-ubuntu-modules no more exists, and aufs is builtin in linux-image (not as a module)
-  $pref lb config --distribution $debian_dist
+  $pref lb config --distribution $debian_dist --parent-distribution $debian_dist
   $pref lb config --linux-packages "linux-image-$release_kernel_ver"
   # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
   # //NOTE// "-e boot" must be the last option if you want to append more.
@@ -434,16 +405,9 @@ else
 fi
 
 # Due to a bug, we have to include some essential packages otherwise it will faild in debian_type=minimal. The size difference between minimal and standard for intrepid is about 8 MB. Ref: https://bugs.launchpad.net/ubuntu/+source/cdebootstrap/+bug/189474
-if [ "$debian_type" = "minimal" ]; then
- case "$debian_dist" in
-  "gutsy"|"hardy"|"intrepid")
-    export CDEBOOTSTRAP_OPTIONS="$CDEBOOTSTRAP_OPTIONS --include=sysv-rc,upstart,system-services,belocs-locales-bin" ;;
-  #"jaunty"|"karmic"|"lucid")
-  *)
-    # Jaunty now use locale generation programs back to libc6, no more belocs-locales-bin. Check /usr/share/doc/libc6/changelog.Debian.gz from glibc (2.9-0ubuntu10)
-    export CDEBOOTSTRAP_OPTIONS="$CDEBOOTSTRAP_OPTIONS --include=sysv-rc,upstart,system-services,gnupg"
-    export DEBOOTSTRAP_OPTIONS="$DEBOOTSTRAP_OPTIONS --include=ubuntu-keyring,gnupg" ;;
- esac
+if [ "$debian_type" = "minimal" -o  "$debian_type" = "minbase" ]; then
+  export CDEBOOTSTRAP_OPTIONS="$CDEBOOTSTRAP_OPTIONS --include=sysv-rc,upstart,system-services,gnupg"
+  export DEBOOTSTRAP_OPTIONS="$DEBOOTSTRAP_OPTIONS --include=ubuntu-keyring,gnupg"
 fi
 
 # We force to use 486 kernel only.
@@ -459,13 +423,20 @@ $pref lb config --architecture $os_arch
 # No memtest from debian, we will use the one from drbl since it's newer.
 $pref lb config --memtest none
 
-$pref lb config --hostname "$debian_dist" 
-$pref lb config --username user --bootappend "username=user"
+$pref lb config --debian-installer false
+$pref lb config --win32-loader false
+
+# Disable zsync, it might fail due to download files after /etc/resolv.conf is deconfigured.
+$pref lb config --zsync false
+
 # Enable cache-indices, by doing this, "apt-get upgrade" won't be run in lb chroot_sources after hook since we might assign older package version when building.
-$pref lb config --cache-indices true
+# $pref lb config --cache-indices true
+
+# Disable the firmware included automatically. It will be too large. We will do that in hook.
+$pref lb config --firmware-binary false --firmware-chroot false
 
 case "$debian_dist" in
-  "gutsy"|"hardy"|"intrepid"|"jaunty"|"karmic"|"lucid")
+  "lucid")
     # Force to use iso instead of iso-hybrid. Since the syslinux (e.g. on lucid) comes without isohybrid program.
     $pref lb config --binary-images iso
     ;;
@@ -476,6 +447,9 @@ case "$debian_dist" in
     ;;
 esac
 
+# Disable the firmware packages automatically inclusion
+$pref lb config --firmware-binary false --firmware-chroot false
+
 # Disable the security, otherwise live-helper >= 1.0~a37 does not support Ubuntu and will create a wrong sources.list for ubuntu updates and securit. We will create it by ourself.
 $pref lb config --security false
 
@@ -483,34 +457,44 @@ $pref lb config --security false
 if [ "$gen_source_tarball" = "yes" ]; then
   $pref lb config --source true
   $pref lb config --source-images tar
+  # Since most of the debian packages are compressed, we just use gzip, not the default one xz.
+  $pref lb config --compression gzip
+else
+  $pref lb config --source false
 fi
 
+# Force to set the theme as live-build, so that /usr/lib/live/build/lb_binary_syslinux will copy /usr/share/live/build/bootloaders/isolinux/* to binary/isolinux/, which will trigger moving /live/vmlinuz-3.5.0-10-generic as /live/vmlinuz, and live/initrd.img-3.5.0-10-generic as live/initrd.img, for example. Then isolinux could boot since isolinux only work for shorter file name.
+#$pref lb config --syslinux-theme "live-build"
+
+# Ubuntu used upstart instead of sysvinit
+$pref lb config --initsystem upstart
+
 # Put files to be included in the chroot hook
-mkdir -p config/chroot_local-includes/live-hook-dir
+mkdir -p config/includes.chroot/live-hook-dir
 for i in $ocs_live_script_dir; do
-  cp -pr $i/* config/chroot_local-includes/live-hook-dir/
+  cp -pr $i/* config/includes.chroot/live-hook-dir/
 done
-#cp -a /etc/drbl/{drbl.conf,drbl-ocs.conf} config/chroot_local-includes/live-hook-dir/
+cp -a /etc/drbl/{drbl.conf,drbl-ocs.conf} config/includes.chroot/live-hook-dir
 
 # Put the mirror url and settings, which we might need.
-cat <<-HOOK_APPEND_END >> config/chroot_local-includes/live-hook-dir/ocs-live-hook.conf
-# The following settings were added before running hook" >> config/chroot_local-includes/live-hook-dir/ocs-live-hook.conf
+cat <<-HOOK_APPEND_END >> config/includes.chroot/live-hook-dir/ocs-live-hook.conf
+# The following settings were added before running hook" >> config/includes.chroot/live-hook-dir/ocs-live-hook.conf
 debian_dist="$debian_dist"
 mirror_url="$mirror_url"
 HOOK_APPEND_END
 
+# Put packages list in config/package-lists/. //NOTE// Do not use file name like clonezilla-packages.list. Make it like clonezilla-packages.list.binary (for lb_binary) or clonezilla-packages.list.chroot (for lb_chroot). Otherwise lb_binary_package-lists will generate deb repository (/pool). 
+# Ref: http://lists.debian.org/debian-live/2012/07/msg00119.html
+echo "$pkgs" > config/package-lists/clonezilla-packages.list.chroot
+
 # Put hook file to be run in chroot
-mkdir -p config/chroot_local-hooks
-cp $ocs_live_script_dir/$run_hook_script config/chroot_local-hooks/
+cp $ocs_live_script_dir/${run_hook_script} config/hooks/${run_hook_script}.chroot
 
 # Put hook file to be run in the binary_local-hooks
-mkdir -p config/binary_local-hooks
-cp $ocs_live_script_dir/$run_binary_hook_script config/binary_local-hooks/
+cp $ocs_live_script_dir/$run_binary_hook_script config/hooks/${run_binary_hook_script}.binary
 
-# prepare ubuntu updates and security source list and drbl source list
-cat << AddDRBLRepository > config/chroot_sources/drbl.chroot
-deb $mirror_security_url ${debian_dist}-updates $categories
-deb-src $mirror_security_url ${debian_dist}-updates $categories
+# prepare ubuntu security source list and drbl source list
+cat << AddDRBLRepository > config/archives/ubuntu-drbl-repository.list.chroot
 deb $mirror_security_url ${debian_dist}-security $categories
 deb-src $mirror_security_url ${debian_dist}-security $categories
 deb $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
@@ -518,7 +502,7 @@ deb-src $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
 AddDRBLRepository
 
 # prepare drbl key
-LC_ALL=C wget -O config/chroot_sources/drbl.chroot.gpg $DRBL_GPG_KEY_URL
+LC_ALL=C wget -O config/archives/drbl-gpg.key $DRBL_GPG_KEY_URL
 
 # Disable apt languages and translations when creating DRBL live. This could reduce apt repository issue.
 disable_apt_lang_translation chroot/etc/apt/apt.conf.d/99lang

@@ -20,8 +20,10 @@ debian_dist_default="wheezy"
 drbl_branch_default="unstable"
 # Live branch in drbl-core: experimental, unstable, testing, stable
 live_branch_default="unstable"
-# Type: xfce, gnome, kde, standard
-de_type_default="xfce"
+# Type: task-xfce-desktop, task-gnome-desktop, task-ssh-server... 
+# Use "apt-cache search --names-only ^task-" to get the list.
+# Ref: http://live.debian.net/manual/stable/html/live-manual.en.html#346
+de_type_default="task-xfce-desktop"
 cpu_flavor_default="486"
 bootstrap_default="debootstrap"
 categories_default="main"
@@ -34,11 +36,11 @@ font_pkgs="ttf-arphic-newsung ttf-kochi-gothic"
 common_GUI_app="$font_pkgs x-ttcidfont-conf leafpad conky gpicview isomaster hardinfo pcmanfm xarchiver xfburn iceweasel-l10n-es-es iceweasel-l10n-fr iceweasel-l10n-it iceweasel-l10n-ja iceweasel-l10n-zh-cn iceweasel-l10n-zh-tw scim-chewing scim-tables-ja scim-tables-zh im-switch xresprobe lxrandr wpagui swfdec-mozilla wicd xvnc4viewer"
 
 # $debian_pkgs_for_gparted is from drbl.conf
-pkgs_for_xfce="thunar xfce4-terminal xnetcardconfig hicolor-icon-theme tango-icon-theme $common_text_app $common_GUI_app $debian_pkgs_for_gparted"
-pkgs_for_gnome="gnome-cups-manager $common_text_app $common_GUI_app $debian_pkgs_for_gparted"
-pkgs_for_kde="$common_text_app $common_GUI_app $debian_pkgs_for_gparted"
-pkgs_for_lxde="gdm3 xnetcardconfig $common_text_app $common_GUI_app $debian_pkgs_for_gparted"
-pkgs_for_standard="$common_text_app"
+pkgs_for_task_xfce_desktop="gdm3 thunar xfce4-terminal xnetcardconfig hicolor-icon-theme tango-icon-theme $common_text_app $common_GUI_app $debian_pkgs_for_gparted"
+#pkgs_for_gnome="gnome-cups-manager $common_text_app $common_GUI_app $debian_pkgs_for_gparted"
+#pkgs_for_kde="$common_text_app $common_GUI_app $debian_pkgs_for_gparted"
+#pkgs_for_lxde="gdm3 xnetcardconfig $common_text_app $common_GUI_app $debian_pkgs_for_gparted"
+#pkgs_for_standard="$common_text_app"
 gen_source_tarball="no"
 
 #
@@ -65,7 +67,7 @@ USAGE() {
    echo "-o, --create-source-tarball  Create a corresponding source image to the binary image.  By default such an source image will not be created since this would require to download quite a few source packages."
    echo "-t, --de-type [xfce|gnome|kde|standard]   Specify the type to create DRBL live. Default is xfce"
    echo "-x, --extra-boot-param  EXTRA_PARAM  Assign extra boot parameter EXTRA_PARAM for the kernel to read. These parameters are the same with that from live-initramfs. Ex. \"noprompt\" can be use to not prompt to eject the CD on reboot."
-   echo "Ex: $0 -m xfce -i my-version-1"
+   echo "Ex: $0 -t xfce -i my-version-1"
 }
 
 # Parse command-line options
@@ -224,5 +226,5 @@ done
 [ -n "$live_extra_boot_param" ] && live_extra_boot_param="-x $live_extra_boot_param"
 [ "$gen_source_tarball" = "yes" ] && gen_source_tarball_opt="-o"
 
-eval pkgs=\$pkgs_for_${de_type}
+eval pkgs=\$pkgs_for_${de_type//-/_}
 time create-drbl-live -l en --bootstrap $bootstrap -c "$categories" -d $debian_dist -p $de_type -k "$pkgs $extra_pkgs" -b $drbl_branch -f $cpu_flavor -g $DRBL_REPOSITORY_URL -m $mirror_url -s $mirror_security_url -e $live_branch $gen_source_tarball_opt $live_extra_boot_param $live_kernel_opt $ver_no_opt 

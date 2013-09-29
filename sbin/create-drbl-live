@@ -17,8 +17,9 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
 # debian_type can be minimal (about 67 MB for Etch)/minimal-net (about 85 MB for Etch).
 # We have to use standard, since if using minimal, it will ignore apt key from DRBL.
-#debian_type="minimal"
-debian_type="standard"
+#debian_type="minbase"
+#debian_type="standard"
+debian_type=""
 DEBIAN_DIST_DEF="wheezy"
 pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DBN $PKG_TO_QUERY $PKG_FROM_DRBL"
 categories_default="main"
@@ -59,7 +60,7 @@ USAGE() {
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
     echo "-e, --drbl-live-branch [s|stable|t|testing|u|unstable|e|experimental]  specifies the DRBL live branch to be used in Live CD. Default is stable."
     echo "-k, --package FILE  Specify package FILE to be installed in Live CD."
-    echo "-p, --packages-list FILE  specifies an external package list file (such as xfce, gnome, kde, lxde...), one package for each line"
+    echo "-p, --metapackages TASK  Specifies a task metapackage maintained by your distribution (such as task-xfce-desktop,task-gnome-desktop ...), one package for each line"
     echo "-m, --mirror-url URL  Assign the Debian repository URL instead of default one $debian_mirror_url_def. "
     echo "-r, --rm-tmp-iso    Remove the first stage temp iso file"
     echo "-s, --mirror-security-url URL  Assign the Debian security repository URL instead of default one $debian_mirror_security_url_def."
@@ -467,8 +468,7 @@ EFI_END
 
 # default settings
 extra_pkgs=""
-pkg_list=""
-pkg_list_opt=""
+meta_pkgs=""
 rm_tmp_iso="no"
 use_existing_stage1_iso="no"
 TARGET_MEDIA_FILE_DEF="both"
@@ -556,14 +556,14 @@ while [ $# -gt 0 ]; do
             fi
 	    [ -z "$drbl_live_branch" ] && USAGE && exit 1
             ;;
-    -p|--packages-list)
+    -p|--metapackages)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
               # skip the -xx option, in case 
-              pkg_list="$pkg_list $1"
+              meta_pkgs="$meta_pkgs $1"
               shift
             fi
-	    [ -z "$pkg_list" ] && USAGE && exit 1
+	    [ -z "$meta_pkgs" ] && USAGE && exit 1
             ;;
     -f|--arch-flavor)
             shift
@@ -684,11 +684,10 @@ echo "The packages to be included in this live CD:"
 echo "$msg_delimiter_star_line"
 echo "$pkgs"
 echo "$msg_delimiter_star_line"
-if [ -n "$pkg_list" ]; then
-  pkg_list_opt="$pkg_list_opt --packages-list $pkg_list"
+if [ -n "$meta_pkgs" ]; then
   echo "The packages list to be included in this live CD:"
   echo "$msg_delimiter_star_line"
-  echo "$pkg_list"
+  echo "$meta_pkgs"
   echo "$msg_delimiter_star_line"
 fi
 
@@ -736,13 +735,14 @@ case "$drbl_live_branch" in
      ;;
 esac
 
-if [ -z "$pkg_list" ]; then
+if [ -z "$meta_pkgs" ]; then
   nametag="standard"
 else
   # choose the first one, and strip space.
-  #nametag="$(echo $pkg_list | awk -F" " '{print $1}' | sed -e "s/ //g")"
+  #nametag="$(echo $meta_pkgs | awk -F" " '{print $1}' | sed -e "s/ //g")"
   # strip the spaces in the beginning and end, replace other space with -
-  nametag="$(echo $pkg_list | sed -e "s/^ *//g" -e "s/ *$//g" -e "s/ /-/g")"
+  # task-xfce-desktop -> xfce
+  nametag="$(LC_ALL=C echo $meta_pkgs | sed -e "s/^ *//g" -e "s/ *$//g" | awk -F"-" '{print $2}')"
 fi
   
 # if version_no is not assigned, use date (Ex. 20070409)
@@ -788,16 +788,30 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   cd debian-live
 
   $pref lb config --archive-areas "$categories"
-  $pref lb config --mirror-binary $mirror_url --mirror-binary-security $mirror_security_url 
+  $pref lb config --parent-mirror-bootstrap $mirror_url --parent-mirror-binary $mirror_url --parent-mirror-binary-updates $mirror_url --parent-mirror-chroot $mirror_url --parent-mirror-chroot-updates $mirror_url --parent-mirror-chroot-security $mirror_security_url --parent-mirror-binary-security $mirror_security_url --parent-mirror-debian-installer $mirror_url
+  # Since we use Debian Sid normally, disable updates.
+  $pref lb config --updates false
   $pref lb config --mirror-bootstrap $mirror_url
-  $pref lb config --mirror-chroot $mirror_url --mirror-chroot-security $mirror_security_url
-  $pref lb config --bootstrap-flavour $debian_type --packages "$pkgs" $pkg_list_opt --bootappend ip=frommedia
-  $pref lb config --apt aptitude --apt-recommends false --binary-indices false --bootstrap $bootstrap --tasksel none
-  $pref lb config --volatile false
+  $pref lb config --mirror-debian-installer $mirror_url
+  $pref lb config --mirror-chroot $mirror_url --mirror-chroot-updates $mirror_url --mirror-chroot-security $mirror_security_url
+  # From live-build 3.0~a58-1, no --bootstrap-flavour option.
+  #$pref lb config --bootstrap-flavour $debian_type
+  if [ -n "$debian_type" ]; then
+    $pref lb config --debootstrap-options="${DEBOOTSTRAP_OPTIONS} --variant=$debian_type"
+  fi
+  $pref lb config --apt aptitude --apt-recommends false --bootstrap $bootstrap
+  # From live-build 3.0~a59-1, no --volatile option.
+  #$pref lb config --volatile false
+  # Disable the firmware packages automatically inclusion
+  $pref lb config --firmware-binary true --firmware-chroot true
+  $pref lb config --security false
   $pref lb config --initramfs live-boot
-  $pref lb config --username user --bootappend username=user
+  $pref lb config --bootappend-live username=user
   # Enable cache-indices, by doing this, "apt-get upgrade" won't be run in lb chroot_sources after hook since we might assign older package version when building.
-  $pref lb config --cache-indices true
+  #$pref lb config --cache-indices true
+  #$pref lb config --tasksel none
+  $pref lb config --apt-indices false
+  $pref lb config --tasksel none
 
   if [ "$debian_dist" = "lenny" ]; then
     # Force to use iso instead of iso-hybrid. Since the syslinux in lenny comes without isohybrid program.
@@ -810,7 +824,8 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
 
   # This decide_live_kernel_related_pkgs_from_debian function will output "kernel_related_pkgs" and "export MKSQUASHFS_OPTIONS"
   decide_live_kernel_related_pkgs_from_debian
-  $pref lb config --distribution $debian_dist --linux-packages "$kernel_related_pkgs"
+  $pref lb config --distribution $debian_dist --parent-distribution $debian_dist
+  $pref lb config --linux-packages "$kernel_related_pkgs"
 
   # We force to use the specific CPU kernel.
   $pref lb config --linux-flavours $cpu_flavor
@@ -820,48 +835,63 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
     686*|486*) os_arch="i386";;
     amd64) os_arch="amd64";;
   esac
-  $pref lb config --architecture $os_arch
-
+  $pref lb config --architectures $os_arch
 
   # No memtest from debian, we will use the one from drbl since it's newer.
   $pref lb config --memtest none
+
+  $pref lb config --debian-installer false
+  $pref lb config --win32-loader false
+
+  # Disable zsync, it might fail due to download files after /etc/resolv.conf is deconfigured.
+  $pref lb config --zsync false
 
   # Create a source tarball or not.
   if [ "$gen_source_tarball" = "yes" ]; then
     $pref lb config --source true
     $pref lb config --source-images tar
+    # Since most of the debian packages are compressed, we just use gzip, not the default one xz.
+    $pref lb config --compression gzip
+  else
+    $pref lb config --source false
   fi
 
   # Put files to be included in the chroot hook
-  mkdir -p config/chroot_local-includes/live-hook-dir
+  mkdir -p config/includes.chroot/live-hook-dir
   for i in $ocs_live_script_dir; do
-    cp -pr $i/* config/chroot_local-includes/live-hook-dir/
+    cp -pr $i/* config/includes.chroot/live-hook-dir/
   done
-  #cp -a /etc/drbl/{drbl.conf,drbl-ocs.conf} config/chroot_local-includes/live-hook-dir/
+  cp -a /etc/drbl/{drbl.conf,drbl-ocs.conf} config/includes.chroot/live-hook-dir
 
   # Put the mirror url and settings, which we might need.
-  cat <<-HOOK_APPEND_END >> config/chroot_local-includes/live-hook-dir/ocs-live-hook.conf
-  # The following settings were added before running hook" >> config/chroot_local-includes/live-hook-dir/ocs-live-hook.conf
-  debian_dist="$debian_dist"
-  mirror_url="$mirror_url"
+  cat <<-HOOK_APPEND_END >> config/includes.chroot/live-hook-dir/ocs-live-hook.conf
+  # The following settings were added before running hook" >> config/includes.chroot/live-hook-dir/ocs-live-hook.conf
+debian_dist="$debian_dist"
+mirror_url="$mirror_url"
 HOOK_APPEND_END
 
-  # Put hook file to be run in chroot
-  mkdir -p config/chroot_local-hooks
-  cp $ocs_live_script_dir/$run_hook_script config/chroot_local-hooks/
+  # Put packages list in config/package-lists/. //NOTE// Do not use file name like drbl-packages.list. Make it like drbl-packages.list.binary (for lb_binary) or drbl-packages.list.chroot (for lb_chroot). Otherwise lb_binary_package-lists will generate deb repository (/pool). 
+  # Ref: http://lists.debian.org/debian-live/2012/07/msg00119.html
+  echo "$pkgs" > config/package-lists/drbl-packages.list.chroot
 
-  # Put hook file to be run in the binary_local-hooks
-  mkdir -p config/binary_local-hooks
-  cp $ocs_live_script_dir/$run_binary_hook_script config/binary_local-hooks/
+  # Put the pkg list, e.g. task-xfce-desktop
+  # Ref: http://live.debian.net/manual/stable/html/live-manual.en.html#346
+  echo "$meta_pkgs" >> config/package-lists/drbl-packages.list.chroot
+
+  # Put hook file to be run in chroot
+  cp $ocs_live_script_dir/${run_hook_script} config/hooks/${run_hook_script}.chroot
+
+  # Put hook file to be run in the binary local hook
+  cp $ocs_live_script_dir/$run_binary_hook_script config/hooks/${run_binary_hook_script}.binary
   
   # prepare drbl source list
-  cat << AddDRBLRepository > config/chroot_sources/drbl.chroot
-  deb $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
-  deb-src $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
+  cat << AddDRBLRepository > config/archives/drbl-repository.list.chroot
+deb $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
+deb-src $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
 AddDRBLRepository
   
   # prepare drbl key
-  LC_ALL=C wget -O config/chroot_sources/drbl.chroot.gpg $DRBL_GPG_KEY_URL
+  LC_ALL=C wget -O config/archives/drbl-gpg.key $DRBL_GPG_KEY_URL
   
   # Disable apt languages and translations when creating DRBL live. This could reduce apt repository issue.
   disable_apt_lang_translation chroot/etc/apt/apt.conf.d/99lang

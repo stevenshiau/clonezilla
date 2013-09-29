@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.6.20
+Version:	3.7.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Sep 29 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.1-drbl1
+- Swithing to use Debian live packages (live-build, live-boot, live-config) version 3 for creating Clonezilla/DRBL/GParted live.
+
 * Thu Sep 26 2013 Steven Shiau <steven _at_ nchc org tw> 3.6.20-drbl1
 - Removing packages xorg-docs-core, xfonts-100dpi, xfonts-75dpi, and xfonts-scalable in gparted-live-hook.
 
