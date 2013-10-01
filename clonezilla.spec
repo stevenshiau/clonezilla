@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.7.1
+Version:	3.7.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Oct 01 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.2-drbl1
+- Bug fixed: some source files list of live system were not moved to source directory after create-*-live is run.
+
 * Sun Sep 29 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.1-drbl1
 - Swithing to use Debian live packages (live-build, live-boot, live-config) version 3 for creating Clonezilla/DRBL/GParted live.
 
