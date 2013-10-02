@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.7.2
+Version:	3.7.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Oct 02 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.3-drbl1
+- Bug fixed: In DRBL live, /tftpboot/node_root/bin/hostname was deconfigured by chroot_hostname. We have to move /tftpboot/node_root/bin/hostname.distrib as /tftpboot/node_root/bin/hostname. It was hostname.orig but now in live build 3 it has been changed as hostname.distrib.
+
 * Tue Oct 01 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.2-drbl1
 - Bug fixed: some source files list of live system were not moved to source directory after create-*-live is run.
 
