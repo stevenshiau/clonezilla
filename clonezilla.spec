@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.7.8
+Version:	3.7.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.9-drbl1
+- Bug fixed: $LIVE_MEDIA variable instead of /live/image should be used in ocs-live-bug-report.
+- Variables lh_ver_required and debootstrap_ver_required in drbl-ocs.conf were updated.
+
 * Thu Oct 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.8-drbl1
 - A language variable was added in the dialog prompt of ocs-onthefly so it's easier to customize.
 
