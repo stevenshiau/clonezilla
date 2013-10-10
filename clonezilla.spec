@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- A language variable was added in the dialog prompt of ocs-onthefly so it's easier to customize.
+
 * Thu Oct 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.7-drbl1
 - Prompts in create-ubuntu-live were updated.
 - Bug fixed: create-drbl-live failed to include .disk file in the generated zip file.
