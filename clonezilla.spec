@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.7.11
+Version:	3.7.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Oct 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.12-drbl1
+- Service "ipmievd" should not be started automatically in DRBL live.
+
 * Fri Oct 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.11-drbl1
 - Some codes were rewritten so "set -e" won't just exit in some cases.
 
