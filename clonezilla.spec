@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.7.9
+Version:	3.7.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Oct 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.10-drbl1
+- Bug fixed: create-gparted-live failed to include .disk file in the generated zip file.
+
 * Thu Oct 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.9-drbl1
 - Bug fixed: $LIVE_MEDIA variable instead of /live/image should be used in ocs-live-bug-report.
 - Variables lh_ver_required and debootstrap_ver_required in drbl-ocs.conf were updated.
