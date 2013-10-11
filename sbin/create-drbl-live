@@ -73,11 +73,21 @@ USAGE() {
 }
 #
 clean_tmp_dirs_files() {
-  [ -d "$stage1_iso_TMP" -a -n "$(echo $stage1_iso_TMP | grep "ocs-iso-tmp")" ] && rm -rf $stage1_iso_TMP
-  [ -d "$ISOSYSLNX_TMP" -a -n "$(echo $ISOSYSLNX_TMP | grep "isolnx-tmp")" ] && rm -rf $ISOSYSLNX_TMP
-  [ -d "$USB_TMP" -a -n "$(echo $USB_TMP | grep "ocs-usb-dev")" ] && rm -rf $USB_TMP
+  if [ -d "$stage1_iso_TMP" -a \
+       -n "$(echo $stage1_iso_TMP | grep "ocs-iso-tmp")" ]; then
+    rm -rf $stage1_iso_TMP
+  fi
+  if [ -d "$ISOSYSLNX_TMP" -a \
+       -n "$(echo $ISOSYSLNX_TMP | grep "isolnx-tmp")" ]; then
+    rm -rf $ISOSYSLNX_TMP
+  fi
+  if [ -d "$USB_TMP" -a -n "$(echo $USB_TMP | grep "ocs-usb-dev")" ]; then
+    rm -rf $USB_TMP
+  fi
   # clean the tmp iso.
-  [ "$rm_tmp_iso" = "yes" -a -f "$stage1_target_iso" ] && rm -f $stage1_target_iso
+  if [ "$rm_tmp_iso" = "yes" -a -f "$stage1_target_iso" ]; then
+    rm -f $stage1_target_iso
+  fi
 } # end of clean_tmp_dirs_files
 #
 create_version_tag_in_live() {
@@ -909,13 +919,23 @@ AddDRBLRepository
 else
   echo "Use existing temp iso file: $stage1_target_iso"
 fi
-  # clean the dir debian-live if $stage1_target_iso is already created
-  if [ -f "$stage1_target_iso" -a -d "debian-live" ]; then
-    echo "Removing working dir debian-live in background..."
-    rm -rf debian-live &
-  fi
+# clean the dir debian-live if $stage1_target_iso is already created
+if [ -f "$stage1_target_iso" -a -d "debian-live" ]; then
+  echo "Removing working dir debian-live in background..."
+  # If live cd is not created, we have to force umount these before rm files.
+  umount -l debian-live/chroot/dev/pts &>/dev/null || true
+  umount -l debian-live/chroot/proc &>/dev/null || true
+  umount -l debian-live/chroot/sys &>/dev/null || true
+  rm -rf debian-live &
+fi
 # 
-[ ! -e "$stage1_target_iso" ] && echo "$stage1_target_iso does NOT exist!" && exit 1
+if [ ! -e "$stage1_target_iso" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$stage1_target_iso does NOT exist!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
 
 # mount the stage 1 iso file
 stage1_iso_TMP="$(mktemp -d /tmp/ocs-iso-tmp.XXXXXX)"
