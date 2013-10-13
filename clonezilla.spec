@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Improvement: adding slash in the sshfs command to avoid a remote issue. Thanks to Baird Ramsey and Richard Freeman (https://sourceforge.net/p/clonezilla/bugs/171/).
+
 * Fri Oct 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.12-drbl1
 - Service "ipmievd" should not be started automatically in DRBL live.
 
