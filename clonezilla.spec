@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.7.14
+Version:	3.7.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Oct 14 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.15-drbl1
+- Removing packages sysklogd, ttf-arphic-newsung, and x-ttcidfont-conf from the packages list of create-drbl-live-by-pkg. Force to add zenity, switch to nodm instead of gdm3 which is too heavy when version 3.8 was included in Debian Sid.
+
 * Mon Oct 14 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.14-drbl1
 - Removing codes about /etc/environment because it's not used in Wheezy+ anymore.
 
