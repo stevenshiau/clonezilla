@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.7.13
+Version:	3.7.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Oct 14 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.14-drbl1
+- Removing codes about /etc/environment because it's not used in Wheezy+ anymore.
+
 * Sun Oct 13 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.13-drbl1
 - Improvement: adding slash in the sshfs command to avoid a remote issue. Thanks to Baird Ramsey and Richard Freeman (https://sourceforge.net/p/clonezilla/bugs/171/).
 - Bug fixed: some service, e.g. ssh, is not disabled successfully when live system was created.
