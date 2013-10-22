@@ -38,7 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 * Tue Oct 22 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.16-drbl1
-The boot parameter "vmwgfx.blacklist=yes" was updated with  vmwgfx.enable_fbdev=no.
+- The boot parameter "vmwgfx.blacklist=yes" was updated with  vmwgfx.enable_fbdev=no.
 
 * Mon Oct 14 2013 Steven Shiau <steven _at_ nchc org tw> 3.7.15-drbl1
 - Removing packages sysklogd, ttf-arphic-newsung, and x-ttcidfont-conf from the packages list of create-drbl-live-by-pkg. Force to add zenity, switch to lightdm instead of gdm3 which is too heavy when version 3.8 was included in Debian Sid.
