@@ -610,7 +610,7 @@ echo "done!"
 
 cp -af $DRBL_SCRIPT_PATH/doc/GPL $USB_TMP/
 # replace the original syslinux and related files.
-mkdir -p $USB_TMP/syslinux/ $USB_TMP/isolinux/
+mkdir -p $USB_TMP/syslinux/ $USB_TMP/isolinux/ $USB_TMP/EFI/boot/
 # For syslinux
 cp -af $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file $USB_TMP/syslinux/
 # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
@@ -627,15 +627,24 @@ for i in $sys_pxelinux_v5p_required_c32; do
     cp -af $pxelinux_binsrc_dir/$i $USB_TMP/isolinux/
   fi
 done
+# 2. For EFI machine
 # Copy the EFI boot files
-if [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootia32.efi" -o -e "$DEBIAN_ISO_TMP/EFI/boot/bootx64.efi" ]; then
-  cp -af $DEBIAN_ISO_TMP/EFI $USB_TMP/
-  cp -af $ocs_logo_grub2_img_png $USB_TMP/EFI/boot/
-else
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Warning! Missing /EFI/boot/bootia32.efi or /EFI/boot/bootx64.efi in the template iso!"
-  echo "uEFI booting won't work!"
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+if [ "$live_efi_boot_loader" = "grub" ]; then
+  if [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootia32.efi" -o -e "$DEBIAN_ISO_TMP/EFI/boot/bootx64.efi" ]; then
+    cp -af $DEBIAN_ISO_TMP/EFI $USB_TMP/
+    cp -af $ocs_logo_grub2_img_png $USB_TMP/EFI/boot/
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Warning! Missing /EFI/boot/bootia32.efi or /EFI/boot/bootx64.efi in the template iso!"
+    echo "uEFI booting won't work!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+elif [ "$live_efi_boot_loader" = "syslinux" ]; then
+   # Those files are prepared in /usr/share/drbl/pkg/syslinux/efi64/ by drbl-prepare-pxelinux
+   cp -af $pxelinux_binsrc_dir/efi64/syslinux.efi $USB_TMP/EFI/boot/bootx64.efi 
+   cp -af $pxelinux_binsrc_dir/efi64/ldlinux.e64 $USB_TMP/EFI/boot/
+   cp -af $pxelinux_binsrc_dir/efi64/*.c32 $USB_TMP/EFI/boot/
+   cp -af $ocs_logo_grub2_img_png $USB_TMP/EFI/boot/
 fi
 
 if [ -n "$include_dir" ]; then
@@ -828,7 +837,15 @@ if [ "$enabled_EFI" = "true" ]; then
   mkdosfs -n OCS-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
   mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
   mkdir -p $EFI_BOOTIMG_TMP/EFI/
-  cp -R $EFI_BOOTTREE/* $EFI_BOOTIMG_TMP/EFI/
+  if [ "$live_efi_boot_loader" = "grub" ]; then
+    # In this case, bootx64.efi is in $EFI_BOOTTREE/, but we should exclude the existing $EFI_BOOTTREE/images/efiboot.img
+    # However, when mkdosfs we do not exclude $EFI_BOOTTREE/images/efiboot.img, so the size might be counted. It's better to put efiboot.img not in /EFI/ in the future.
+    rsync -a --exclude images/ $EFI_BOOTTREE/* $EFI_BOOTIMG_TMP/EFI/
+  elif [ "$live_efi_boot_loader" = "syslinux" ]; then
+    # In this case, bootx64.efi is copied in $ISOSYSLNX_TMP/EFI/, we should do something similar with ocs-gen-grub2-efi-bldr
+    rsync -a --exclude images/ $ISOSYSLNX_TMP/EFI/* $EFI_BOOTIMG_TMP/EFI/
+    # TODO similar to ocs-gen-grub2-efi-bldr, create a syslinux.cfg to include /syslinux/syslinux.cfg.
+  fi
   umount $EFI_BOOTIMG_TMP
   if [ -d "$EFI_BOOTIMG_TMP" -a -n \
   	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
@@ -863,18 +880,26 @@ else
     ocs-live-boot-menu -vb $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
     # For isolinux
     ocs-live-boot-menu -vb $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/isolinux/
-    # For grub2 efi
-    if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
-      ocs-live-boot-menu -vb $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/EFI/boot/
+    # For EFI, grub2 efi or syslinux efi
+    if [ "$live_efi_boot_loader" = "grub" ]; then
+      if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
+        ocs-live-boot-menu -vb $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/EFI/boot/
+      fi
+    elif [ "$live_efi_boot_loader" = "syslinux" ]; then
+      ocs-live-boot-menu -vb $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for EFI machine" syslinux $USB_TMP/EFI/boot/
     fi
   else
     # For syslinux
     ocs-live-boot-menu -vb $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
     # For isolinux
     ocs-live-boot-menu -vb $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/isolinux/
-    # For grub2-efi
-    if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
-      ocs-live-boot-menu -vb $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/EFI/boot
+    # For EFI, grub2 efi or syslinux efi
+    if [ "$live_efi_boot_loader" = "grub" ]; then
+      if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
+        ocs-live-boot-menu -vb $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/EFI/boot
+      fi
+    elif [ "$live_efi_boot_loader" = "syslinux" ]; then
+      ocs-live-boot-menu -vb $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for EFI machine" syslinux $USB_TMP/EFI/boot/
     fi
   fi
   echo "Preparing syslinux, syslinux.exe, makeboot.sh, and makeboot.bat in dir utils... "

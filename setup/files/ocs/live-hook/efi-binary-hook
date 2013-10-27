@@ -11,18 +11,24 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
 
 chroot chroot mkdir -p /EFI/boot
-# Find the distribution for the chroot environment
-[ -e chroot/etc/lsb-release ] && . chroot/etc/lsb-release
-if [ "$DISTRIB_ID" = "Ubuntu" ] ;then
-  # Ubuntu linux. Use the signed boot loader (shim+grub) so it can be used in uEFI secure boot.
-  # //NOTE// This command is not run in all chroot environment, instead part of its content is run in chroot dir
-  ocs-put-signed-grub2-efi-bldr -c chroot chroot/EFI/boot
-else
-  # Debian linux
-  chroot chroot /bin/bash ocs-gen-grub2-efi-bldr /EFI/boot
+if [ "$live_efi_boot_loader" = "grub" ]; then
+  echo "EFI boot loader is grub. Prepare grub2 EFI boot loader..." 
+  # Find the distribution for the chroot environment
+  [ -e chroot/etc/lsb-release ] && . chroot/etc/lsb-release
+  if [ "$DISTRIB_ID" = "Ubuntu" ] ;then
+    # Ubuntu linux. Use the signed boot loader (shim+grub) so it can be used in uEFI secure boot.
+    # //NOTE// This command is not run in all chroot environment, instead part of its content is run in chroot dir
+    ocs-put-signed-grub2-efi-bldr -c chroot chroot/EFI/boot
+  else
+    # Debian linux
+    chroot chroot /bin/bash ocs-gen-grub2-efi-bldr /EFI/boot
+  fi
+  rm -rf ./binary/EFI
+  mv chroot/EFI ./binary/
+elif [ "$live_efi_boot_loader" = "syslinux" ]; then
+  # We let ocs-iso and ocs-live-dev to put syslinux's EFI files.
+  echo "EFI boot loader is syslinux. Skip running binary hook file $0. The EFI boot loader files will be put by ocs-iso and ocs-live-dev." 
 fi
-rm -rf ./binary/EFI
-mv chroot/EFI ./binary/
 
 ### THE END ###
 # DO NOT PUT ANY SCRIPT AFTHER THIS!!!
