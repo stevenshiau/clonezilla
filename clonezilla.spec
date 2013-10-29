@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Variable lh_ver_required in drbl-ocs.conf is set as 3.0.5-1.
+
 * Mon Oct 28 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.2-drbl1
 - Bug fixed: ldlinux.c32, libcom32.c32, libutil.c32 were not put in /isolinux/.
 
