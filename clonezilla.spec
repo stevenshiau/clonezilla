@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.2
+Version:	3.8.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.6.5, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.6.8, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,7 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Oct 30 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.3-drbl1
 - Variable lh_ver_required in drbl-ocs.conf is set as 3.0.5-1.
+- Bug fixed: i386 arch of Ubuntu-based Clonezilla did not support uEFI boot (non-secure).
 
 * Mon Oct 28 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.2-drbl1
 - Bug fixed: ldlinux.c32, libcom32.c32, libutil.c32 were not put in /isolinux/.
