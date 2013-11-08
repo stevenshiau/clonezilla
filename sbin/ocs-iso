@@ -66,7 +66,7 @@ USAGE() {
     echo "-o, --normal-menu  When a clonezilla image is inserted, by default only restore menu will be shown in the created ISO file. If you want to show normal menu, i.e. with save and restore menu, use this one."
     echo "-x, --extra-boot-param  EXTRA_PARAM  Assign extra boot parameter EXTRA_PARAM for clonezilla live kernel to read. These parameters are the same with that from live-initramfs. Ex. \"noprompt\" can be use to not prompt to eject the CD on reboot."
     echo "-u, --include-dir DIR     Include a dir in the target iso file."
-    echo "--ocs-live-boot-menu-option EXTRA_OPTION Assign an extra option for ocs-live-boot-menu. //NOTE// Do not put '-' in this EXTRA_OPTION, $0 will add that automatically. e.g. if you want to add -s1 for ocs-live-boot-menu to run, use 's1' only."
+    echo "-n, --ocs-live-boot-menu-option EXTRA_OPTION Assign an extra option for ocs-live-boot-menu. //NOTE// Do not put '-' in this EXTRA_OPTION, $0 will add that automatically. e.g. if you want to add -s1 for ocs-live-boot-menu to run, use 's1' only."
     echo "$prog will download a template Debian live CD for clonezilla iso file if ncecessary. You can also download it by yourself, and put it in the working directory when you run $prog. If you want to create that template iso file in Debian Etch, run create-debian-live."
     echo "NOTE! Due to the limitation in mkisofs, this program does not work in clonezilla image file larger than $FILE_LIMIT MB."
     echo "Ex:"
@@ -252,14 +252,14 @@ while [ $# -gt 0 ]; do
             fi
 	    [ -z "$live_extra_boot_param" ] && USAGE && exit 1
             ;;
-    --ocs-live-boot-menu-option)
+    -n|--ocs-live-boot-menu-option)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
               # skip the -xx option, in case 
-              ocs_live_boot_menu_option="$1"
+              live_boot_menu_opt_raw="$1"
               shift
             fi
-	    [ -z "$ocs_live_boot_menu_option" ] && USAGE && exit 1
+	    [ -z "$live_boot_menu_opt_raw" ] && USAGE && exit 1
             ;;
     -u|--include-dir)
             shift
@@ -285,7 +285,11 @@ ocs_image="$(echo $ocs_image | sed -e "s|/||g")"
 [ -z "$image_path" ] && image_path=$ocsroot
 [ -z "$bg_mode" ] && bg_mode="$BG_MODE_DEF"
 [ -z "$DEBIAN_ISO" ] && DEBIAN_ISO="$DEBIAN_ISO_DEF"
-[ -n "$ocs_live_boot_menu_option" ] && ocs_live_boot_menu_option="-$ocs_live_boot_menu_option"
+if [ -n "$live_boot_menu_opt_raw" ]; then
+   for i in $live_boot_menu_opt_raw; do
+     ocs_live_boot_menu_option="$ocs_live_boot_menu_option -$i"
+   done
+fi
 md5_file_url="$DEBIAN_ISO_ETC_PATH/$md5_file"
 
 #

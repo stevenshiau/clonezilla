@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.5
+Version:	3.8.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Nov 08 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.6-drbl1
+- Making Ubuntu-based Clonezilla live use "splash" in the boot parameters.
+
 * Fri Nov 08 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.5-drbl1
 - Adding a language and keyboard configuration mechamism to work with plymouth.
 
