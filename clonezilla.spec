@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.6
+Version:	3.8.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Nov 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.7-drbl1
+- A better way to disable auto start service of upstart is used now in Clonezilla live.
+
 * Fri Nov 08 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.6-drbl1
 - Making Ubuntu-based Clonezilla live use "splash" in the boot parameters.
 
