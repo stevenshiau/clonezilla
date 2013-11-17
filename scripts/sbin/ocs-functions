@@ -9608,32 +9608,7 @@ decide_live_kernel_related_pkgs_from_debian() {
   # This function is for create-debian-live, create-gparted-live, and create-drbl-live, not for create-ubuntu-live.
   # debian_dist and kernel_related_pkgs are global variables
   # This function will output "kernel_related_pkgs" and "export MKSQUASHFS_OPTIONS"
-  if [ "$debian_dist" = "etch" ]; then
-    if [ -n "$live_kernel_ver" ]; then
-      kernel_related_pkgs="linux-image-${live_kernel_ver} aufs-modules-${live_kernel_ver} squashfs-modules-${live_kernel_ver}"
-    else
-      kernel_related_pkgs="linux-image-2.6 aufs-modules-2.6 squashfs-modules-2.6"
-    fi
-    # exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
-    # For etch, mksquashfs only allows 1024 to 64k. //NOTE// Do not use "64K", use "65536" since older mksquash does not accept that (k).
-    export MKSQUASHFS_OPTIONS="-b 65536 -e boot"
-  elif [ "$debian_dist" = "lenny" ]; then
-    # For 2.6.29, squashfs is already in mainline kernel, so squashfs-modules-2.6 is no more required.
-    # Ref: http://lists.debian.org/debian-live/2009/04/msg00030.html
-    if [ -n "$live_kernel_ver" ]; then
-      if dpkg --compare-versions "$live_kernel_ver" ">>" "2.6.31" &>/dev/null; then
-        kernel_related_pkgs="linux-image-${live_kernel_ver}"
-      elif dpkg --compare-versions "$live_kernel_ver" ">>" "2.6.29" &>/dev/null; then
-        kernel_related_pkgs="linux-image-${live_kernel_ver} aufs-modules-${live_kernel_ver}"
-      else
-        kernel_related_pkgs="linux-image-${live_kernel_ver} aufs-modules-${live_kernel_ver} squashfs-modules-${live_kernel_ver}"
-      fi
-    else
-      kernel_related_pkgs="linux-image-2.6 aufs-modules-2.6 squashfs-modules-2.6"
-    fi
-    # exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
-    export MKSQUASHFS_OPTIONS="-b 1024k -e boot"
-  elif [ "$debian_dist" = "squeeze" ]; then
+  if [ "$debian_dist" = "squeeze" ]; then
     # squeeze uses kernel 2.6.30 from Aug/20/2009, so no more squashfs-modules. From kernel 2.6.31, aufs is builtin, so no more aufs-modules.
     if [ -n "${live_kernel_ver}" ]; then
       kernel_related_pkgs="linux-image-${live_kernel_ver}"
@@ -9647,19 +9622,13 @@ decide_live_kernel_related_pkgs_from_debian() {
     if [ -n "${live_kernel_ver}" ]; then
       kernel_related_pkgs="linux-image-${live_kernel_ver}"
     else
-      kernel_related_pkgs="linux-image-2.6"
+      kernel_related_pkgs="linux-image"
     fi
     # exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
     # "-comp xz -Xbcj x86" can be used when the CONFIG_SQUASHFS_XZ is on in kernel.
     # For "-Xbcj x86", refer to: http://kerneltrap.org/mailarchive/linux-fsdevel/2010/12/9/6887823
-    # From kernel 2.6.39-2, xz support was enabled.
-    if dpkg --compare-versions "$live_kernel_ver" "<<" "2.6.39" &>/dev/null; then
-      # //NOTE// "-e boot" must be the last option if you want to append more.
-      export MKSQUASHFS_OPTIONS="-b 1024k -e boot"
-    else
-      # //NOTE// "-e boot" must be the last option if you want to append more.
-      export MKSQUASHFS_OPTIONS="-b 1024k -comp xz -Xbcj x86 -e boot"  
-    fi
+    # //NOTE// "-e boot" must be the last option if you want to append more.
+    export MKSQUASHFS_OPTIONS="-b 1024k -comp xz -Xbcj x86 -e boot"  
   else
     echo "This distribution \"$debian_dist\" is not supported!"
     echo "Program terminated!"
