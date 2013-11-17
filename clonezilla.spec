@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.8
+Version:	3.8.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-* Sun Nov 17 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.8-drbl1
+* Sun Nov 17 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.9-drbl1
 - Unused codes in function decide_live_kernel_related_pkgs_from_debian of ocs-functions was updated.
 
 * Mon Nov 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.8-drbl1
