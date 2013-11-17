@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.7
+Version:	3.8.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.8-drbl1
+- Bug fixed: ocs-iso and ocs-live-dev failed to parse multiple options for "-n".
+
 * Sun Nov 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.7-drbl1
 - A better way to disable auto start service of upstart is used now in Clonezilla live.
 
