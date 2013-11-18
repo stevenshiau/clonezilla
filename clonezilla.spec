@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.10
+Version:	3.8.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 18 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.11-drbl1
+- Bug fixed: the method to detect if signed-shim exists or not in efi-binary-hook was wrong.
+
 * Mon Nov 18 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.10-drbl1
 - Bug fixed: the option "--extra-boot-param" of create-drbl-live-by-pkg failed to accept multiple boot parameters.
 
