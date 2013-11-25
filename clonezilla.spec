@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.13
+Version:	3.8.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.6.10, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.6.15, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.66, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.14-drbl1
+- Comments in program ocs-lang-kbd-conf were updated.
+- Bug fixed: Ubuntu-based Clonezilla live failed to make preset keyboard-layout work. Thanks to m-tm (m-tm _at_ gmx de) for this bug report, and Michael Vinzenz for tests.
+
 * Mon Nov 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.13-drbl1
 - Bug fixed: boot parameter "noprompt" was replaced by "noeject" in live-boot version 3. We should use that in Clonezilla.
 
