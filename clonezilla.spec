@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.12
+Version:	3.8.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.13-drbl1
+- Bug fixed: boot parameter "noprompt" was replaced by "noeject" in live-boot version 3. We should use that in Clonezilla.
+
 * Tue Nov 19 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.12-drbl1
 - Some output messages of ocs-run were suppressed for DRBL client.
 
