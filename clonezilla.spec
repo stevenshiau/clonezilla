@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.14
+Version:	3.8.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Nov 27 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.15-drbl1
+- Somehow the boot parameter "ip=frommedia" made Ubuntu-based Clonezilla live's vmlinuz boot slowly. Because "ip=" is accepted by live-boot with same function and it's shorter, use it.
+- When creating recovery zip file, if image is included, use "-0", i.e., not to compress it.
+- When a recovery iso/zip file is created, Clonezilla should honor the original splash mechanism.
+
 * Mon Nov 25 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.14-drbl1
 - Comments in program ocs-lang-kbd-conf were updated.
 - Bug fixed: Ubuntu-based Clonezilla live failed to make preset keyboard-layout work. Thanks to m-tm (m-tm _at_ gmx de) for this bug report, and Michael Vinzenz for tests.
