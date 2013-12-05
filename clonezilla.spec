@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.15
+Version:	3.8.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Dec 05 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.16-drbl1
+- Bug fixed: the dir of EFI in live zip file should be mode 755, not read-only.
+
 * Wed Nov 27 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.15-drbl1
 - Somehow the boot parameter "ip=frommedia" made Ubuntu-based Clonezilla live's vmlinuz boot slowly. Because "ip=" is accepted by live-boot with same function and it's shorter, use it.
 - When creating recovery zip file, if image is included, use "-0", i.e., not to compress it.
