@@ -18,6 +18,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Settings
 # By default we do not check the image saved by dd.
 dd_checking_method="no-check"
+chk_img_restoreable=""
 
 #
 USAGE() {
@@ -47,7 +48,7 @@ USAGE() {
 } # end of USAGE
 #
 choose_compress_format() {
-  local TMP=`mktemp /tmp/ocs.XXXXXX`
+  local TMP=`mktemp /tmp/ocs_comp.XXXXXX`
   local z_opt
   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
   show_z4_or_above_menu_or_not
@@ -82,6 +83,25 @@ choose_compress_format() {
   esac
   [ -f "$TMP" ] && rm -f $TMP
 } # end of choose_compress_format
+#
+ask_if_check_saved_img() {
+  local TMP=`mktemp /tmp/ocs_chk.XXXXXX`
+  local sc_opt
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  # Question about checking the image after conversion
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+  "$msg_clonezilla_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_if_checking_image_restorable" \
+  0 0 0 $DIA_ESC \
+  " "     "$msg_ocs_param_check_img_restorable" \
+  "-sc "  "$msg_ocs_param_skip_checking_img_restorable" \
+  2> $TMP
+  sc_opt="$(cat $TMP)"
+  case "$sc_opt" in
+   -sc)  chk_img_restoreable="no";;
+     *)  chk_img_restoreable="yes";;
+  esac
+  [ -f "$TMP" ] && rm -f $TMP
+} # ask_if_check_saved_img
 #
 img_covert_to_diff_compression() {
   local file_ fs_ partclone_img_info_tmp file_basename rc
@@ -142,6 +162,7 @@ img_covert_to_diff_compression() {
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
 
   split_error="$(mktemp /tmp/split_error.XXXXXX)"
+  trap "[ -f "$TMP" ] && rm -f $split_error" HUP INT QUIT TERM EXIT
 
   compress_prog_opt="$IMG_CLONE_CMP"
   cmd_compress="$compress_prog_opt"
@@ -161,11 +182,6 @@ img_covert_to_diff_compression() {
     echo "Now process the image file of partition: $img_file_prefix"
     echo "Converting compression format: $img_comp_format -> $t_comp_suf"
   fi
-
-  if [ -s "$split_error" ]; then
-    cat $split_error
-  fi
-  rm -f $split_error
 
   ( for img in $target_d/$img_file_prefix; do
       cat $img
@@ -191,6 +207,11 @@ img_covert_to_diff_compression() {
       rm -fv $target_d/$img_file_prefix
     fi
   fi
+  if [ -s "$split_error" ]; then
+    cat $split_error
+  fi
+  rm -f $split_error
+
   return $rc
 } # end of img_covert_to_diff_compression
 #
@@ -446,13 +467,13 @@ task_convertimage() {
 
   if [ "$rct" -gt 0 -a "$ocs_batch_mode" != "on" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$msg_broken_partition_img_found: $target_dir" | tee --append ${OCS_LOGFILE}
+    echo "$msg_failed_to_convert_the_img_compression: $target_dir" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo -n "$msg_press_enter_to_continue..."
     read
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_all_the_part_lv_are_ok: $target_dir" | tee --append ${OCS_LOGFILE}
+    echo "$msg_succeeded_convert_the_img_compression: $target_dir" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
 } # end of task_convertimage
@@ -477,6 +498,10 @@ while [ $# -gt 0 ]; do
            fi
            [ -z "$ocsroot" ] && USAGE && exit 1
            ;;
+   -sc|--skip-check-restorable)
+           # Flag to check if the image is restorable
+           chk_img_restoreable="no"
+	   shift;;
    -z0|--no-compress)    IMG_CLONE_CMP="cat"; shift;;
    -z1|--gzip-compress)  IMG_CLONE_CMP="pigz -c $extra_pigz_opt"; shift;;
    -z2|--bz2-compress)
@@ -544,11 +569,18 @@ if [ "$ocs_dest_img_name" = "ask_user" ]; then
 fi
 ocs_dest_img_name="$target_dir"
 
+if [ -z "$chk_img_restoreable" ]; then
+  ask_if_check_saved_img
+fi
+
 #
 create-ocs-tmp-img -t $ocsroot -n "$ocs_src_img_name" "$ocs_dest_img_name"
 
 task_convertimage "$ocs_dest_img_name"
 
-echo $msg_delimiter_star_line
-echo "Checking the converted image..."
-ocs-chkimg -b $ocs_dest_img_name
+#
+if [ "$chk_img_restoreable" = "yes" ]; then
+  echo $msg_delimiter_star_line
+  echo "Checking the converted image..."
+  ocs-chkimg -b $ocs_dest_img_name
+fi
