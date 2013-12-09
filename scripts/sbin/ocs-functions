@@ -666,13 +666,14 @@ get_random_time() {
 }
 #
 get_image_cat_zip_cmd() {
-  #  cat_prog, zip_stdin_cmd and unzip_stdin_cmd are global variables.
+  #  cat_prog, zip_stdin_cmd and unzip_stdin_cmd, img_comp_format are global variables.
   local imgf="$1"
   local comp_prog_ref comp_prog cpu_no
   # There are 2 ways to get the compression info
   # (1) By file name. The format is like ${tgt_file}.${fs_pre}-img.${comp_suf} (new format for partclone), or user might choose partimage + lzma (TODO)
   # (2) By file magic, i.e. use command "file"
-  
+ 
+  img_comp_format="" 
   # (1)
   comp_prog_ref="$(echo "$imgf" | grep -Eo -- ".ptcl-img.(gz|bz2|lzo|lzma|xz|lzip|lrz|uncomp)?")"
   cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)" 
@@ -768,6 +769,8 @@ get_image_cat_zip_cmd() {
               ;;
     esac
   fi
+  # img_comp_format is global variable for later reference use.
+  img_comp_format="$comp_prog"
   if [ -z "$comp_prog" ]; then
     # (2) Old format. Get compression info by file magic, i.e. use command "file"
     if [ ! -e "$imgf" ]; then
@@ -3793,12 +3796,17 @@ get_input_image_name() {
     # There is nothing in the screen when function is called if we just 
     # use echo the result to stdout.
     ANS_TMP="$1"
+    local img_name_assign="$2"  # target name assigned. This is optional.
     local tgt_name_default
     local ASK_IMGNAME=1
     TMP=`mktemp /tmp/ocs.XXXXXX`
     trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
     while [ "$ASK_IMGNAME" -eq 1 ]; do
-      tgt_name_default="$(date +%F-%H-img)"
+      if [ -z "$img_name_assign" ]; then
+        tgt_name_default="$(date +%F-%H-img)"
+      else
+        tgt_name_default="$img_name_assign"
+      fi
       $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
          --inputbox "$msg_input_name_to_save_the_img $tgt_name" 0 0 "$tgt_name_default" 2> $TMP
       tgt_img_name="$(cat $TMP)"
@@ -4416,6 +4424,7 @@ get_existing_parts_image() {
    local TMP="$(mktemp /tmp/ocs.XXXXXX)"
    case "$action_mode" in
      "check") action_des="$msg_choose_the_image_to_be_checked" ;;
+     "convert") action_des="$msg_choose_the_image_to_be_converted" ;;
            *) action_des="$msg_choose_the_image_to_restore" ;;
    esac
 
@@ -6785,12 +6794,13 @@ show_warning_about_write_failed() {
 #
 get_target_dir_name_when_saving() {
   # target_dir is a global variable
+  local img_name_prompt="$1" # The image name is optional, only for prompt in the dialog.
   local ANS_TMP
   local ASK_IMG_NAME=1
   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
   while [ "$ASK_IMG_NAME" -ne 0 ]; do
-    get_input_image_name $ANS_TMP
+    get_input_image_name $ANS_TMP $img_name_prompt
     target_dir="$(cat $ANS_TMP)"
     if [ "$target_dir" = "ask_user" ]; then
        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
@@ -6895,6 +6905,21 @@ get_target_dir_name_when_checking_img_restorable() {
   target_image="$target_dir"
   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
 } # end of get_target_dir_name_when_checking_img_restorable
+#
+get_target_dir_name_when_converting_img() {
+  # target_dir and ocsroot are gloable variables
+  local ANS_TMP
+  ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+  trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+  # get_existing_parts_image will search $imagedir
+  get_existing_parts_image $ANS_TMP convert 
+  # the return name will be only one image name.
+  # Note! We won't add leading $ocsroot in $target_dir, because when task_restoreparts do the real job later, it will add that.
+  target_dir="$(cat $ANS_TMP)"
+  # target_image is an important global variable, it's related to the PXE menu tag, and some other important thing.
+  target_image="$target_dir"
+  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+} # end of get_target_dir_name_when_converting_img
 #
 rm_tmp_cnvt_img() {
   # img_cnvt_flag is a global variable

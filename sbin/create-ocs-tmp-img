@@ -12,6 +12,10 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . /etc/drbl/drbl-ocs.conf
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
+# Settings
+# By default this program is used to create an image with device converted. However, if what we want is to duplicate an image, no need to convert the device.
+cvt_dev="yes"
+
 # Ex.:
 # disk                      -> copied
 # etch-home.reiserfs-img.aa -> soft linked
@@ -35,13 +39,21 @@ USAGE() {
     echo "Usage:"
     echo "$0 [OPTION] EXISTING_IMAGE NEW_IMAGE ORIGINAL_DEV NEW_DEV   To create a new image NEW_IMAGE based on existing image EXISTING_IMAGE, the original dev is ORIGINAL_DEV, the new one is NEW_DEV"
     echo "OPTION:"
+    echo "-n, --no-cvt-dev  Do not convert the device name. This option is used to create a duplicated image only."
     echo "-t, --target-dir  DIR  Assign the created image will be put in DIR. If not assigned, the created image will be in /tmp."
-    echo "Ex: $0 image image-cnvt sda sdb"
+    echo "Ex: To convert the \"image\" as \"image-cvt\", with device \"sda\" is changed to \"sdb\", run:"
+    echo "    $0 image image-cnvt sda sdb"
+    echo "Ex: To duplicate the \"image\" as \"image-pixz\", without changing any device name, run:"
+    echo "    $0 -n image image-pixz"
 }
 
 #
 while [ $# -gt 0 ]; do
   case "$1" in
+    -n|--no-cvt-dev)
+            shift; 
+            cvt_dev="no"
+            ;;
     -t|--target-dir)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -76,18 +88,21 @@ if [ -z "$new_imgname" ]; then
   exit 1
 fi
 
-if [ -z "$src_dev" ]; then
-  echo "No ORIGINAL_DEV!"
-  echo "Program terminated!"
-  USAGE
-  exit 1
-fi
-
-if [ -z "$tgt_dev" ]; then
-  echo "No NEW_DEV!"
-  echo "Program terminated!"
-  USAGE
-  exit 1
+# Only check source and destination device name when this program is used to create an image with device converted.
+if [ "$cvt_dev" = "yes" ]; then
+  if [ -z "$src_dev" ]; then
+    echo "No ORIGINAL_DEV!"
+    echo "Program terminated!"
+    USAGE
+    exit 1
+  fi
+  
+  if [ -z "$tgt_dev" ]; then
+    echo "No NEW_DEV!"
+    echo "Program terminated!"
+    USAGE
+    exit 1
+  fi
 fi
 
 # We put the new image in /tmp, since we need a filesystem can be symbolic linked. Otherwise it will fail, like CD (readonly) or samba server (FAT does not support symbolic link)
@@ -161,8 +176,11 @@ done
   done
 )
 
-# Put a tag file
-echo "This image was converted by $0 and it is not portable." > $new_imghome/$new_imgname/converted-not-portable
 #
-cnvt-ocs-dev -b -d $new_imghome $new_imgname $src_dev $tgt_dev
+if [ "$cvt_dev" = "yes" ]; then
+  # Put a tag file
+  echo "This image was converted by $0 and it is not portable." > $new_imghome/$new_imgname/converted-not-portable
+  #
+  cnvt-ocs-dev -b -d $new_imghome $new_imgname $src_dev $tgt_dev
+fi
 echo "The created image is \"$new_imghome/$new_imgname\"."

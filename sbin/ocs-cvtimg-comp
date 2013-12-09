@@ -18,29 +18,72 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Settings
 # By default we do not check the image saved by dd.
 dd_checking_method="no-check"
-nogui="off"   # Default to turn on TUI
 
 #
 USAGE() {
-    echo "$ocs - To check the image of Clonezilla"
+    echo "$ocs - To convert the image of Clonezilla from existing compression format to another one"
     echo "Usage:"
     echo "To run $ocs:"
-    echo "$ocs [OPTION] IMAGE_NAME DEVICE"
+    echo "$ocs [OPTION] SRC_IMAGE_NAME DEST_IMAGE_NAME"
     echo "Options:"
     echo "-b, --batch-mode   Run image checking in batch mode"
-    echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone or Partimage, use text only"
     echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
-    echo "IMAGE_NAME is the image dir name, not absolute path"
-    echo "DEVICE is the device name, e.g. sda1, sda2..."
-    echo "If \"ask_user\" is used as IMAGE_NAME or DEVICE, a dialog menu will be shown to allow selection."
-    echo "If no IMAGE_NAME is specified, a dialog menu will be shown."
+    echo "-z0, --no-compress       Convert to uncompression format"
+    echo "-z1, --gzip-compress     Convert to gzip format"
+    echo "-z2, --bz2-compress      Convert to bzip2 format"
+    echo "-z3, --lzo-compress      Convert to lzop format"
+    echo "-z4, --lzma-compress     Convert to lzma format"
+    echo "-z5, --xz-compress       Convert to xz format"
+    echo "-z6, --lzip-compress     Convert to lzip format"
+    echo "-z7, --lrzip-compress    Convert to lrzip format"
+    echo "SRC_IMAGE_NAME and DEST_IMAGE_NAME are the image dir name, not absolute path"
+    echo "If the destination compression format is not assigned, XZ format will be used"
+    echo "If \"ask_user\" is used as SRC_IMAGE_NAME or DEST_IMAGE_NAME, a dialog menu will be shown to allow selection or inputing."
+    echo "If no SRC_IMAGE_NAME or DEST_IMAGE_NAME is specified, a dialog menu will be shown."
     echo "Ex:"
-    echo "To check the image \"my-image\", which is located in $ocsroot/my-image, run"
-    echo "   $ocs my-image"
+    echo "To convert the image \"my-image\", which is located in $ocsroot/my-image to \"my-image-xz\" with xz format, run"
+    echo "   $ocs -z5 my-image my-image-pixz"
     echo
 } # end of USAGE
 #
-img_check_by_partclone() {
+choose_compress_format() {
+  local TMP=`mktemp /tmp/ocs.XXXXXX`
+  local z_opt
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  show_z4_or_above_menu_or_not
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+  "$msg_clonezilla_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_one_compression_param_to_save" \
+  0 0 0 $DIA_ESC \
+  "-z1"      "$msg_ocs_param_z1" \
+  "-z2"      "$msg_ocs_param_z2" \
+  "-z3"      "$msg_ocs_param_z3($msg_note!!)" \
+  $ocs_z4_option_1      $ocs_z4_option_2 \
+  $ocs_z5_option_1      $ocs_z5_option_2 \
+  $ocs_z6_option_1      $ocs_z6_option_2 \
+  $ocs_z7_option_1      $ocs_z7_option_2 \
+  "-z0"      "$msg_ocs_param_z0" \
+  2> $TMP
+  z_opt="$(cat $TMP)"
+  case "$z_opt" in
+   -z0)  IMG_CLONE_CMP="cat";;
+   -z1)  IMG_CLONE_CMP="pigz -c $extra_pigz_opt";;
+   -z2)
+         if [ "$parallel_bzip2_prog" = "pbzip2" ]; then
+           IMG_CLONE_CMP="pbzip2 -c $extra_pbzip2_opt"
+         elif [ "$parallel_bzip2_prog" = "lbzip2" ]; then
+           IMG_CLONE_CMP="lbzip2 -c $extra_lbzip2_opt"
+         fi
+         ;;
+   -z3)  IMG_CLONE_CMP="lzop -c $extra_lzop_opt";;
+   -z4)  IMG_CLONE_CMP="lzma -c $extra_lzma_opt";;
+   -z6)  IMG_CLONE_CMP="plzip -c $extra_plzip_opt";;
+   -z7)  IMG_CLONE_CMP="lrzip -q - $extra_lrzip_opt";;
+     *)  IMG_CLONE_CMP="pixz $extra_pixz_opt";;
+  esac
+  [ -f "$TMP" ] && rm -f $TMP
+} # end of choose_compress_format
+#
+img_covert_to_diff_compression() {
   local file_ fs_ partclone_img_info_tmp file_basename rc
   # First, we find the filesystem 
   file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
@@ -56,7 +99,7 @@ img_check_by_partclone() {
   fi
   if [ -z "${fs_}" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The file system can not be decided in function img_check_by_partclone!!!"
+    echo "The file system can not be decided in function img_covert_to_diff_compression!!!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!"
     exit 1
@@ -91,17 +134,67 @@ img_check_by_partclone() {
   fi
   echo $msg_delimiter_star_line
 
+  s_comp_suf="$(ocs-get-comp-suffix $unzip_stdin_cmd)"
+  # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
+  # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
+  t_img_file_prefix="$(echo $img_file_prefix | sed -r -e "s|\.\*$||g" -e "s|\.$s_comp_suf||g")"
+
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
+
+  split_error="$(mktemp /tmp/split_error.XXXXXX)"
+
+  compress_prog_opt="$IMG_CLONE_CMP"
+  cmd_compress="$compress_prog_opt"
+  t_comp_suf="$(ocs-get-comp-suffix $compress_prog_opt)"
+  # sda1.ext4-ptcl-img.gz.aa -> /home/partimag/precise-x86-20131112/sda1.ext4-ptcl-img.gz.aa
+  # sda5.ext4-ptcl-img.gz.aa -> /home/partimag/precise-x86-20131112/sda5.ext4-ptcl-img.gz.aa
+  # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
+
+  # Check if source and destination compression program is the same format. If it's the same, we can not go on, otherwise the source file will be overwritten, and it will be broken due to source and destination are the same one.
+  if [ "$img_comp_format" = "$t_comp_suf" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Source compression format and destination format are the same: $img_comp_format"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  else
+    echo "Now process the image file of partition: $img_file_prefix"
+    echo "Converting compression format: $img_comp_format -> $t_comp_suf"
+  fi
+
+  if [ -s "$split_error" ]; then
+    cat $split_error
+  fi
+  rm -f $split_error
+
   ( for img in $target_d/$img_file_prefix; do
       cat $img
     done
   ) | \
-  $unzip_stdin_cmd | LC_ALL=C partclone.chkimg $PARTCLONE_CHKIMG_OPT -s -
+  $unzip_stdin_cmd | \
+  (
+    case "$VOL_LIMIT" in
+      [1-9]*)
+         # $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf}. is prefix, the last "." is necessary make the output file is like sda1.${fs_pre}-img.aa, sda1.${fs_pre}-img.ab. We do not add -d to make it like sda1.${fs_pre}-img.00, sda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (sda1.${fs_pre}-img.000, sda1.${fs_pre}-img.001)
+         pv -p -a | ${cmd_compress} | split -b ${VOL_LIMIT}m - $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf}. 2> $split_error
+         ;;
+      *)
+         pv -p -a | ${cmd_compress} | cat - > $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf} 2> $split_error
+         ;;
+    esac
+  )
+
   rc="$?"
+  if [ "$rc" -eq 0 ]; then
+    if [ -L $target_d/$img_file_prefix ]; then
+      echo "Remove the temp link image file(s) $target_d/$img_file_prefix"
+      rm -fv $target_d/$img_file_prefix
+    fi
+  fi
   return $rc
-} # end of img_check_by_partclone
+} # end of img_covert_to_diff_compression
 #
-do_partition_or_lv_img_check() {
+do_partition_or_lv_img_convert() {
   # part is like: /dev/hda1
   local target_d="$1"
   local img_file="$(to_filename $2)"
@@ -135,18 +228,18 @@ do_partition_or_lv_img_check() {
     fi
   elif is_partclone_image $target_d $img_file; then
     # The saved image is from partclone
-    img_check_by_partclone
+    img_covert_to_diff_compression
     rc=$?
     if [ "$rc" -gt 0 -a "$ocs_batch_mode" != "on" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE | tee --append ${OCS_LOGFILE}
-      echo "$msg_this_part_in_the_img_is_broken: $img_file" | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "This image conversion failed: $img_file" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo -n "$msg_press_enter_to_continue..."
       read
     else
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING | tee --append ${OCS_LOGFILE}
-      echo "$msg_this_part_in_the_img_is_ok: $img_file" | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "This image conversion is finished: $img_file" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
   elif [ -f "$target_d/$img_file.dd-img" -o -f "$target_d/$img_file.dd-img.aa" ]; then
     if [ "$dd_checking_method" = "no-check" ]; then
@@ -183,22 +276,13 @@ do_partition_or_lv_img_check() {
         fi
       fi
     fi
-  else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "This image file for partition $img_file was not found!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    rc=1
-    if [ "$ocs_batch_mode" != "on" ]; then
-      echo -n "$msg_press_enter_to_continue..."
-      read
-    fi
   fi
 
   echo $msg_delimiter_star_line
   return $rc
-} # end of do_partition_or_lv_img_check
+} # end of do_partition_or_lv_img_convert
 #
-task_logv_check() {
+task_logv_convert() {
   # mode is unicast or multicast
   local tgt_parts="$1"  # tgt_parts is like: hda1 hda2 hda5
   local volg is_in_chosen_partition lvm_tmp rc rctlv
@@ -265,46 +349,21 @@ task_logv_check() {
    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
    echo "Checking the device LV $fn in the image \"$(basename $target_dir_fullpath)\"..."
    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-   do_partition_or_lv_img_check $target_dir_fullpath $fn $lv
+   do_partition_or_lv_img_convert $target_dir_fullpath $fn $lv
    rc=$?
    rctlv="$(($rctlv + $rc))"
   done < $LOGV_PARSE_CONF
   return $rctlv
-} # end of task_logv_check
+} # end of task_logv_convert
 
 #
-task_checkimage() {
+task_convertimage() {
   local target_dir="$1"
-  local target_parts="$2"
   local parts_included target_dir_fullpath
   local ptype rc rct
 
-  if [ "$target_dir" = "ask_user" ]; then
-    get_target_dir_name_when_checking_img_restorable
-  fi
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "$msg_the_image_to_be_cheked: $target_dir"
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-
   #
-  source_parts_no="$(cat $ocsroot/$target_dir/parts | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
-
-  #
-  if [ "$target_parts" = "ask_user" ]; then
-    ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
-    trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-    get_existing_partitions_from_img $ANS_TMP $ocsroot/$target_dir no check
-    # we have to remove " (comes with checklist in dialog) 
-    # so that for loop will work (Specially for FC3/4...)
-    target_parts="$(cat $ANS_TMP | tr -d \")"
-    [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
-    # target name exists, but file "parts" is empty ?
-    check_target_parts $ocsroot/$target_dir/parts "$target_parts"
-  elif [ -z "$target_parts" ]; then
-    target_parts="$(LC_ALL=C cat $ocsroot/$target_dir/parts)"
-  else
-    echo "$msg_the_requested_partition_to_be_checked: $target_parts"
-  fi
+  target_parts="$(LC_ALL=C cat $ocsroot/$target_dir/parts)"
 
   # target_hd will be extract from $target_parts, maybe we will have one more
   # find the target hd
@@ -323,7 +382,7 @@ task_checkimage() {
     image_type="disk"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_a_disk_image_saved_from_hd: $(cat $ocsroot/$target_dir/disk)"
-    echo "$msg_the_part_image_to_be_cheked: $target_parts"
+    echo "$msg_the_part_image_to_be_convert: $target_parts"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   elif [ -e "$ocsroot/$target_dir/parts" ]; then
     image_type="partition"
@@ -350,150 +409,6 @@ task_checkimage() {
   target_parts="$(echo $target_parts | sed -e "s/^[[:space:]]*//g")"
 
   echo $msg_delimiter_star_line
-  # Start checking partition table.
-  echo "Checking the partition table in the image \"$target_dir\"..."
-  for ihd in $target_hd; do
-    # Get the partition type from parted output
-    if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
-      ptype="gpt"
-    elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
-      ptype="mbr"
-    else
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      exit 1
-    fi
-    case "$ptype" in
-     mbr)
-      if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-pt.sf" ]; then
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-         echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-pt.sf" | tee --append ${OCS_LOGFILE}
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo -n "$msg_press_enter_to_continue..."
-         read
-      else
-	 echo "Partition table file for disk was found: ${ihd}" | tee --append ${OCS_LOGFILE}
-      fi
-      ;;
-     gpt)
-	 if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-gpt-1st" ]; then
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-	 echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-gpt-1st" | tee --append ${OCS_LOGFILE}
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo -n "$msg_press_enter_to_continue..."
-         read
-      else
-         echo "GPT 1st partition table file found!" | tee --append ${OCS_LOGFILE}
-      fi
-      if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-gpt-2nd" ]; then
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-	 echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-gpt-2nd" | tee --append ${OCS_LOGFILE}
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo -n "$msg_press_enter_to_continue..."
-         read
-      else
-         echo "GPT 2nd partition table file found!" | tee --append ${OCS_LOGFILE}
-      fi
-      if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-gpt.gdisk" ]; then
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	 echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-gpt.gdisk" | tee --append ${OCS_LOGFILE}
-	 echo "Was this image saved by older version of Clonezilla? If so, we still can use this old image. However, it's recommended to save the image with the latest Clonezilla. " | tee --append ${OCS_LOGFILE}
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo -n "$msg_press_enter_to_continue..."
-         read
-      else
-         echo "GPT partition table file for this disk saved by gdisk was found: ${ihd}" | tee --append ${OCS_LOGFILE}
-      fi
-      ;;
-    esac
-  done
-
-  # When Clonezilla does not save a whole disk image (i.e. use the mode saveparts), the swap partition will be skipped. Therefore only check if swap info files exist when it is savedisk.
-  if [ "$image_type" = "disk" ]; then
-    echo $msg_delimiter_star_line
-    echo "Checking the swap partition info in the image \"$target_dir\"..."
-    # Check swap partition
-    for ihd in $target_hd; do
-      # Get the partition type from parted output
-      if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
-        ptype="gpt"
-      elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
-        ptype="mbr"
-      else
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-	echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-        exit 1
-      fi
-      case "$ptype" in
-       mbr)
-        echo "Finding swap partition(s) in MBR table $target_dir_fullpath/$(to_filename ${ihd})-pt.sf..."
-        for partition in `get_swap_partition_sf_format $target_dir_fullpath/$(to_filename ${ihd})-pt.sf`; do
-          echo "Checking swap partition $partition..."
-	  # read LABEL, UUID info for $partition if swappt-$(to_filename $partition).info exists
-          uuid_opt=""
-          label_opt=""
-	  if [ -e "$target_dir_fullpath/swappt-$(to_filename $partition).info" ]; then
-	    cat "$target_dir_fullpath/swappt-$(to_filename $partition).info"
-            echo "Swap partition info file found!"
-          else
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-            echo "$msg_this_swap_part_info_not_found: $partition"
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-            echo -n "$msg_press_enter_to_continue..."
-            read
-          fi
-        done
-        ;;
-       gpt)
-        echo "Finding swap partition(s) in GPT table $target_dir_fullpath/$(to_filename ${ihd})-pt.parted..."
-        for partition in `get_swap_partition_parted_format $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; do
-          echo "Checking swap partition $partition..."
-	  # read LABEL, UUID info for $partition if swappt-$(to_filename $partition).info exists
-          uuid_opt=""
-          label_opt=""
-	  if [ -e "$target_dir_fullpath/swappt-$(to_filename $partition).info" ]; then
-            cat "$target_dir_fullpath/swappt-$(to_filename $partition).info"
-            echo "Swap partition info file found!"
-          else
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-            echo "$msg_this_swap_part_info_not_found: $partition"
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-            echo -n "$msg_press_enter_to_continue..."
-            read
-          fi
-        done
-        ;;
-      esac
-    done
-  else
-    echo "This is not an image for whole disk. Skip checking swap partition info..." | tee --append ${OCS_LOGFILE}
-  fi
-
-  echo $msg_delimiter_star_line
-  # Check MBR
-  echo "Checking the MBR in the image \"$target_dir\"..."
-  # Reinstall executable code area (first 446 bytes in MBR)
-  for ihd in $target_hd; do
-    # Ref: http://en.wikipedia.org/wiki/Master_boot_record
-    # Master Boot Record (MBR) is the 512-byte boot sector:
-    # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
-    # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
-    if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-mbr" ]; then
-       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-       echo "$msg_mbr_img_of_this_hd_not_found: ${ihd}"
-       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-       echo -n "$msg_press_enter_to_continue..."
-       read
-    else
-       echo "MBR file for this disk was found: ${ihd}" | tee --append ${OCS_LOGFILE}
-    fi
-  done
-
-  echo $msg_delimiter_star_line
   PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
   do_LVM_restore="no"
   rct=0
@@ -513,9 +428,9 @@ task_checkimage() {
       continue
     fi
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Checking the partition $partition in the image \"$target_dir\"..."
+    echo "Converting the image of partition $partition in the image \"$target_dir\"..."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    do_partition_or_lv_img_check $target_dir_fullpath $partition
+    do_partition_or_lv_img_convert $target_dir_fullpath $partition
     rc=$?
     rct="$(($rct + $rc))"
   done
@@ -523,24 +438,24 @@ task_checkimage() {
   # Check LVM
   if [ "$do_LVM_restore" = "yes" ]; then
     # LVM exists, check PV/VG/LV.
-    task_logv_check "$target_parts"
+    task_logv_convert "$target_parts"
     rc=$?
     rct="$(($rct + $rc))"
     echo $msg_delimiter_star_line
   fi
 
   if [ "$rct" -gt 0 -a "$ocs_batch_mode" != "on" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "$msg_broken_partition_img_found: $target_dir" | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo -n "$msg_press_enter_to_continue..."
     read
   else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_all_the_part_lv_are_ok: $target_dir" | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
-} # end of task_checkimage
+} # end of task_convertimage
 
 ####################
 ### Main program ###
@@ -562,11 +477,20 @@ while [ $# -gt 0 ]; do
            fi
            [ -z "$ocsroot" ] && USAGE && exit 1
            ;;
-   -nogui|--nogui)
-           shift; 
-           # -nogui is for backward compatable, better to use --nogui
-           nogui="on"
-           ;;
+   -z0|--no-compress)    IMG_CLONE_CMP="cat"; shift;;
+   -z1|--gzip-compress)  IMG_CLONE_CMP="pigz -c $extra_pigz_opt"; shift;;
+   -z2|--bz2-compress)
+           if [ "$parallel_bzip2_prog" = "pbzip2" ]; then
+             IMG_CLONE_CMP="pbzip2 -c $extra_pbzip2_opt"
+           elif [ "$parallel_bzip2_prog" = "lbzip2" ]; then
+             IMG_CLONE_CMP="lbzip2 -c $extra_lbzip2_opt"
+           fi
+           shift;;
+   -z3|--lzo-compress)   IMG_CLONE_CMP="lzop -c $extra_lzop_opt"; shift;;
+   -z4|--lzma-compress)  IMG_CLONE_CMP="lzma -c $extra_lzma_opt"; shift;;
+   -z5|--xz-compress)    IMG_CLONE_CMP="pixz $extra_pixz_opt"; shift;;
+   -z6|--lzip-compress)  IMG_CLONE_CMP="plzip -c $extra_plzip_opt"; shift;;
+   -z7|--lrzip-compress) IMG_CLONE_CMP="lrzip -q - $extra_lrzip_opt"; shift;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
            exit 2 ;;
@@ -574,9 +498,9 @@ while [ $# -gt 0 ]; do
  esac
 done
 
-ocs_chk_img_name="$1"
+ocs_src_img_name="$1"
 shift
-ocs_chk_dev="$*"
+ocs_dest_img_name="$1"
 
 # Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
 # otherwise setterm will complain.
@@ -588,24 +512,43 @@ export TERM="$TERM"
 check_if_root
 ask_and_load_lang_set
 
+# check DIA
+check_DIA_set_ESC $DIA
+#
+[ -z "$VOL_LIMIT" ] && VOL_LIMIT=$VOL_LIMIT_DEFAULT
+[ -z "$IMG_CLONE_CMP" ] && IMG_CLONE_CMP="$IMG_CLONE_CMP_def"
+
 # imagedir is a variable which ask_user related function need
 imagedir="$ocsroot"
-[ -z "$ocs_chk_img_name" ] && ocs_chk_img_name="ask_user"
-# if "$ocs_chk_dev" is nothing, we check all the partitions.
+[ -z "$ocs_src_img_name" ] && ocs_src_img_name="ask_user"
+[ -z "$ocs_dest_img_name" ] && ocs_dest_img_name="ask_user"
 
-#
-if [ "$nogui" = "off" ]; then
-  # TUI is on.
-  PARTCLONE_CHKIMG_OPT="$PARTCLONE_CHKIMG_OPT -N"
+# Prepare the image to be converted
+# 1st, check if "$ocs_dest_img_name" exist
+if [ "$ocs_src_img_name" = "ask_user" ]; then
+  get_target_dir_name_when_converting_img
+fi
+ocs_src_img_name="$target_dir"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "$msg_the_image_to_be_convert: $ocs_src_img_name"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+if [ -z "$IMG_CLONE_CMP" ]; then
+  choose_compress_format
 fi
 
-log_line_start="$(LC_ALL=C wc -l $OCS_LOGFILE | cut -d" " -f1)"
+append_name="$(ocs-get-comp-suffix $IMG_CLONE_CMP)"
 
-task_checkimage "$ocs_chk_img_name" "$ocs_chk_dev"
+if [ "$ocs_dest_img_name" = "ask_user" ]; then
+  get_target_dir_name_when_saving  ${ocs_src_img_name}-${append_name} # get $target_dir
+fi
+ocs_dest_img_name="$target_dir"
 
-log_line_start="$((log_line_start + 1))"
-# Output the log summary.
-echo "Summary of image checking:"
-echo "=========================="
-tail -n +$log_line_start $OCS_LOGFILE
-echo "=========================="
+#
+create-ocs-tmp-img -t $ocsroot -n "$ocs_src_img_name" "$ocs_dest_img_name"
+
+task_convertimage "$ocs_dest_img_name"
+
+echo $msg_delimiter_star_line
+echo "Checking the converted image..."
+ocs-chkimg -b $ocs_dest_img_name
