@@ -29,6 +29,7 @@ USAGE() {
     echo "Options:"
     echo "-b, --batch-mode   Run image checking in batch mode"
     echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
+    echo "-sc, --skip-check-restorable  Skip checking the image if restorable after it is converted."
     echo "-z0, --no-compress       Convert to uncompression format"
     echo "-z1, --gzip-compress     Convert to gzip format"
     echo "-z2, --bz2-compress      Convert to bzip2 format"
@@ -53,7 +54,7 @@ choose_compress_format() {
   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
   show_z4_or_above_menu_or_not
   $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
-  "$msg_clonezilla_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_one_compression_param_to_save" \
+  "$msg_nchc_clonezilla" --menu "$msg_choose_one_compression_param_to_save" \
   0 0 0 $DIA_ESC \
   "-z1"      "$msg_ocs_param_z1" \
   "-z2"      "$msg_ocs_param_z2" \
@@ -84,16 +85,16 @@ choose_compress_format() {
   [ -f "$TMP" ] && rm -f $TMP
 } # end of choose_compress_format
 #
-ask_if_check_saved_img() {
+ask_if_check_converted_img() {
   local TMP=`mktemp /tmp/ocs_chk.XXXXXX`
   local sc_opt
   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
   # Question about checking the image after conversion
   $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
-  "$msg_clonezilla_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_if_checking_image_restorable" \
+  "$msg_nchc_clonezilla" --menu "$msg_choose_if_checking_image_restorable" \
   0 0 0 $DIA_ESC \
-  " "     "$msg_ocs_param_check_img_restorable" \
-  "-sc "  "$msg_ocs_param_skip_checking_img_restorable" \
+  " "     "$msg_check_converted_img_restorable" \
+  "-sc "  "$msg_skip_check_converted_img_restorable" \
   2> $TMP
   sc_opt="$(cat $TMP)"
   case "$sc_opt" in
@@ -101,7 +102,7 @@ ask_if_check_saved_img() {
      *)  chk_img_restoreable="yes";;
   esac
   [ -f "$TMP" ] && rm -f $TMP
-} # ask_if_check_saved_img
+} # ask_if_check_converted_img
 #
 img_covert_to_diff_compression() {
   local file_ fs_ partclone_img_info_tmp file_basename rc
@@ -183,6 +184,28 @@ img_covert_to_diff_compression() {
     echo "Converting compression format: $img_comp_format -> $t_comp_suf"
   fi
 
+  # Find the used space from partclone.info
+  # Partclone v0.2.68 http://partclone.org
+  # Unknown mode
+  # File system:  EXTFS
+  # Device size:    5.0 GB = 1220352 Blocks
+  # Space in use:   1.5 GB = 356732 Blocks  -> 1.5G
+  # Free Space:     3.5 GB = 863620 Blocks
+  # Block size:   4096 Byte
+  used_size="$(\
+  ( for img in $target_d/$img_file_prefix; do
+      cat $img
+    done
+  ) | \
+  $unzip_stdin_cmd | partclone.info -s - 2>&1 | \
+  awk -F":" '/^Space in use/ {print $2}' | sed -r -e "s/ = .*$//g" | sed -r -e "s/^[[:space:]]*//g" -e "s/[[:space:]]*//g" -e "s/B$//g")"
+  if [ -n "$used_size" ]; then
+    # Option for pv. The -s option only accepts integer... sigh... Not using it now.
+    #used_size_opt="-s $used_size"
+    used_size_opt=""
+  fi
+
+  #
   ( for img in $target_d/$img_file_prefix; do
       cat $img
     done
@@ -192,10 +215,10 @@ img_covert_to_diff_compression() {
     case "$VOL_LIMIT" in
       [1-9]*)
          # $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf}. is prefix, the last "." is necessary make the output file is like sda1.${fs_pre}-img.aa, sda1.${fs_pre}-img.ab. We do not add -d to make it like sda1.${fs_pre}-img.00, sda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (sda1.${fs_pre}-img.000, sda1.${fs_pre}-img.001)
-         pv -p -a | ${cmd_compress} | split -b ${VOL_LIMIT}m - $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf}. 2> $split_error
+         pv -pae $used_size_opt | ${cmd_compress} | split -b ${VOL_LIMIT}m - $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf}. 2> $split_error
          ;;
       *)
-         pv -p -a | ${cmd_compress} | cat - > $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf} 2> $split_error
+         pv -pae $used_size_opt | ${cmd_compress} | cat - > $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf} 2> $split_error
          ;;
     esac
   )
@@ -570,7 +593,7 @@ fi
 ocs_dest_img_name="$target_dir"
 
 if [ -z "$chk_img_restoreable" ]; then
-  ask_if_check_saved_img
+  ask_if_check_converted_img
 fi
 
 #
