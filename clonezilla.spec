@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.23
+Version:	3.8.24
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Dec 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.24-drbl1
+- Function ocs-get-comp-suffix of ocs-functions was improved to covert more commands.
+- Bug fixed: ocs-cvtimg-comp failed to run in command line mode with source and destination image names assigned.
+
 * Tue Dec 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.23-drbl1
 - Program ocs-cvtimg-comp should check if the image format is for ntfsclone, partimage, and dd. For the first 2 format, exit, and for the last one, just copy files.
 

@@ -159,6 +159,13 @@ img_covert_to_diff_compression() {
   echo $msg_delimiter_star_line
 
   s_comp_suf="$(ocs-get-comp-suffix $unzip_stdin_cmd)"
+  if [ -z "$s_comp_suf" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to find the compression format of source image!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
   # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
   # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
   t_img_file_prefix="$(echo $img_file_prefix | sed -r -e "s|\.\*$||g" -e "s|\.$s_comp_suf||g")"
@@ -171,9 +178,13 @@ img_covert_to_diff_compression() {
   compress_prog_opt="$IMG_CLONE_CMP"
   cmd_compress="$compress_prog_opt"
   t_comp_suf="$(ocs-get-comp-suffix $compress_prog_opt)"
-  # sda1.ext4-ptcl-img.gz.aa -> /home/partimag/precise-x86-20131112/sda1.ext4-ptcl-img.gz.aa
-  # sda5.ext4-ptcl-img.gz.aa -> /home/partimag/precise-x86-20131112/sda5.ext4-ptcl-img.gz.aa
-  # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
+  if [ -z "$t_comp_suf" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to decide the compression format of destination image!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
 
   # Check if source and destination compression program is the same format. If it's the same, we can not go on, otherwise the source file will be overwritten, and it will be broken due to source and destination are the same one.
   if [ "$img_comp_format" = "$t_comp_suf" ]; then
@@ -593,8 +604,9 @@ imagedir="$ocsroot"
 # 1st, check if "$ocs_dest_img_name" exist
 if [ "$ocs_src_img_name" = "ask_user" ]; then
   get_target_dir_name_when_converting_img
+  ocs_src_img_name="$target_dir"
 fi
-ocs_src_img_name="$target_dir"
+
 [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
 echo "$msg_the_image_to_be_convert: $ocs_src_img_name"
 [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -607,8 +619,8 @@ append_name="$(ocs-get-comp-suffix $IMG_CLONE_CMP)"
 
 if [ "$ocs_dest_img_name" = "ask_user" ]; then
   get_target_dir_name_when_saving  ${ocs_src_img_name}-${append_name} # get $target_dir
+  ocs_dest_img_name="$target_dir"
 fi
-ocs_dest_img_name="$target_dir"
 
 if [ -z "$chk_img_restoreable" ]; then
   ask_if_check_converted_img
