@@ -256,31 +256,7 @@ do_partition_or_lv_img_convert() {
   image_name_="$(basename $target_d)"
   # get the cat program: cat, zcat or bzcat
 
-  if [ -f "$target_d/$img_file.000" -o \
-       -f "$target_d/$img_file.aa" -o \
-       -f "$target_d/$img_file" ]; then
-    # The saved image is from partimage
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "This partition image was saved by partimage." | tee --append ${OCS_LOGFILE}
-    echo "$msg_img_check_not_supported" | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    rc=1
-    if [ "$ocs_batch_mode" != "on" ]; then
-      echo -n "$msg_press_enter_to_continue..."
-      read
-    fi
-  elif [ -f "$target_d/$img_file.ntfs-img" -o -f "$target_d/$img_file.ntfs-img.aa" ]; then
-    # The saved image is from ntfsclone
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "This partition image was saved by ntfsclone." | tee --append ${OCS_LOGFILE}
-    echo "$msg_img_check_not_supported" | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    rc=1
-    if [ "$ocs_batch_mode" != "on" ]; then
-      echo -n "$msg_press_enter_to_continue..."
-      read
-    fi
-  elif is_partclone_image $target_d $img_file; then
+  if is_partclone_image $target_d $img_file; then
     # The saved image is from partclone
     img_covert_to_diff_compression
     rc=$?
@@ -295,41 +271,13 @@ do_partition_or_lv_img_convert() {
       echo "This image conversion is finished: $img_file" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
-  elif [ -f "$target_d/$img_file.dd-img" -o -f "$target_d/$img_file.dd-img.aa" ]; then
-    if [ "$dd_checking_method" = "no-check" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Image was saved by dd. No need to check the file system integrity: $img_file" | tee --append ${OCS_LOGFILE}
-      sleep 1
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      rc=0
-    else
-      # For some of the special partition, even it's dd, we do not need to check that. E.g. VMware vmkcore partition. It only need partition ID=fc, we do not care the content of the file system. Ref: http://communities.vmware.com/thread/85788
-      # The saved image is from dd
-      if [ -e "$target_d/$img_file.dd-img.info" ]; then
-        # Get the paritition info, we will get "$partition"
-        . $target_d/$img_file.dd-img.info
-      fi
-      if [ "$partition" = "VMware_vmkcore_partition" ]; then
-        echo "VMware vmkcore partition found. No ndeed to check the file system." | tee --append ${OCS_LOGFILE}
-        rc=0
-      elif [ "$partition" = "BSD_slice" ]; then
-        echo "BSD slice found. No ndeed to check the file system." | tee --append ${OCS_LOGFILE}
-        rc=0
-      elif [ "$partition" = "BSD_swap_partition" ]; then
-        echo "BSD swap partition found. No ndeed to check the file system." | tee --append ${OCS_LOGFILE}
-        rc=0
-      else
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "This partition image was saved by dd." | tee --append ${OCS_LOGFILE}
-        echo "$msg_img_check_not_supported"
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        rc=1
-        if [ "$ocs_batch_mode" != "on" ]; then
-          echo -n "$msg_press_enter_to_continue..."
-          read
-        fi
-      fi
-    fi
+  elif [ -f "$target_d/$img_file.dd-img" -o \
+         -f "$target_d/$img_file.dd-img.aa" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Image was saved by dd. No converting it. Copy the file later: $img_file" | tee --append ${OCS_LOGFILE}
+    sleep 1
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    rc=0
   fi
 
   echo $msg_delimiter_star_line
@@ -415,6 +363,7 @@ task_convertimage() {
   local target_dir="$1"
   local parts_included target_dir_fullpath
   local ptype rc rct
+  local f_parent
 
   #
   target_parts="$(LC_ALL=C cat $ocsroot/$target_dir/parts)"
@@ -498,6 +447,18 @@ task_convertimage() {
     echo $msg_delimiter_star_line
   fi
 
+  # Scan the symbolic link files, then copy them. This is especially for those dd-img and its related files.
+  for i in $target_dir_fullpath/*; do
+    if [ -h "$i" ]; then
+      f_parent="$(LC_ALL=C stat -c "%N" $i | awk -F"->" '{print $2}' |\
+                sed -r -e "s/^[[:space:]]*//g" -e "s/\`//g" -e "s/'//g")"
+      rm -f $i
+      ( cd $target_dir_fullpath
+        rsync -avP -L $f_parent .
+      )
+    fi
+  done
+
   if [ "$rct" -gt 0 -a "$ocs_batch_mode" != "on" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "$msg_failed_to_convert_the_img_compression: $target_dir" | tee --append ${OCS_LOGFILE}
@@ -510,6 +471,52 @@ task_convertimage() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
 } # end of task_convertimage
+#
+check_if_old_format_img() {
+  local target_dir="$1"
+  local parts_included target_dir_fullpath
+  local ptype rc rct
+  local img_f
+
+  target_dir_fullpath="$ocsroot/$target_dir"
+  target_parts="$(LC_ALL=C cat $ocsroot/$target_dir/parts)"
+  # strip the leading spaces
+  target_parts="$(echo $target_parts | sed -e "s/^[[:space:]]*//g")"
+
+  echo $msg_delimiter_star_line
+  for partition in $target_parts; do
+    img_f="$(to_filename $partition)"
+    if [ -f "$target_dir_fullpath/$img_f.000" -o \
+         -f "$target_dir_fullpath/$img_f.aa" -o \
+         -f "$target_dir_fullpath/$img_f" ]; then
+      # The saved image is from partimage
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "This partition image was saved by partimage." | tee --append ${OCS_LOGFILE}
+      echo "This program does not support converting that format!" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      rc=1
+      if [ "$ocs_batch_mode" != "on" ]; then
+        echo -n "$msg_press_enter_to_continue..."
+        read
+      fi
+      echo "$msg_program_stop!"
+      exit 1
+    elif [ -f "$target_dir_fullpath/$img_f.ntfs-img" -o \
+           -f "$target_dir_fullpath/$img_f.ntfs-img.aa" ]; then
+      # The saved image is from ntfsclone
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "This partition image was saved by ntfsclone." | tee --append ${OCS_LOGFILE}
+      echo "This program does not support converting that format!" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      if [ "$ocs_batch_mode" != "on" ]; then
+        echo -n "$msg_press_enter_to_continue..."
+        read
+      fi
+      echo "$msg_program_stop!"
+      exit 1
+    fi
+  done
+} # end of check_if_old_format_img
 
 ####################
 ### Main program ###
@@ -608,6 +615,7 @@ if [ -z "$chk_img_restoreable" ]; then
 fi
 
 #
+check_if_old_format_img "$ocs_src_img_name"
 create-ocs-tmp-img -t $ocsroot -n "$ocs_src_img_name" "$ocs_dest_img_name"
 
 task_convertimage "$ocs_dest_img_name"
