@@ -19,6 +19,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # By default we do not check the image saved by dd.
 dd_checking_method="no-check"
 chk_img_restoreable=""
+verbose="no"
 
 #
 USAGE() {
@@ -30,6 +31,7 @@ USAGE() {
     echo "-b, --batch-mode   Run image checking in batch mode"
     echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
     echo "-sc, --skip-check-restorable  Skip checking the image if restorable after it is converted."
+    echo "-v, --verbose            Prints verbose information"
     echo "-z0, --no-compress       Convert to uncompression format"
     echo "-z1, --gzip-compress     Convert to gzip format"
     echo "-z2, --bz2-compress      Convert to bzip2 format"
@@ -105,7 +107,8 @@ ask_if_check_converted_img() {
 } # ask_if_check_converted_img
 #
 img_covert_to_diff_compression() {
-  local file_ fs_ partclone_img_info_tmp file_basename rc
+  local file_ fs_ partclone_img_info_tmp file_basename rc img_info
+  local used_size block_size used_size_byte rmopt_v
   # First, we find the filesystem 
   file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
   file_basename="$(basename ${file_})"
@@ -184,26 +187,30 @@ img_covert_to_diff_compression() {
     echo "Converting compression format: $img_comp_format -> $t_comp_suf"
   fi
 
-  # Find the used space from partclone.info
+  img_info="$(mktemp /tmp/ocs_img_info.XXXXXXX)"
+  trap "[ -f "$img_info" ] && rm -f $img_info" HUP INT QUIT TERM EXIT
+  # Find the used space from partclone.info. Because for pv, -s option only accepts integer
+  # So we can not use 1.5 GB for example, instead we have to use 356732*4096=1461174272
   # Partclone v0.2.68 http://partclone.org
   # Unknown mode
   # File system:  EXTFS
   # Device size:    5.0 GB = 1220352 Blocks
-  # Space in use:   1.5 GB = 356732 Blocks  -> 1.5G
+  # Space in use:   1.5 GB = 356732 Blocks
   # Free Space:     3.5 GB = 863620 Blocks
   # Block size:   4096 Byte
-  used_size="$(\
   ( for img in $target_d/$img_file_prefix; do
       cat $img
     done
   ) | \
-  $unzip_stdin_cmd | partclone.info -s - 2>&1 | \
-  awk -F":" '/^Space in use/ {print $2}' | sed -r -e "s/ = .*$//g" | sed -r -e "s/^[[:space:]]*//g" -e "s/[[:space:]]*//g" -e "s/B$//g")"
-  if [ -n "$used_size" ]; then
-    # Option for pv. The -s option only accepts integer... sigh... Not using it now.
-    #used_size_opt="-s $used_size"
-    used_size_opt=""
+  $unzip_stdin_cmd | partclone.info -s - &> $img_info
+  used_size="$(LC_ALL=C awk -F":" '/^Space in use/ {print $2}' $img_info | sed -r -e "s/^.*[[:space:]]=//g" -e "s/^[[:space:]]*//g" -e "s/[[:space:]]*Blocks//g")"
+  block_size="$(LC_ALL=C awk -F":" '/^Block size/ {print $2}' $img_info | sed -r -e "s/^[[:space:]]*//g" -e "s/Byte$//g")"
+  used_size_byte="$(LC_ALL=C echo "scale=0; $used_size * $block_size / 1" | bc -l)"
+  if [ -n "$used_size_byte" ]; then
+    # Option for pv. The -s option only accepts integer
+    used_size_opt="-s $used_size_byte"
   fi
+  rm -f $img_info
 
   #
   ( for img in $target_d/$img_file_prefix; do
@@ -226,8 +233,11 @@ img_covert_to_diff_compression() {
   rc="$?"
   if [ "$rc" -eq 0 ]; then
     if [ -L $target_d/$img_file_prefix ]; then
-      echo "Remove the temp link image file(s) $target_d/$img_file_prefix"
-      rm -fv $target_d/$img_file_prefix
+      if [ "$verbose" = "yes" ]; then
+        echo "Remove the temp link image file(s) $target_d/$img_file_prefix"
+	rmopt_v="-v"
+      fi
+      rm -f $rmopt_v $target_d/$img_file_prefix
     fi
   fi
   if [ -s "$split_error" ]; then
@@ -525,6 +535,7 @@ while [ $# -gt 0 ]; do
            # Flag to check if the image is restorable
            chk_img_restoreable="no"
 	   shift;;
+   -v|--verbose) verbose="yes"; shift;;
    -z0|--no-compress)    IMG_CLONE_CMP="cat"; shift;;
    -z1|--gzip-compress)  IMG_CLONE_CMP="pigz -c $extra_pigz_opt"; shift;;
    -z2|--bz2-compress)
