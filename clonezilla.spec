@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.24
+Version:	3.8.25
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Dec 11 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.25-drbl1
+- Part of codes in ocs-sr were moved as a function check_and_fix_vol_limit_if_required in ocs-functions.
+- Bug fixed: ocs-cvtimg-comp failed to remove the linked split files.
+
 * Tue Dec 10 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.24-drbl1
 - Function ocs-get-comp-suffix of ocs-functions was improved to covert more commands.
 - Bug fixed: ocs-cvtimg-comp failed to run in command line mode with source and destination image names assigned.

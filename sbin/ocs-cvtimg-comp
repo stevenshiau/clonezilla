@@ -29,6 +29,7 @@ USAGE() {
     echo "$ocs [OPTION] SRC_IMAGE_NAME DEST_IMAGE_NAME"
     echo "Options:"
     echo "-b, --batch-mode   Run image checking in batch mode"
+    echo " -i, --image-size SIZE    Set the split image file volume size SIZE (MB). When $ocs is run with -x, the default SIZE is set as $VOL_LIMIT_IN_INTERACTIVE, if without -x, we will not split it."
     echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
     echo "-sc, --skip-check-restorable  Skip checking the image if restorable after it is converted."
     echo "-v, --verbose            Prints verbose information"
@@ -105,6 +106,29 @@ ask_if_check_converted_img() {
   esac
   [ -f "$TMP" ] && rm -f $TMP
 } # ask_if_check_converted_img
+#
+ask_image_volume_size() {
+  local vol_size_tmp
+  local ASK_VOL_SIZE=1
+  # VOL_LIMIT and VOL_LIMIT_prompt are global variables.
+  vol_size_tmp="$(mktemp /tmp/vol_size_tmp.XXXXXX)"
+  trap "[ -f "$vol_size_tmp" ] && rm -f $vol_size_tmp" HUP INT QUIT TERM EXIT
+  while [ "$ASK_VOL_SIZE" -ne 0 ]; do
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    "$msg_nchc_clonezilla" --inputbox "$msg_set_image_volume_size" \
+    0 0 $VOL_LIMIT_prompt \
+    2> $vol_size_tmp
+    if [ -n "$(cat $vol_size_tmp | grep -iE "[^[:digit:]]")" ]; then
+      ASK_VOL_SIZE=1
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+      --msgbox "$msg_enter_digits_only\n$msg_please_do_it_again!!!" 0 0 
+    else
+      ASK_VOL_SIZE=0
+    fi
+  done
+  VOL_LIMIT="$(cat $vol_size_tmp)"
+  [ -f "$vol_size_tmp" ] && rm -f $vol_size_tmp
+} # ask_image_volume_size
 #
 img_covert_to_diff_compression() {
   local file_ fs_ partclone_img_info_tmp file_basename rc img_info
@@ -243,13 +267,15 @@ img_covert_to_diff_compression() {
 
   rc="$?"
   if [ "$rc" -eq 0 ]; then
-    if [ -L $target_d/$img_file_prefix ]; then
-      if [ "$verbose" = "yes" ]; then
-        echo "Remove the temp link image file(s) $target_d/$img_file_prefix"
-	rmopt_v="-v"
+    for ifile in $target_d/$img_file_prefix; do 
+      if [ -L "$ifile" ]; then
+        if [ "$verbose" = "yes" ]; then
+          echo "Remove the temp link image file(s) $ifile"
+          rmopt_v="-v"
+        fi
+        rm -f $rmopt_v $ifile
       fi
-      rm -f $rmopt_v $target_d/$img_file_prefix
-    fi
+    done
   fi
   if [ -s "$split_error" ]; then
     cat $split_error
@@ -554,6 +580,15 @@ while [ $# -gt 0 ]; do
            chk_img_restoreable="no"
 	   shift;;
    -v|--verbose) verbose="yes"; shift;;
+   -i|--image-size)
+           shift
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             VOL_LIMIT=$1
+             shift
+           fi
+           [ -z "$VOL_LIMIT" ] && USAGE && exit 1
+           ;;
    -z0|--no-compress)    IMG_CLONE_CMP="cat"; shift;;
    -z1|--gzip-compress)  IMG_CLONE_CMP="pigz -c $extra_pigz_opt"; shift;;
    -z2|--bz2-compress)
@@ -592,13 +627,21 @@ ask_and_load_lang_set
 # check DIA
 check_DIA_set_ESC $DIA
 #
-[ -z "$VOL_LIMIT" ] && VOL_LIMIT=$VOL_LIMIT_DEFAULT
 [ -z "$IMG_CLONE_CMP" ] && IMG_CLONE_CMP="$IMG_CLONE_CMP_def"
 
 # imagedir is a variable which ask_user related function need
 imagedir="$ocsroot"
 [ -z "$ocs_src_img_name" ] && ocs_src_img_name="ask_user"
 [ -z "$ocs_dest_img_name" ] && ocs_dest_img_name="ask_user"
+
+# If it's interactive mode, use the interactive value.
+# The VOL_LIMIT_prompt is preparted here, later we will use.
+if [ "$ocs_src_img_name" = "ask_user" -o \
+     "$ocs_dest_img_name" = "ask_user" ]; then
+  VOL_LIMIT_prompt="$VOL_LIMIT_IN_INTERACTIVE"
+else
+  VOL_LIMIT_prompt=$VOL_LIMIT_DEFAULT
+fi
 
 # Prepare the image to be converted
 # 1st, check if "$ocs_dest_img_name" exist
@@ -621,6 +664,13 @@ if [ "$ocs_dest_img_name" = "ask_user" ]; then
   get_target_dir_name_when_saving  ${ocs_src_img_name}-${append_name} # get $target_dir
   ocs_dest_img_name="$target_dir"
 fi
+
+#
+if [ -z "$VOL_LIMIT" ]; then
+  ask_image_volume_size
+fi
+# If VOL_LIMIT is too large, split won't work. Check and fix it if required.
+check_and_fix_vol_limit_if_required
 
 if [ -z "$chk_img_restoreable" ]; then
   ask_if_check_converted_img
