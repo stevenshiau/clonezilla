@@ -484,24 +484,42 @@ task_convertimage() {
     echo $msg_delimiter_star_line
   fi
 
-  # Scan the symbolic link files, then copy them. This is especially for those dd-img and its related files.
-  for i in $target_dir_fullpath/*; do
-    if [ -h "$i" ]; then
-      f_parent="$(LC_ALL=C stat -c "%N" $i | awk -F"->" '{print $2}' |\
-                sed -r -e "s/^[[:space:]]*//g" -e "s/\`//g" -e "s/'//g")"
-      rm -f $i
-      ( cd $target_dir_fullpath
-        rsync -avP -L $f_parent .
-      )
-    fi
-  done
+  # If the above conversion run smoothly, then we can scan the symbolic link files, and copy them. This is especially for those dd-img and its related files.
+  if [ "$rct" -eq 0 ]; then
+    for i in $target_dir_fullpath/*; do
+      if [ -h "$i" ]; then
+        f_parent="$(LC_ALL=C stat -c "%N" $i | awk -F"->" '{print $2}' |\
+                  sed -r -e "s/^[[:space:]]*//g" -e "s/\`//g" -e "s/'//g")"
+        rm -f $i
+        ( cd $target_dir_fullpath
+	  echo "Copying $f_parent..."
+          rsync -avP -L $f_parent .
+        )
+        rc=$?
+        rct="$(($rct + $rc))"
+      fi
+    done
+  fi
 
-  if [ "$rct" -gt 0 -a "$ocs_batch_mode" != "on" ]; then
+  if [ "$rct" -gt 0 ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "$msg_failed_to_convert_the_img_compression: $target_dir" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo -n "$msg_press_enter_to_continue..."
-    read
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_this_incomplete_image_will_be_removed: $target_dir_fullpath"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    if [ "$ocs_batch_mode" != "on" ]; then
+      echo -n "$msg_press_enter_to_continue..."
+      read
+    fi
+    # Careful... Do not remove all the images...
+    if [ -n "$target_dir_fullpath" ]; then
+      if [ "$target_dir_fullpath" != "$ocsroot" ]; then
+        rm -rfv $target_dir_fullpath
+      fi
+    fi
+    echo "$msg_program_stop!"
+    exit 1
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_succeeded_convert_the_img_compression: $target_dir" | tee --append ${OCS_LOGFILE}
