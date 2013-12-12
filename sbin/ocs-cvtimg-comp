@@ -16,10 +16,8 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
 # Settings
-# By default we do not check the image saved by dd.
-dd_checking_method="no-check"
-chk_img_restoreable=""
 verbose="no"
+chk_img_restoreable_def="yes"
 
 #
 USAGE() {
@@ -29,8 +27,9 @@ USAGE() {
     echo "$ocs [OPTION] SRC_IMAGE_NAME DEST_IMAGE_NAME"
     echo "Options:"
     echo "-b, --batch-mode   Run image checking in batch mode"
-    echo " -i, --image-size SIZE    Set the split image file volume size SIZE (MB). When $ocs is run with -x, the default SIZE is set as $VOL_LIMIT_IN_INTERACTIVE, if without -x, we will not split it."
+    echo "-i, --image-size SIZE    Set the split image file volume size SIZE (MB). When $ocs is run with -x, the default SIZE is set as $VOL_LIMIT_IN_INTERACTIVE, if without -x, we will not split it."
     echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
+    echo "-nogui, --nogui          Do not show GUI (TUI) of Partclone when checking, use text only"
     echo "-sc, --skip-check-restorable  Skip checking the image if restorable after it is converted."
     echo "-v, --verbose            Prints verbose information"
     echo "-z0, --no-compress       Convert to uncompression format"
@@ -53,11 +52,15 @@ USAGE() {
 #
 choose_compress_format() {
   local TMP=`mktemp /tmp/ocs_comp.XXXXXX`
-  local z_opt
+  local z_opt default_comp
   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
   show_z4_or_above_menu_or_not
+  if [ -n "$ocs_z5_option_1" ]; then
+    default_comp_opt="--default-item $ocs_z5_option_1"
+  fi
   $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
   "$msg_nchc_clonezilla" --menu "$msg_choose_one_compression_param_to_save" \
+  $default_comp_opt \
   0 0 0 $DIA_ESC \
   "-z1"      "$msg_ocs_param_z1" \
   "-z2"      "$msg_ocs_param_z2" \
@@ -593,6 +596,10 @@ while [ $# -gt 0 ]; do
            fi
            [ -z "$ocsroot" ] && USAGE && exit 1
            ;;
+   -nogui|--nogui)
+           # -nogui is for backward compatable, better to use --nogui
+           nogui="on"
+	   shift;;
    -sc|--skip-check-restorable)
            # Flag to check if the image is restorable
            chk_img_restoreable="no"
@@ -628,9 +635,14 @@ while [ $# -gt 0 ]; do
  esac
 done
 
-ocs_src_img_name="$1"
-shift
-ocs_dest_img_name="$1"
+#
+if [ -z "$*" ]; then
+  mode="interactive"
+else
+  ocs_src_img_name="$1"
+  shift
+  ocs_dest_img_name="$1"
+fi
 
 # Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
 # otherwise setterm will complain.
@@ -690,8 +702,12 @@ fi
 # If VOL_LIMIT is too large, split won't work. Check and fix it if required.
 check_and_fix_vol_limit_if_required
 
-if [ -z "$chk_img_restoreable" ]; then
+if [ "$mode" = "interactive" ]; then
   ask_if_check_converted_img
+else
+  if [ -z "$chk_img_restoreable" ]; then
+    chk_img_restoreable="$chk_img_restoreable_def"
+  fi
 fi
 
 #
@@ -702,7 +718,22 @@ task_convertimage "$ocs_dest_img_name"
 
 #
 if [ "$chk_img_restoreable" = "yes" ]; then
+  if [ "$nogui" = "on" ]; then
+    nogui_opt="-nogui"
+  fi
   echo $msg_delimiter_star_line
   echo "Checking the converted image..."
-  ocs-chkimg -b $ocs_dest_img_name
+  ocs-chkimg -b $nogui_opt $ocs_dest_img_name
+  rc_ocs="$?"
+  if [ "$rc_ocs" -eq 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+    echo "$msg_new_compression_format_image_created_successfully: $ocs_dest_img_name"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$msg_failed_to_convert_new_compression_as_another_image: $ocs_dest_img_name"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
 fi
+
+exit $rc_ocs
