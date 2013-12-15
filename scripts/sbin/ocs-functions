@@ -7748,13 +7748,6 @@ task_restoreparts() {
     done
   fi
 
-  # Install MBR which displays a failure message on boot. This is for fault tolerance. If all the partitions are cloned successfully, the correcting MBR will be restored later. For more info, please check https://sourceforge.net/tracker/?func=detail&atid=671653&aid=2793248&group_id=115473
-  if [ "$restore_mbr" = "yes" ]; then
-    for ihd in $target_hd; do
-      cat /usr/share/partclone/fail-mbr.bin > /dev/$ihd
-    done
-  fi
-
   # We will only restore hidden data when the mode is restoredisk (including unicast & multicast restoredisk, i.e. restoredisk or multicast_restoredisk).
   if [ "$clone_hidden_data" = "yes" -a -n "$(echo "$ocs_sr_type" | grep -Ei "restoredisk")" ]; then
     for ihd in $target_hd; do
@@ -7906,25 +7899,14 @@ task_restoreparts() {
   fi
 
   # Reinstall executable code area (first 446 bytes in MBR)
-  for ihd in $target_hd; do
-    if [ "$restore_mbr" = "yes" ]; then
-      # Ref: http://en.wikipedia.org/wiki/Master_boot_record
-      # Master Boot Record (MBR) is the 512-byte boot sector:
-      # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
-      # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
-      if [ "$restore_prebuild_mbr" = "yes" ]; then
-        # For M$ Windows system, sometimes it will fail if we restore the mbr from the one we saved (Ex. hda-mbr). Another option is to use mbr.bin from syslinux
-	echo -n "Restoring the mbr.bin from syslinux to /dev/$ihd... " | tee --append $OCS_LOGFILE
-        cat $pxelinux_binsrc_dir/bios/mbr.bin > /dev/$ihd
-        echo "done." | tee --append $OCS_LOGFILE
-      else
-        echo -n "Restoring the first 446 bytes of MBR data, i.e. executable code area, for $ihd... " | tee --append $OCS_LOGFILE
-        dd if=$target_dir_fullpath/$(to_filename ${ihd})-mbr of=/dev/$ihd bs=446 count=1 &>/dev/null
-        echo "done." | tee --append $OCS_LOGFILE
-      fi
-      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+  if [ "$restore_mbr" = "yes" ]; then
+    if [ "$restore_prebuild_mbr" = "yes" ]; then
+      prebuild_opt="-p"
     fi
-  done
+    for ihd in $target_hd; do
+      ocs-restore-mbr $prebuild_opt $target_dir $ihd | tee --append ${OCS_LOGFILE}
+    done
+  fi
 
   # resize partition if necessary
   if [ "$resize_partition" = "on" ]; then

@@ -1,0 +1,117 @@
+#!/bin/bash
+
+# Reinstall executable code area (first 446 bytes in MBR)
+
+# Ref: http://en.wikipedia.org/wiki/Master_boot_record
+# Master Boot Record (MBR) is the 512-byte boot sector:
+# 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
+# However, some people also call executable code area (first 446 bytes in MBR) as MBR.
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Setings
+# By default we do not restore the prebuild mbr from syslinux.
+restore_prebuild_mbr="no"
+
+#
+USAGE() {
+    echo "$ocs - To restore the MBR from an image to device"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] IMAGE_NAME DEVICE"
+    echo "Options:"
+    echo "-p, --prebuild_mbr  Use the prebuild bootloader from syslinux (For Windows only), not from the saved image"
+    echo "IMAGE_NAME is the image dir name, not absolute path"
+    echo "DEVICE is the device name, e.g. sda, sda..."
+    echo "Ex:"
+    echo "To restore the the mbr saved in the image \"my-image\" to device sda, run:"
+    echo "   $ocs my-image sda"
+    echo
+} # end of USAGE
+
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -p|--prebuild_mbr)
+           restore_prebuild_mbr="yes"
+           shift; 
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+target_dir="$1"
+shift
+target_hd="$*"
+
+# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
+# otherwise setterm will complain.
+[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
+echo "Setting the TERM as $TERM"
+export TERM="$TERM"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+if [ -z "$target_dir" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No image was assigned!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  echo "$msg_program_stop!"
+  exit 1
+fi
+if [ -z "$target_hd" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No destination disk was assigned!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+#
+target_dir_fullpath="$ocsroot/$target_dir"
+
+for ihd in $target_hd; do
+  if `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
+    # Install MBR which displays a failure message on boot. This is for fault tolerance. If all the partitions are cloned successfully, the correcting MBR will be restored later. For more info, please check https://sourceforge.net/tracker/?func=detail&atid=671653&aid=2793248&group_id=115473
+    cat /usr/share/partclone/fail-mbr.bin > /dev/$ihd
+    if [ "$restore_prebuild_mbr" = "yes" ]; then
+      # For M$ Windows system, sometimes it will fail if we restore the mbr from the one we saved (Ex. hda-mbr). Another option is to use mbr.bin from syslinux
+      echo -n "Restoring the mbr.bin from syslinux to /dev/$ihd... "
+      cat $pxelinux_binsrc_dir/bios/mbr.bin > /dev/$ihd
+      echo "done."
+    else
+      echo -n "Restoring the first 446 bytes of MBR data, i.e. executable code area, for $ihd... "
+      dd if=$target_dir_fullpath/$(to_filename ${ihd})-mbr of=/dev/$ihd bs=446 count=1 &>/dev/null
+      echo "done."
+    fi
+    echo $msg_delimiter_star_line
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Not a MBR disk: $ihd"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "No need to restore the first 446 bytes of MBR data!"
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+done
