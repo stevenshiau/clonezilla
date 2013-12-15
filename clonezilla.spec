@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.28
+Version:	3.8.29
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Dec 15 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.29-drbl1
+- Prompt in ocs-restore-mbr was updated.
+
 * Sun Dec 15 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.28-drbl1
 - The codes about restoring MBR was extracted as another program ocs-restore-mbr so it's easier to be used separately.
 
