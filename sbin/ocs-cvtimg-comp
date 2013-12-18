@@ -74,19 +74,39 @@ choose_compress_format() {
   z_opt="$(cat $TMP)"
   case "$z_opt" in
    -z0)  IMG_CLONE_CMP="cat";;
-   -z1)  IMG_CLONE_CMP="pigz -c $extra_pigz_opt";;
-   -z2)
-         if [ "$parallel_bzip2_prog" = "pbzip2" ]; then
-           IMG_CLONE_CMP="pbzip2 -c $extra_pbzip2_opt"
-         elif [ "$parallel_bzip2_prog" = "lbzip2" ]; then
-           IMG_CLONE_CMP="lbzip2 -c $extra_lbzip2_opt"
+   -z1)  
+	 if type pigz &>/dev/null; then
+	   IMG_CLONE_CMP="pigz -c $extra_pigz_opt"
+         else
+	   IMG_CLONE_CMP="gzip -c $extra_gzip_opt"
          fi
-         ;;
+	 shift;;
+   -z2)
+         if [ "$parallel_bzip2_prog" = "pbzip2" ] && type pbzip2 &>/dev/null; then
+           IMG_CLONE_CMP="pbzip2 -c $extra_pbzip2_opt"
+         elif [ "$parallel_bzip2_prog" = "lbzip2" ] && type lbzip2 &>/dev/null; then
+           IMG_CLONE_CMP="lbzip2 -c $extra_lbzip2_opt"
+         else
+           IMG_CLONE_CMP="bzip2 -c $extra_bzip2_opt"
+         fi
+         shift;;
    -z3)  IMG_CLONE_CMP="lzop -c $extra_lzop_opt";;
    -z4)  IMG_CLONE_CMP="lzma -c $extra_lzma_opt";;
-   -z6)  IMG_CLONE_CMP="plzip -c $extra_plzip_opt";;
+   -z6)  
+	 if type plzip &>/dev/null; then
+	   IMG_CLONE_CMP="plzip -c $extra_plzip_opt"
+         else
+	   IMG_CLONE_CMP="lzip -c $extra_lzip_opt"
+         fi
+	 shift;;
    -z7)  IMG_CLONE_CMP="lrzip -q - $extra_lrzip_opt";;
-     *)  IMG_CLONE_CMP="pixz $extra_pixz_opt";;
+     *)  
+	 if type pixz &>/dev/null; then
+	   IMG_CLONE_CMP="pixz $extra_pixz_opt"
+         else
+	   IMG_CLONE_CMP="xz -c $extra_xz_opt"
+         fi
+	 shift;;
   esac
   [ -f "$TMP" ] && rm -f $TMP
 } # end of choose_compress_format
@@ -193,9 +213,14 @@ img_covert_to_diff_compression() {
     echo "$msg_program_stop!"
     exit 1
   fi
-  # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
-  # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
-  t_img_file_prefix="$(echo $img_file_prefix | sed -r -e "s|\.\*$||g" -e "s|\.$s_comp_suf||g")"
+  # E.g. 
+  # (1) New format without split, e.g. 
+  # sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.* (now) -> sda1.ext4-ptcl-img
+  # (2) New format with image not split, e.g. 
+  # sda1.ext4-ptcl-img.gz (now) -> sda1.ext4-ptcl-img
+  #t_img_file_prefix="$(echo $img_file_prefix | sed -r -e "s|\.\*$||g" \
+  #	               -e "s|\.$s_comp_suf\..*$||g" -e "s|\.$s_comp_suf$||g")"
+  t_img_file_prefix="$(echo $img_file_prefix | sed -r -e "s|\.\*$||g" -e "s|\.${s_comp_suf}$||g")"
 
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
 
@@ -222,7 +247,7 @@ img_covert_to_diff_compression() {
     exit 1
   else
     echo "Now process the image file of partition: $img_file_prefix"
-    echo "Converting compression format: $img_comp_format -> $t_comp_suf"
+    echo "Converting compression format: $img_comp_format -> $t_comp_suf by \"$compress_prog_opt\""
   fi
 
   img_info="$(mktemp /tmp/ocs_img_info.XXXXXXX)"
@@ -615,18 +640,38 @@ while [ $# -gt 0 ]; do
            [ -z "$VOL_LIMIT" ] && USAGE && exit 1
            ;;
    -z0|--no-compress)    IMG_CLONE_CMP="cat"; shift;;
-   -z1|--gzip-compress)  IMG_CLONE_CMP="pigz -c $extra_pigz_opt"; shift;;
+   -z1|--gzip-compress)  
+	   if type pigz &>/dev/null; then
+	     IMG_CLONE_CMP="pigz -c $extra_pigz_opt"
+           else
+	     IMG_CLONE_CMP="gzip -c $extra_gzip_opt"
+           fi
+	   shift;;
    -z2|--bz2-compress)
-           if [ "$parallel_bzip2_prog" = "pbzip2" ]; then
+           if [ "$parallel_bzip2_prog" = "pbzip2" ] && type pbzip2 &>/dev/null; then
              IMG_CLONE_CMP="pbzip2 -c $extra_pbzip2_opt"
-           elif [ "$parallel_bzip2_prog" = "lbzip2" ]; then
+           elif [ "$parallel_bzip2_prog" = "lbzip2" ] && type lbzip2 &>/dev/null; then
              IMG_CLONE_CMP="lbzip2 -c $extra_lbzip2_opt"
+           else
+             IMG_CLONE_CMP="bzip2 -c $extra_bzip2_opt"
            fi
            shift;;
    -z3|--lzo-compress)   IMG_CLONE_CMP="lzop -c $extra_lzop_opt"; shift;;
    -z4|--lzma-compress)  IMG_CLONE_CMP="lzma -c $extra_lzma_opt"; shift;;
-   -z5|--xz-compress)    IMG_CLONE_CMP="pixz $extra_pixz_opt"; shift;;
-   -z6|--lzip-compress)  IMG_CLONE_CMP="plzip -c $extra_plzip_opt"; shift;;
+   -z5|--xz-compress)    
+	   if type pixz &>/dev/null; then
+	     IMG_CLONE_CMP="pixz $extra_pixz_opt"
+           else
+	     IMG_CLONE_CMP="xz -c $extra_xz_opt"
+           fi
+	   shift;;
+   -z6|--lzip-compress)  
+	   if type plzip &>/dev/null; then
+	     IMG_CLONE_CMP="plzip -c $extra_plzip_opt"
+           else
+	     IMG_CLONE_CMP="lzip -c $extra_lzip_opt"
+           fi
+	   shift;;
    -z7|--lrzip-compress) IMG_CLONE_CMP="lrzip -q - $extra_lrzip_opt"; shift;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
