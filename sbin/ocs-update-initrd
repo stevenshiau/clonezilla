@@ -1,0 +1,242 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# Description: Program to reinstall grub on a MBR hard drive. This program is aimed to use the grub in the restored OS first, and if it fails, try to use the grub from the running OS (live CD, for example).
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+verbose="no"
+grub_partition="" # e.g. /dev/sda1
+selected_hd=""    # e.g. sda
+selected_parts="" # e.g. sda1, sda2
+grub_ver_in_restored_os=""
+grub2_boot_dir=""
+check_before_install="yes"  # By default we check if grub is already in the boot loader. If so, we continue to run grub-install
+
+#
+USAGE() {
+    echo "$ocs - To install grub on a hard drive."
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] DISK"
+    echo "Options:"
+    echo "-g, --grub-version VER  Assign the grub version as VER (1 or 2)"
+    echo "-s, --selected-hd  DISk Assign the disk to search for _only_, i.e. not to search those not in the lists. This is used for not to touch those disk which are not restored. E.g. sda or sdb..." 
+    echo "-p, --selected-parts PARTITION  Assign the partitions to search for _only_, i.e. not to search those not in the lists. This is used for not to touch those partitions which are not restored. E.g. sda1, sda2. For multiple partitions, use something like \"sda1 sda2\""
+    echo "-n, --no-check-before-install   By default we check if grub is already in the boot loader. If so, we continue to run grub-install. This option will go without checking."
+    echo "DISK is where the hard drive grub will be installed. E.g. /dev/sda, /dev/sdb..."
+    echo "Ex:"
+    echo "To install grub on /dev/sda with possible grub partitions sda1 and sda2, run"
+    echo "   $ocs -p \"sda1 sda2\" /dev/sda"
+    echo "To install grub and let $ocs to find the grub disk, run"
+    echo "   $ocs auto"
+    echo
+} # end of USAGE
+
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+# -s or -p option is used to pass the selected device, which means only these device will be searched for grub partition. If no assigning, all the available partitions on the system will be searched.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -g|--grub-version)
+       shift
+       if [ -z "$(echo $1 |grep ^-.)" ]; then
+         # skip the -xx option, in case 
+         grub_ver_in_restored_os="$1"
+         shift
+       fi
+       [ -z "$grub_ver_in_restored_os" ] && echo "-g is used, but no grub_ver_in_restored_os assigned." && exit 1
+       ;;
+    -s|--selected-hd)
+       shift
+       if [ -z "$(echo $1 |grep ^-.)" ]; then
+         # skip the -xx option, in case 
+         selected_hd="$1"
+         shift
+       fi
+       if [ -z "$selected_hd" ]; then
+         echo "-s is used, but no selected_hd assigned."
+         echo "$msg_program_stop"
+         [ "$save_restore_error_log" = "yes" ] && copy_error_log
+         exit 1
+       fi
+       ;;
+    -p|--selected-parts)
+       shift
+       if [ -z "$(echo $1 |grep ^-.)" ]; then
+         # skip the -xx option, in case 
+         selected_parts="$1"
+         shift
+       fi
+       if [ -z "$selected_parts" ]; then
+         echo "-p is used, but no selected_parts assigned."
+         echo "$msg_program_stop"
+         [ "$save_restore_error_log" = "yes" ] && copy_error_log
+         exit 1
+       fi
+       ;;
+    -n|--no-check-before-install)
+       # Option to force install grub even if boot loader is not found as grub
+       shift
+       check_before_install="no"
+       ;;
+    -*)     echo "${0}: ${1}: invalid option"
+            USAGE >& 2
+            echo "$msg_program_stop"
+            [ "$save_restore_error_log" = "yes" ] && copy_error_log
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+grub_partition="$1"
+
+if [ -z "$grub_partition" ]; then
+  USAGE
+  exit 1
+fi
+
+# if grub_partition is not set, set default
+if [ "$grub_partition" = "auto" ]; then
+   grub_partition=""   # reset it as none
+   check_grub_partition "$selected_hd"
+   # We get $found_grub_partition from check_grub_partition, it might be 1 or 2 or more partitions, e.g. /dev/sda1 /dev/hda1
+   # 3 cases:
+   # (1) selected_parts is assigned
+   # From the selected_parts, we can decide which one got from check_grub_partition is really for the target disk
+   # (2) selected_hd is assigned
+   # found_grub_partition e.g.: /dev/sda1 /dev/hda1
+   # selected_hd e.g.: sda sdb
+   # (3) no selected_parts or selected_hd is assigned
+   if [ -n "$selected_parts" ]; then
+     # found_grub_partition e.g.: /dev/sda1 /dev/hda1 /dev/cciss/c0d0p1
+     # selected_parts e.g.: sda1 sda2 sda5 cciss/c0d0p1 cciss/c0d0p2
+     for i in $found_grub_partition; do
+       for j in $selected_parts; do
+         if [  "${i#/dev/*}" = "$j" ]; then
+          grub_partition="$i"  # e.g. /dev/sda1
+          break
+         fi
+       done
+       [ -n "$grub_partition" ] && break
+     done
+   elif [ -n "$selected_hd" ]; then
+     # found_grub_partition e.g.: /dev/sda1 /dev/hda1
+     # selected_hd e.g.: sda sdb
+     for i in $found_grub_partition; do
+       for j in $selected_hd; do
+         if [ "$(get_diskname $i)" = "$j" ]; then
+          grub_partition="$i"  # e.g. /dev/sda1
+          break
+         fi
+       done
+       [ -n "$grub_partition" ] && break
+     done
+   else
+     # No assignment, use the one found. However, maybe there are more than 1. We only take the first one.
+     if [ "$(LC_ALL=C echo $found_grub_partition | wc -w)" -gt 1 ]; then
+       grub_partition="$(echo $found_grub_partition | awk -F" " '{print $1}')"
+       echo "More than one grub config partitions exist: $found_grub_partition. Choose the 1st one: $grub_partition."
+     else
+       grub_partition="$found_grub_partition"
+     fi
+   fi
+   if [ -n "$grub_partition" ]; then
+     echo "Found grub partition: $grub_partition"
+   else
+     echo "The grub directory is NOT found. Maybe it does not exist (so other boot manager exists) or the file system is not supported in the kernel. Skip running $grub_install_exec."
+     exit 1
+   fi
+   # Check if grub_partition is on the list of target partitions
+   if [ -n "$selected_parts" ]; then
+     # Only if we assign the selected partitions, we have to check...
+     # E.g.
+     # grub_partition=/dev/sda1
+     # echo "sda1 sda3" | grep -Ewo "${grub_partition#/dev/*}"
+     if [ -n "$(echo $selected_parts | grep -Ewo "${grub_partition#/dev/*}")" ]; then
+       echo "Found grub partition \"$grub_partition\", which is on the restored partitions list ($selected_parts). Will run $grub_install_exec later."
+     else
+       echo "The found grub partition \"$grub_partition\" is _NOT_ on the restored partitions list ($selected_parts). Skip running $grub_install_exec."
+       exit 3
+     fi
+   fi
+fi
+# grub_partition is like "/dev/hda1" or "/dev/sda1"
+# So grub_hd is like "hda" or "sda"
+# Remove the leading space, just in case.
+grub_partition="$(LC_ALL=C echo "$grub_partition" | sed -r -e "s/^[[:space:]]*//g")"
+grub_hd="$(get_diskname $grub_partition)"
+# active this device
+fdisk -l /dev/$grub_hd &>/dev/null
+
+# process the boot loader
+hd_img="$(mktemp -d /tmp/hd_img.XXXXXX)"
+mount $grub_partition $hd_img
+
+# Check if /boot is in its own partition, if so, different mount point.
+# grub root-directory must have "/boot/". If no "/boot/", it must be the grub partition itself (i.e. a separate partition will be mounted as /boot, and it conains /grub/ in the partition.)
+if [ ! -d "$hd_img/boot/" ]; then
+   # In this case, /boot must exist in its own partition, 
+   # not same partition with / (root partition).
+
+   # remount it as /tmp/hd_img.XXXXXX/boot
+   unmount_wait_and_try $hd_img
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+   echo "There is a separate boot partition in target device. Trying to mount root partition for $grub_install_exec to work with that..."
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   # Important! We have to mount the root dir first. Otherwise in FC6, CentOS 5 or later, grub-install will refuse to do that without root device. It will show the error message like: "Could not find device for /mnt"... For Debian or Ubuntu, no such problem. 
+   # Actually we can modify /sbin/grub-install (grub-0.97-13) in FC6 or Centos5:
+   # -----------
+   # ...
+   # # Get the root drive.
+   # root_device=`find_device ${rootdir}` || exit 1
+   # ...
+   # -----------
+   # as 
+   # root_device=`find_device ${rootdir}`
+   # i.e. remove "|| exit 1". However, it's better to follow the way distribution does. Therefore we modify ocs-function instead of modifying grub-install.
+   mount_root_partition_for_separate_boot_part $hd_img  # return variable $found_root_partition
+   # just in case no /boot in root partition
+   mkdir -p $hd_img/boot
+   mount $grub_partition $hd_img/boot/
+
+   do_run_update_initrd_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd"
+   rc="$?"
+else
+   # In this case, /boot must co-exist with root system in same partition, 
+   # Then found_root_partition is the grub partition
+   found_root_partition="$grub_partition"
+   do_run_update_initrd_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd"
+   rc="$?"
+fi
+
+unmount_wait_and_try $grub_partition 2>/dev/null
+unmount_wait_and_try $hd_img 2>/dev/null
+# "sleep 0.5" was added to avoid ocs-restore-mdisks run too fast error.
+# Without it, it might show this error when ocs-restore-mdisks is run:
+# rmdir: failed to remove `/tmp/hd_img.weAw4i': Device or resource busy
+[ -d "$hd_img/boot" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img/boot)
+[ -d "$hd_img" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img)
+
+if [ "$rc" -ne 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to create initrd in the restored OS."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    [ "$debug_mode" = "on" ] && sulogin
+else
+    echo "done!"
+fi
+exit $rc

@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.8.30
+Version:	3.9.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 23 2013 Steven Shiau <steven _at_ nchc org tw> 3.9.1-drbl1
+- Comments in ocs-cvtimg-comp were updated.
+- The install_grub_hd function in ocs-functions was extracted as a program "ocs-install-grub" so that it's easier to be run separately.
+- Program ocs-update-initrd was added so it's can be run separately for P2V for CentOS 5 (not finished yet).
+
 * Wed Dec 18 2013 Steven Shiau <steven _at_ nchc org tw> 3.8.30-drbl1
 - If parallel compression programs are not found, ocs-cvtimg-comp will find the normal compression programs to do that.
 
