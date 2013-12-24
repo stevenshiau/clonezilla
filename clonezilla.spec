@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.1
+Version:	3.9.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.7.13, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.68, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.7.14, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.68, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Dec 24 2013 Steven Shiau <steven _at_ nchc org tw> 3.9.2-drbl1
+- All the install_grub_hd in ocs-onthefly and ocs-makeboot was replaced by ocs-install-grub.
+
 * Mon Dec 23 2013 Steven Shiau <steven _at_ nchc org tw> 3.9.1-drbl1
 - Comments in ocs-cvtimg-comp were updated.
 - The install_grub_hd function in ocs-functions was extracted as a program "ocs-install-grub" so that it's easier to be run separately.
