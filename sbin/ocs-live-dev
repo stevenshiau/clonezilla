@@ -61,7 +61,8 @@ USAGE() {
     echo "-c, --create-release  Create a USB package release file, this will not create a bootable device, instead it will create a zip file contain all necessary files to make it boot and run clonezilla live."
     echo "-o, --normal-menu  When a clonezilla image is inserted, by default only restore menu will be shown in the created ISO file. If you want to show normal menu, i.e. with save and restore menu, use this one."
     echo "-x, --extra-boot-param  EXTRA_PARAM  Assign extra boot parameter EXTRA_PARAM for clonezilla live kernel to read. These parameters are the same with that from live-initramfs. Ex. \"noeject\" can be use to not prompt to eject the CD on reboot."
-    echo "-u, --include-dir DIR     Include a dir in the target zip file."
+    echo "-y, --syslinux-ver VER  Assign the syslinux version as VER. E.g. 6.02, 6.03-pre1"
+    echo "-u, --include-dir DIR   Include a dir in the target zip file."
     echo "-n, --ocs-live-boot-menu-option EXTRA_OPTION Assign an extra option for ocs-live-boot-menu. //NOTE// Do not put '-' in this EXTRA_OPTION, $0 will add that automatically. e.g. if you want to add -s1 for ocs-live-boot-menu to run, use 's1' only."
     echo "$prog will download a template Debian live CD for clonezilla iso file if ncecessary. You can also download it by yourself, and put it in the working directory when you run $prog. If you want to create that template iso file in Debian Etch, run create-debian-live."
     echo "NOTE! You have to prepare the target partition first, and the filesystem should be ready (FAT or ext2/3)."
@@ -254,6 +255,15 @@ while [ $# -gt 0 ]; do
               shift
             fi
 	    [ -z "$include_dir" ] && USAGE && exit 1
+            ;;
+    -y|--syslinux-ver)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              isolinux_ver="$1"
+              shift
+            fi
+	    [ -z "$isolinux_ver" ] && USAGE && exit 1
             ;;
     -*)     echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
@@ -937,7 +947,9 @@ else
     cp -af $LIVE_MEDIA/utils $USB_TMP
   else
     # Since we can not judge the version from any files in $USB_TMP/syslinux, we use $USB_TMP/isolinux/isolinux.bin.
-    isolinux_ver="$(LC_ALL=C strings $USB_TMP/isolinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+    if [ -z "$isolinux_ver" ]; then
+      isolinux_ver="$(LC_ALL=C strings $USB_TMP/isolinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+    fi
     put_syslinux_makeboot_for_usb_flash $USB_TMP $isolinux_ver
   fi
   # just store it. since big files, like squash flie and opt_drbl.tgz are compressed, it's not necessary to compress it again.
