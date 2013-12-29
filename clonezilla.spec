@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.4
+Version:	3.9.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Dec 29 2013 Steven Shiau <steven _at_ nchc org tw> 3.9.5-drbl1
+- An initial value for next_step in function get_live_boot_param in ocs-functions was added.
+
 * Sat Dec 28 2013 Steven Shiau <steven _at_ nchc org tw> 3.9.4-drbl1
 - Bug fixed: next_step should be local variable in function get_live_boot_param in ocs-functions.
 
