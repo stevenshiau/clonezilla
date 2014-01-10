@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.7
+Version:	3.9.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jan 10 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.8-drbl1
+- Bug fixed: "noeject" is not required in the TORAM part of isolinux.cfg and syslinux.cfg.  Thanks to Ady <ady-sf _at_ hotmail com> for this bug report.
+
 * Thu Jan 09 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.7-drbl1
 - Boot parameters ocs_daemonon and ocs_daemonoff for Ubuntu-based Clonezilla live failed due to upstart is not compatable with sysvinit command like "/etc/init.d/$i start".
 
