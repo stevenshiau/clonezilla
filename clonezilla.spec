@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.8
+Version:	3.9.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jan 11 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.9-drbl1
+- Bug fixed: If drbl_mode is none, we should not make drbl as client's default boot menu when running "drbl-ocs stop".
+
 * Fri Jan 10 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.8-drbl1
 - Bug fixed: "noeject" is not required in the TORAM part of isolinux.cfg and syslinux.cfg.  Thanks to Ady <ady-sf _at_ hotmail com> for this bug report.
 

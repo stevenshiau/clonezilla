@@ -724,7 +724,17 @@ case "$drbl_ocs_type" in
     # Make client to boot in drbl mode with menu label specified.
     # get the distribution name and type: OS_Version and OS_type
     check_distribution_name
-    force_pxe_clients_boot_label drbl
+    # Check if drbl_mode is none or not. If none, we have to set the default menu as local
+    # Here we use subshell to avoid variables are introduced.
+    (
+      if [ -e /etc/drbl/drbl_deploy.conf ]; then
+        . /etc/drbl/drbl_deploy.conf
+      fi
+      case "$drbl_mode" in
+        none) force_pxe_clients_boot_label local ;;
+           *) force_pxe_clients_boot_label drbl ;;
+      esac
+    )
     # When stopping the service, we disable all, no matter it's NFSroot-based or Clonezilla-live based.
     # (1) for NFSroot-based
     hide_reveal_pxe_img clonezilla hide $PXE_CONF
