@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.10
+Version:	3.9.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jan 15 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.11-drbl1
+- Bug fixed: the grub dir name is called "grub2" for Fedora >=18, that causes check_grub_partition function failed to locate the grub partition.
+
 * Mon Jan 13 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.10-drbl1
 - Bug fixed: boot parameters of toram was accidentally removed previously.
 
