@@ -1580,8 +1580,14 @@ post_process_in_target_dev() {
 set_filter_program() {
 case "$filter" in
   bzip|bzip2)
-       if which bzip2 &>/dev/null; then
-         filter_comp="bzip2 -c"
+       if [ "$parallel_bzip2_prog" = "pbzip2" ] && type pbzip2 &>/dev/null; then
+         filter_comp="pbzip2 -c $extra_pbzip2_opt"
+         filter_decomp="pbzip2 -cd"
+       elif [ "$parallel_bzip2_prog" = "lbzip2" ] && type lbzip2 &>/dev/null; then
+         filter_comp="lbzip2 -c $extra_lbzip2_opt"
+         filter_decomp="lbzip2 -cd"
+       elif type bzip2 &>/dev/null; then
+         filter_comp="bzip2 -c $extra_bzip2_opt"
          filter_decomp="bzip2 -cd"
        else
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -1592,12 +1598,27 @@ case "$filter" in
        fi
        ;;
    lzop)
-       if which lzop &>/dev/null; then
-         filter_comp="lzop -c"
+       if type lzop &>/dev/null; then
+         filter_comp="lzop -c $extra_lzop_opt"
          filter_decomp="lzop -cd"
        else
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
          echo "lzop is NOT found." | tee --append $OCS_LOGFILE
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+	 exit 1
+       fi
+       ;;
+   xz)
+       if type pixz &>/dev/null; then
+         filter_comp="pixz $extra_pixz_opt"
+         filter_decomp="pixz -d"
+       elif type xz &>/dev/null; then
+         filter_comp="xz -c $extra_xz_opt"
+         filter_decomp="xz -cd"
+       else
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "xz is NOT found." | tee --append $OCS_LOGFILE
          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
          echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
 	 exit 1
@@ -1608,7 +1629,10 @@ case "$filter" in
        filter_decomp="cat"
        ;;
    *)
-       if which gzip &>/dev/null; then
+       if type pigz &>/dev/null; then
+         filter_comp="pigz -c $extra_pigz_opt"
+         filter_decomp="pigz -cd"
+       elif type gzip &>/dev/null; then
          filter_comp="gzip -c $extra_gzip_opt"
          filter_decomp="gzip -cd"
        else
@@ -1686,7 +1710,7 @@ USAGE() {
     echo "-r, --resize-partition   Resize the file system size to fit the partition size in the destination disk. It is normally used when when a small partition image is restored to a larger partition."
     echo "-f, --source DEV         Specify the source device as DEV (sda, sda1...)"
     echo "-g, --grub-install GRUB_PARTITION     Install grub in the MBR of the disk containing partition GRUB_PARTITION with root grub directory in the same GRUB_PARTITION when restoration finishs, GRUB_PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the grub root partition automatically). If \"auto\" is assigned, it will work if grub partition and root partition are not in the same partition."
-    echo "-i, --filter PROGRAM     Use the PROGRAM (gzip/lzop/bzip2/cat) before sending partition data to netcat (only in network clone mode). The default action is gzip. Use \"cat\" if you do not want to compress (Good for fast internode network)."
+    echo "-i, --filter PROGRAM     Use the PROGRAM (gzip/lzop/bzip2/xz/cat) before sending partition data to netcat (only in network clone mode). The default action is gzip. Use \"cat\" if you do not want to compress (Good for fast internode network)."
     echo "-nogui, --nogui          Do not show GUI (TUI) of Partclone or Partimage, use text only"
     echo "-rescue, --rescue        Turn on rescue mode, i.e. try to skip bad sectors."
     echo "-irhr, --irhr            Skip removing the Linux udev hardware records on the restored GNU/Linux."
@@ -2107,7 +2131,7 @@ parse_ocs_onthefly_cmd_options() {
               shift
               if [ -z "$(echo $1 |grep ^-.)" ]; then
                 # skip the -xx option, in case 
-  	      filter=$1
+  	        filter=$1
                 shift
               fi
   	    [ -z "$filter" ] && USAGE && exit 1
