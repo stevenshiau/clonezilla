@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.12
+Version:	3.9.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jan 16 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.13-drbl1
+- Packages.gz instead of Packages.bzip2 is used in get_latest_kernel_ver_in_repository since bzip2 one is changed to xz in Debian Sid, but Ubuntu still uses gzip and bzip2.
+
 * Thu Jan 16 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.12-drbl1
 - Pixz is used in ocs-onthefly local to remote cloning. An option to use xz as filter program was added, too.
 
