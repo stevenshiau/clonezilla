@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.14
+Version:	3.9.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jan 18 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.15-drbl1
+- Parameter "ocs_postmode_prompt" instead of "messages_shown_preference" for the post action (reboot/poweroff/cmd/...) mode. If command line mode instead of TUI mode is desired, now we can use "ocs_postmode_prompt=cmd" in the boot parameters. This will work for both ocs-sr and ocs-onthefly.
+- Deprecated function run_post_cmd_when_clonezilla_live_end of ocs-functions was removed.
+- The output of command run_post_cmd_when_clone_end in ocs-onthefly is recoreded in log file, too.
+
 * Fri Jan 17 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.14-drbl1
 - Program partclone.restore is replaced by partclone.$fs in ocs-onthefly because partclone.restore will be deprecated in the future.
 

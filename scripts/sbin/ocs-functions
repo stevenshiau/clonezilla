@@ -3167,7 +3167,15 @@ run_post_cmd_when_clone_end() {
       reboot $HALT_REBOOT_OPT
       ;;
     choose)
-      if [ "$messages_shown_preference" = "tui" ]; then
+      if [ "$ocs_postmode_prompt" = "cmd" ]; then
+        echo "$msg_clone_finished_choose_to:"
+        echo "(0) $msg_poweroff"
+        echo "(1) $msg_reboot"
+        echo "(2) $msg_enter_cml"
+        echo -n "[2] "
+        read final_action
+      else
+        # Default to use TUI mode
         TMP="$(mktemp /tmp/ocslivemode.XXXXXX)"
         trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
         $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
@@ -3178,13 +3186,6 @@ run_post_cmd_when_clone_end() {
         2> $TMP
 	final_action="$(cat $TMP)"
         [ -f "$TMP" ] && rm -f $TMP
-      else
-        echo "$msg_clone_finished_choose_to:"
-        echo "(0) $msg_poweroff"
-        echo "(1) $msg_reboot"
-        echo "(2) $msg_enter_cml"
-        echo -n "[2] "
-        read final_action
       fi
       case "$final_action" in
         0) echo -n 'Will poweroff... '; countdown 5; poweroff $HALT_REBOOT_OPT ;;
@@ -8687,52 +8688,6 @@ unmount_mounted_fs_before_ocs_live_reboot() {
     fi
   done
 } # end of unmount_mounted_fs_before_ocs_live_reboot
-#
-run_post_cmd_when_clonezilla_live_end() {
-  # //NOTE// This function is deprecated. We will use ocs-live-final-action file due to jfbterm does not work with function.
-  local tty_bash_id umount_dir
-  echo "$msg_clone_finished_choose_to:"
-  echo "(0) $msg_poweroff"
-  echo "(1) $msg_reboot"
-  echo "(2) $msg_enter_cml"
-  echo "(3) $msg_run_clonezilla_live_again"
-  if mountpoint $ocsroot &>/dev/null; then
-    echo "(4) $msg_run_clonezilla_live_again_but_keep_mounted_repository"
-  fi
-  echo -n "[2] "
-  read final_action
-  case "$final_action" in
-    0) unmount_mounted_fs_before_ocs_live_reboot
-       echo -n 'Will poweroff... '
-       countdown 5
-       poweroff $HALT_REBOOT_OPT ;;
-    1) unmount_mounted_fs_before_ocs_live_reboot
-       echo -n 'Will reboot... '
-       countdown 5
-       reboot $HALT_REBOOT_OPT ;;
-    3|4) # umount the clonezilla home dir
-       if [ "$final_action" = "3" ]; then
-         echo "Completely start over, so umounting $ocsroot..."
-         unmount_mounted_fs_before_ocs_live_reboot
-       else
-         echo "Keep the mounted image repository $ocsroot..."
-       fi
-       echo -n 'Run Clonezilla live again... '
-       # since we are not in login shell, it's useless to use "exit" or "logout" to force logout bash. Use kill to terminate the login shell in tty1. The clonezilla live main menu will be run again.
-       if [ -n "$ocs_live_run_tty" ]; then
-         # ocs_live_run_tty is like: /dev/tty2, /dev/pts/2 (very unlikely)
-         ttys="$(LC_ALL=C echo $ocs_live_run_tty | sed -e "s|/dev/||g")"
-       else
-         ttys="tty1"
-       fi
-       for i in $ttys; do
-         tty_bash_id="$(LC_ALL=C ps -t $i | grep bash | awk -F" " '{print $1}')"
-         kill -9 $tty_bash_id
-       done
-       ;;
-    *) echo ;;
-  esac
-} # end of run_post_cmd_when_clonezilla_live_end
 #
 get_live_boot_param() {
   # For live helper with live-initramfs, maybe it is: boot=live username=casper union=aufs

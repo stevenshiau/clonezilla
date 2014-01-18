@@ -60,30 +60,52 @@ check_DIA_set_ESC $DIA
 ##############
 #### main ####
 
-TMP="$(mktemp /tmp/ocs_final_act.XXXXXX)"
-
-if mountpoint $ocsroot &>/dev/null; then
-  rerun2_ocs_with_repo_mounted_1="rerun2"
-  rerun2_ocs_with_repo_mounted_2="$(rep_whspc_w_udrsc "$msg_run_clonezilla_live_again_but_keep_mounted_repository")"
-fi
-
-final_action_flag=1
-while [ "$final_action_flag" -ne 0 ]; do
-  $DIA --default-item "cmd" --nocancel --backtitle "Free Software Labs, NCHC, Taiwan" --title  \
-  "Choose mode" --menu "$msg_clone_finished_choose_to:" \
-  0 0 0 \
-  poweroff "$msg_poweroff" \
-  reboot "$msg_reboot" \
-  cmd "$msg_enter_cml" \
-  rerun1 "$msg_run_clonezilla_live_again" \
-  $rerun2_ocs_with_repo_mounted_1 $rerun2_ocs_with_repo_mounted_2 \
-  2> $TMP
-  final_action="$(cat $TMP)"
-  if [ -z "$lang" ]; then
-    final_action_flag=1
-  else
-    final_action_flag=0
+# ocs_postmode_prompt is loaded from ocs-live.conf.
+if [ "$ocs_postmode_prompt" = "cmd" ]; then
+  echo "$msg_clone_finished_choose_to:"
+  echo "(0) $msg_poweroff"
+  echo "(1) $msg_reboot"
+  echo "(2) $msg_enter_cml"
+  echo "(3) $msg_run_clonezilla_live_again"
+  if mountpoint $ocsroot &>/dev/null; then
+    echo "(4) $msg_run_clonezilla_live_again_but_keep_mounted_repository"
   fi
-done
-[ -f "$TMP" ] && rm -f $TMP
+  echo -n "[2] "
+  read final_action_no
+  case "$final_action_no" in
+    0) final_action="poweroff";;
+    1) final_action="reboot";;
+    3) final_action="rerun1";;
+    4) final_action="rerun2";;
+    *) final_action="cmd";;
+  esac
+else
+  # Default to use TUI mode
+  TMP="$(mktemp /tmp/ocs_final_act.XXXXXX)"
+  
+  if mountpoint $ocsroot &>/dev/null; then
+    rerun2_ocs_with_repo_mounted_1="rerun2"
+    rerun2_ocs_with_repo_mounted_2="$(rep_whspc_w_udrsc "$msg_run_clonezilla_live_again_but_keep_mounted_repository")"
+  fi
+  
+  final_action_flag=1
+  while [ "$final_action_flag" -ne 0 ]; do
+    $DIA --default-item "cmd" --nocancel --backtitle "Free Software Labs, NCHC, Taiwan" --title  \
+    "Choose mode" --menu "$msg_clone_finished_choose_to:" \
+    0 0 0 \
+    poweroff "$msg_poweroff" \
+    reboot "$msg_reboot" \
+    cmd "$msg_enter_cml" \
+    rerun1 "$msg_run_clonezilla_live_again" \
+    $rerun2_ocs_with_repo_mounted_1 $rerun2_ocs_with_repo_mounted_2 \
+    2> $TMP
+    final_action="$(cat $TMP)"
+    if [ -z "$lang" ]; then
+      final_action_flag=1
+    else
+      final_action_flag=0
+    fi
+  done
+  [ -f "$TMP" ] && rm -f $TMP
+fi
 echo "$final_action" > $output_f
