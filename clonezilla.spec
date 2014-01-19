@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.15
+Version:	3.9.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jan 19 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.16-drbl1
+- When "-p choose" of ocs-sr or ocs-onthefly is used, the default item of dialog menu is entering command line prompt now.
+- The option "--rsyncable" was added for gzip/pigz when saving an image (https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/8d5f80a6). Thanks to lucatrv for providing this idea. 
+
 * Sat Jan 18 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.15-drbl1
 - Parameter "ocs_postmode_prompt" instead of "messages_shown_preference" for the post action (reboot/poweroff/cmd/...) mode. If command line mode instead of TUI mode is desired, now we can use "ocs_postmode_prompt=cmd" in the boot parameters. This will work for both ocs-sr and ocs-onthefly.
 - Deprecated function run_post_cmd_when_clonezilla_live_end of ocs-functions was removed.
