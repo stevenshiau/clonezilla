@@ -546,7 +546,7 @@ if [ "$template_mode" = "from-booting-live-media" ]; then
   # dr-xr-xr-x  syslinux/
   # dr-xr-xr-x  utils/
   # We need all of them.
-  template_iso_size="$(LC_ALL=C du -Lmsc $LIVE_MEDIA/{Clonezilla-Live-Version,GPL,.disk,EFI,isolinux,$sys_files_dir,syslinux,utils} | tail -n 1 | awk -F" " '{print $1}')"
+  template_iso_size="$(LC_ALL=C du -Lmsc $LIVE_MEDIA/{Clonezilla-Live-Version,GPL,.disk,EFI,$sys_files_dir,syslinux,utils} | tail -n 1 | awk -F" " '{print $1}')"
 else
   # From iso file (debian-live-for-ocs.iso)
   # The dirs/files in Debian live for OCS:
@@ -629,23 +629,11 @@ fi
 
 # Create the iso image file
 # isolinux should be rw, so we have to copy it, and exclude the one in iso image.
-mkdir -p $ISOSYSLNX_TMP/isolinux/ $ISOSYSLNX_TMP/syslinux/ $ISOSYSLNX_TMP/EFI/boot/
+mkdir -p $ISOSYSLNX_TMP/syslinux/ $ISOSYSLNX_TMP/EFI/boot/
 # rsync -a --exclude f*.txt --exclude boot.cat --exclude isolinux.txt --exclude isolinux.bin --exclude splash.rle --exclude doc $DRBL_SCRIPT_PATH/pkg/syslinux/* $ISOSYSLNX_TMP/isolinux/
 # we have to overwrite isolinux.bin since vesamenu.c32 should be same version with that.
-# For isolinux
-cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file $ISOSYSLNX_TMP/isolinux/
-# For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
-for i in $sys_pxelinux_v5p_required_c32; do
-  if [ -e "$pxelinux_binsrc_dir/$i" ]; then
-    # syslinux <= 5 
-    cp -af $pxelinux_binsrc_dir/$i $ISOSYSLNX_TMP/isolinux/
-  elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
-    # syslinux >= 6, different path
-    cp -af $pxelinux_binsrc_dir/bios/$i $ISOSYSLNX_TMP/isolinux/
-  fi
-done
-# For syslinux
-cp -af $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file $ISOSYSLNX_TMP/syslinux/
+# Jan/19/2014 For both syslinux and isolinux (unified in one dir)
+cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file $ISOSYSLNX_TMP/syslinux/
 # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
 for i in $sys_pxelinux_v5p_required_c32; do
   if [ -e "$pxelinux_binsrc_dir/$i" ]; then
@@ -766,7 +754,14 @@ for i in $mkiso_exclude_list; do
 done
 
 # Find the boot param $boot_param, also $splash_opt will be gotten
-get_live_boot_param $DEBIAN_ISO_TMP/isolinux
+if [ "$template_mode" = "from-booting-live-media" ]; then
+  # From boot media (clonezilla live), DEBIAN_ISO_TMP is LIVE_MEDIA
+  # Jan/19/2014 We have unified syslinux and isolinux to one dir "syslinux"
+  get_live_boot_param $DEBIAN_ISO_TMP/syslinux
+else
+  # From iso file (debian-live-for-ocs.iso)
+  get_live_boot_param $DEBIAN_ISO_TMP/isolinux
+fi
 
 if [ "$splash_opt" = "splash" ]; then
   splash_switch="-sp"
@@ -778,7 +773,7 @@ fi
 if [ -n "$ocs_image" ]; then
   # Image is included
   # For isolinux
-  ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/isolinux/
+  ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/syslinux/
   # For syslinux
   ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" syslinux $ISOSYSLNX_TMP/syslinux/
   # For EFI, grub2 efi or syslinux efi
@@ -792,7 +787,7 @@ if [ -n "$ocs_image" ]; then
 else
   # No image is included
   # For isolinux
-  ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/isolinux/
+  ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/syslinux/
   # For syslinux
   ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" syslinux $ISOSYSLNX_TMP/syslinux/
   # For EFI, grub2 efi or syslinux efi
@@ -814,7 +809,7 @@ if [ -e "$LIVE_MEDIA/utils/linux/syslinux" -a \
   cp -rf $LIVE_MEDIA/utils $ISOSYSLNX_TMP
 else
   if [ -z "$isolinux_ver" ]; then
-    isolinux_ver="$(LC_ALL=C strings $ISOSYSLNX_TMP/isolinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+    isolinux_ver="$(LC_ALL=C strings $ISOSYSLNX_TMP/syslinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
   fi
   put_syslinux_makeboot_for_usb_flash $ISOSYSLNX_TMP $isolinux_ver
 fi
@@ -830,9 +825,9 @@ echo "$prog $prog_option" >> $ISOSYSLNX_TMP/Clonezilla-Live-Version
 
 # $sys_files_dir maybe /casper, /live or /isolinux. If it is isolinux, we can not list them twice otherwise mkisofs will go wrong.
 if [ "$sys_files_dir" != "isolinux" ]; then
-  sys_files_dir_graft_point="/isolinux/=$ISOSYSLNX_TMP/isolinux/ /syslinux/=$ISOSYSLNX_TMP/syslinux/ /$sys_files_dir/=$ISOSYSLNX_TMP/$sys_files_dir/"
+  sys_files_dir_graft_point="/syslinux/=$ISOSYSLNX_TMP/syslinux/ /$sys_files_dir/=$ISOSYSLNX_TMP/$sys_files_dir/"
 else
-  sys_files_dir_graft_point="/isolinux/=$ISOSYSLNX_TMP/isolinux/ /syslinux/=$ISOSYSLNX_TMP/syslinux/" 
+  sys_files_dir_graft_point="/syslinux/=$ISOSYSLNX_TMP/syslinux/" 
 fi
 
 #
@@ -922,7 +917,7 @@ genisoimage \
  -V "$iso_label_tag" \
  -publisher "DRBL/Clonezilla http://drbl.org http://clonezilla.org" \
  -f -r -hide-rr-moved -hide-joliet-trans-tbl -J -l $allow_limited_size_opt \
- -b isolinux/isolinux.bin -c isolinux/boot.cat \
+ -b syslinux/isolinux.bin -c syslinux/boot.cat \
  -no-emul-boot -boot-load-size 4 -boot-info-table \
  $efi_img_opt \
  $mkiso_exclude_opt \

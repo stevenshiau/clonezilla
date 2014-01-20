@@ -584,7 +584,7 @@ if [ "$template_mode" = "from-booting-live-media" ]; then
   # dr-xr-xr-x  syslinux/
   # dr-xr-xr-x  utils/
   # We need all of them.
-  template_iso_size="$(LC_ALL=C du -Lmsc $LIVE_MEDIA/{Clonezilla-Live-Version,GPL,.disk,EFI,isolinux,$sys_files_dir,syslinux,utils} | tail -n 1 | awk -F" " '{print $1}')"
+  template_iso_size="$(LC_ALL=C du -Lmsc $LIVE_MEDIA/{Clonezilla-Live-Version,GPL,.disk,EFI,$sys_files_dir,syslinux,utils} | tail -n 1 | awk -F" " '{print $1}')"
 else
   # From iso file (debian-live-for-ocs.iso)
   # The dirs/files in Debian live for OCS:
@@ -626,9 +626,9 @@ echo "done!"
 
 cp -af $DRBL_SCRIPT_PATH/doc/GPL $USB_TMP/
 # replace the original syslinux and related files.
-mkdir -p $USB_TMP/syslinux/ $USB_TMP/isolinux/ $USB_TMP/EFI/boot/
+mkdir -p $USB_TMP/syslinux/ $USB_TMP/EFI/boot/
 # For syslinux
-cp -af $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file $USB_TMP/syslinux/
+cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file $USB_TMP/syslinux/
 # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
 for i in $sys_pxelinux_v5p_required_c32; do
   if [ -e "$pxelinux_binsrc_dir/$i" ]; then
@@ -637,18 +637,6 @@ for i in $sys_pxelinux_v5p_required_c32; do
   elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
     # syslinux >= 6, different path
     cp -af $pxelinux_binsrc_dir/bios/$i $USB_TMP/syslinux/
-  fi
-done
-# For isolinux
-cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file $USB_TMP/isolinux/
-# For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
-for i in $sys_pxelinux_v5p_required_c32; do
-  if [ -e "$pxelinux_binsrc_dir/$i" ]; then
-    # syslinux <= 5 
-    cp -af $pxelinux_binsrc_dir/$i $USB_TMP/isolinux/
-  elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
-    # syslinux >= 6, different path
-    cp -af $pxelinux_binsrc_dir/bios/$i $USB_TMP/isolinux/
   fi
 done
 # 2. For EFI machine
@@ -848,7 +836,16 @@ echo "This Clonezilla live zip file was created by this command:" >> $USB_TMP/Cl
 echo "$prog $prog_option" >> $USB_TMP/Clonezilla-Live-Version
 
 # Find the boot param $boot_param, also $splash_opt will be gotten
-get_live_boot_param $DEBIAN_ISO_TMP/isolinux
+if [ "$template_mode" = "from-booting-live-media" ]; then
+  # From boot media (clonezilla live), DEBIAN_ISO_TMP is LIVE_MEDIA
+  # Jan/19/2014 We have unified syslinux and isolinux to one dir "syslinux"
+  get_live_boot_param $DEBIAN_ISO_TMP/syslinux
+else
+  # From iso file (debian-live-for-ocs.iso)
+  get_live_boot_param $DEBIAN_ISO_TMP/isolinux
+fi
+
+
 if [ "$splash_opt" = "splash" ]; then
   splash_switch="-sp"
 else
@@ -916,7 +913,7 @@ else
     # For syslinux
     ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
     # For isolinux
-    ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/isolinux/
+    ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
     # For EFI, grub2 efi or syslinux efi
     if [ "$live_efi_boot_loader" = "grub" ]; then
       if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
@@ -929,7 +926,7 @@ else
     # For syslinux
     ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
     # For isolinux
-    ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/isolinux/
+    ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
     # For EFI, grub2 efi or syslinux efi
     if [ "$live_efi_boot_loader" = "grub" ]; then
       if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
@@ -948,7 +945,7 @@ else
   else
     # Since we can not judge the version from any files in $USB_TMP/syslinux, we use $USB_TMP/isolinux/isolinux.bin.
     if [ -z "$isolinux_ver" ]; then
-      isolinux_ver="$(LC_ALL=C strings $USB_TMP/isolinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+      isolinux_ver="$(LC_ALL=C strings $USB_TMP/syslinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
     fi
     put_syslinux_makeboot_for_usb_flash $USB_TMP $isolinux_ver
   fi

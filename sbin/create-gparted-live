@@ -163,24 +163,13 @@ create_gparted_live_iso(){
   fi
 
   # now we can insert the boot menu of isolinux
-  mkdir -p $ISOSYSLNX_TMP/syslinux $ISOSYSLNX_TMP/isolinux $ISOSYSLNX_TMP/EFI/boot/
+  mkdir -p $ISOSYSLNX_TMP/syslinux $ISOSYSLNX_TMP/EFI/boot/
   # create isolinux menu
   # isolinux should be rw, so we have to copy it, and exclude the one in iso image.
   # we have to overwrite isolinux.bin since vesamenu.c32 should be same version with that.
-  # For isolinux
-  cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $gparted_live_boot_bg_img $pxelinux_chain_file $ISOSYSLNX_TMP/isolinux/
-  # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
-  for i in $sys_pxelinux_v5p_required_c32; do
-    if [ -e "$pxelinux_binsrc_dir/$i" ]; then
-      # syslinux <= 5 
-      cp -af $pxelinux_binsrc_dir/$i $ISOSYSLNX_TMP/isolinux/
-    elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
-      # syslinux >= 6, different path
-      cp -af $pxelinux_binsrc_dir/bios/$i $ISOSYSLNX_TMP/isolinux/
-    fi
-  done
+  # Jan/19/2014 For both syslinux and isolinux (unified in one dir)
   # For syslinux
-  cp -af $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $gparted_live_boot_bg_img $pxelinux_chain_file $ISOSYSLNX_TMP/syslinux/
+  cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $gparted_live_boot_bg_img $pxelinux_chain_file $ISOSYSLNX_TMP/syslinux/
   # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
   for i in $sys_pxelinux_v5p_required_c32; do
     if [ -e "$pxelinux_binsrc_dir/$i" ]; then
@@ -240,10 +229,18 @@ create_gparted_live_iso(){
   done
 
   # Find the boot param $boot_param
-  get_live_boot_param $stage1_iso_TMP/isolinux
+  if [ "$template_mode" = "from-booting-live-media" ]; then
+    # From boot media (clonezilla live), DEBIAN_ISO_TMP is LIVE_MEDIA
+    # Jan/19/2014 We have unified syslinux and isolinux to one dir "syslinux"
+    get_live_boot_param $stage1_iso_TMP/syslinux
+  else
+    # From iso file (debian-live-for-ocs.iso)
+    get_live_boot_param $stage1_iso_TMP/isolinux
+  fi
+
   # generate the menu
   # For isolinux
-  ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/isolinux/
+  ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/syslinux/
   # For syslinux
   ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap noeject" -r "* Boot menu for BIOS machine" syslinux $ISOSYSLNX_TMP/syslinux/
   # For EFI, grub2 efi or syslinux efi
@@ -258,7 +255,7 @@ create_gparted_live_iso(){
   # With syslinux-related files, we can put the iso file on USB stick and make ti bootable, too.
   echo "Preparing syslinux.exe, syslinux, makeboot.bat and makeboot.sh... "
   if [ -z "$isolinux_ver" ]; then
-    isolinux_ver="$(LC_ALL=C strings $ISOSYSLNX_TMP/isolinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+    isolinux_ver="$(LC_ALL=C strings $ISOSYSLNX_TMP/syslinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
   fi
   put_syslinux_makeboot_for_usb_flash $ISOSYSLNX_TMP/ $isolinux_ver
 
@@ -269,9 +266,9 @@ create_gparted_live_iso(){
 
   # $sys_files_dir maybe /casper, /live or /isolinux. If it is isolinux, we can not list them twice otherwise mkisofs will go wrong.
   if [ "$sys_files_dir" != "isolinux" ]; then
-    sys_files_dir_graft_point="/isolinux/=$ISOSYSLNX_TMP/isolinux/ /syslinux/=$ISOSYSLNX_TMP/syslinux/ /$sys_files_dir/=$ISOSYSLNX_TMP/$sys_files_dir/"
+    sys_files_dir_graft_point="/syslinux/=$ISOSYSLNX_TMP/syslinux/ /$sys_files_dir/=$ISOSYSLNX_TMP/$sys_files_dir/"
   else
-    sys_files_dir_graft_point="/isolinux/=$ISOSYSLNX_TMP/isolinux/ /syslinux/=$ISOSYSLNX_TMP/syslinux/" 
+    sys_files_dir_graft_point="/syslinux/=$ISOSYSLNX_TMP/syslinux/" 
   fi
 
   # Remove the existing iso
@@ -336,7 +333,7 @@ EFI_END
    -V "GParted-live" \
    -publisher "GParted http://gparted.org" \
    -f -r -hide-rr-moved -hide-joliet-trans-tbl -J -l -allow-limited-size\
-   -b isolinux/isolinux.bin -c isolinux/boot.cat \
+   -b syslinux/isolinux.bin -c syslinux/boot.cat \
    -no-emul-boot -boot-load-size 4 -boot-info-table \
    $efi_img_opt \
    $mkiso_exclude_opt \
@@ -407,12 +404,13 @@ create_gparted_live_zip() {
     USB_TMP="$(mktemp -d /tmp/ocs-usb-dev.XXXXXX)"
   fi
   mkdir -p $USB_TMP/$sys_files_dir
-  mkdir -p $USB_TMP/syslinux/ $USB_TMP/isolinux/ $USB_TMP/EFI/boot/
+  mkdir -p $USB_TMP/syslinux/ $USB_TMP/EFI/boot/
   echo "Copying files to temp working directory... This might take some time..."
   rsync -av --exclude isolinux --exclude md5sum.txt --exclude doc $stage1_iso_TMP/.  $USB_TMP/
   cp -af $DRBL_SCRIPT_PATH/doc/GPL $USB_TMP/
+  # Jan/19/2014 For both syslinux and isolinux (unified in one dir)
   # For syslinux
-  cp -af $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $gparted_live_boot_bg_img $pxelinux_chain_file $USB_TMP/syslinux/
+  cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $gparted_live_boot_bg_img $pxelinux_chain_file $USB_TMP/syslinux/
   # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
   for i in $sys_pxelinux_v5p_required_c32; do
     if [ -e "$pxelinux_binsrc_dir/$i" ]; then
@@ -421,18 +419,6 @@ create_gparted_live_zip() {
     elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
       # syslinux >= 6, different path
       cp -af $pxelinux_binsrc_dir/bios/$i $USB_TMP/syslinux/
-    fi
-  done
-  # For isolinux
-  cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $gparted_live_boot_bg_img $pxelinux_chain_file $USB_TMP/isolinux/
-  # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
-  for i in $sys_pxelinux_v5p_required_c32; do
-    if [ -e "$pxelinux_binsrc_dir/$i" ]; then
-      # syslinux <= 5 
-      cp -af $pxelinux_binsrc_dir/$i $USB_TMP/isolinux/
-    elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
-      # syslinux >= 6, different path
-      cp -af $pxelinux_binsrc_dir/bios/$i $USB_TMP/isolinux/
     fi
   done
   # 2. For EFI machine
@@ -520,12 +506,19 @@ EFI_END
   create_version_tag_in_live $USB_TMP/GParted-Live-Version "$VER_TAG" 
 
   # Find the boot param $boot_param
-  get_live_boot_param $stage1_iso_TMP/isolinux
+  if [ "$template_mode" = "from-booting-live-media" ]; then
+    # From boot media (clonezilla live), DEBIAN_ISO_TMP is LIVE_MEDIA
+    # Jan/19/2014 We have unified syslinux and isolinux to one dir "syslinux"
+    get_live_boot_param $stage1_iso_TMP/syslinux
+  else
+    # From iso file (debian-live-for-ocs.iso)
+    get_live_boot_param $stage1_iso_TMP/isolinux
+  fi
   # generate the menu
   # For syslinux
   ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap noeject" -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
   # For isolinux
-  ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/isolinux/
+  ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
     if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -a -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
@@ -536,9 +529,9 @@ EFI_END
   fi
 
   echo "Preparing syslinux.exe, syslinux, makeboot.bat and makeboot.sh... "
-  # Since we can not judge the version from any files in $USB_TMP/syslinux, we use $USB_TMP/isolinux/isolinux.bin.
+  # Since we can not judge the version from any files in $USB_TMP/syslinux, we use $USB_TMP/syslinux/isolinux.bin.
   if [ -z "$isolinux_ver" ]; then
-    isolinux_ver="$(LC_ALL=C strings $USB_TMP/isolinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+    isolinux_ver="$(LC_ALL=C strings $USB_TMP/syslinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
   fi
   put_syslinux_makeboot_for_usb_flash $USB_TMP $isolinux_ver
   # just store it. since big files, like squash flie and opt_drbl.tgz are compressed, it's not necessary to compress it again.
