@@ -849,6 +849,19 @@ get_image_cat_zip_cmd() {
       cat_prog="lrzip -q -d -o -" 
       zip_stdin_cmd="lrzip -q - $extra_lzip_opt"
       unzip_stdin_cmd="lrzip -q -d -o -"
+    elif [ -n "$(file -Ls $imgf | grep -i "XZ compressed data")" ]; then
+      # Ex: sda1.ntfs-ptcl-img.xz.aa: XZ compressed data
+      if [ "$cpu_no" -gt 1 ] && \
+         [ "$use_parallel_decompression" = "yes" ] && \
+         type pixz &>/dev/null; then
+        cat_prog="pixz -d"
+        zip_stdin_cmd="pixz $extra_pixz_opt"
+        unzip_stdin_cmd="pixz -d"
+      else
+        cat_prog="xzcat"
+        zip_stdin_cmd="xz -c $extra_xz_opt"
+        unzip_stdin_cmd="unxz -c"
+      fi
     elif [ -n "$(file -Ls $imgf | grep -i "PartImage file .* not compressed")" ]; then
       # Ex: hdb1.000: PartImage file version 0.6.1 volume 0 type reiserfs-3.6 device /dev/hdb1, original filename hdb1, not compressed
       cat_prog="cat"

@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: xz format for old image format (e.g. sda1.aa) was not detected (https://sourceforge.net/p/clonezilla/bugs/191/). Thanks to peter green for reporting this issue.
+
 * Tue Jan 21 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.18-drbl1
 - Boot parameter "noeject" should be added for those USB stick booting config in create-drbl-live.
 
