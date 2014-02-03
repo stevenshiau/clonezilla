@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.18
+Version:	3.9.19
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Feb 03 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.19-drbl1
 - Bug fixed: xz format for old image format (e.g. sda1.aa) was not detected (https://sourceforge.net/p/clonezilla/bugs/191/). Thanks to peter green for reporting this issue.
 - Bug fixed: There is a typo for the destination partition for 2nd confirmation for local partition to local partition (https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/b99ab9e6/). Thanks to Tweed for reporting this bug.
 
