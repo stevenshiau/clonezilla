@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.19
+Version:	3.9.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.7.21, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.7.22, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 04 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.20-drbl1
+- Function get_latest_kernel_ver_in_repository was updated so that correct linux kernel version for Ubuntu trusty could be got due to new kernel package linux-image-3.13.0-6-lowlatency is shown.
+
 * Mon Feb 03 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.19-drbl1
 - Bug fixed: xz format for old image format (e.g. sda1.aa) was not detected (https://sourceforge.net/p/clonezilla/bugs/191/). Thanks to peter green for reporting this issue.
 - Bug fixed: There is a typo for the destination partition for 2nd confirmation for local partition to local partition (https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/b99ab9e6/). Thanks to Tweed for reporting this bug.
