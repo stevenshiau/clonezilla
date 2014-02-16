@@ -54,9 +54,10 @@ USAGE() {
     echo "-t, --ocs-live-batch  Set clonezilla live to run in batch mode, usually it's for restoring. If this mode is set, some dialog question will be ignored."
     echo "-j, --debian-iso ISO_FILE  Assign Debian live template iso file name as ISO_FILE to be used to create Clonezilla live. By default the ISO_FILE is \"$DEBIAN_ISO_DEF\"."
     echo "-p, --image-path   Assign the clonezilla image source path where CLONEZILLA_IMAGE_NAME exists in this server.  Default = $ocsroot"
-    echo "-d, --dev DEV      Write the output to DEV (such as /dev/sda1)"
+    echo "-d, --dev DEV      Write the output to DEV (such as /dev/sdg1)"
     echo "-a, --boot-loader [grub|syslinux]  Force to use grub or syslinux as boot loader in target device"
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date. This only works when using with option -s and -c."
+    echo "-f, --batch-mode   Run $prog in batch, unattended mode."
     echo "-s, --skip-image   Do not include any clonezilla image. The is used to created a live CD or USB flash drive with DRBL/Clonezilla programs only."
     echo "-c, --create-release  Create a USB package release file, this will not create a bootable device, instead it will create a zip file contain all necessary files to make it boot and run clonezilla live."
     echo "-o, --normal-menu  When a clonezilla image is inserted, by default only restore menu will be shown in the created ISO file. If you want to show normal menu, i.e. with save and restore menu, use this one."
@@ -67,12 +68,14 @@ USAGE() {
     echo "$prog will download a template Debian live CD for clonezilla iso file if ncecessary. You can also download it by yourself, and put it in the working directory when you run $prog. If you want to create that template iso file in Debian Etch, run create-debian-live."
     echo "NOTE! You have to prepare the target partition first, and the filesystem should be ready (FAT or ext2/3)."
     echo "Ex:"
-    echo "To put clonezilla image squeeze-ocs (located in /home/partimag in clonezilla server) to USB device /dev/sda1, you can run:"
-    echo "  $prog -d /dev/sda1 squeeze-ocs"
+    echo "To put clonezilla image squeeze-ocs (located in /home/partimag in clonezilla server) to USB device /dev/sdg1, you can run:"
+    echo "  $prog -d /dev/sdg1 squeeze-ocs"
     echo "To put more images, just append them, such as:"
-    echo "  $prog -d /dev/sda1 squeeze-ocs etch-ocs"
+    echo "  $prog -d /dev/sdg1 squeeze-ocs etch-ocs"
+    echo "To create a bootable, recovery USB device (e.g. /dev/sdg1, VFAT file system) with image \"precise-x86-20140206\" included:"
+    echo "  $prog -g en_US.UTF-8 -t -k NONE -d /dev/sdg1 -e \"-g auto -e1 auto -e2 -c -r -j2 -p choose restoredisk precise-x86-20140206 sda\" precise-x86-20140206"
     echo "To create a Live USB device with DRBL/Clonezilla programs, which can be used to save image:"
-    echo "  $prog -s -d /dev/sda1"
+    echo "  $prog -s -d /dev/sdg1"
     echo "To create a zip file of general purpose Clonezilla live. Later it can be put in an USB flash drive or similar device:"
     echo "  $prog -s -c"
     echo "To create a zip file for restoring with clonezilla image squeeze-r5 builtin, and make it boot then restore the image squeeze-r5 to sda in unattended mode (Only confirmation in the beginning), you can run:"
@@ -100,8 +103,11 @@ clean_tmp_dir() {
 #
 check_if_root
 
-# default settings:
+# Default settings:
+# Batch mode for run Clonezilla live in restoring/recovery mode.
 ocs_live_batch="no"
+# Batch mode for running this program.
+batch_mode="no"
 custom_ocs=""
 normal_menu_with_insert_image="no"
 template_mode=""
@@ -161,6 +167,10 @@ while [ $# -gt 0 ]; do
               shift
             fi
 	    [ -z "$version_no" ] && USAGE && exit 1
+            ;;
+    -f|--batch-mode)
+            shift
+            batch_mode="yes"
             ;;
     -g|--ocs-live-language)
             shift
@@ -350,19 +360,21 @@ if [ "$target_mode" = "boot_dev" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "$msg_create_live_device_warning: $output_dev"
   echo "$msg_this_is_disk_usage_status:"
-  fdisk -l $output_dev_hd
+  parted -s $output_dev_hd print
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "$msg_are_u_sure_u_want_to_continue"
-  echo -n "[y/N] "
-  read cont_ans
-  case "$cont_ans" in
-    y|Y|[yY][eE][sS])
-       echo $msg_ok_let_do_it
-       ;;
-    *)
-       echo "Abort!"
-       exit 2
-  esac
+  if [ "$batch_mode" = "no" ]; then
+    echo "$msg_are_u_sure_u_want_to_continue"
+    echo -n "[y/N] "
+    read cont_ans
+    case "$cont_ans" in
+      y|Y|[yY][eE][sS])
+         echo $msg_ok_let_do_it
+         ;;
+      *)
+         echo "Abort!"
+         exit 2
+    esac
+  fi
 fi
 
 # Decide where is the $LIVE_MEDIA
@@ -510,7 +522,7 @@ if [ "$target_mode" = "release_file" ]; then
   boot_loader="syslinux"
 else
   # mount the target boot device
-  mount -o loop $output_dev $USB_TMP
+  mount $output_dev $USB_TMP
   rc=$?
   if [ "$rc" -gt 0 ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -901,54 +913,57 @@ EFI_END
 fi
 
 #
-if [ "$target_mode" = "boot_dev" ]; then
-  echo -n "Waiting for data to be saved in $output_dev before unmounting it..." && umount $USB_TMP &>/dev/null
-  echo
-  echo "Making $output_dev_hd bootable..."
-  [ -n "$boot_loader" ] && boot_loader_opt="-b $boot_loader"
-  # Since boot_param containing \"\, therefore we can not use another variable to be used for ocs-makeboot or ocs-live-boot-menu. Therefore remember to sync the boot_param of ocs-makeboot as ocs-live-boot-menu (which is used always, so if any bug, it is easier to be found and fixed) does
-  ocs-makeboot -l $lang_answer -k $kernel_on_dev -i $initrd_on_dev --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -f $boot_loader_opt $output_dev
+if [ -n "$ocs_image" ]; then
+  # For syslinux
+  ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
+  # For isolinux
+  ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
+  # For EFI, grub2 efi or syslinux efi
+  if [ "$live_efi_boot_loader" = "grub" ]; then
+    if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
+      ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/EFI/boot/
+    fi
+  elif [ "$live_efi_boot_loader" = "syslinux" ]; then
+    ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for EFI machine" syslinux $USB_TMP/EFI/boot/
+  fi
 else
-  if [ -n "$ocs_image" ]; then
-    # For syslinux
-    ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
-    # For isolinux
-    ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
-    # For EFI, grub2 efi or syslinux efi
-    if [ "$live_efi_boot_loader" = "grub" ]; then
-      if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
-        ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/EFI/boot/
-      fi
-    elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-      ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" --title "clonezilla live with img $ocs_image" -r "* Boot menu for EFI machine" syslinux $USB_TMP/EFI/boot/
+  # For syslinux
+  ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
+  # For isolinux
+  ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
+  # For EFI, grub2 efi or syslinux efi
+  if [ "$live_efi_boot_loader" = "grub" ]; then
+    if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
+      ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/EFI/boot
     fi
-  else
-    # For syslinux
-    ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
-    # For isolinux
-    ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
-    # For EFI, grub2 efi or syslinux efi
-    if [ "$live_efi_boot_loader" = "grub" ]; then
-      if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
-        ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/EFI/boot
-      fi
-    elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-      ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for EFI machine" syslinux $USB_TMP/EFI/boot/
-    fi
+  elif [ "$live_efi_boot_loader" = "syslinux" ]; then
+    ocs-live-boot-menu -vb $splash_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=$ocs_live_batch" -r "* Boot menu for EFI machine" syslinux $USB_TMP/EFI/boot/
   fi
-  echo "Preparing syslinux, syslinux.exe, makeboot.sh, and makeboot.bat in dir utils... "
-  # If it's in Clonezilla live environment, we have those files
-  if [ -e "$LIVE_MEDIA/utils/linux/syslinux" -a \
-       -e "$LIVE_MEDIA/utils/mbr/mbr.bin" -a \
-       -e "$LIVE_MEDIA/utils/win32/syslinux.exe" ]; then
-    cp -af $LIVE_MEDIA/utils $USB_TMP
-  else
-    # Since we can not judge the version from any files in $USB_TMP/syslinux, we use $USB_TMP/isolinux/isolinux.bin.
-    if [ -z "$isolinux_ver" ]; then
-      isolinux_ver="$(LC_ALL=C strings $USB_TMP/syslinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
-    fi
-    put_syslinux_makeboot_for_usb_flash $USB_TMP $isolinux_ver
+fi
+echo "Preparing syslinux, syslinux.exe, makeboot.sh, and makeboot.bat in dir utils... "
+# If it's in Clonezilla live environment, we have those files
+if [ -e "$LIVE_MEDIA/utils/linux/syslinux" -a \
+     -e "$LIVE_MEDIA/utils/mbr/mbr.bin" -a \
+     -e "$LIVE_MEDIA/utils/win32/syslinux.exe" ]; then
+  cp -af $LIVE_MEDIA/utils $USB_TMP
+else
+  # Since we can not judge the version from any files in $USB_TMP/syslinux, we use $USB_TMP/isolinux/isolinux.bin.
+  if [ -z "$isolinux_ver" ]; then
+    isolinux_ver="$(LC_ALL=C strings $USB_TMP/syslinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
   fi
+  put_syslinux_makeboot_for_usb_flash $USB_TMP $isolinux_ver
+fi
+#
+if [ "$target_mode" = "boot_dev" ]; then
+  mkbt_opt=""
+  if [ "$batch_mode" = "no" ]; then
+    mkbt_opt="-b"
+  fi
+  echo "Making $output_dev_hd bootable..."
+  bash $USB_TMP/utils/linux/makeboot.sh $mkbt_opt $output_dev
+  sleep 1
+  umount $USB_TMP
+else
   # just store it. since big files, like squash flie and opt_drbl.tgz are compressed, it's not necessary to compress it again.
   (cd $USB_TMP
    echo "Packing the output file $output_filename..."
