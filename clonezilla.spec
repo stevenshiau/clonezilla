@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.23
+Version:	3.9.24
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Feb 16 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.24-drbl1
+- Bug fixed: Batch mode option passed to makeboot.sh in ocs-live-dev was wrong.
+
 * Sun Feb 16 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.23-drbl1
 - Program ocs-live-dev was improved to directly put image and unattended mode of boot parameters to a USB device.
 - An option "-b" was added so that ocs-live-dev can be run in batch mode.
