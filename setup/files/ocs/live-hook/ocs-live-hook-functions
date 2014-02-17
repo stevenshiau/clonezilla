@@ -154,7 +154,8 @@ clean_unnecessary_backup_file_in_boot() {
   # (1)
   rm -f /boot/initrd*.bak
   # (2)
-  orphan_deb="$(deborphan -n)"
+  # On AMD64 arch, if libc6-i386 is installed, it will be listed. While we need that so that 32-bit program could run on it. Therefore exclude it.
+  orphan_deb="$(deborphan -n -e libc6-i386)"
   orphan_deb="$(echo $orphan_deb)"  # put it in one line
   if [ -n "$orphan_deb" ]; then
     apt-get --yes --purge remove $orphan_deb
@@ -624,8 +625,8 @@ get_unifont_bgf() {
   local tmp_wd bterm_unifont_udeb
   [ -z "$target_dir" ] && return 1
   tmp_wd="$(mktemp -d /tmp/unifont.XXXXXX)"
-  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-i386/Packages.bz2
-  bterm_unifont_udeb="$(LC_ALL=C bzcat $tmp_wd/Packages.bz2 | sed -ne 's/^Filename: //p' | grep -Ew bterm-unifont)"
+  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-i386/Packages.gz
+  bterm_unifont_udeb="$(LC_ALL=C zcat $tmp_wd/Packages.gz | sed -ne 's/^Filename: //p' | grep -Ew bterm-unifont)"
   # result like: pool/main/b/bterm-unifont/bterm-unifont_1.2_i386.udeb
   wget -P $tmp_wd $mirror_url/$bterm_unifont_udeb
   dpkg-deb --extract $tmp_wd/$(basename $bterm_unifont_udeb) $tmp_wd
@@ -687,9 +688,9 @@ get_non_free_net_firmware_for_ubuntu() {
     return 0
   fi
   tmp_wd="$(mktemp -d /tmp/nic_firmware.XXXXXX)"
-  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-i386/Packages.bz2
+  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-i386/Packages.gz
   # Find the firmware binary files.
-  nic_firmware_udeb="$(LC_ALL=C bzcat $tmp_wd/Packages.bz2 | sed -ne 's/^Filename: //p' | grep -Ew "nic-firmware_.")"
+  nic_firmware_udeb="$(LC_ALL=C zcat $tmp_wd/Packages.gz | sed -ne 's/^Filename: //p' | grep -Ew "nic-firmware_.")"
   # result like: pool/main/l/linux-firmware/nic-firmware_1.78_all.udeb
   wget -P $tmp_wd $mirror_url/$nic_firmware_udeb
   echo "Extracting non-free firmware and puting it in Clonezilla live..."
