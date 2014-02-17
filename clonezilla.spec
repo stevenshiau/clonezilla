@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.26
+Version:	3.9.27
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Feb 17 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.27-drbl1
+- Package libc6-i386 was added in all AMD64 version of live system.
+
 * Mon Feb 17 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.26-drbl1
 - The /lib32 dir will be kept in the amd32 version of live system.
 
