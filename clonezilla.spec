@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.28
+Version:	3.9.29
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 18 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.29-drbl1
+- The mechanism to run scripts S[0-9][0-9]* and K[0-9][0-9]* in a directory has been improved. "$script" instead of ". $script" should be used otherwise in some cases the rest of scripts won't be run.
+
 * Mon Feb 17 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.28-drbl1
 - Bug fixed: Packages.bz2 on Debian repository is no more. Use Packages.gz in ocs-live-hook-functions.
 - Disable remove_grpck_opt_p in ocs-live-hook because the issue was fixed in passwd 1:4.1.5.1-1.
