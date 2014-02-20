@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.29
+Version:	3.9.30
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.7.26, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.7.27, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Feb 20 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.30-drbl1
+- An option -q was added to ocs-live-dev so that it can be used to use the existing image on the recovery device.
+
 * Tue Feb 18 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.29-drbl1
 - The mechanism to run scripts S[0-9][0-9]* and K[0-9][0-9]* in a directory has been improved. "$script" instead of ". $script" should be used otherwise in some cases the rest of scripts won't be run.
 
