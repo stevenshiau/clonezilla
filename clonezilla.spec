@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.30
+Version:	3.9.31
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Feb 21 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.31-drbl1
+- The boot media should not be mounted again as read-write mode in function ocs-live-env-prepare of ocs-functions. Otherwise when rebooting, due to the squashfsfs are mounted, it can not be unmounted. Thanks to ilovecats for reporting this.
+- The example "clone-multiple-usb-example.sh" was removed. Because it's in the main menu already. 
+- An example gen-rec-usb was added. It could be used to create a recovery USB flash drive directly from the machine.
+
 * Thu Feb 20 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.30-drbl1
 - An option -q was added to ocs-live-dev so that it can be used to use the existing image on the recovery device.
 

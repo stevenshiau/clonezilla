@@ -8607,26 +8607,9 @@ ocs-live-env-prepare(){
   # Decide where is the $LIVE_MEDIA
   get_live_media_mnt_point
 
-  # Try to force to remount /$LIVE_MEDIA as rw, since it's rw device, like USB disk, we can try to save clonezilla image.
-  mount -o remount,rw /$LIVE_MEDIA
-  
-  # Prepare default ocsroot.
-  if mkdir -p /$LIVE_MEDIA/$ocsroot 2>/dev/null; then
-    # If /$LIVE_MEDIA is writable, default to make $ocsroot link to /$LIVE_MEDIA/$ocsroot. This link file will be removed by prep-ocsroot if it need the mount point $ocsroot (dir).
-    # Remove the stale mountpoint if it's empty. This will avoid link twice: 
-    # If we run this later:
-    # ln -fs /live_media/home/partimag /home/partimag
-    # if the latter dir /home/partimag exists then link will create something like:
-    # ls -l /home/partimag/
-    # lrwxrwxrwx 1 root root 26 2007-12-13 23:29 partimag -> /live_media//home/partimag
-    # If we embedded the image in Clonezilla live, /$LIVE_MEDIA/$ocsroot will exist, so if we run "mkdir -p /$LIVE_MEDIA/$ocsroot", it will succeed, and this is what we want, too. Since later we will link /$LIVE_MEDIA/$ocsroot to $ocsroot.
-    [ -d "$ocsroot" -a -z "$(unalias ls &>/dev/null; ls $ocsroot/ 2>/dev/null)" ] && rmdir $ocsroot 
-    [ -L "$ocsroot" ] && rm -f $ocsroot 
-    mkdir -p "$(dirname $ocsroot)"
-    ln -fs /$LIVE_MEDIA/$ocsroot $ocsroot
-  else
-    # mkdir a mount point to be used later if it does not exist. Normally it will be created in /etc/ocs/ocs-live.d/S03prep-drbl-clonezilla, so here it's just a insurance.
-    [ ! -d "$ocsroot" ] && mkdir -p $ocsroot
+  # mkdir a mount point to be used later if it does not exist. Normally it will be created in /etc/ocs/ocs-live.d/S03prep-drbl-clonezilla, so here it's just a backup plan.
+  if [ ! -d "$ocsroot" ]; then
+    mkdir -p $ocsroot
   fi
   
   ask_language_if_supported_with_bterm

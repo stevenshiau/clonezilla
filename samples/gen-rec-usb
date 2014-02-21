@@ -1,0 +1,128 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ stevenshiau org>
+# Description: Program to create a recovery USB flash drive directly from the machine by Clonezilla live.
+# To use it:
+# Prepare:
+# (1) A bootable Clonezilla live, either on CD or USB flash drive (master one)
+# (2) A USB flash drive with 1 FAT/EXT/BTRFS/NTFS partition (USB flash drive B)
+# Then
+# (1) Insert master one and USB flash drive B on the machiine which you want to take the image
+# (2) Boot Clonezilla live with master one. Do not choose TORAM mode. Use normal mode
+# (3) Run this program. Without any option it will enter interactive mode. You can also use some options. Run with option "-h" for more info.
+# Then it will take the hard drive (say /dev/sda) as an image, put the image on USB flash drive B (e.g. /dev/sdb1), make it bootable. Then you will have a a recovery USB flash drive. All is done is this program.
+# //NOTE// The boot loader of destination device (USB flash drive B) will be overwritten. USE IT CAREFULLY!!!
+
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+# img_name is the image name which will be saved in the USB flash drive. Normally you do not have to care about this.
+img_name="recovery-img"
+ocs_batch_mode="false"
+tui="true"   # Default to turn on TUI
+boot_menu_prompt="Run USB Recovery - Powered By Clonezilla Live"
+
+#
+USAGE() {
+    echo "$ocs - To create a recovery USB flash drive"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] SRC_HARD_DRIVE DEST_USB_FLASH_DRIVE"
+    echo "Options:"
+    echo "-b, --batch-mode   Run image checking in batch mode"
+    echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone or Partimage, use text only"
+    echo "SRC_HARD_DRIVE is the hard drive to be taken as an image, e.g. sda, sdb..."
+    echo "DEST_USB_FLASH_DRIVE is the USB flash drive partition name, e.g. sdf1, sdg1..."
+    echo "If no SRC_HARD_DRIVE/DEST_USB_FLASH_DRIVE is specified, a dialog menu will be shown."
+    echo "Ex:"
+    echo "To take the /dev/sda as an image and put on /dev/sdb1 as a recovery USB flash drive, run in batch mode:"
+    echo "   $ocs -b sda sdb1"
+    echo
+} # end of USAGE
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -b|--batch) ocs_batch_mode="true"; shift;;
+   -nogui|--nogui)
+           shift; 
+           # -nogui is for backward compatable, better to use --nogui
+           tui="false"
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+target_hd="$1"
+target_parts="$2"
+
+#
+ask_and_load_lang_set
+
+#
+if [ "$ocs_batch_mode" = "true" ]; then
+  ocs_sr_batch_opt="--batch"
+  ocs_live_dev_batch_opt="-f"
+else
+  ocs_sr_batch_opt="-c"
+fi
+if [ "$tui" = "false" ]; then
+  ocs_sr_nogui_opt="--nogui"
+fi
+
+#
+if [ -z "$target_hd" ]; then
+  get_target_hd_name_from_local_machine "Choose the source disk to be imaged for the recovery" "menu"
+fi
+if [ -z "$target_parts" ]; then
+  get_target_parts_name_from_local_machine "Choose destination partition of USB flash drive to write" "menu"
+fi
+TMPMNT="$(mktemp -d /tmp/ocs_live.XXXXXX)"
+mount /dev/$target_parts $TMPMNT
+rc="$?"
+if [ "$rc" -eq 0 ]; then
+  mkdir -p $TMPMNT/$ocsroot
+  mount --bind -o noatime,nodiratime $TMPMNT/$ocsroot /$ocsroot
+  ocs-sr $ocs_sr_batch_opt $ocs_sr_nogui_opt -q2 -j2 -z2p -i 2000 -sc -p true savedisk $img_name $target_hd
+  rc_sr="$?"
+  umount /$ocsroot
+  umount $TMPMNT
+  if [ "$rc_sr" -eq 0 ]; then
+    echo $msg_delimiter_star_line
+    ocs-live-dev $ocs_live_dev_batch_opt -q -g en_US.UTF-8 -t -k NONE -d /dev/$target_parts -e "-g auto -e1 auto -e2 -c -r -j2 -p choose restoredisk $img_name ask_user" $img_name
+    # Process the label
+    # Only show the first boot menu
+    echo "Polishing the boot menu..."
+    mount /dev/$target_parts $TMPMNT
+    cfg_f="$TMPMNT/syslinux/syslinux.cfg"
+    cfg_tmp="$(mktemp /tmp/cfg.XXXXXX)"
+    line_no="$(LC_ALL=C grep -i -n "^MENU BEGIN Other modes of Clonezilla live" $cfg_f | awk -F":" '{print $1}')"
+    line_no="$((line_no - 1))"
+    head -n $line_no $cfg_f > $cfg_tmp
+    perl -pi -e "s|^([[:space:]].*)MENU LABEL.*|\$1MENU LABEL $boot_menu_prompt|g" $cfg_tmp
+    cp -a $cfg_tmp $cfg_f
+    cp -a $cfg_f $TMPMNT/syslinux/isolinux.cfg
+    rm -f $cfg_tmp
+    umount $TMPMNT
+    rmdir $TMPMNT
+    echo "done!"
+  fi
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Failed to mount /dev/$target_parts as image repository!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
