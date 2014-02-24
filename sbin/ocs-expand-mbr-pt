@@ -143,7 +143,7 @@ tgt_disk_size="$(LC_ALL=C parted -s $target_disk unit s print | grep -E "^Disk /
 check_mbr_disk_size_gt_2TiB $target_disk exit
 
 #
-ratio=$(echo "scale=4; $tgt_disk_size / $ori_disk_size" | bc -l) || exit 1
+ratio=$(echo "scale=10; $tgt_disk_size / $ori_disk_size" | bc -l) || exit 1
 echo "The ratio for target disk size to original disk size is $ratio."
 if [ "$chk_tgt_disk_size_bf_mk_pt" = "yes" ]; then
   if [ "$(LC_ALL=C echo "$ratio < 1" | bc -l)" = "1" ]; then
@@ -272,16 +272,16 @@ while read dev start start_no size size_no id flag; do
       fi
 
       if [ "$expand" = "true" ]; then
-        start_no="$(echo "scale=0; ($start_no_keep + $size_no_keep)/1" | bc -l)"
-        size_no="$(echo "scale=0; ${size_no/,/}*$ratio/1 + $append_to_next" | bc -l)"
+	start_no="$(printf "%.0f" "$(echo "($start_no_keep + $size_no_keep)" | bc -l)")"
+	size_no="$(printf "%.0f" "$(echo "${size_no/,/}*$ratio + $append_to_next" | bc -l)")"
 	# Reset the space append_to_next.
 	append_to_next="0"
       else
-        start_no="$(echo "scale=0; ($start_no_keep + $size_no_keep)/1" | bc -l)"
+	start_no="$(printf "%.0f" "$(echo "($start_no_keep + $size_no_keep)" | bc -l)")"
         size_no="${size_no/,/}"
 	# Since we do not expand this "system reserved partition" or "swap partition", 
 	# we append the space to the next partition.
-	append_to_next="$(echo "scale=0; ${size_no}*$ratio/1 - ${size_no}" | bc -l)"
+	append_to_next="$(printf "%.0f" "$(echo "${size_no}*$ratio - ${size_no}" | bc -l)")"
       fi
     fi
     if [ -n "$(echo $id | grep -iE "(id=5|id=f)")" ]; then
@@ -314,16 +314,16 @@ while read dev start start_no size size_no id flag; do
       fi
 
       if [ "$expand" = "true" ]; then
-        start_no="$(echo "scale=0; ($start_no_keep+$size_no_keep+$logical_part_gap)/1" | bc -l)"
-        size_no="$(echo "scale=0; ${size_no/,/}*$ratio/1 + $append_to_next" | bc -l)"
+	start_no="$(printf "%.0f" "$(echo "($start_no_keep+$size_no_keep+$logical_part_gap)" | bc -l)")"
+	size_no="$(printf "%.0f" "$(echo "${size_no/,/}*$ratio + $append_to_next" | bc -l)")"
         logical_part_gap="0"
 	# Reset the space append_to_next.
 	append_to_next="0"
       else
-        start_no="$(echo "scale=0; ($start_no_keep+$size_no_keep+$logical_part_gap)/1" | bc -l)"
+	start_no="$(printf "%.0f" "$(echo "($start_no_keep+$size_no_keep+$logical_part_gap)" | bc -l)")"
         size_no="${size_no/,/}"
 	# Since we do not expand the "swap partition", we append the space to the next partition.
-	append_to_next="$(echo "scale=0; ${size_no}*$ratio/1 - ${size_no}" | bc -l)"
+	append_to_next="$(printf "%.0f" "$(echo "${size_no}*$ratio - ${size_no}" | bc -l)")"
       fi
     fi
     echo $dev : $start $start_no, $size $size_no, $id $flag >> $new_sf

@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.32
+Version:	3.9.33
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Feb 24 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.33-drbl1
+- Using -z1p instead of -z2p when saving image in the sample file gen-rec-usb.
+- The way "scale=0" was not used in ocs-expand-mbr-pt. A better method is used.
+- Bug fixed: toram menu for grub should use toram=filesystem.squashfs instead of toram so that it's consistent with that of syslinux.
+
 * Fri Feb 21 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.32-drbl1
 - Sync the parse_cmdline_option of gl-functions with drbl-functions.
 - Bug fixed: the linking part in function ocs-live-env-prepare of ocs-functions should be kept. We should just remove the remount,rw part. Besides, the checking mechanism for linking or not has been changed to find the image. 

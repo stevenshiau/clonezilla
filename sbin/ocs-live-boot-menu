@@ -185,7 +185,7 @@ label $output_title (To RAM)
   MENU LABEL $output_title (To RAM. Boot media can be removed later)
   # MENU PASSWD
   kernel $kernel_file
-  append initrd=$initrd_file $boot_param_toram $vga_default_mode toram=filesystem.squashfs ip= $quiet_opt $splash_opt $vga_blacklist_opt
+  append initrd=$initrd_file $boot_param_toram_extra $vga_default_mode toram=filesystem.squashfs ip= $quiet_opt $splash_opt $vga_blacklist_opt
   TEXT HELP
   All the programs will be copied to RAM, so you can
   remove boot media (CD or USB flash drive) later
@@ -252,7 +252,7 @@ label $output_title ($lang_locale. To RAM)
   MENU LABEL $output_title ($lang_locale. To RAM. Boot media can be removed later)
   # MENU PASSWD
   kernel $kernel_file
-  append initrd=$initrd_file $boot_param_toram $vga_default_mode locale=$lang_locale toram=filesystem.squashfs ip= $quiet_opt $splash_opt $vga_blacklist_opt
+  append initrd=$initrd_file $boot_param_toram_extra $vga_default_mode locale=$lang_locale toram=filesystem.squashfs ip= $quiet_opt $splash_opt $vga_blacklist_opt
   TEXT HELP
   $lang_locale, and alll the programs will be copied to RAM,
   so you can remove boot media (CD or USB flash drive) later
@@ -451,7 +451,7 @@ fi
   cat <<-BOOT_MENU_END >> $output_file
 title $output_title (To RAM, boot media can be removed later)
   root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param_toram $vga_default_mode toram ip= $vga_blacklist_opt
+  kernel $kernel_file root=$output_dev_grub ro $boot_param_toram_extra $vga_default_mode toram=filesystem.squashfs ip= $vga_blacklist_opt
   initrd $initrd_file
 
 BOOT_MENU_END
@@ -487,7 +487,7 @@ fi
   cat <<-BOOT_MENU_END >> $output_file
 title $output_title ($lang_locale. To RAM. Boot media can be removed later)
   root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param_toram $vga_default_mode locale=$lang_locale toram ip= $vga_blacklist_opt
+  kernel $kernel_file root=$output_dev_grub ro $boot_param_toram_extra $vga_default_mode locale=$lang_locale toram=filesystem.squashfs ip= $vga_blacklist_opt
   initrd $initrd_file
 
 BOOT_MENU_END
@@ -617,7 +617,7 @@ fi
   cat <<-BOOT_MENU_END >> $output_file
 menuentry "$output_title (To RAM, boot media can be removed later)"{
   search --set -f $kernel_file
-  linux $kernel_file $boot_param_toram $vga_default_mode toram=filesystem.squashfs ip= $quiet_opt $splash_opt $vga_blacklist_opt
+  linux $kernel_file $boot_param_toram_extra $vga_default_mode toram=filesystem.squashfs ip= $quiet_opt $splash_opt $vga_blacklist_opt
   initrd $initrd_file
 }
 
@@ -658,7 +658,7 @@ fi
   cat <<-BOOT_MENU_END >> $output_file
 menuentry "$output_title ($lang_locale. To RAM. Boot media can be removed later)"{
   search --set -f $kernel_file
-  linux $kernel_file $boot_param_toram $vga_default_mode locale=$lang_locale toram=filesystem.squashfs ip= $quiet_opt $splash_opt $vga_blacklist_opt
+  linux $kernel_file $boot_param_toram_extra $vga_default_mode locale=$lang_locale toram=filesystem.squashfs ip= $quiet_opt $splash_opt $vga_blacklist_opt
   initrd $initrd_file
 }
 
@@ -934,13 +934,13 @@ output_dir="$2"
 
 # 2014/01/10 No need to add "noeject" here. "toram" for live-boot will handle that.
 # Thanks to Ady <ady-sf _at_ hotmail com> for the bug report.
-## boot_param_toram is specially for "To RAM" menu. We will append noeject if it does not containt that.
+## boot_param_toram_extra is specially for "To RAM" menu. We will append noeject if it does not containt that.
 #if [ -z "$(echo $boot_param | grep -Ew "noeject")" ]; then
-#  boot_param_toram="$boot_param noeject"
+#  boot_param_toram_extra="$boot_param noeject"
 #else
-#  boot_param_toram="$boot_param"
+#  boot_param_toram_extra="$boot_param"
 #fi
-boot_param_toram="$boot_param"
+boot_param_toram_extra="$boot_param"
 
 # For KMS, we need to remove "nomodeset" if it exists in $boot_param
 boot_param_rm_nomodeset="$(echo $boot_param | sed -r -e "s/[[:space:]]*nomodeset[[:space:]]*/ /g")"
@@ -1022,7 +1022,7 @@ case "$show_vga_mode" in
       *) vga_default_mode="";
      esac
      ;;
-  *) # For 3 modes, we force to set default as 1024x768.
+  *) # For 3 modes, we force to set default as 800x600.
      vga_640x480_prompt=", VGA 640x480"
      vga_800x600_prompt=", VGA 800x600" 
      vga_1024x768_prompt=", VGA 1024x768"
