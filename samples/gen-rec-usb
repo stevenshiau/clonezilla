@@ -21,6 +21,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Settings
 # img_name is the image name which will be saved in the USB flash drive. Normally you do not have to care about this.
 img_name="recovery-img"
+# ocs_batch_mode could be: true, false, semi
 ocs_batch_mode="false"
 tui="true"   # Default to turn on TUI
 boot_menu_prompt="Run USB Recovery - Powered By Clonezilla Live"
@@ -32,7 +33,8 @@ USAGE() {
     echo "To run $ocs:"
     echo "$ocs [OPTION] SRC_HARD_DRIVE DEST_USB_FLASH_DRIVE"
     echo "Options:"
-    echo "-b, --batch-mode   Run image checking in batch mode"
+    echo "-b, --batch   Run image checking in batch mode"
+    echo "-s, --semi-batch   Run image checking in semi-batch mode, i.e. just comfirm once"
     echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone or Partimage, use text only"
     echo "SRC_HARD_DRIVE is the hard drive to be taken as an image, e.g. sda, sdb..."
     echo "DEST_USB_FLASH_DRIVE is the USB flash drive partition name, e.g. sdf1, sdg1..."
@@ -53,6 +55,7 @@ ocs=`basename $ocs_file`
 while [ $# -gt 0 ]; do
  case "$1" in
    -b|--batch) ocs_batch_mode="true"; shift;;
+   -s|--semi-batch) ocs_batch_mode="semi"; shift;;
    -nogui|--nogui)
            shift; 
            # -nogui is for backward compatable, better to use --nogui
@@ -75,8 +78,12 @@ ask_and_load_lang_set
 if [ "$ocs_batch_mode" = "true" ]; then
   ocs_sr_batch_opt="--batch"
   ocs_live_dev_batch_opt="-f"
+elif [ "$ocs_batch_mode" = "semi" ]; then
+  ocs_sr_batch_opt="-c"
+  ocs_live_dev_batch_opt="-f"
 else
   ocs_sr_batch_opt="-c"
+  ocs_live_dev_batch_opt=""
 fi
 if [ "$tui" = "false" ]; then
   ocs_sr_nogui_opt="--nogui"
