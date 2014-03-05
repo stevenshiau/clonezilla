@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.33
+Version:	3.9.34
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.7.28, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.7.30, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,7 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-- An option "-s|--semi-batch" was added to the sample file gen-rec-usb. It can be used to confirm only once, not every major step.
+* Wed Mar 05 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.34-drbl1
+- An option "-s|--semi-batch" was added to the sample file gen-rec-usb. It can be used to confirm only once, not every major step. Thanks to ilovecats for this suggestion.
 
 * Mon Feb 24 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.33-drbl1
 - Using -z1p instead of -z2p when saving image in the sample file gen-rec-usb.
