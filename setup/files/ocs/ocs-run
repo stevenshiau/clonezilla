@@ -114,6 +114,10 @@ do_start_ocs_run() {
       [ -z "$ocs_opt" ] && wait_for_press_enter_then_abort "No clonezilla param in /proc/cmdline!"
       case "$ocs_opt" in
        *select_in_client*)
+         # For Ubuntu < 13.10, the plymouthd might be running even we force to disable it in /etc/init/plymouth.conf. Therefore we force to stop it before running clonezilla dialog menu. Otherwise the keyboard will have problem.
+         if [ -n "$(pidof plymouthd)" ]; then
+           /bin/plymouth quit
+ 	 fi
          # remove select_in_client in ocs_opt so the clonezilla can run.
          ocs_opt="$(echo $ocs_opt | sed -e "s/select_in_client//g")"
          echo Now run: $verbose_run clonezilla $ocs_opt

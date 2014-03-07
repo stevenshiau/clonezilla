@@ -10153,3 +10153,35 @@ get_best_console_font_size() {
   fi
   echo "Best font size for KMS console: $console_font_size"
 } # end of get_best_console_font_size
+#
+gen_iso_sort_file() {
+  # Suggestion from Ady <ady-sf _at_ hotmail com>
+  # In older versions of Syslinux, the isolinux.bin file (ISOLINUX's 
+  # eltorito no-emulation boot loader) was smaller than in the current 
+  # 6.xx versions. For example, in version 4.07 the isolinux.bin is 24KB, 
+  # while the file is bigger than 40KB in the 6.xx branch.
+  # 
+  # Evidently, this additional size uses more LBAs, and some buggy BIOS 
+  # are having troubles with this situation. In a certain sense (but not 
+  # necessarily a strict technical comparison), it is similar to the old 
+  # problem about partitions being located over 1024 cylinders and thus 
+  # not being bootable (which of course is not an issue nowadays).
+  # 
+  # Although isolinux.bin 6.xx has been patched so to reduce the chances 
+  # of boot failure with such buggy BIOS, putting the entire isolinux.bin 
+  # in lower LBAs has been proved to help, even before the introduction 
+  # of patches.
+  local out_f="$1"
+  if [ -z "$out_f" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No output was assigned in function gen_iso_sort_file!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop"
+    exit 1
+  fi
+  # Function to create the sort file for ISO file. For more details, run "man genisoimage", find "-sort"
+  cat <<-SORT_END > $out_f
+syslinux/isolinux.bin 2
+syslinux/boot.cat 1
+SORT_END
+}
