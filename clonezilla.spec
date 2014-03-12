@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.37
+Version:	3.9.38
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Mar 12 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.38-drbl1
+- Menu of KMS mode for live system will always shown by ocs-live-boot-menu.
+
 * Wed Mar 12 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.37-drbl1
 - Package xnetcardconfig was removed from create-drbl-live-by-pkg because it's no more in Debian repository and not used in DRBL live.
 
