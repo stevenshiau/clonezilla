@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- The info to be shown in the TUI mod of countdown_or_confirm_before_restore was improved. More info will be shown.
+
 * Wed Mar 12 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.38-drbl1
 - Menu of KMS mode for live system will always shown by ocs-live-boot-menu.
 
