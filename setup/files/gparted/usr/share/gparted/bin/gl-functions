@@ -83,14 +83,14 @@ parse_cmdline_option() {
     # ocs_lang="" vga=788 ip= nosplash BOOT_IMAGE=/live/vmlinuz <- WRONG RESULT. We just want ocs_lang=""
     if LC_ALL=C grep -Eq "($ik=\"|$ik=\\\\\")" $cmdl_file; then
       # For case like: ocs_prerun="sleep 5" or ocs_prerun=\"sleep 5\"
-      LC_ALL=C grep -oE -- "$ik=(\"|\\\\\")([[:space:]]|[[:print:]])*(\"|\\\\\")([[:space:]]|$)+" $cmdl_file | sed -r -e "s|=\\\\\"|=\"|g" -e "s@\\\\\"([[:space:]]|$)+@\"@g" | sed -r -e 's|^\"(.*)=|\1=\"|g' > $parse_tmp
+      LC_ALL=C grep -oE -- "$ik=(\"|\\\\\")[^\"]*(\"|\\\\\")([[:space:]]|$)+" $cmdl_file | sed -r -e "s|=\\\\\"|=\"|g" -e "s@\\\\\"([[:space:]]|$)+@\"@g" | sed -r -e 's|^\"(.*)=|\1=\"|g' > $parse_tmp
     elif LC_ALL=C grep -Eq "\"$ik=" $cmdl_file; then
       # For case like: "ocs_prerun=sleep 5", "ocs_prerun1=mount UUID=XXXYYZZ /mnt"
       # 2012/08/20 Without separating "=", it might fail in this case:
       # "ocs_prerun1=mount UUID=XXXYYZZ /mnt" -> ocs_prerun1=mount UUID="XXXYYZZ /mnt"
       # Therefore we have to use: sed -r -e 's|^\"(.*=)(.*=.*)*|\1\"\2|g'
       # Ref: http://stackoverflow.com/questions/9681393/sed-multiple-patterns-on-the-same-line-how-to-match-parse-first-one
-      LC_ALL=C grep -oE -- "\"$ik=([[:space:]]|[[:print:]])*\"([[:space:]]|$)+" $cmdl_file | sed -r -e "s|=\\\\\"|=\"|g" -e "s@\\\\\"([[:space:]]|$)+@\"@g" | sed -r -e 's|^\"(.*=)(.*=.*)*|\1\"\2|g' > $parse_tmp
+      LC_ALL=C grep -oE -- "\"$ik=[^\"]*\"([[:space:]]|$)+" $cmdl_file | sed -r -e "s|=\\\\\"|=\"|g" -e "s@\\\\\"([[:space:]]|$)+@\"@g" | sed -r -e 's|^\"(.*=)(.*=.*)*|\1\"\2|g' > $parse_tmp
     else
       # This is for case xxx=xyz, no space in its assignment
       LC_ALL=C grep -oE -- "$ik=([[:alnum:]]|_|-|\.|\/|:)*([[:space:]]|$)+" $cmdl_file > $parse_tmp
