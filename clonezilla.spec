@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.41
+Version:	3.9.42
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 16 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.42-drbl1
+- Bug fixed: after drbl service has been started, if clonezilla SE is started, the image repository should be mounted in DRBL live.
+
 * Sat Mar 15 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.41-drbl1
 - The content of "iso_sort.txt" should be a two-column list, separated by "TAB", not space, in the function gen_iso_sort_file of ocs-functions.
 

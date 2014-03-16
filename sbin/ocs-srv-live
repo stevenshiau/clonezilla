@@ -33,6 +33,69 @@ USAGE() {
     echo "Example: To start Clonezilla server edition service service in this DRBL Live server"
     echo "$0 start"
 }
+#
+start_ocs_srv() {
+  # start drbl live first, which will setup drbl environment
+  echo "Checking if DRBL related sevices are started or not..."
+  # dhcpd is for isc-dhcp-server (from Squeeze), dhcpd3 is for dhcp3-server (< squeeze).
+  dhcpd_pid="$(LC_ALL=C pidof dhcpd || LC_ALL=C pidof dhcpd3)"
+  tftpd_pid="$(LC_ALL=C pidof in.tftpd)"
+  unfsd_pid="$(LC_ALL=C pidof unfsd)"
+  nfsd_pid="$(LC_ALL=C pidof nfsd)"
+  if [ -z "$dhcpd_pid" -o -z "$tftpd_pid" ] || [ -z "$unfsd_pid" -a -z "$nfsd_pid" ]; then
+    # Not configured yet or DRBL service is not started, either
+    if [ "$ocs_batch_mode" = "on" ]; then
+      echo "$msg_delimiter_star_line"
+      echo "$msg_drbl_env_is_not_ready_now_config"
+      echo $msg_this_might_take_several_minutes
+      echo -n $msg_press_enter_to_continue
+      read
+      echo "$msg_delimiter_star_line"
+    fi
+    # Check if $ocsroot is a mountpoint or not, if not, we have to mount it.
+    prepare_ocsroot_opt=""
+    if ! mountpoint $ocsroot &>/dev/null; then
+      echo "Directory $ocsroot is not a mount point. Will try to mount $ocsroot..."
+      prepare_ocsroot_opt="--prepare-ocsroot"
+    fi	        
+    drbl-live $prepare_ocsroot_opt --skip-pause-in-the-end --no-prompt-drbl-live start
+  else
+    # DRBL service has been started. Therefore for Clonezilla SE we need to mount $ocsroot
+    # Check if $ocsroot is a mountpoint or not, if not, we have to mount it.
+    if ! mountpoint $ocsroot &>/dev/null; then
+      echo "Directory $ocsroot is not a mount point. Will try to mount $ocsroot..."
+      prep-ocsroot
+    fi	        
+  fi
+  # disable the DRBL in pxelinux menu
+  hide_reveal_pxe_img drbl hide $pxecfg_pd/pxelinux.cfg/default
+  # set local as default
+  set-default-pxe-img -i local -c $pxecfg_pd/pxelinux.cfg/default
+
+  echo "$msg_delimiter_star_line"
+  echo "$msg_drbl_env_is_ready"
+  echo "$msg_delimiter_star_line"
+  sleep 1
+  dcs clonezilla-start $mode
+
+  echo "$msg_delimiter_star_line"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  if [ "$ocs_prompt_mode" = "tui" ]; then
+    $DIA --title "$msg_nchc_free_software_labs" --clear \
+         --msgbox "$msg_do_not_close_window_until_clone_finish" 0 0
+  else
+    echo -e "$msg_do_not_close_window_until_clone_finish"
+  fi
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  /bin/bash
+} # end of start_ocs_srv
+#
+stop_ocs_srv() {
+  drbl-ocs stop
+  echo "$msg_delimiter_star_line"
+  echo -n $msg_press_enter_to_continue
+  read < /dev/stdin
+} # end of stop_ocs_srv
 
 #################
 ##### MAIN ######
@@ -44,8 +107,6 @@ ask_and_load_lang_set
 
 switch="$1"
 mode="$2"
-shift
-shift
 
 #
 if [ -z "$switch" ]; then
@@ -62,57 +123,6 @@ if ! is_boot_from_live; then
 fi
 
 case "$switch" in
-   "start"|"restart")
-     # start drbl live first, which will setup drbl environment
-     echo "Checking if DRBL related sevices are started or not..."
-     # dhcpd is for isc-dhcp-server (from Squeeze), dhcpd3 is for dhcp3-server (< squeeze).
-     dhcpd_pid="$(LC_ALL=C pidof dhcpd || LC_ALL=C pidof dhcpd3)"
-     tftpd_pid="$(LC_ALL=C pidof in.tftpd)"
-     unfsd_pid="$(LC_ALL=C pidof unfsd)"
-     nfsd_pid="$(LC_ALL=C pidof nfsd)"
-     if [ -z "$dhcpd_pid" -o -z "$tftpd_pid" ] || [ -z "$unfsd_pid" -a -z "$nfsd_pid" ]; then
-       if [ "$ocs_batch_mode" = "on" ]; then
-         echo "$msg_delimiter_star_line"
-         echo "$msg_drbl_env_is_not_ready_now_config"
-         echo $msg_this_might_take_several_minutes
-         echo -n $msg_press_enter_to_continue
-         read
-         echo "$msg_delimiter_star_line"
-       fi
-       # Check if $ocsroot is a mountpoint or not, if not, we have to mount it.
-       prepare_ocsroot_opt=""
-       if ! mountpoint $ocsroot &>/dev/null; then
-         echo "Directory $ocsroot is not a mount point. Will try to mount $ocsroot..."
-         prepare_ocsroot_opt="--prepare-ocsroot"
-       fi	        
-       drbl-live $prepare_ocsroot_opt --skip-pause-in-the-end --no-prompt-drbl-live start
-     fi
-     # disable the DRBL in pxelinux menu
-     hide_reveal_pxe_img drbl hide $pxecfg_pd/pxelinux.cfg/default
-     # set local as default
-     set-default-pxe-img -i local -c $pxecfg_pd/pxelinux.cfg/default
-
-     echo "$msg_delimiter_star_line"
-     echo "$msg_drbl_env_is_ready"
-     echo "$msg_delimiter_star_line"
-     sleep 1
-     dcs clonezilla-start $mode
-
-     echo "$msg_delimiter_star_line"
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-     if [ "$ocs_prompt_mode" = "tui" ]; then
-       $DIA --title "$msg_nchc_free_software_labs" --clear \
-            --msgbox "$msg_do_not_close_window_until_clone_finish" 0 0
-     else
-       echo -e "$msg_do_not_close_window_until_clone_finish"
-     fi
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-     /bin/bash
-     ;;
-   "stop")
-     drbl-ocs stop
-     echo "$msg_delimiter_star_line"
-     echo -n $msg_press_enter_to_continue
-     read < /dev/stdin
-     ;;
+   "start"|"restart") start_ocs_srv ;;
+   "stop")            stop_ocs_srv ;;
 esac
