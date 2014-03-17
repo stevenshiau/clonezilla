@@ -3095,7 +3095,7 @@ warning_about_run_parts_in_debian() {
 countdown_or_confirm_before_restore() {
   local restore_img_name new_dev_to_be_restore
   local i partition_table ctdn rest_conf init_des
-  local continue_choice
+  local continue_choice img_time img_time_prompt
   # wait for some commands if specified by user
   # init_des is the 1st line description used in confirming
 
@@ -3151,20 +3151,24 @@ countdown_or_confirm_before_restore() {
   fi
   if [ "$confirm_before_clone" = "yes" ] && [ "$rest_conf" = "yes" ]; then
     echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
+    img_time="$(LC_ALL=C ls -ld --time-style=+%Y-%m%d-%H%M $restore_img_name/clonezilla-img | awk '{ print $6;}')"
+    if [ -n "$img_time" ]; then
+      img_time_prompt="$msg_img_created_time: $img_time\n"
+    fi
     if [ "$ocs_prompt_mode" = "tui" ]; then
       # TUI mode
-      tui_prompt_txt="${init_des}${msg_the_following_step_is_to_restore_img_to_disk_part}: \"$restore_img_name\" -> \"$new_dev_to_be_restore\"\n"
+      tui_prompt_txt="${init_des}${msg_the_following_step_is_to_restore_img_to_disk_part}: \"$restore_img_name\" -> \"$new_dev_to_be_restore\"\n$img_time_prompt"
       if [ "$ocs_sr_type" = "restoreparts" -a "$create_part" = "yes" ]; then
         tui_prompt_txt="${tui_prompt_txt}$msg_uppercase_Warning. $msg_option_k_is_not_chosen_part_table_will_be_recreated\n"
       fi
       tui_prompt_txt="${tui_prompt_txt}$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!\n"
       if [ -n "$dev_model_shown" ]; then
-        tui_prompt_txt="${tui_prompt_txt}$msg_delimiter_star_line\n$msg_all_data_in_dev_will_be_overwritten:\n$dev_model_shown\n$msg_delimiter_star_line\n"
+        tui_prompt_txt="${tui_prompt_txt}$msg_all_data_in_dev_will_be_overwritten:\n$msg_delimiter_star_line\n$dev_model_shown\n$msg_delimiter_star_line\n"
       fi
       confirm_continue_no_default_answer -d "$tui_prompt_txt"
     else
       # CMD mode, no TUI
-      echo "${init_des}${msg_the_following_step_is_to_restore_img_to_disk_part}: \"$restore_img_name\" -> \"$new_dev_to_be_restore\"" | tee --append $OCS_LOGFILE
+      echo -e "${init_des}${msg_the_following_step_is_to_restore_img_to_disk_part}: \"$restore_img_name\" -> \"$new_dev_to_be_restore\"\n$img_time_prompt" | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       if [ "$ocs_sr_type" = "restoreparts" -a "$create_part" = "yes" ]; then
         echo "$msg_uppercase_Warning. $msg_option_k_is_not_chosen_part_table_will_be_recreated" | tee --append $OCS_LOGFILE
