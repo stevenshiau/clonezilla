@@ -3092,6 +3092,24 @@ warning_about_run_parts_in_debian() {
   fi
 } # end of warning_about_run_parts_in_debian
 #
+get_img_created_time() {
+  local img_path="$1" # img_path is $ocsroot/$target_dir/
+  local img_tm
+  if [ -z "$img_path" ]; then
+    echo "$img_tm"
+    return 1
+  fi
+  img_tm=""
+  # First we find the tag in the file "clonezilla-img".
+  img_tm="$(LC_ALL=C grep -E "^### Image created time: " $img_path/clonezilla-img 2>/dev/null | awk -F":" '{print $2}' | sed -r -e "s|^[[:space:]]*||g")"
+  if [ -z "$img_tm" ]; then
+    # No tag found. Use the image dir created time.
+    img_tm="$(LC_ALL=C ls -ld --time-style=+%Y-%m%d-%H%M $img_path | awk '{ print $6;}')"
+  fi
+  echo "$img_tm"
+  return 0
+} # end of get_img_created_time
+#
 countdown_or_confirm_before_restore() {
   local restore_img_name new_dev_to_be_restore
   local i partition_table ctdn rest_conf init_des
@@ -3151,7 +3169,7 @@ countdown_or_confirm_before_restore() {
   fi
   if [ "$confirm_before_clone" = "yes" ] && [ "$rest_conf" = "yes" ]; then
     echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
-    img_time="$(LC_ALL=C ls -ld --time-style=+%Y-%m%d-%H%M $restore_img_name/clonezilla-img | awk '{ print $6;}')"
+    img_time="$(get_img_created_time $restore_img_name)"
     if [ -n "$img_time" ]; then
       img_time_prompt="$msg_img_created_time: $img_time"
     fi
@@ -3354,6 +3372,8 @@ task_postprocessing() {
       echo "The log during saving:" >> $img_dir/clonezilla-img
       echo "----------------------------------------------------------" >> $img_dir/clonezilla-img
       cat ${OCS_LOGFILE} >> $img_dir/clonezilla-img
+      echo "### End of log ###" >> $img_dir/clonezilla-img
+      echo "### Image created time: $(date +%Y-%m%d-%H%M)" >> $img_dir/clonezilla-img
     ;;
   esac
 
@@ -4029,7 +4049,7 @@ get_existing_disk_image() {
      # only directory ..., not file
      [ ! -d "$imagedir/$file" ] && continue
      [ ! -f "$imagedir/$file/disk" ] && continue
-     fileinfo="$(LC_ALL=C ls -l --time-style=+%Y-%m%d-%H%M $imagedir/$file/disk 2>/dev/null| awk '{ print $6; }')"
+     fileinfo="$(get_img_created_time $imagedir/$file)"
      fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/disk 2>/dev/null)
      #
      disks_size_all=""
@@ -4115,7 +4135,7 @@ get_existing_parts_image() {
      # only directory ..., not file
      [ ! -d "$imagedir/$file" ] && continue
      [ ! -f "$imagedir/$file/parts" -a ! -f "$imagedir/$file/disk" ] && continue
-     fileinfo="$(LC_ALL=C ls -ld --time-style=+%Y-%m%d-%H%M $imagedir/$file | awk '{ print $6;}')"
+     fileinfo="$(get_img_created_time $imagedir/$file)"
      if [ -f "$imagedir/$file/parts" ]; then 
        fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/parts)
      elif [ -f "$imagedir/$file/disk" ]; then 
