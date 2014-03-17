@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.43
+Version:	3.9.44
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Mar 17 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.44-drbl1
+- Bug fixed: in cmd mode, an extra line was added in the confirmation messages before restorinig an image.
+
 * Mon Mar 17 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.43-drbl1
 - Image creating date will be shown in the prompt before restoring an image.
 
