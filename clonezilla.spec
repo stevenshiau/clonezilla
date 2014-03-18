@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.9.45
+Version:	3.9.46
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Mar 18 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.46-drbl1
+- Suppress all the space of time got in get_img_create_time because it might be used in dialog prompt.
+- Bug fixed: two extra grub 2.02 modules gfxterm_background and gfxterm_menu are added now when creating bootx64.efi and bootxia32.efi by ocs-gen-grub2-efi-bldr. Otherwise the backgroud won't be shown.
+
 * Mon Mar 17 2014 Steven Shiau <steven _at_ nchc org tw> 3.9.45-drbl1
 - A better way to get image created time was implemented.
 
