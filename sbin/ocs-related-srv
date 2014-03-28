@@ -91,7 +91,19 @@ if [ -e /etc/debian_version ]; then
   [ -x $RCX_REL_INITD/portmap ] && ln -fs $RCX_REL_INITD/portmap S13portmap 
   [ -x $RCX_REL_INITD/rpcbind ] && ln -fs $RCX_REL_INITD/rpcbind S13rpcbind
   [ -x $RCX_REL_INITD/nfs-common ] && ln -fs $RCX_REL_INITD/nfs-common S15nfs-common
-  [ -x $RCX_REL_INITD/ssh ] && ln -fs $RCX_REL_INITD/ssh S16ssh
+  if [ -x $RCX_REL_INITD/ssh ]; then
+    if grep -q check_for_upstart $RCX_REL_INITD/ssh; then
+    # For Ubuntu >= 13.10, it will check if it's upstart mechanism. If it is, then ssh won't be started here. However, we want it to be started in rc1.d.
+    cp -a $RCX_REL_INITD/ssh S16ssh
+    line="$(LC_ALL=C grep -n -Ew "if init_is_upstart; then" S16ssh | awk -F":" '{print $1}')"
+    if [ -n "$line" ]; then
+      line_2_mod="$((line + 1))"
+      perl -pi -e "if ($((line_2_mod))..$((line_2_mod))) {s/^([[:space:]]*)exit.*/\$1true; #commented by DRBL/g}" S16ssh
+    fi
+    else
+      ln -fs $RCX_REL_INITD/ssh S16ssh
+    fi
+  fi
   [ -x $RCX_REL_INITD/mountall.sh ] && ln -fs $RCX_REL_INITD/mountall.sh S17mountall.sh
   [ -x $RCX_REL_INITD/mountvirtfs ] && ln -fs $RCX_REL_INITD/mountvirtfs S17mountvirtfs
   [ -x $RCX_REL_INITD/mountnfs.sh ] && ln -fs $RCX_REL_INITD/mountnfs.sh S17mountnfs.sh
