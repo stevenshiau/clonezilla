@@ -502,6 +502,23 @@ append_drbl_clonezilla_PATH_in_system() {
   # echo "export PATH=\$PATH:/sbin:/usr/sbin:$DRBL_SCRIPT_PATH/sbin:$DRBL_SCRIPT_PATH/bin:" >> /etc/bash.bashrc
 } # end of append_drbl_clonezilla_PATH_in_system
 #
+query_and_install_PKG_TO_QUERY() {
+  # For DRBL live
+  # PKG_TO_QUERY is listed in drbl-ocs.conf. Here we query if it exists in the repository. If so, install.
+  # The reason we do not install these packages by live-config option is because
+  # we do not know if it exists in the repository or not. If it's not, apt will just quit. Therefore we have to install in the hook mechanism.
+  local pkg_2_inst
+  echo "Searching if $PKG_TO_QUERY available... "
+  for ipkg in $PKG_TO_QUERY; do
+    if [ -n "$(LC_ALL=C apt-cache show $ipkg 2>/dev/null)" ]; then
+      echo "Package $ipkg exists in repository."
+      pkg_2_inst="$pkg_2_inst $ipkg"
+    fi
+  done
+  echo "Installing packages: $pkg_2_inst"
+  LC_ALL=C apt-get -y install $pkg_2_inst
+} # end of query_and_install_PKG_TO_QUERY
+#
 install_debian_extra_modules() {
   local ker_list pkg_list
   # extra_module_list is from ocs-live-hook.conf

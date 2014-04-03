@@ -21,7 +21,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 #debian_type="standard"
 debian_type=""
 DEBIAN_DIST_DEF="wheezy"
-pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DBN $PKG_TO_QUERY $PKG_FROM_DRBL"
+pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DBN $PKG_FROM_DRBL"
 categories_default="main"
 cpu_flavor_default="486"
 bootstrap_default="debootstrap"
@@ -891,7 +891,11 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   if [ -n "$debian_type" ]; then
     $pref lb config --debootstrap-options="${DEBOOTSTRAP_OPTIONS} --variant=$debian_type"
   fi
-  $pref lb config --apt aptitude --apt-recommends false --bootstrap $bootstrap
+  # Since we might assign the package version, e.g. live-boot=3.0.1-1.drbl4.
+  # If we do not adding "--no-upgrade", then 
+  # in /usr/lib/live/build/chroot_live-packages it will run
+  # "apt-get install live-boot" then it will be upgraded.
+  $pref lb config --apt apt --apt-options "--yes --no-upgrade" --apt-recommends false --bootstrap $bootstrap
   # From live-build 3.0~a59-1, no --volatile option.
   #$pref lb config --volatile false
   # Disable the firmware packages automatically inclusion
