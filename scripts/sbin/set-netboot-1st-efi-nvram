@@ -1,0 +1,121 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# Description: Program to update the UEFI NVRAM for the restored disk
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+ocs_batch_mode="false"
+
+#
+USAGE() {
+  echo "$ocs - Set network boot in 1st order of UEFI NVRAM"
+  echo "Usage:"
+  echo "To run $ocs:"
+  echo "$ocs [OPTION]"
+  echo "Options:"
+  echo "-b, --batch   Run image checking in batch mode"
+  echo "Ex:"
+  echo "To set network boot in 1st order of UEFI NVRAM in batch mode, run"
+  echo "   $ocs -b"
+  echo
+} # end of USAGE
+
+do_check_and_update_efi_nvram() {
+  #
+  # root@trusty64-10-0-0-1:~# efibootmgr -v
+  # BootCurrent: 0002
+  # BootOrder: 0002,0004,0001,0003,0000
+  # Boot0000* EFI VMware Virtual SCSI Hard Drive (1.0)      ACPI(a0341d0,0)PCI(10,0)SCSI(1,0)
+  # Boot0001* EFI VMware Virtual SATA CDROM Drive (1.0)     ACPI(a0341d0,0)PCI(11,0)PCI(5,0)03120a00010000000000
+  # Boot0002* EFI Network   ACPI(a0341d0,0)PCI(11,0)PCI(1,0)MAC(000c2968f323,0)
+  # Boot0003* EFI Internal Shell (Unsupported option)       MM(b,3efcb000,3f355fff)
+  # Boot0004* Ubuntu 12.10  HD(1,800,5f000,9323f65d-c6ca-4041-abb7-18148a3fb6ab)File(\EFI\ubuntu\grubx64.efi)
+  
+  # root@trusty64-10-0-0-1:~# efibootmgr -v | grep -Ew "^BootCurrent:" | awk -F" " '{print $2}'
+  # 0002
+  # root@trusty64-10-0-0-1:~# efibootmgr -v | grep -Ew "^Boot0002"
+  # Boot0002* EFI Network   ACPI(a0341d0,0)PCI(11,0)PCI(1,0)MAC(000c2968f323,0)
+  
+  bootcurrent_no="$(LC_ALL=C efibootmgr -v | grep -Eiw "^BootCurrent:" | awk -F" " '{print $2}')"
+  bootorder="$(LC_ALL=C efibootmgr -v | grep -Eiw "^BootOrder:" | awk -F" " '{print $2}')"
+  bootcurrent="Boot${bootcurrent_no}"
+  if [ -n "$(LC_ALL=C efibootmgr -v | grep -Eiw "^$bootcurrent" |\
+             grep -Eiw "EFI Network")" ]; then
+    # Change EFI network boot to 1st order.
+    # E.g. BootOrder: 0004,0002,0001,0003,0000 -> 0002,0004,0001,0003,0000
+    # Two possibilities, between numbers, or in the end, i.e.
+    # case 1: 0004,0002,0001,0003,0000
+    # case 2: 0004,0000,0001,0003,0002
+    # case 3: 0002,0004,0000,0001,0003 -> No need to change
+    # case 4: 0002 -> No need to change
+    new_bootorder=""
+    if [ -n "$(echo "$bootorder" | grep -E ",${bootcurrent_no},")" ]; then
+      # case 1: 0004,0002,0001,0003,0000 -> 0002,0004,0001,0003,0000
+      new_bootorder="$(echo $bootorder | sed -r -e "s|(.*)${bootcurrent_no}|${bootcurrent_no},\1|g")"
+    elif [ -n "$(echo "$bootorder" | grep -E ",${bootcurrent_no}$")" ]; then
+      # case 2: 0004,0000,0001,0003,0002 -> 0002,0004,0001,0003,0000
+      new_bootorder="$(echo $bootorder | sed -r -e "s|(.*)${bootcurrent_no}|${bootcurrent_no},\1|g")"
+    fi
+    if [ -n "$new_bootorder" ]; then
+      echo "Running: efibootmgr -o \"$new_bootorder\""
+      LC_ALL=C efibootmgr -o "$new_bootorder"
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "EFI network boot already in the 1st boot order."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    fi
+    echo "The EFI bootmanager:"
+    LC_ALL=C efibootmgr
+  fi
+} # do_check_and_update_efi_nvram
+
+########################
+##### MAIN PROGRAM #####
+########################
+#
+ocs_file="$0"
+ocs=`basename $ocs_file`
+
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -b|--batch) ocs_batch_mode="true"; shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+check_if_root
+ask_and_load_lang_set
+
+if [ "$ocs_batch_mode" = "false" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "The following action is to set the network boot in the 1st order in the EFI NVRAM."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_are_u_sure_u_want_to_continue"
+  echo -n "[y/N] "
+  read cont_ans
+  case "$cont_ans" in
+    y|Y|[yY][eE][sS])
+       echo $msg_ok_let_do_it
+       ;;
+    *)
+       echo "Abort!"
+       exit 2
+  esac
+fi
+
+echo "Setting network boot in the 1st order of uEFI NVRAM..."
+do_check_and_update_efi_nvram
+exit 0
