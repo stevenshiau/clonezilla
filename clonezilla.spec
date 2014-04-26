@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.4
+Version:	3.10.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Apr 26 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.5-drbl1
+- Bug fixed: two extra grub 2.02 modules gfxterm_background and gfxterm_menu are added now when creating bootx64.efi and bootxia32.efi by gl-gen-grub2-efi-bldr. Otherwise the backgroud won't be shown. Thanks to Ady (ady-sf _at_ hotmail com) for reporting this issue.
+
 * Fri Apr 25 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.4-drbl1
 - Bug fixed: live-boot was upgraded to 4.x. Setting "--cache-indices" of live-config as true so that live-boot won't be upgraded after filesystem.squashfs is created.
 
