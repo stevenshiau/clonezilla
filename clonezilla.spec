@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: Restoring an LVM partition prevents any following non-LVM partitions from being restored. Thanks to Ian Horton for the patch.
+
 * Sat Apr 26 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.5-drbl1
 - Bug fixed: two extra grub 2.02 modules gfxterm_background and gfxterm_menu are added now when creating bootx64.efi and bootxia32.efi by gl-gen-grub2-efi-bldr. Otherwise the backgroud won't be shown. Thanks to Ady (ady-sf _at_ hotmail com) for reporting this issue.
 
