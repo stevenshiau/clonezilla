@@ -5391,7 +5391,7 @@ feed_multicast_restoreparts() {
   # This is for None-LVM parts
   local tgt_dir="$1"
   local tgt_parts="$2"
-  local time_to_pause_before_mail mail_client="" time_tag
+  local time_to_pause_before_mail mail_client="" time_tag part_is_lvm
   # prepare the mail client
   if type mutt &>/dev/null; then
     mail_client="mutt"
@@ -5407,16 +5407,18 @@ feed_multicast_restoreparts() {
   for partition in $tgt_parts; do
     # hda1 -> hda
     hd_tmp="$(get_diskname $partition)"
+    part_is_lvm="no"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
     if [ -n "$(grep -Ew "$partition" $imagedir/$tgt_dir/lvm_vg_dev.list 2>/dev/null)" ]; then
       # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
-      do_LVM_restore_feed="yes"
+      part_is_lvm="yes"
       continue
     fi
     udp_send_part_img $tgt_dir $partition $partition
   done
   # We have to do restore LVM (PV/VG/LV) together, not follow every partition
-  if [ "$do_LVM_restore_feed" = "yes" ]; then
+  if [ "$part_is_lvm" = "yes" ]; then
+    do_LVM_restore_feed="yes"
     # LVM exists, feed images to restore PV/VG/LV.
     feed_LVM_multicast "$tgt_parts" $port
   fi
@@ -7277,7 +7279,7 @@ task_restoreparts() {
   local ptype
   local whole_disk=""
   local cmd_restore_minix_sub_parts_table
-  local resize_ntfsfix_opt
+  local resize_ntfsfix_opt part_is_lvm
 
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -7438,20 +7440,22 @@ task_restoreparts() {
   for partition in $target_parts; do
     # hda1 -> hda
     hd_tmp="$(get_diskname $partition)"
+    part_is_lvm="no"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
     if [ -e $PV_PARSE_CONF ]; then
       for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
         if [ "$partition" = "$(get_master_dev_of_multipath $i)" ]; then
-          do_LVM_restore="yes"
+          part_is_lvm="yes"
           # This continue is to skip the multipath do loop, not the partition do loop
           continue
         fi
       done
     elif check_LVM_partition /dev/$partition; then
-      do_LVM_restore="yes"
+      part_is_lvm="yes"
     fi
-    #If do_LVM_restore is yes, we should skip the rest...
-    if [ "$do_LVM_restore" = "yes" ]; then
+    # If part_is_lvm is yes, we should skip the rest...
+    if [ "$part_is_lvm" = "yes" ]; then
+      do_LVM_restore="yes"
       # This continue is to skip the rest of this partition do loop
       continue
     fi
