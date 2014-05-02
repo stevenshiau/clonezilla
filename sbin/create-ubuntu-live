@@ -51,7 +51,7 @@ USAGE() {
     echo "-b, --branch [s|stable|t|testing|u|unstable|e|experimental]  Specify the DRBL branch to be used in Live CD. Default is stable."
     echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (cdebootstrap or debootstrap). If not specified, $bootstrap_default will be used."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main universe', default is \'$categories_default\' if not specified."
-    echo "-d, --debian-dist [gutsy|hardy|intrepid|jaunty|karmic|lucid|maverick|natty|oneiric]  Assign Ubuntu dist, the default is $DEBIAN_DIST_DEF if not assigned."
+    echo "-d, --debian-dist [precise|trusty|utopic]  Assign Ubuntu dist, the default is $DEBIAN_DIST_DEF if not assigned."
     echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 386 or amd64. If it's not assigned, $cpu_flavor_default will be used."
     echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
@@ -100,12 +100,17 @@ build_it(){
   echo "The kernel version in this live CD will be: $release_kernel_ver"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   
-  if [ "$debian_dist" = "lucid" ]; then
-    # ///OLD/// Updated! 2007/12/27 with the patch from http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448210, now we can use cdebootstrap.
-    # ///OLD/// Here actually we can not use "--bootstrap cdebootstrap" due to this bug:
-    # ///OLD/// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448348&trim=no
-    # In Intrepid, "--apt aptitude" does not work since aptitude is not the default one. Use "--apt apt" (default) instead of "--apt aptitude".
-    # Since intrepid uses uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
+  if [     "$debian_dist" = "precise" \
+  	-o "$debian_dist" = "raring" \
+  	-o "$debian_dist" = "saucy" \
+  	-o "$debian_dist" = "trusty" \
+  	-o "$debian_dist" = "utopic" \
+     ]; then
+    # For Uubntu 12.10+, linux-image has spilt as linux-image and linux-image-extra
+    # Ref: https://lists.ubuntu.com/archives/kernel-team/2012-May/020448.html
+    if [ "$debian_dist" != "precise" ]; then
+      pkgs="$pkgs linux-image-extra-${release_kernel_ver}"
+    fi
     # From live-build 3.0~a58-1, no --bootstrap-flavour option. We use debootstrap options now.
     # $pref lb config --bootstrap-flavour $debian_type 
     $pref lb config --debootstrap-options="${DEBOOTSTRAP_OPTIONS} --variant=$debian_type"
@@ -114,42 +119,6 @@ build_it(){
     # in /usr/lib/live/build/chroot_live-packages it will run
     # "apt-get install live-boot" then it will be upgraded.
     $pref lb config --apt apt --apt-options "--yes --no-upgrade" --apt-recommends false --bootstrap $bootstrap
-    # From live-build 3.0~a59-1, no --volatile option.
-    #$pref lb config --volatile false
-    # Disable the firmware packages automatically inclusion
-    $pref lb config --firmware-binary false --firmware-chroot false
-    $pref lb config --security false
-    # ///NOTE/// From intrepid with kernel 2.6.26-4 or later, linux-ubuntu-modules no more exists, and aufs is builtin in linux-image (not as a module)
-    $pref lb config --distribution $debian_dist --parent-distribution $debian_dist
-    $pref lb config --linux-packages "linux-image-$release_kernel_ver"
-    # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
-    # Do not use lzma (For Hardy or later). /NOTE/ "-e dir_list" must be the last param for mksquashfs.
-    # On karmic, mksquashfs does not support --nolzma anymore
-    export MKSQUASHFS_OPTIONS="-b 1024k -e boot"
-  elif [  "$debian_dist" = "precise" \
-  	-o "$debian_dist" = "quantal" \
-  	-o "$debian_dist" = "raring" \
-  	-o "$debian_dist" = "saucy" \
-  	-o "$debian_dist" = "trusty" \
-       ]; then
-    # ///OLD/// Updated! 2007/12/27 with the patch from http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448210, now we can use cdebootstrap.
-    # ///OLD/// Here actually we can not use "--bootstrap cdebootstrap" due to this bug:
-    # ///OLD/// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=448348&trim=no
-    # In Intrepid, "--apt aptitude" does not work since aptitude is not the default one. Use "--apt apt" (default) instead of "--apt aptitude".
-    # Since intrepid uses uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
-    # For Uubntu 12.10, linux-image has spilt as linux-image and linux-image-extra
-    # Ref: https://lists.ubuntu.com/archives/kernel-team/2012-May/020448.html
-    if [    "$debian_dist" = "quantal" \
-         -o "$debian_dist" = "raring" \
-         -o "$debian_dist" = "saucy" \
-         -o "$debian_dist" = "trusty" \
-       ]; then
-      pkgs="$pkgs linux-image-extra-${release_kernel_ver}"
-    fi
-    # From live-build 3.0~a58-1, no --bootstrap-flavour option. We use debootstrap options now.
-    # $pref lb config --bootstrap-flavour $debian_type 
-    $pref lb config --debootstrap-options="${DEBOOTSTRAP_OPTIONS} --variant=$debian_type"
-    $pref lb config --apt apt --apt-recommends false --bootstrap $bootstrap
     # From live-build 3.0~a59-1, no --volatile option.
     # $pref lb config --volatile false
     # Disable the firmware packages automatically inclusion
@@ -201,17 +170,9 @@ build_it(){
   # Disable the firmware included automatically. It will be too large. We will do that in hook.
   $pref lb config --firmware-binary false --firmware-chroot false
   
-  case "$debian_dist" in
-    "lucid")
-      # Force to use iso instead of iso-hybrid. Since the syslinux (e.g. on lucid) comes without isohybrid program.
-      $pref lb config --binary-images iso
-      ;;
-    *)
-      # Enable isohybrid
-      # //NOTE// This is for template iso only, not for Clonezilla live iso.
-      $pref lb config --binary-images iso-hybrid
-      ;;
-  esac
+  # Enable isohybrid
+  # //NOTE// This is for template iso only, not for Clonezilla live iso.
+  $pref lb config --binary-images iso-hybrid
   
   # Disable the firmware packages automatically inclusion
   $pref lb config --firmware-binary false --firmware-chroot false

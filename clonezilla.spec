@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.7
+Version:	3.10.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri May 02 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.8-drbl1
+- Adding support for utopic in create-ubuntu-live, and dropping the support for lucid and quantal.
+
 * Fri May 02 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.7-drbl1
 - Bug fixed: 1-2-mdisks failed to reinstall grub due to ocs-restore-mbr does not honor the temp $ocsroot variable.
 
