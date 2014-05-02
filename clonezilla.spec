@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.6
+Version:	3.10.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri May 02 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.7-drbl1
+- Bug fixed: 1-2-mdisks failed to reinstall grub due to ocs-restore-mbr does not honor the temp $ocsroot variable.
+
 * Thu May 01 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.6-drbl1
 - Bug fixed: Restoring an LVM partition prevents any following non-LVM partitions from being restored. Thanks to Ian Horton for the patch.
 
