@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.8
+Version:	3.10.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.8.23, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.8.24, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu May 15 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.9-drbl1
+- Packages, lsof, psmisc, dnsutils, wget, ftp, bzip2, zip, unzip, w3m and gsmartcontrol were added in GParted live.
+- Startup page of netsurf was assigned to GParted live manual.
+
 * Fri May 02 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.8-drbl1
 - Adding support for utopic in create-ubuntu-live, and dropping the support for lucid and quantal.
 
