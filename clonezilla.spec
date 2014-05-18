@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: The boot media should not be mounted again as read-write mode in ocs-live-save. Otherwise when rebooting, due to the squashfsfs are mounted, it can not be unmounted.
+
 * Sat May 17 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.10-drbl1
 - Accepting -b|-batch|--batch options for ocs-restore-mdisks. A typo in the USAGE message was fixed.
 
