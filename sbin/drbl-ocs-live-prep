@@ -31,89 +31,6 @@ USAGE() {
   echo "Ex: To use http://downloads.sourceforge.net/clonezilla/clonezilla-live-2.1.2-35-i686-pae.iso as the OS of client when running Clonezilla job, run:"
   echo "    $0 -i http://downloads.sourceforge.net/clonezilla/clonezilla-live-2.1.2-35-i686-pae.iso"
 }
-#
-download_clonezilla_live() {
-  local cz_ver arch_tag local_cz_file
-  # ocslive_tmp is global variable. The dir might be removed in function put_clonezilla_live
-  ocslive_tmp="$(mktemp -d /tmp/ocslive_tmp.XXXXXX)"
-
-  # If client_arch is assigned, we will switch to that iso
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "The CPU arch for client was assigned as: $client_arch"
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  arch_tag="-$client_arch"
-
-  # iso_url_for_pxe_ocs_live is from drbl-ocs.conf. e.g. 
-  # (1) http://downloads.sourceforge.net/clonezilla/clonezilla-live-1.2.6-24-i686.iso
-  # (2) http://sourceforge.net/projects/clonezilla/files/clonezilla_live_testing/clonezilla-live-1.2.6-24-i686.iso
-  if [ -z "$iso_url_for_pxe_ocs_live" ]; then
-    # First we try to see if iso_url_for_pxe_ocs_live_default is assigned in drbl-ocs.conf.
-    if [ -n "$iso_url_for_pxe_ocs_live_default" ]; then
-      iso_url_for_pxe_ocs_live="$iso_url_for_pxe_ocs_live_default"
-    fi
-    if [ -z "$iso_url_for_pxe_ocs_live" ]; then
-      # If not assigned in drbl-ocs.conf, try to find one.
-      echo "No Clonezilla live iso was assigned in drbl-ocs.conf or command line option."
-      echo "Trying to find the available Clonezilla live iso from sourceforge..."
-      cz_ver="$(LC_ALL=C get-latest-ocs-live-ver $clonezilla_iso_branch)"
-      iso_url_for_pxe_ocs_live="http://downloads.sourceforge.net/clonezilla/clonezilla-live-${cz_ver}${arch_tag}.iso"
-    fi
-  fi
-  if [ -z "$iso_url_for_pxe_ocs_live" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "iso_url_for_pxe_ocs_live _NOT_ found in drbl-ocs.conf, and can not be found from $default_iso_url_for_pxe_ocs_live!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop"
-    [ -d "$ocslive_tmp" -a -n "$(echo "$ocslive_tmp" | grep "ocslive")" ] && rm -rf $ocslive_tmp
-    exit 1
-  else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Available Clonezilla live iso URL: $iso_url_for_pxe_ocs_live"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  fi
-
-  case "$iso_url_for_pxe_ocs_live" in
-  http://*|ftp://*)
-    ocs_live_url_path="$(LC_ALL=C dirname $iso_url_for_pxe_ocs_live)"
-    ocs_live_iso="$(LC_ALL=C basename $iso_url_for_pxe_ocs_live)"
-    if [ "$ocs_live_url_path" = "." ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "No local iso file $ocs_live_iso was found, and no correct URL was found!"
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Please make sure iso file $ocs_live_iso exists, or specify a correct URL so that $ocs_live_iso can be downloaded!"
-      echo "Run \"$0 --help\" to get more details"
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
-      exit 1
-    fi
-    echo "Downloading the Clonezilla live iso from $ocs_live_url_path/$ocs_live_iso..."
-    wget -P "$ocslive_tmp" $ocs_live_url_path/$ocs_live_iso
-    rc="$?"
-    if [ "$rc" -ne 0 ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Failed to download Clonezilla live iso from $ocs_live_url_path/$ocs_live_iso!"
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop"
-      [ -d "$ocslive_tmp" -a -n "$(echo "$ocslive_tmp" | grep "ocslive")" ] && rm -rf $ocslive_tmp
-      exit 1
-    fi
-    ocs_live_iso_file="$ocslive_tmp/$ocs_live_iso"
-    ;;
-  file://*)
-    local_cz_file="$(echo $iso_url_for_pxe_ocs_live| sed -e "s|file://||g")"
-    if [ -e "$local_cz_file" ]; then
-      ocs_live_iso_file="$local_cz_file"
-    else
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Local Clonezilla live file \"$ocs_live_url_path\" _NOT_ found!"
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop"
-      [ -d "$ocslive_tmp" -a -n "$(echo "$ocslive_tmp" | grep "ocslive")" ] && rm -rf $ocslive_tmp
-      exit 1
-    fi
-    ;;
-  esac
-} # end of download_clonezilla_live
 #  
 put_clonezilla_live() {
   if [ -e "$iso_url_for_pxe_ocs_live" ]; then
@@ -123,7 +40,7 @@ put_clonezilla_live() {
   else
     echo "Try to download Clonezilla live iso file from network..."
     # Try to download the file. The download file will be in $ocs_live_iso_file
-    download_clonezilla_live
+    download_clonezilla_live $client_arch $iso_url_for_pxe_ocs_live
   fi
   # (1) Run drbl-sl to put it on the system.
   # For drbl-sl, fetch is the default option due to the legacy reason.
