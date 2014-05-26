@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.11
+Version:	3.10.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.8.25, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.9.2, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,9 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon May 26 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.12-drbl1
 - Function download_clonezilla_live was moved from drbl-ocs-live-prep to ocs-functions so that it could be reused.
 - Bug fixed: failed to parse correct option "-sc" in interactive mode of ocs-cvtimg-comp.
 - Prompt about arch of USAGE in drbl-ocs-live-prep was improved.
+- Program ocs-img-2-vdk was added to convert Clonezilla image to virtual disk file (qcow2 or vmdk) via KVM.
 
 * Sun May 18 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.11-drbl1
 - Bug fixed: The boot media should not be mounted again as read-write mode in ocs-live-save. Otherwise when rebooting, due to the squashfsfs are mounted, it can not be unmounted.

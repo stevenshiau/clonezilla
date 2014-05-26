@@ -1,0 +1,357 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# Description: Program to convert the Clonezilla image to virtual machine disk file
+# Todo: 
+# 1. Change output dir to $ocsroot?
+# 2. Show disk size info when selecting image? i.e Prompt when selecting the image name (not restoring or converting compression)
+# 3. If something does wrong, how to debug or login kvm to shutdown?
+# 4. Serial console for grub?
+# 5. Make sure there is kernel and append lines in isolinux.cfg/syslinux.cfg
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+cz_iso="p2v-converting.iso"
+kvm_ram_size="1024"  # GB
+# By default only qcow2 format is created. The vmdk format is not.
+create_vmdk_format_def="no"
+
+#
+USAGE() {
+    echo "$ocs - To convert the image of Clonezilla to virtual disk"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] IMAGE_NAME VDISK_IMAGE_NAME"
+    echo "Options:"
+    echo "-b, --batch-mode   Run image checking in batch mode"
+    echo "-c, --create-vmdk  Besides qcow2 virtual disk , create the vmdk (compat6) format disk file, too."
+    echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
+    echo "IMAGE_NAME is the image dir name, not absolute path"
+    echo "VDISK_IMAGE_NAME is the virtual disk file name"
+    echo "If IMAGE_NAME is not assigned, a dialog menu will be shown to allow selection."
+    echo "If no VDISK_IMAGE_NAME is not specified, a dialog menu will be shown."
+    echo "Ex:"
+    echo "To convert the image \"my-image\", which is located in $ocsroot/my-image, to virtual disk file \"my-image.qcow2\", run" 
+    echo "   $ocs my-image my-image.qcow2"
+    echo
+} # end of USAGE
+#
+ask_if_create_vmdk_format() {
+  local TMP=`mktemp /tmp/ocs_cvt.XXXXXX`
+  local c_opt
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  # Question about convert the image to vmdk format, too
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+  "$msg_nchc_clonezilla" --menu "$msg_choose_if_create_vmdk_format" \
+  0 0 0 $DIA_ESC \
+  " "    "$msg_not_create_vmdk_format" \
+  "-c"  "$msg_create_vmdk_format" \
+  2> $TMP
+  c_opt="$(cat $TMP)"
+  case "$c_opt" in
+   "-c")  create_vmdk_format="yes";;
+    *)  create_vmdk_format="no";;
+  esac
+  [ -f "$TMP" ] && rm -f $TMP
+} # ask_if_create_vmdk_format
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -c|--create-vmdk) create_vmdk_format="yes"; shift;;
+   -b|--batch) ocs_batch_mode="on"; shift;;
+   -or|--ocsroot)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             ocsroot="$1"
+             shift;
+           fi
+           [ -z "$ocsroot" ] && USAGE && exit 1
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+if [ -z "$*" ]; then
+  mode="interactive"
+else
+  ocs_src_img_name="$1"
+  shift
+  ocs_qcow2_img_name="$1"
+fi
+
+# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
+# otherwise setterm will complain.
+[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
+echo "Setting the TERM as $TERM"
+export TERM="$TERM"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+# check DIA
+check_DIA_set_ESC $DIA
+
+# imagedir is a variable which ask_user related function need
+imagedir="$ocsroot"
+
+# Check required packages...
+if ! type qemu-img &>/dev/null; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Command qemu-img _NOT_ found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+if ! type kvm &>/dev/null; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Command kvm _NOT_ found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+#
+[ -z "$ocs_src_img_name" ] && ocs_src_img_name="ask_user"
+[ -z "$ocs_qcow2_img_name" ] && ocs_qcow2_img_name="ask_user"
+
+if [ "$ocs_src_img_name" = "ask_user" ]; then
+  get_target_dir_name_when_converting_img
+  if [ -n "$target_dir" ]; then
+    ocs_src_img_name=$target_dir
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "The image to convert to virtual disk: $ocs_src_img_name"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No image was chosen!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+fi
+
+if [ "$ocs_qcow2_img_name" = "ask_user" ]; then
+  ASK_IMGNAME=1
+  while [ "$ASK_IMGNAME" -eq 1 ]; do
+    target_dir=""
+    get_target_dir_name_when_saving  ${ocs_src_img_name}.qcow2 # get $target_dir
+    if [ -e "$target_dir" ]; then
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+      --yesno "$msg_the_image \"$target_dir\" $msg_was_saved_before!\n\n$msg_do_you_want_to_replace ?" 0 0 2> $TMP
+      # Yes (to overwrite) is chosen, $?=0, if no is chosen, $?=1
+      ASK_IMGNAME=$?
+    else
+      ASK_IMGNAME=0
+    fi
+  done
+  ocs_qcow2_img_name="$target_dir"
+fi
+
+#
+if [ "$mode" = "interactive" ]; then
+  ask_if_create_vmdk_format
+else
+  if [ -z "$create_vmdk_format" ]; then
+    create_vmdk_format="$create_vmdk_format_def"
+  fi
+fi
+
+#
+# Use the function download_clonezilla_live in /usr/sbin/drbl-ocs-live-prep
+# //NOTE// Must prepare MBR (isolinux.cfg) and uEFI mode (grub.cfg)
+echo $msg_delimiter_star_line
+if [ ! -e "$cz_iso" ]; then
+  # Download a fresh clonezilla live iso
+  #download_clonezilla_live i686-pae stable  # output is $ocs_live_iso_file
+  download_clonezilla_live amd64 alternative  # output is $ocs_live_iso_file
+else
+  # Reuse the previous one.
+  ocs_live_iso_file="$cz_iso"
+fi
+echo $msg_delimiter_star_line
+echo "Preparing the pre-configured Clonezilla live iso for virtual machine..."
+ocs_iso_mnt="$(mktemp -d /tmp/ocs_iso_mnt.XXXXXX)"
+ocs_wdir="$(mktemp -d ocs_wdir.XXXXXX)"
+mount -o loop $ocs_live_iso_file  $ocs_iso_mnt
+rsync -aqP $ocs_iso_mnt/. $ocs_wdir/
+
+# Patch boot parameters in isolinux.cfg, syslinux.cfg, and grub config in live CD/USB
+# //NOTE// ocs_kvm_cvt_begin and ocs_kvm_cvt_end are used to mark the append, so that
+# it won't be append more than once.
+append_param="ocs_kvm_cvt_begin noeject keyboard-layouts=NONE locales=en_US.UTF-8 ocs_prerun1=\"mount -t 9p -o trans=virtio,version=9p2000.L hostshare $ocsroot\" ocs_prerun2=\"sleep 2\" live-getty console=ttyS0,115200n81 ocs_kvm_cvt_end"
+cfg_list="isolinux syslinux"
+cfg_tmp="$(mktemp /tmp/syslinux_cfg.XXXXXX)"
+# mktemp will create file in mode 600 without honoring umask, we want mode 644 otherwise tftp client won't be able to read file.
+chmod go+r $cfg_tmp
+# Modify isolinux.cfg and syslinux.cfg of live CD
+echo "Modifying isolinux.cfg, syslinux.cfg and grub.cfg of live CD..."
+for i in $cfg_list; do
+  cfg_f="$ocs_wdir/syslinux/$i.cfg"
+  # Only show the first boot menu
+  line_no="$(LC_ALL=C grep -n "^MENU BEGIN Other modes of Clonezilla live" $cfg_f | awk -F":" '{print $1}')"
+  if [ -n "$line_no" ]; then
+    line_no="$((line_no - 1))"
+  else
+    line_no="$(LC_ALL=C wc -l $cfg_f | awk -F" " '{print $1}')"
+  fi
+  # Clean cfg_tmp
+  > $cfg_tmp
+  # Append serial console in the 1st line for syslinux/isolinux if there is not.
+  if [ -z "$(grep -E "^serial 0 115200" $cfg_f 2>/dev/null)" ]; then
+    echo "serial 0 115200" > $cfg_tmp
+  fi
+  head -n $line_no $cfg_f >> $cfg_tmp
+  cp -a $cfg_tmp $cfg_f
+  # Begin modifying
+  perl -pi -e "s|^timeout .*|timeout 1|g" $cfg_f
+  perl -pi -e "s|^([[:space:]]*append)(.*)quiet(.*)|\$1\$2\$3|g" $cfg_f
+  perl -pi -e "s|^([[:space:]]*)(MENU COLOR.*)|\$1#\$2|g" $cfg_f
+  perl -pi -e "s|^ALLOWOPTIONS .*|ALLOWOPTIONS 0|g" $cfg_f
+  perl -pi -e "s|^([[:space:]]*)MENU LABEL Clonezilla live.*|\$1MENU LABEL Clonezilla live ($ocs_src_img_name -> virtual disk)|g" $cfg_f
+  perl -pi -e "s|ocs_live_run=\".*\"|ocs_live_run=\"ocs-sr -nogui -g auto -e1 auto -e2 -batch -r -j2 -p poweroff restoredisk $ocs_src_img_name sda\"|g" $cfg_f
+  if [ -n "$(grep -E "append initrd=/live/initrd.img" $cfg_f | grep -E ocs_kvm_cvt_begin)" ]; then
+      perl -pi -e "s|(append initrd=/live/initrd.img.*)[[:space:]]+ocs_kvm_cvt_begin.*ocs_kvm_cvt_end|\$1 $append_param|g" $cfg_f
+  else
+      perl -pi -e "s|(append initrd=/live/initrd.img.*)|\$1 $append_param|g" $cfg_f
+  fi
+done
+
+# Modify grub.cfg of live CD
+cfg_f="$ocs_wdir/EFI/boot/grub.cfg"
+# Only show the first boot menu
+line_no="$(LC_ALL=C grep -E -n "^menuentry \"Clonezilla live \(Default settings, VGA 1024x768.*" $cfg_f | awk -F":" '{print $1}')"
+if [ -n "$line_no" ]; then
+  line_no="$((line_no - 1))"
+else
+  line_no="$(LC_ALL=C wc -l $cfg_f | awk -F" " '{print $1}')"
+fi
+# Clean cfg_tmp
+> $cfg_tmp
+# Serial console for grub?
+head -n $line_no $cfg_f > $cfg_tmp
+cp -a $cfg_tmp $cfg_f
+if [ -n "$(grep -E "^[[:space:]]*linux /live/vmlinuz.*" $cfg_f | grep -E ocs_kvm_cvt_begin)" ]; then
+    perl -pi -e "s|^([[:space:]]*linux /live/vmlinuz.*)[[:space:]]+ocs_kvm_cvt_begin.*ocs_kvm_cvt_end|\$1 $append_param|g" $cfg_f
+else
+    perl -pi -e "s|^([[:space:]]*linux /live/vmlinuz.*)|\$1 $append_param|g" $cfg_f
+fi
+
+(cd $ocs_wdir
+genisoimage -quiet -A 'Clonezilla live CD' -f -r -hide-rr-moved -hide-joliet-trans-tbl -J -l -allow-limited-size -b syslinux/isolinux.bin -c syslinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -efi-boot EFI/images/efiboot.img -no-emul-boot ./ > ../$cz_iso
+)
+
+umount $ocs_iso_mnt
+if [ -d "$ocs_iso_mnt" -a -n "$(echo "$ocs_iso_mnt" | grep "ocs_iso_mnt")" ]; then
+  rm -rf $ocs_iso_mnt
+fi
+if [ -d "$ocs_wdir" -a -n "$(echo "$ocs_wdir" | grep "ocs_wdir")" ]; then
+  rm -rf $ocs_wdir
+fi
+echo $msg_delimiter_star_line
+
+# Get disk size
+# We can only convert 1 disk.
+src_dsk_n="$(cat $ocsroot/$ocs_src_img_name/disk | awk -F" " '{print $1}')"
+if [ -z "$src_dsk_n" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No disk name was found in image $ocs_src_img_name"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+src_disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $ocsroot/$ocs_src_img_name/$(to_filename ${src_dsk_n})-pt.parted | awk -F":" '{print $2}' | sed -r -e "s/s$//g" -e "s/^[[:space:]]*//g")"
+vmdk_size_GB="$(LC_ALL=C echo "scale=1; $src_disk_size_sec*512/1000.0^3" | bc -l)"
+
+# What if there are 2 or more disks? Need for loop to do that here.
+if [ -z "$vmdk_size_GB" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No disk size was found from image $ocs_src_img_name"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+# 
+echo $msg_delimiter_star_line
+echo "Creating virtual disk file $ocs_qcow2_img_name with size $vmdk_size_GB GB..."
+qemu-img create -f qcow2 $ocs_qcow2_img_name ${vmdk_size_GB}G
+kvm_serial_log="$ocs_qcow2_img_name.log"
+
+# Get CPU core number. We use half of that of hosts.
+host_cpu_cores="$(LC_ALL=C grep -E "^processor[[:space:]]+" /proc/cpuinfo | wc -l)"
+if [ "$host_cpu_cores" -gt 1 ]; then
+  client_cpu_cores="$(LC_ALL=C echo "scale=0; $host_cpu_cores/2.0" | bc -l)"
+else
+  client_cpu_cores="1"
+fi
+
+echo $msg_delimiter_star_line
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "$msg_kvm_started_for_conversion"
+echo "$msg_do_not_panic_for_booting_msg_of_kvm"
+echo "$msg_only_output_for_kvm_no_input"
+echo "$msg_press_ctrl_c_to_quit_tail"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+echo $msg_delimiter_star_line
+if [ "$ocs_batch_mode" != "on" ]; then
+  echo -n "$msg_press_enter_to_continue..."
+  read
+fi
+
+echo $msg_delimiter_star_line
+echo "Starting KVM to do the conversion..."
+# Set kvm pid file
+kvm_pid_f="$(mktemp /tmp/kvm_pid.XXXXXX)"
+
+# //NOTE// Must separate MBR or uEFI mode from the image
+# MBR mode:
+kvm -name clonezilla -cdrom $cz_iso -m $kvm_ram_size -cpu host -smp $client_cpu_cores -display none -daemonize -pidfile $kvm_pid_f -boot d -chardev file,id=serial0,path=${kvm_serial_log},server,nowait -serial chardev:serial0 -drive file=$ocs_qcow2_img_name,index=0,media=disk,aio=native,cache=none,if=scsi -fsdev local,security_model=mapped,id=fsdev0,path=$ocsroot -device virtio-9p-pci,id=fs0,fsdev=fsdev0,mount_tag=hostshare
+kvm_job_rc="$?"
+echo
+if [ "$kvm_job_rc" -ne 0 ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$msg_failed_to_start_kvm_to_convert"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+else
+  kvm_pid="$(cat $kvm_pid_f)"
+  echo "KVM process pid: $kvm_pid"
+fi
+
+#
+tail --pid $kvm_pid -f $kvm_serial_log
+
+echo $msg_delimiter_star_line
+if [ "$create_vmdk_format" = "yes" ]; then
+  ocs_vmdk_img_name="${ocs_qcow2_img_name/.qcow2/}.vmdk"
+  echo "Now converting qcow2 format to vmdk (compat6) format. The converted file name will be: $ocs_vmdk_img_name"
+  qemu-img convert -O vmdk -o compat6 -p $ocs_qcow2_img_name $ocs_vmdk_img_name
+  echo $msg_delimiter_star_line
+fi
+
+# Clean the tmp files
+rm -f $kvm_pid_f $cfg_tmp
+
+echo "Program finished!"
