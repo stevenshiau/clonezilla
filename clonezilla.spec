@@ -39,6 +39,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 %changelog
 - Function download_clonezilla_live was moved from drbl-ocs-live-prep to ocs-functions so that it could be reused.
 - Bug fixed: failed to parse correct option "-sc" in interactive mode of ocs-cvtimg-comp.
+- Prompt about arch of USAGE in drbl-ocs-live-prep was improved.
 
 * Sun May 18 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.11-drbl1
 - Bug fixed: The boot media should not be mounted again as read-write mode in ocs-live-save. Otherwise when rebooting, due to the squashfsfs are mounted, it can not be unmounted.
