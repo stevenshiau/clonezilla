@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.13
+Version:	3.10.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue May 27 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.14-drbl1
+- Packages qemu-kvm and qemu-utils were added in the packages list of create-drbl-live-by-pkg.
+
 * Tue May 27 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.13-drbl1
 - The options ( -a, -i, and -r) to assign Clonezilla live as template were added in ocs-img-2-vdk.
 
