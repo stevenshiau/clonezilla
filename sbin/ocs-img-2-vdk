@@ -2,12 +2,13 @@
 # License: GPL 
 # Author: Steven Shiau <steven _at_ nchc org tw>
 # Description: Program to convert the Clonezilla image to virtual machine disk file
-# Todo: 
+# TODO: 
 # 1. Change output dir to $ocsroot?
 # 2. Show disk size info when selecting image? i.e Prompt when selecting the image name (not restoring or converting compression)
-# 3. If something does wrong, how to debug or login kvm to shutdown?
+# 3. If something goes wrong, how to debug or login kvm to shutdown?
 # 4. Serial console for grub?
-# 5. Make sure there is kernel and append lines in isolinux.cfg/syslinux.cfg
+# 5. Option to use the booting Clonezilla live as template iso?
+# 6. Parsing the image to prepare the MBR or uEFI KVM machine. Now only MBR works, and it's not parsed.
 #
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
@@ -18,10 +19,15 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
 # Settings
-cz_iso="p2v-converting.iso"
-kvm_ram_size="1024"  # GB
+cz_iso="i2v-preseed.iso"
+kvm_ram_size="1024"  # MB
 # By default only qcow2 format is created. The vmdk format is not.
 create_vmdk_format_def="no"
+# For template iso file
+iso_arch_def="amd64"
+iso_branch_def="alternative"
+# By default the template iso in the working dir is reused.
+reuse_i2v_iso="yes"
 
 #
 USAGE() {
@@ -30,9 +36,12 @@ USAGE() {
     echo "To run $ocs:"
     echo "$ocs [OPTION] IMAGE_NAME VDISK_IMAGE_NAME"
     echo "Options:"
+    echo "-a, --iso-arch ARCH:  Force to use the CPU arch for the iso file. E.g. if i686-pae is assigned, the i686-pae version of Clonezilla live will be downloaded and use for KVM. Available arch are: i386, amd64 for Ubuntu-based (alternative) branch, and i486, i686-pae, amd64 for Debian-based (regular) release. //NOTE// By using this, the original file name assigned in the option '-i' will be changed as appropriate file name."
     echo "-b, --batch-mode   Run image checking in batch mode"
     echo "-c, --create-vmdk  Besides qcow2 virtual disk , create the vmdk (compat6) format disk file, too."
+    echo "-i, --iso-url ISO_URL:  Use the ISO_URL (e.g. http://downloads.sourceforge.net/clonezilla/clonezilla-live-2.1.2-35-i686-pae.iso or file:///usr/share/iso/clonezilla-live-2.1.2-35-amd64.iso) instead of the one assigned in drbl-ocs.conf. $0 will download clonezilla-live iso file from ISO_URL then use the as the OS of KVM when running Clonezilla job. //NOTE// Use iso file name only, not the zip one."
     echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
+    echo "-r, --branch NAME: Force to use the Clonezilla live from branch NAME (stable, testing, alternative, alternative_testing). If not assigned, stable will be used."
     echo "IMAGE_NAME is the image dir name, not absolute path"
     echo "VDISK_IMAGE_NAME is the virtual disk file name"
     echo "If IMAGE_NAME is not assigned, a dialog menu will be shown to allow selection."
@@ -72,8 +81,28 @@ ocs=`basename $ocs_file`
 #
 while [ $# -gt 0 ]; do
  case "$1" in
+   -a|--iso-arch)
+       shift;
+       if [ -z "$(echo $1 |grep ^-.)" ]; then
+         # skip the -xx option, in case 
+         iso_arch="$1"
+         [ -z "$iso_arch" ] && USAGE && exit 1
+         shift
+         reuse_i2v_iso="no"
+       fi
+       ;;
    -c|--create-vmdk) create_vmdk_format="yes"; shift;;
    -b|--batch) ocs_batch_mode="on"; shift;;
+   -i|--iso-url)
+       shift;
+       if [ -z "$(echo $1 |grep ^-.)" ]; then
+         # skip the -xx option, in case 
+         iso_url="$1"
+         [ -z "$iso_url" ] && USAGE && exit 1
+         shift
+         reuse_i2v_iso="no"
+       fi
+       ;;
    -or|--ocsroot)
            # overwrite the ocsroot in drbl.conf
            shift; 
@@ -84,6 +113,16 @@ while [ $# -gt 0 ]; do
            fi
            [ -z "$ocsroot" ] && USAGE && exit 1
            ;;
+   -r|--branch)
+       shift;
+       if [ -z "$(echo $1 |grep ^-.)" ]; then
+         # skip the -xx option, in case 
+         iso_branch="$1"
+         [ -z "$iso_branch" ] && USAGE && exit 1
+         shift
+         reuse_i2v_iso="no"
+       fi
+       ;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
            exit 2 ;;
@@ -132,8 +171,13 @@ if ! type kvm &>/dev/null; then
 fi
 
 #
+WD="$(pwd)"
+
+#
 [ -z "$ocs_src_img_name" ] && ocs_src_img_name="ask_user"
 [ -z "$ocs_qcow2_img_name" ] && ocs_qcow2_img_name="ask_user"
+[ -z "$iso_arch" ] && iso_arch="$iso_arch_def"
+[ -z "$iso_branch" ] && iso_branch="$iso_branch_def"
 
 if [ "$ocs_src_img_name" = "ask_user" ]; then
   get_target_dir_name_when_converting_img
@@ -181,18 +225,26 @@ fi
 # Use the function download_clonezilla_live in /usr/sbin/drbl-ocs-live-prep
 # //NOTE// Must prepare MBR (isolinux.cfg) and uEFI mode (grub.cfg)
 echo $msg_delimiter_star_line
-if [ ! -e "$cz_iso" ]; then
-  # Download a fresh clonezilla live iso
-  #download_clonezilla_live i686-pae stable  # output is $ocs_live_iso_file
-  download_clonezilla_live amd64 alternative  # output is $ocs_live_iso_file
-else
+if [ "$reuse_i2v_iso" = yes -a -e "$cz_iso" ]; then
   # Reuse the previous one.
+  echo "Reuse the existing \"$cz_iso\"..."
   ocs_live_iso_file="$cz_iso"
+else
+  # Use the fresh one
+  if [ -e "$iso_url" ]; then
+    # local file
+    echo "Try to using the local Clonezilla live iso file \"$iso_url\"..."
+    ocs_live_iso_file="$iso_url"
+  else
+    echo "Try to download Clonezilla live iso file from network..."
+    # Try to download the file. The download file will be in $ocs_live_iso_file
+    download_clonezilla_live $iso_arch $iso_branch $iso_url
+  fi
 fi
 echo $msg_delimiter_star_line
 echo "Preparing the pre-configured Clonezilla live iso for virtual machine..."
 ocs_iso_mnt="$(mktemp -d /tmp/ocs_iso_mnt.XXXXXX)"
-ocs_wdir="$(mktemp -d ocs_wdir.XXXXXX)"
+ocs_wdir="$(mktemp -d /tmp/ocs_wdir.XXXXXX)"
 mount -o loop $ocs_live_iso_file  $ocs_iso_mnt
 rsync -aqP $ocs_iso_mnt/. $ocs_wdir/
 
@@ -202,7 +254,7 @@ rsync -aqP $ocs_iso_mnt/. $ocs_wdir/
 append_param="ocs_kvm_cvt_begin noeject keyboard-layouts=NONE locales=en_US.UTF-8 ocs_prerun1=\"mount -t 9p -o trans=virtio,version=9p2000.L hostshare $ocsroot\" ocs_prerun2=\"sleep 2\" live-getty console=ttyS0,115200n81 ocs_kvm_cvt_end"
 cfg_list="isolinux syslinux"
 cfg_tmp="$(mktemp /tmp/syslinux_cfg.XXXXXX)"
-# mktemp will create file in mode 600 without honoring umask, we want mode 644 otherwise tftp client won't be able to read file.
+# mktemp will create file in mode 600 without honoring umask, we want mode 644
 chmod go+r $cfg_tmp
 # Modify isolinux.cfg and syslinux.cfg of live CD
 echo "Modifying isolinux.cfg, syslinux.cfg and grub.cfg of live CD..."
@@ -235,6 +287,21 @@ for i in $cfg_list; do
   else
       perl -pi -e "s|(append initrd=/live/initrd.img.*)|\$1 $append_param|g" $cfg_f
   fi
+  # Check if kernel and append line exist... Just in case.
+  if [ -z "$(grep -E "^[[:space:]]*kernel .*" $cfg_f)" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No kernel line was found in $cfg_f! The patched part failed!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+  if [ -z "$(grep -E "^[[:space:]]*append initrd=.*ocs_live_run.*" $cfg_f)" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No appropriate append line was found in $cfg_f! The patched part failed!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
 done
 
 # Modify grub.cfg of live CD
@@ -248,7 +315,7 @@ else
 fi
 # Clean cfg_tmp
 > $cfg_tmp
-# Serial console for grub?
+# TODO: Serial console for grub
 head -n $line_no $cfg_f > $cfg_tmp
 cp -a $cfg_tmp $cfg_f
 if [ -n "$(grep -E "^[[:space:]]*linux /live/vmlinuz.*" $cfg_f | grep -E ocs_kvm_cvt_begin)" ]; then
@@ -256,11 +323,11 @@ if [ -n "$(grep -E "^[[:space:]]*linux /live/vmlinuz.*" $cfg_f | grep -E ocs_kvm
 else
     perl -pi -e "s|^([[:space:]]*linux /live/vmlinuz.*)|\$1 $append_param|g" $cfg_f
 fi
+# TODO: Check linux line for required boot parameters, just in case.
 
 (cd $ocs_wdir
-genisoimage -quiet -A 'Clonezilla live CD' -f -r -hide-rr-moved -hide-joliet-trans-tbl -J -l -allow-limited-size -b syslinux/isolinux.bin -c syslinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -efi-boot EFI/images/efiboot.img -no-emul-boot ./ > ../$cz_iso
+genisoimage -quiet -A 'Clonezilla live CD' -f -r -hide-rr-moved -hide-joliet-trans-tbl -J -l -allow-limited-size -b syslinux/isolinux.bin -c syslinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -efi-boot EFI/images/efiboot.img -no-emul-boot ./ > $WD/$cz_iso
 )
-
 umount $ocs_iso_mnt
 if [ -d "$ocs_iso_mnt" -a -n "$(echo "$ocs_iso_mnt" | grep "ocs_iso_mnt")" ]; then
   rm -rf $ocs_iso_mnt

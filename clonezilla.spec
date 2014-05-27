@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.12
+Version:	3.10.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue May 27 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.13-drbl1
+- The options ( -a, -i, and -r) to assign Clonezilla live as template were added in ocs-img-2-vdk.
+
 * Mon May 26 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.12-drbl1
 - Function download_clonezilla_live was moved from drbl-ocs-live-prep to ocs-functions so that it could be reused.
 - Bug fixed: failed to parse correct option "-sc" in interactive mode of ocs-cvtimg-comp.
