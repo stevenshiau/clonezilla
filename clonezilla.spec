@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.14
+Version:	3.10.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu May 29 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.15-drbl1
+- If host machine is x86 arch, not x86-64/amd64, then we force to use x86 arch for KVM in ocs-img-2-vdk.
+
 * Tue May 27 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.14-drbl1
 - Packages qemu-kvm and qemu-utils were added in the packages list of create-drbl-live-by-pkg.
 
