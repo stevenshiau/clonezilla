@@ -36,7 +36,7 @@ USAGE() {
     echo "To run $ocs:"
     echo "$ocs [OPTION] IMAGE_NAME VDISK_IMAGE_NAME"
     echo "Options:"
-    echo "-a, --iso-arch ARCH:  Force to use the CPU arch for the iso file. E.g. if i686-pae is assigned, the i686-pae version of Clonezilla live will be downloaded and use for KVM. Available arch are: i386, amd64 for Ubuntu-based (alternative) branch, and i486, i686-pae, amd64 for Debian-based (regular) release. //NOTE// By using this, the original file name assigned in the option '-i' will be changed as appropriate file name."
+    echo "-a, --iso-arch ARCH:  Force to use the CPU arch for the iso file. E.g. if i686-pae is assigned, the i686-pae version of Clonezilla live will be downloaded and use for KVM. Available arch are: i386, amd64 for Ubuntu-based (alternative) branch, and i486, i686-pae, amd64 for Debian-based (regular) release. //NOTE// (1) By using this, the original file name assigned in the option '-i' will be changed as appropriate file name. (2) If the host machine is x86 arch, then it's recommended to use x86 for the virtual machine, not x86-64. Otherwise the performance will be bad."
     echo "-b, --batch-mode   Run image checking in batch mode"
     echo "-c, --create-vmdk  Besides qcow2 virtual disk , create the vmdk (compat6) format disk file, too."
     echo "-i, --iso-url ISO_URL:  Use the ISO_URL (e.g. http://downloads.sourceforge.net/clonezilla/clonezilla-live-2.1.2-35-i686-pae.iso or file:///usr/share/iso/clonezilla-live-2.1.2-35-amd64.iso) instead of the one assigned in drbl-ocs.conf. $0 will download clonezilla-live iso file from ISO_URL then use the as the OS of KVM when running Clonezilla job. //NOTE// Use iso file name only, not the zip one."
@@ -233,10 +233,21 @@ else
   # Use the fresh one
   if [ -e "$iso_url" ]; then
     # local file
-    echo "Try to using the local Clonezilla live iso file \"$iso_url\"..."
+    echo "Try to use the local Clonezilla live iso file \"$iso_url\"..."
     ocs_live_iso_file="$iso_url"
   else
     echo "Try to download Clonezilla live iso file from network..."
+    # If host machine is x86 arch, not x86-64/amd64, then we force to use
+    # x86 arch for KVM
+    if [ "$(LC_ALL=C uname -m)" != "x86_64" ]; then
+      case "$iso_branch" in
+        alternative*) iso_arch="i386";;
+                   *) iso_arch="i686-pae";;
+      esac
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "The host machine is not running x86-64 arch. Therefore force to use \"$iso_arch\" for virtual machine."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    fi
     # Try to download the file. The download file will be in $ocs_live_iso_file
     download_clonezilla_live $iso_arch $iso_branch $iso_url
   fi
