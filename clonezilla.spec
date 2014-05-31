@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.15
+Version:	3.10.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.9.2, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.9.3, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.70, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: ocs-live-run-menu was improved so that it can run variable ocs_live_run like: ocs_live_run="ocs-restore-mdisks -batch -p '-g auto -e1 auto -e2 -cm -r -j2 -k1 -p true' ask_user sda sdb". Thanks to Coudy and jbweng2008 _at_ 163 com for reporting this issue.
+
+* Fri May 30 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.16-drbl1
+- Updating ocs-live-hook.conf for Slovak language.
+
 * Thu May 29 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.15-drbl1
 - If host machine is x86 arch, not x86-64/amd64, then we force to use x86 arch for KVM in ocs-img-2-vdk.
 
