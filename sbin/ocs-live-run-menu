@@ -38,15 +38,15 @@ fi
 get_fb_term
 [ "$fb_term" = "bterm" -a ! -e "$uni_font" ] && exit 1
 
-use_bterm=""
+use_fb_term=""
 # Ex. zh_TW.UTF-8 -> zh_TW
 locale_region="$(echo "$ocs_lang" | sed -e "s|\..*||g")"
 if `locale_required_bterm_or_not "$locale_region"` && \
    [ -n "$fb_term" ] && \
    ([ -e /dev/fb/0 ] || [ -e /dev/fb0 ]); then 
-   use_bterm="yes"
+   use_fb_term="yes"
 else
-   use_bterm="no"
+   use_fb_term="no"
 fi
 
 #
@@ -81,7 +81,7 @@ done
 ocs-live-pre-run
 
 #
-if [ "$use_bterm" = "yes" ];then
+if [ "$use_fb_term" = "yes" ];then
   case "$fb_term" in
    "bterm")
        # Since bterm can only use one parameter (i.e. not working if we run 'bterm -l zh_TW.UTF-8 -f $uni_font ls -alF /etc/', i.e. only ls will be respected. There is no such issue for jfbterm). Here we use a workaround to make it work for bterm, i.e. use a tmp file to run it.
@@ -96,14 +96,22 @@ if [ "$use_bterm" = "yes" ];then
        [ -e "$ocs_live_run_tmp" ] && rm -f $ocs_live_run_tmp
        ;;
   "jfbterm")
+       # Although jfbterm can use more than one parameters. However, if a variable command is like:
+       # ocs_live_run="ocs-restore-mdisks -batch -p '-g auto -e1 auto -e2 -cm -r -j2 -k1 -p true' ask_user sda sdb"
+       # jfbterm -q -e $ocs_live_run -> Won't work. The single quotation and double quotation will be wrong. If there is no jfbterm, we can use "eval $ocs_live_run" to run it. However, jfbterm will has issue.
+       # Here we use a workaround to make it work for jbterm, i.e. use a tmp file to run it.
+       ocs_live_run_tmp="$(mktemp /tmp/ocs_live_run_tmp.XXXXXX)"
+       echo "$ocs_live_run" > $ocs_live_run_tmp
+       chmod 755 $ocs_live_run_tmp
        export TERM=jfbterm
        set +e
-       jfbterm -q -e $ocs_live_run
+       jfbterm -q -e $ocs_live_run_tmp
        EXIT=$?
+       [ -e "$ocs_live_run_tmp" ] && rm -f $ocs_live_run_tmp
        ;;
   esac
 else
-  $ocs_live_run
+  eval $ocs_live_run
 fi
 echo "\"$ocs_live_run\" is finished."
 
@@ -129,7 +137,7 @@ else
   # The result got from ocs-live-final-action will be saved in file $ocs_live_run_rlt.
   ocs_live_run_rlt="$(mktemp /tmp/ocs_live_run_rlt.XXXXXX)"
   # Case 2: Clonezilla live interactive mode
-  if [ "$use_bterm" = "yes" ];then
+  if [ "$use_fb_term" = "yes" ];then
     case "$fb_term" in
      "bterm")
          # Since bterm can only use one parameter (i.e. not working if we run 'bterm -l zh_TW.UTF-8 -f $uni_font ls -alF /etc/', i.e. only ls will be respected. There is no such issue for jfbterm). Here we use a workaround to make it work for bterm, i.e. use a tmp file to run it.
