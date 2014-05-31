@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.16
+Version:	3.10.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat May 31 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.17-drbl1
 - Bug fixed: ocs-live-run-menu was improved so that it can run variable ocs_live_run like: ocs_live_run="ocs-restore-mdisks -batch -p '-g auto -e1 auto -e2 -cm -r -j2 -k1 -p true' ask_user sda sdb". Thanks to Coudy and jbweng2008 _at_ 163 com for reporting this issue.
 
 * Fri May 30 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.16-drbl1
