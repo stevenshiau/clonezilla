@@ -82,38 +82,52 @@ ocs-live-pre-run
 
 #
 if [ "$use_fb_term" = "yes" ];then
+  # (1) For bterm
+  # Since bterm can only use one parameter (i.e. not working if we run 'bterm -l zh_TW.UTF-8 -f $uni_font ls -alF /etc/', i.e. only ls will be respected. There is no such issue for jfbterm). Here we use a workaround to make it work for bterm, i.e. use a tmp file to run it.
+  # (2) For jfbterm
+  # Although jfbterm can use more than one parameters. However, if a variable command is like:
+  # ocs_live_run="ocs-restore-mdisks -batch -p '-g auto -e1 auto -e2 -cm -r -j2 -k1 -p true' ask_user sda sdb"
+  # jfbterm -q -e $ocs_live_run -> Won't work. The single quotation and double quotation will be wrong. If there is no jfbterm, we can use "eval $ocs_live_run" to run it. However, jfbterm will has issue.
+  # Here we use a workaround to make it work for jbterm, i.e. use a tmp file to run it.
+  ocs_live_run_tmp="$(mktemp /tmp/ocs_live_run_tmp.XXXXXX)"
+  cat <<-RUN_END > $ocs_live_run_tmp
+#!/bin/bash
+$ocs_live_run 2>&1 | tee ${ocs_live_run_tmp}.log
+echo "\${PIPESTATUS[0]}" > ${ocs_live_run_tmp}.rc
+RUN_END
+  chmod 755 $ocs_live_run_tmp
   case "$fb_term" in
    "bterm")
-       # Since bterm can only use one parameter (i.e. not working if we run 'bterm -l zh_TW.UTF-8 -f $uni_font ls -alF /etc/', i.e. only ls will be respected. There is no such issue for jfbterm). Here we use a workaround to make it work for bterm, i.e. use a tmp file to run it.
-       ocs_live_run_tmp="$(mktemp /tmp/ocs_live_run_tmp.XXXXXX)"
-       echo "$ocs_live_run" > $ocs_live_run_tmp
-       chmod 755 $ocs_live_run_tmp
        export TERM=bterm
        set +e
        # bterm need full path command even it's in the PATH already.
        bterm -l $LANG -f $uni_font $ocs_live_run_tmp
-       EXIT=$?
-       [ -e "$ocs_live_run_tmp" ] && rm -f $ocs_live_run_tmp
+       EXIT="$(cat ${ocs_live_run_tmp}.rc)"
        ;;
   "jfbterm")
-       # Although jfbterm can use more than one parameters. However, if a variable command is like:
-       # ocs_live_run="ocs-restore-mdisks -batch -p '-g auto -e1 auto -e2 -cm -r -j2 -k1 -p true' ask_user sda sdb"
-       # jfbterm -q -e $ocs_live_run -> Won't work. The single quotation and double quotation will be wrong. If there is no jfbterm, we can use "eval $ocs_live_run" to run it. However, jfbterm will has issue.
-       # Here we use a workaround to make it work for jbterm, i.e. use a tmp file to run it.
-       ocs_live_run_tmp="$(mktemp /tmp/ocs_live_run_tmp.XXXXXX)"
-       echo "$ocs_live_run" > $ocs_live_run_tmp
-       chmod 755 $ocs_live_run_tmp
        export TERM=jfbterm
        set +e
        jfbterm -q -e $ocs_live_run_tmp
-       EXIT=$?
-       [ -e "$ocs_live_run_tmp" ] && rm -f $ocs_live_run_tmp
+       EXIT="$(cat ${ocs_live_run_tmp}.rc)"
        ;;
   esac
+  [ -e "$ocs_live_run_tmp" ] && rm -f $ocs_live_run_tmp
+  [ -e "${ocs_live_run_tmp}.rc" ] && rm -f ${ocs_live_run_tmp}.rc
 else
   eval $ocs_live_run
+  EXIT=$?
 fi
-echo "\"$ocs_live_run\" is finished."
+if [ "$EXIT" -eq 0 ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "\"$ocs_live_run\" finished successfully."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Check ${ocs_live_run_tmp}.log for more details."
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "\"$ocs_live_run\" finished with error!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Check ${ocs_live_run_tmp}.log for more details."
+fi
 
 # Post run
 ocs-live-post-run
