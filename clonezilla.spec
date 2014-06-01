@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- To avoid giving wrong result, do not show it's successful or not after jfbterm is finished in ocs-live-run-menu. Let user to check the log file.
+
 * Sun Jun 01 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.18-drbl1
 - Program ocs-live-run-menu was improved to give more output info for command is run in jfbterm.
 - Program cnvt-ocs-dev now could convert SD device (mmcblk0). Thanks to joyer99 for reporting this issue (https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/40636cdd/?limit=25).
