@@ -38,6 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 - Program ocs-live-run-menu was improved to give more output info for command is run in jfbterm.
+- Program cnvt-ocs-dev now could convert SD device (mmcblk0). Thanks to joyer99 for reporting this issue (https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/40636cdd/?limit=25).
 
 * Sat May 31 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.17-drbl1
 - Bug fixed: ocs-live-run-menu was improved so that it can run variable ocs_live_run like: ocs_live_run="ocs-restore-mdisks -batch -p '-g auto -e1 auto -e2 -cm -r -j2 -k1 -p true' ask_user sda sdb". Thanks to Coudy and jbweng2008 _at_ 163 com for reporting this issue.
