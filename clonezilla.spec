@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.18
+Version:	3.10.19
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 02 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.19-drbl1
 - To avoid giving wrong result, do not show it's successful or not after jfbterm is finished in ocs-live-run-menu. Let user to check the log file.
+- The log file for ocs-live-run-menu is changed as /var/log/clonezilla-live.log.
 
 * Sun Jun 01 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.18-drbl1
 - Program ocs-live-run-menu was improved to give more output info for command is run in jfbterm.
