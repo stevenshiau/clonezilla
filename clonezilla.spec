@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.19
+Version:	3.10.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jun 08 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.20-drbl1
 - Due to an issue of command "eject", "noeject" was added in the boot parameters of GParted live iso file.
 
 * Mon Jun 02 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.19-drbl1
