@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Due to an issue of command "eject", "noeject" was added in the boot parameters of GParted live iso file.
+
 * Mon Jun 02 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.19-drbl1
 - To avoid giving wrong result, do not show it's successful or not after jfbterm is finished in ocs-live-run-menu. Let user to check the log file.
 - The log file for ocs-live-run-menu is changed as /var/log/clonezilla-live.log.
