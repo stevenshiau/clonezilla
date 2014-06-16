@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.21
+Version:	3.10.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 16 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.22-drbl1
+- Dropping the usage for progress option "-V' of ntfsclone, which was patched by Thomas Tsai. Now ntfsclone (e.g. v2014.2.15AR.1) has an option "-V" for showing version number. Therefore it should not be used anymore.
+
 * Mon Jun 09 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.21-drbl1
 - Package xz-utils was added in GParted live so that the initrd could be compressed as xz format.
 

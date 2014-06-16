@@ -110,16 +110,6 @@ unmount_wait_and_try() {
   done
 } # end of unmount_wait_and_try
 #
-get_ntfsclone_progress_opt() {
-  if type ntfsclone &>/dev/null; then
-    # Decide ntfsclone supports -V or not. Thomas has added an option "-V" for ntfsclone to show more info when cloning. However, the patch we sent to ntfsprogs project did not get any response... we have to do this here. In the future, we will switch to use partclone as default.
-    ntfsclone_progress_option=""
-    if [ -n "$(ntfsclone -h 2>&1 | grep -Ewo -- "-V")" ]; then
-      ntfsclone_progress_option="-V"
-    fi
-  fi
-} # end of get_ntfsclone_progress_opt
-#
 gen_md5_sha1_sums() {
   local img_dir="$1"  # absolute path
   # Generate MD5SUMS, SHA1SUMS
@@ -1077,7 +1067,7 @@ save_part_by_ntfsclone() {
     echo "WARNING!!! ntfsclone is run with extra option(s): $ntfsclone_save_extra_opt"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
-  ( ntfsclone $ntfsclone_progress_option $ntfsclone_save_extra_opt_def $ntfsclone_save_extra_opt --save-image --output - $source_dev | \
+  ( ntfsclone $ntfsclone_save_extra_opt_def $ntfsclone_save_extra_opt --save-image --output - $source_dev | \
     $compress_prog_opt | \
     (
      case "$VOL_LIMIT" in
@@ -4608,7 +4598,7 @@ unicast_restore_by_ntfsclone() {
     done
   ) | \
   $unzip_stdin_cmd | \
-  ntfsclone $ntfsclone_progress_option $ntfsclone_restore_extra_opt_def --restore-image --overwrite $part - | tee $ntfs_img_info_tmp
+  ntfsclone $ntfsclone_restore_extra_opt_def --restore-image --overwrite $part - | tee $ntfs_img_info_tmp
   rc="${PIPESTATUS[0]}"
   end_time="$(date +%s%N)"
   get_ntfs_image_info $ntfs_img_info_tmp $start_time $end_time
@@ -4926,7 +4916,7 @@ multicast_restore_by_ntfsclone() {
 
   start_time="$(date +%s%N)"
   $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
-  ntfsclone $ntfsclone_progress_option $ntfsclone_restore_extra_opt_def --restore-image --overwrite $part - | tee $ntfs_img_info_tmp
+  ntfsclone $ntfsclone_restore_extra_opt_def --restore-image --overwrite $part - | tee $ntfs_img_info_tmp
   rc="${PIPESTATUS[0]}"
   end_time="$(date +%s%N)"
   get_ntfs_image_info $ntfs_img_info_tmp $start_time $end_time
