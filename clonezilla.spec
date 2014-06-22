@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Forced to use LC_ALL=C to run printf in ocs-expand-mbr-pt. This could avoid the possible locales issue (https://sourceforge.net/p/clonezilla/bugs/197/).
+
 * Mon Jun 16 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.22-drbl1
 - Dropping the usage for progress option "-V' of ntfsclone, which was patched by Thomas Tsai. Now ntfsclone (e.g. v2014.2.15AR.1) has an option "-V" for showing version number. Therefore it should not be used anymore.
 
