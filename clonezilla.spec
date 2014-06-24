@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Adding partclone in GParted live. (https://bugzilla.gnome.org/show_bug.cgi?id=732039)
+
 * Mon Jun 23 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.24-drbl1
 - Config file drbl-ocs.conf was updated to add more comments about udpcast sender options. Thanks to Pretzel. Ref: http://sourceforge.net/p/clonezilla/discussion/Clonezilla_server_edition/thread/6e1e87d4/
 
