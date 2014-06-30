@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.25
+Version:	3.10.26
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 30 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.26-drbl1
+- The clonezilla-live.log redirected by tee was removed from ocs-live-run-menu. It is duplicated because /var/log/clonezilla.log has the same output, and it causes the distoration of partclone output when running in zh_TW.UTF-8 environment.
+
 * Thu Jun 26 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.25-drbl1
 - Adding partclone in GParted live. (https://bugzilla.gnome.org/show_bug.cgi?id=732039)
 
