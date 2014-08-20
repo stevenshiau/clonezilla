@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.27
+Version:	3.10.28
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Aug 20 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.28-drbl1
+- Using debian_type="minbase" in create-drbl-live so that it won't fail due to systemd-sysv is installed.
+- Adding packages manpages and info in the packages list of create-drbl-live-by-pkg since debian_type="minbase" is used.
+
 * Tue Aug 19 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.27-drbl1
 - File ocs-live-hook.conf was updated for language file tr_TR.
 
