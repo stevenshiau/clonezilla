@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.10.29
+Version:	3.10.30
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Aug 26 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.30-drbl1
+- Force to remove systemd package in clonezilla live and gparted live.
+
 * Tue Aug 26 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.29-drbl1
 - Force to remove systemd package in drbl live.
 
