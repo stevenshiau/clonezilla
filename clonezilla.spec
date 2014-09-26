@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Device name /dev/md* is supported. With boot parameter "nodmraid", now it's possible fakeraid/softraid could be supported. Not well tested though.
+- Bug fixed: only device name /dev/mmcblk0p* worked in function get_diskname of ocs-functions. Those /dev/mmcblk[1-9]p* failed.
+
 * Wed Sep 10 2014 Steven Shiau <steven _at_ nchc org tw> 3.10.33-drbl1
 - Using vmwgfx.enable_fbdev=1 instead of vmwgfx.enable_fbdev=no in ocs-live-boot-menu. Now we use vesafb instead of uvesafb in both Debian-based and Ubuntu-based Clonezilla live. No more uvesafb for Ubuntu-based one.
 
