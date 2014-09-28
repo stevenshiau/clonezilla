@@ -54,6 +54,22 @@ while [ $# -gt 0 ]; do
             shift; 
             cvt_dev="no"
             ;;
+    -f|--from-part)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      from_part="$1"
+              shift
+            fi
+	    ;;
+    -d|--to-part)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      to_part="$1"
+              shift
+            fi
+	    ;;
     -t|--target-dir)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -181,6 +197,29 @@ if [ "$cvt_dev" = "yes" ]; then
   # Put a tag file
   echo "This image was converted by $0 and it is not portable." > $new_imghome/$new_imgname/converted-not-portable
   #
-  cnvt-ocs-dev -b -d $new_imghome $new_imgname $src_dev $tgt_dev
+  cnvt_force_opt=""
+  if [ -n "$from_part" -a -n "$to_part" ]; then
+    # We have to force to create the tmp image when source partition and destination partition is different.
+    # The is especially for the partitions on the same disk, like the image of sda1 is restored to sda6
+    cnvt_force_opt="-f"
+  fi
+  cnvt-ocs-dev $cnvt_force_opt -b -d $new_imghome $new_imgname $src_dev $tgt_dev
 fi
+
+if [ -n "$from_part" -a -n "$to_part" ]; then
+  # Softlink them
+  ( 
+    cd $new_imghome/$new_imgname || exit 1
+    # 1st, remove the destination partition in case it exists
+    rm -f ${to_part}.*
+    # sda1.ext4-ptcl-img.gz.aa -> sdb5.ext4-ptcl-img.gz.aa
+    for i in $ocsroot/$imgname/${from_part}.*; do
+      [ ! -e "$i" ] && continue
+      fn="$(basename $i)"
+      fn_new="$(echo "$fn" | sed -e "s|${from_part}\.|${to_part}\.|")"
+      ln -fs "${i}" "${fn_new}"
+    done
+  )
+fi
+
 echo "The created image is \"$new_imghome/$new_imgname\"."
