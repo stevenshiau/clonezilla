@@ -4294,6 +4294,8 @@ get_existing_partitions_from_img() {
      fi
      if [ "$request_mode" = "check" ]; then
         prompt_msg_part1="$msg_choose_the_parts_to_check"
+     elif [ "$request_mode" = "select_from_img" ]; then
+        prompt_msg_part1="$msg_choose_the_parts_from_img_to_restore"
      else
         prompt_msg_part1="$msg_choose_the_parts_to_restore"
      fi
@@ -6634,6 +6636,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # (2) Add an option in create-ocs-tmp-img to assign the ocsroot
   # (3) Avoid multiple unicast clones to convert the same image.
   #img_cnvt_flag="0"
+  local tmp_img_from_to_opt
 
   # Check if target disk name exists in the image.
   tgtdisk_exist_flag=0
@@ -6646,6 +6649,13 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
       break
     fi
   done
+  # source_part is a global variable.
+  # If source_part exists, it means the image of a partition will be restored to different part.
+  tmp_img_from_to_opt=""
+  if [ -n "$source_part" ]; then
+    tgtdisk_exist_flag=1
+    tmp_img_from_to_opt="-f $source_part -d $target_parts"
+  fi
   if [ "$tgtdisk_exist_flag" -eq 1 ]; then
     # Some cases not supported:
     # (1) Multicast clone.
@@ -6688,7 +6698,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
          -n "${target_dir}-tmp-cnvted" ]; then
       rm -rf "$ocsroot/${target_dir}-tmp-cnvted" 
     fi
-    create-ocs-tmp-img $target_dir ${target_dir}-tmp-cnvted $dsksname_from_img $target_hd
+    create-ocs-tmp-img $tmp_img_from_to_opt $target_dir ${target_dir}-tmp-cnvted $dsksname_from_img $target_hd
     # Change the ocsroot to /tmp now since create-ocs-tmp-img will create the image in /tmp
     ocsroot="/tmp"
     target_dir="${target_dir}-tmp-cnvted"
@@ -8169,6 +8179,7 @@ check_and_fix_vol_limit_if_required() {
 #
 USAGE_common_restore(){
     # Common restore usage help messages for both drbl-ocs and ocs-sr
+    echo " -f, --from-part-in-img PARTITION      Restore the partition from image. This is especially for \"restoreparts\" to restore the image of partition (only works for one) to different partition, e.g. sda1 of image to sdb6."
     echo " -g, --grub-install GRUB_PARTITION     Install grub in the MBR of the disk containing partition GRUB_PARTITION with root grub directory in the same GRUB_PARTITION when restoration finishs, GRUB_PARTITION can be one of \"/dev/hda1\", \"/dev/hda2\"... or \"auto\" (\"auto\" will let clonezilla detect the grub root partition automatically). If \"auto\" is assigned, it will work if grub partition and root partition are not in the same partition."
     echo " -r, --resize-partition   Resize the partition when restoration finishes, this will resize the file system size to fit the partition size. It is normally used when when a small partition image is restored to a larger partition."
     echo " -k, --no-fdisk, --no-create-partition   Do NOT create partition in target harddisk. If this option is set, you must make sure there is an existing partition table in the current restored harddisk. Default is to create the partition table."

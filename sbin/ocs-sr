@@ -138,6 +138,15 @@ parse_ocs_sr_cmd_options_with_dash() {
             fi
             [ -z "$grub_partition" ] && USAGE && exit 1
             ;;
+    -f|--from-part-in-img)
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              source_part=$1
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$source_part" ] && USAGE && exit 1
+            ;;
     -a|--no-force-dma-on)  
 	    force_dma_on="no"
             shift; n_shift=$((n_shift+1));;
@@ -1206,22 +1215,47 @@ case "$ocs_sr_type" in
       target_dir="$ocs_sr_img_name"
     fi
     check_input_target_image "$ocsroot/$target_dir"
-    source_parts_no="$(cat $ocsroot/$target_dir/parts | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+    #source_parts_no="$(cat $ocsroot/$target_dir/parts | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
     
     if [ "$ocs_sr_dev" = "ask_user" ]; then
-      if [ "$source_parts_no" -eq 1 ]; then
-        dia_sel_opt="menu"
-      else
-        dia_sel_opt="checklist"
+      if [ -z "$source_part" ]; then
+        ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+        trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+        get_existing_partitions_from_img $ANS_TMP $ocsroot/$target_dir no select_from_img
+        # we have to remove " (comes with checklist in dialog) 
+        # so that for loop will work (Specially for FC3/4...)
+        source_part="$(cat $ANS_TMP | tr -d \")"
+        [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
       fi
-      get_target_parts_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt
+      # target name exists, but file "parts" is empty ?
+      check_target_parts $ocsroot/$target_dir/parts "$source_part"
+      src_parts_no="$(LC_ALL=C echo $source_part | wc -w)"
+      if [ "$src_parts_no" -eq 1 ]; then
+        dia_sel_opt="menu"
+        get_target_parts_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt  # Obtain target_parts
+      else
+	# In this case, it's too complicated to restore partitions to different partitions on destination disk.
+	# Therefore we only allow original partitions to partitions, i.e. e.g., sda1, sda2 from image -> sda1, sda2 on destination disk. Therefore "source_part" is reset to none.
+        target_parts="$source_part"
+        source_part=""
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	echo "$msg_2_or_more_parts_only_same_parts_on_dest"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "$msg_press_enter_to_continue"
+        read 
+      fi
     elif [ "$ocs_sr_dev" = "all" ]; then
       target_parts="$(cat $ocsroot/$target_dir/parts)"
     else
       target_parts="$ocs_sr_dev"
     fi
+    #
     get_extra_param_when_type_is_ask_user_and_interactive_mode
     wrap_up_opt  # Since extra param inputed again, wrap up again
+    # Append the option if restoring to different partition on the destination disk.
+    if [ -n "$source_part" ]; then
+	OCS_OPTS="$OCS_OPTS -f $source_part"
+    fi
 
     task_processing_after_parameters_checked
 
