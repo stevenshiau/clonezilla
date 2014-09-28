@@ -20,6 +20,7 @@ export TERM="$TERM"
 ocs=`basename $0`
 # Initial setting
 batch_mode="no"
+force_mode="no"
 
 #
 check_if_root
@@ -62,6 +63,9 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -b|--batch)
             batch_mode="yes"
+	    shift;;
+    -f|--force)
+            force_mode="yes"
 	    shift;;
     -l|--language)
             shift
@@ -118,13 +122,21 @@ if [ ! -d "$ocsroot/$image_name" ]; then
   exit 1
 fi
 
-# check if src and target is same
-if [ "$src_dev" = "$tgt_dev" ]; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Source device ($src_dev) and target device ($tgt_dev) are same one!"
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "Skip converting!"
-  exit 1
+# Check if src and target is same. If it's in force mode, we create it anyway.
+if [ "$force_mode" = "no" ]; then
+  if [ "$src_dev" = "$tgt_dev" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Source device ($src_dev) and target device ($tgt_dev) are same one!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Skip converting!"
+    exit 1
+  fi
+else
+  # force_mode is yes
+  if [ "$src_dev" = "$tgt_dev" ]; then
+    echo "Although source device ($src_dev) and target device ($tgt_dev) are the same, but it's forced to continue. This program is exited with return code 0."
+    exit 0
+  fi
 fi
 
 # check src_dev
@@ -167,11 +179,13 @@ fi
 files_2_be_mod_about_disk="disk $(to_filename ${src_dev})-pt.parted $(to_filename ${src_dev})-pt.parted.compact"
 files_2_be_mod_about_parts="parts pt.sf $(to_filename ${src_dev})-pt.sf"
 
-if [ -n "$(unalias ls 2>/dev/null; ls $ocsroot/$image_name/$(to_filename ${tgt_dev})* 2>/dev/null)" ]; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Target device files ($ocsroot/$image_name/$(to_filename ${tgt_dev})*) already exist!"
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  wait_for_confirm
+if [ "$force_mode" = "no" ]; then
+  if [ -n "$(unalias ls 2>/dev/null; ls $ocsroot/$image_name/$(to_filename ${tgt_dev})* 2>/dev/null)" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Target device files ($ocsroot/$image_name/$(to_filename ${tgt_dev})*) already exist!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    wait_for_confirm
+  fi
 fi
 for ifile in $files_2_be_mod_about_disk; do
   [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
@@ -183,7 +197,7 @@ for ifile in $files_2_be_mod_about_parts; do
   [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
   echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
   case $tgt_dev in
-  cciss*|mmcblk*)
+  cciss*|mmcblk*|md*)
     # sda1 -> cciss/c0d0p1 or sda1 -> mmcblk0p1
     # How about cciss/c0d0p1 -> cciss/c0d1p1?
     # How about mmcblk0p1 -> sda1? OK!
@@ -200,7 +214,7 @@ done
 if [ -f "$ocsroot/$image_name/lvm_vg_dev.list" ]; then
   echo -n "Change /dev/$src_dev to /dev/$tgt_dev in $ocsroot/$image_name/lvm_vg_dev.list... "
   case $tgt_dev in
-  cciss*|mmcblk*)
+  cciss*|mmcblk*|md*)
     LC_ALL=C perl -pi -e "s|/dev/$src_dev[p]?|/dev/${tgt_dev}p|g" $ocsroot/$image_name/lvm_vg_dev.list
     ;;
   *)
@@ -243,7 +257,7 @@ for im in $filenames_2_be_mod_about_parts; do
   # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
   # cciss/c0d0p1 -> sda1
   case $tgt_dev in
-  cciss*|mmcblk*)
+  cciss*|mmcblk*|md*)
     newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
     ;;
   *)
@@ -264,7 +278,7 @@ for im in $filenames_2_be_mod_about_swap; do
   [ ! -e "$im" ] && continue
   imname="$(LC_ALL=C basename $im)"
   case $tgt_dev in
-  cciss*|mmcblk*)
+  cciss*|mmcblk*|md*)
    newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
    ;;
   *)
