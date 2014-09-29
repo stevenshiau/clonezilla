@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.11.1
+Version:	3.11.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,15 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Sep 29 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.4-drbl1
+- Post run commands of Clonezilla after restoring will be shown specifically.
+
+* Mon Sep 29 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.3-drbl1
+- Bug fixed: manual page of ocs-install-grub was wrong in grub partition description.
+
+* Mon Sep 29 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.2-drbl1
+- Bug fixed: ocs-install-grub wrongly parsed Clonezilla live boot media as grub root partition for some cases, e.g. when restoring /dev/md126* devices.
+ 
 * Sun Sep 28 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.1-drbl1
 - Programs ocs-sr and ocs-functions were updated to support restoring image of partition to different name partition.
 - Options -f|--from-part and -d|--to-part were added for create-ocs-tmp-img. It's intended to be used for restoring an image of partition to different partition name.

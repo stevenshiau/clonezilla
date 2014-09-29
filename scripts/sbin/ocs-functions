@@ -1980,8 +1980,8 @@ mount_root_partition_for_separate_boot_part() {
     #
     mount $root_partition $hd_img >/dev/null 2>&1
     mrc=$?
-    # root partition must have /boot
-    if [ -d "$hd_img/boot/" ]; then
+    # root partition must have /boot, however, we have to skip the Clonezilla live boot media because it also includes /boot/.
+    if [ -d "$hd_img/boot/" -a ! -e "$hd_img/Clonezilla-Live-Version" ]; then
        # Found the root partition
        found_root_partition="$root_partition"
        break;
@@ -2265,10 +2265,14 @@ test_run_grub1_from_restored_os(){
   LC_ALL=C chroot $mnt_pnt ls &>/dev/null
   rc_=$?
   if [ "$rc_" -eq 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Yes, we are able to chroot the restored OS partition $root_prt."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     run_grub1_from_restored_os_mode="yes"
   else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "No, we are not able to chroot the restored OS partition $root_prt."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     run_grub1_from_restored_os_mode="no"
   fi
   unmount_wait_and_try $mnt_pnt
@@ -2378,10 +2382,14 @@ test_run_grub2_from_restored_os(){
   LC_ALL=C chroot $mnt_pnt ls &>/dev/null
   rc_=$?
   if [ "$rc_" -eq 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Yes, we are able to chroot the restored OS partition $root_prt."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     run_grub2_from_restored_os_mode="yes"
   else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "No, we are not able to chroot the restored OS partition $root_prt."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     run_grub2_from_restored_os_mode="no"
   fi
   unmount_wait_and_try $mnt_pnt
@@ -7564,6 +7572,7 @@ task_restoreparts() {
       prebuild_opt="-p"
     fi
     for ihd in $target_hd; do
+      echo "Running: ocs-restore-mbr --ocsroot $ocsroot $prebuild_opt $target_dir $ihd" | tee --append ${OCS_LOGFILE}
       ocs-restore-mbr --ocsroot $ocsroot $prebuild_opt $target_dir $ihd | tee --append ${OCS_LOGFILE}
     done
   fi
@@ -7578,6 +7587,7 @@ task_restoreparts() {
     for partition in $target_parts; do
       is_whole_disk $partition && continue
       echo "Now tuning the file system size on partition /dev/$partition to fit the partition size..." | tee --append $OCS_LOGFILE
+      echo "Running: ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition" | tee --append $OCS_LOGFILE
       ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition | tee --append $OCS_LOGFILE
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     done
@@ -7585,24 +7595,28 @@ task_restoreparts() {
 
   # Remove the udev MAC address records on the restored GNU/Linux
   if [ "$do_rm_hardware_record" = "yes" ]; then
+    echo "Running: ocs-tux-postprocess $target_parts $target_logv" | tee --append $OCS_LOGFILE
     ocs-tux-postprocess $target_parts $target_logv | tee --append $OCS_LOGFILE
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
   # re-install syslinux
   if [ "$do_update_syslinux" = "yes" ]; then
+    echo "Running: ocs-update-syslinux -b $target_parts" | tee --append $OCS_LOGFILE
     ocs-update-syslinux -b $target_parts | tee --append $OCS_LOGFILE
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
   # re-install grub here
   if [ "$install_grub" = "on" ]; then
+    echo "Running: ocs-install-grub -p \"$target_parts\" $grub_partition" | tee --append $OCS_LOGFILE
     ocs-install-grub -p "$target_parts" $grub_partition | tee --append $OCS_LOGFILE
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
   # Reloc ntfs boot partition
   if [ "$change_ntfs_boot_chs" = "on" ]; then
+    echo "Running: run_ntfsreloc_part -p \"$target_parts\" $ntfs_boot_partition" | tee --append $OCS_LOGFILE
     run_ntfsreloc_part -p "$target_parts" $ntfs_boot_partition | tee --append $OCS_LOGFILE
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
@@ -7633,6 +7647,7 @@ task_restoreparts() {
   if [ "$update_efi_nvram" = "yes" ]; then
     for ihd in $target_hd; do
       if `is_gpt_partitition_table_disk /dev/$ihd`; then
+        echo "Running: update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat /dev/$ihd" | tee --append $OCS_LOGFILE
         update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat /dev/$ihd | tee --append $OCS_LOGFILE
 	# After EFI NVRAM is updated, the boot loader of network boot might be shift. We have to move it back if the BootCurrent is network boot.
 	set-netboot-1st-efi-nvram -b
