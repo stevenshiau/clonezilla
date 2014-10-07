@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: options "-fsck-src-part" and ""-fsck-src-part-y" were duplicated in ocs-onthefly expert mode.
+
 * Thu Oct 02 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.6-drbl1
 - Updating prep-ocsroot to run nfs-common service only when it exists.
 - Batch mode of ocs-sr failed due to the last modification about restoring image of partitioin to differnt partition name.
