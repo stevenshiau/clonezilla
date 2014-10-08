@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.11.6
+Version:	3.11.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,8 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Oct 08 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.7-drbl1
 - Bug fixed: options "-fsck-src-part" and ""-fsck-src-part-y" were duplicated in ocs-onthefly expert mode.
 - Bug fixed: The input harddrive of ocs-install-grub might be more than one, therefore ocs-install-grub should take that into consideration.
+- Now Clonezilla could support PV on disk, not only on partition.
 
 * Thu Oct 02 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.6-drbl1
 - Updating prep-ocsroot to run nfs-common service only when it exists.
