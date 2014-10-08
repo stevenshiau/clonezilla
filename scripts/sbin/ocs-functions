@@ -183,10 +183,41 @@ get_partition_table_type_from_disk() {
   elif `is_mbr_partitition_table_disk $tdisk`; then
     ptype="mbr"
   else
+    # Here we do not have to check if it's PV on a disk, because we do not need to do anything when it's "pv_disk" like that in function "get_partition_table_type_from_img".
     ptype="unknown"
   fi
   echo "$ptype"
 } # get_partition_table_type_from_disk
+#
+get_partition_table_type_from_img() {
+  local img_dir_fullpath="$1"  # image dir full path
+  local hdsk="$2"  # hard drive name, like: sda, cciss/c0d0
+  local ptype ip
+  ptype=""
+  if [ -z "$img_dir_fullpath" -o -z "$hdsk" ]; then
+    exit 1
+  fi
+  # From the output file of parted, we can decide if the partition is gpt or mbr
+  if `is_gpt_partitition_table_file $img_dir_fullpath/$(to_filename ${hdsk})-pt.parted`; then
+    ptype="gpt"
+  elif `is_mbr_partitition_table_file $img_dir_fullpath/$(to_filename ${hdsk})-pt.parted`; then
+    ptype="mbr"
+  else
+    # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+    pv_on_dsk="$(get_pv_on_disk_from_PV_conf_list "$img_dir_fullpath/lvm_vg_dev.list")"
+    for ip in $pv_on_dsk; do
+      if [ -n "$(LC_ALL=C echo "${hdsk}" | grep -Ew "${ip}")" ]; then
+        # Found PV on this disk
+        ptype="pv_disk"
+        break
+      fi
+    done
+    if [ -z "$ptype" ]; then
+      ptype="unknown"
+    fi
+  fi
+  echo "$ptype"
+} # end of get_partition_table_type
 #
 is_gpt_partitition_table_file() {
   local p_table_f="$1"
@@ -2641,6 +2672,7 @@ check_integrity_of_partition_table_in_disk() {
   local disk_file="$1"
   local dsk_chk_tmp="$(mktemp /tmp/dsk_chk_tmp.XXXXXX)"
   local disk_name continue_confirm_ans
+  local pv_on_dsk pv_on_dsk_flag
   if [ -z "$disk_file" ]; then
     echo "To check partition table, you have to assign disk." | tee --append ${OCS_LOGFILE}
     echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
@@ -2653,35 +2685,48 @@ check_integrity_of_partition_table_in_disk() {
   parted -s $disk_file print &> $dsk_chk_tmp
   rc=$?
   if [ "$rc" -gt 0 ]; then
-    disk_name="$(basename $disk_file)"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$msg_the_partition_table_in_disk_is_illegal: $disk_file" | tee --append ${OCS_LOGFILE}
-    echo "$msg_parted_detect_as_wrong" | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    if [ -e "$dsk_chk_tmp" ]; then
-      echo "$msg_error_messages_from_parted_are:" | tee --append ${OCS_LOGFILE}
-      echo $msg_delimiter_star_line               | tee --append ${OCS_LOGFILE}
-      cat $dsk_chk_tmp                            | tee --append ${OCS_LOGFILE}
-      echo $msg_delimiter_star_line               | tee --append ${OCS_LOGFILE}
-      rm -f $dsk_chk_tmp
+    # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+    pv_on_dsk="$(get_pv_on_disk_from_local_machine)"
+    pv_on_dsk_flag="0"
+    for ip in $pv_on_dsk; do
+      if [ -n "$(LC_ALL=C echo "${disk_file#/dev/*}" | grep -Ew "${ip}")" ]; then
+        # Found PV on disk
+        pv_on_dsk_flag="1"
+        break
+      fi
+    done
+    if [ "$pv_on_dsk_flag" -eq 0 ]; then
+      # No PV on disk, it does not make sense for this bare disk.
+      disk_name="$(basename $disk_file)"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$msg_the_partition_table_in_disk_is_illegal: $disk_file" | tee --append ${OCS_LOGFILE}
+      echo "$msg_parted_detect_as_wrong" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      if [ -e "$dsk_chk_tmp" ]; then
+        echo "$msg_error_messages_from_parted_are:" | tee --append ${OCS_LOGFILE}
+        echo $msg_delimiter_star_line               | tee --append ${OCS_LOGFILE}
+        cat $dsk_chk_tmp                            | tee --append ${OCS_LOGFILE}
+        echo $msg_delimiter_star_line               | tee --append ${OCS_LOGFILE}
+        rm -f $dsk_chk_tmp
+      fi
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "$msg_continue_with_weried_partition_table"      | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo -n "$msg_are_u_sure_u_want_to_continue (y/N) " | tee --append ${OCS_LOGFILE}
+      read continue_confirm_ans
+      case "$continue_confirm_ans" in
+           y|Y|[yY][eE][sS])
+              echo "Very bad choice."  | tee --append ${OCS_LOGFILE}
+              echo "$msg_ok_let_do_it" | tee --append ${OCS_LOGFILE}
+              ;;
+           *)
+              echo "Smart choice."      | tee --append ${OCS_LOGFILE}
+              echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+              # Saving mode, always copy error log to image dir.
+              copy_error_log
+              exit 1
+      esac
     fi
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_continue_with_weried_partition_table"      | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo -n "$msg_are_u_sure_u_want_to_continue (y/N) " | tee --append ${OCS_LOGFILE}
-    read continue_confirm_ans
-    case "$continue_confirm_ans" in
-         y|Y|[yY][eE][sS])
-            echo "Very bad choice."  | tee --append ${OCS_LOGFILE}
-            echo "$msg_ok_let_do_it" | tee --append ${OCS_LOGFILE}
-            ;;
-         *)
-            echo "Smart choice."      | tee --append ${OCS_LOGFILE}
-            echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-            # Saving mode, always copy error log to image dir.
-            copy_error_log
-            exit 1
-    esac
   fi
   [ -e "$dsk_chk_tmp" ] && rm -f $dsk_chk_tmp
 } # end of check_integrity_of_partition_table_in_disk
@@ -2826,21 +2871,18 @@ create_partition() {
     inform_kernel_partition_table_changed mbr $tgt_hd_file | tee --append ${OCS_LOGFILE}
   fi
 
-  # From the output file of parted, we can decide if the partition is gpt or mbr
-  if `is_gpt_partitition_table_file $tgt_dir/$(to_filename ${tgt_hd_name})-pt.parted`; then
-    pt_type="gpt"
-  elif `is_mbr_partitition_table_file $tgt_dir/$(to_filename ${tgt_hd_name})-pt.parted`; then
-    pt_type="mbr"
-  else
+  # Decide if the partition is gpt or mbr
+  pt_type="$(get_partition_table_type_from_img "$tgt_dir" "${tgt_hd_name}")"
+
+  #
+  case "$pt_type" in
+  unknown)
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "Unknown partition table format from the file $tgt_dir/$(to_filename ${tgt_hd_name})-pt.parted!" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
-  fi
-
-  #
-  case "$pt_type" in
+    ;;
   mbr)
     # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
     if [ "$use_HD_CHS_from_EDD_pref" = "yes" ]; then
@@ -3277,7 +3319,7 @@ run_post_cmd_when_clone_end() {
       reboot $HALT_REBOOT_OPT
       ;;
     choose)
-      if [ "$ocs_postmode_prompt" = "cmd" ]; then
+      if [ "$ocs_postmode_prompt" = "cmd" ] || [ "$nogui" = "on" ]; then
         echo "$msg_clone_finished_choose_to:"
         echo "(0) $msg_poweroff"
         echo "(1) $msg_reboot"
@@ -6793,6 +6835,7 @@ task_savedisk() {
   local target_parts
   local target_swap_parts
   local gen_md5sum_status gen_sha1sum_status rc_task_savedisk
+  local pv_on_dsk
 
   screen_not_blank
   active_proc_partitions
@@ -6842,6 +6885,19 @@ task_savedisk() {
     echo "Searching for swap partition(s)..." | tee --append $OCS_LOGFILE
     get_known_partition_proc_format $idisk swap
     target_swap_parts="$target_swap_parts $BACKUP_DEVS"
+  done
+
+  # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+  # instead it's on a disk (e.g. /dev/sdb).
+  pv_on_dsk="$(get_pv_on_disk_from_local_machine)"  # pv_on_dsk: sda, sdb...
+  for ip in $pv_on_dsk; do
+    if [ -n "$(LC_ALL=C echo "$target_hd" | grep -Ew "${ip}")" ]; then
+      # Only when it's listed in the target_hd, we add it.
+      if [ -z "$(echo $target_parts | grep -Ew ${ip})" ]; then
+        # Avoid duplicated one since task_savedisk might already list it already.
+        target_parts="$target_parts ${ip}"
+      fi
+    fi
   done
 
   [ -z "$target_parts" ] || echo "The data partition to be saved: $target_parts" | tee --append $OCS_LOGFILE
@@ -6896,6 +6952,7 @@ task_saveparts() {
   local disk_size_sec to_skip dev_to_be_saved_shown_in_warning rc_saveparts
   local target_dir_fullpath
   local minix_subpt_start minix_subpt_end minix_subpt_size cmd_save_minix_sub_parts_table
+  local pv_on_dsk pv_on_dsk_flag
 
   # target_hd will be extracted from $target_parts, maybe we will have one more
   local target_hd=""
@@ -7038,6 +7095,8 @@ task_saveparts() {
     # Output another one which is easier for human to read
     LC_ALL=C parted -s /dev/$ihd unit compact print > $target_dir_fullpath/$(to_filename ${ihd})-pt.parted.compact
     # From the output file of parted, we can decide if the partition is gpt or mbr
+    # //NOTE// Here we can not use function "get_partition_table_type_from_img"
+    # because the image is not created completely yet.
     if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
       # GPT, output the GPT data. Ref: http://en.wikipedia.org/wiki/GUID_Partition_Table
       # Legacy MBR (LBA 0), Partition table header (LBA 1), Partition entries (LBA 2-33)
@@ -7106,11 +7165,24 @@ task_saveparts() {
       fi
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     else
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Unknown partition table format on disk /dev/$ihd." | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      exit 1
+      # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+      pv_on_dsk="$(get_pv_on_disk_from_local_machine)"
+      pv_on_dsk_flag="0"
+      for ip in $pv_on_dsk; do
+        if [ -n "$(LC_ALL=C echo "$ihd" | grep -Ew "${ip}")" ]; then
+          # Found PV on disk
+          pv_on_dsk_flag="1"
+	  break
+        fi
+      done
+      if [ "$pv_on_dsk_flag" -eq 0 ]; then
+        # No PV on disk, it does not make sense to save this bare disk.
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "Unknown partition table format on disk /dev/$ihd." | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+        exit 1
+      fi
     fi
     if [ "$RETVAL" -ne 0 ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -7154,6 +7226,20 @@ task_saveparts() {
       echo "PARTITION_TYPE=Win_boot_reserved" > $target_dir_fullpath/$partition.info
     fi
   done
+  # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+  # instead it's on a disk (e.g. /dev/sdb).
+  # Although there is a checking in task_savedisk function, but this is for "saveparts" option.
+  pv_on_dsk="$(get_pv_on_disk_from_local_machine)"  # pv_on_dsk: sda, sdb...
+  for ip in $pv_on_dsk; do
+    if [ -n "$(LC_ALL=C echo "$target_hd" | grep -Ew "${ip}")" ]; then
+      # Only when it's listed in the target_hd, we add it.
+      if [ -z "$(echo $target_parts | grep -Ew ${ip})" ]; then
+        # Avoid duplicated one since task_savedisk might already list it already.
+        target_parts="$target_parts ${ip}"
+      fi
+    fi
+  done
+
   # We have to do save LVM (PV/VG/LV) together, not follow every partition
   if [ "$do_LVM_save" = "yes" ]; then
     save_logv "$target_parts"
@@ -7194,6 +7280,7 @@ task_restoredisk() {
   # we use the port to identify it's unicast or multicast.
   local port="$3"
   local dsksname_from_img src_dsk_no dia_sel_opt tgt_dsk_no partition_table
+  local pv_on_dsk
   # img_cnvt_flag is a global variable
   get_sort_V_opt
 
@@ -7245,6 +7332,21 @@ task_restoredisk() {
     done
   done
 
+  # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+  # instead it's on a disk (e.g. /dev/sdb).
+  pv_on_dsk="$(get_pv_on_disk_from_PV_conf_list "$ocsroot/$target_dir/lvm_vg_dev.list")"
+  for ip in $pv_on_dsk; do
+    if [ -n "$(LC_ALL=C echo "$target_hd" | grep -Ew "${ip}")" ]; then
+      # Found PV on disk, force do_LVM_restore as "yes"
+      do_LVM_restore="yes"
+      # Only when it's listed in the target_hd, we add it.
+      if [ -z "$(echo $target_parts | grep -Ew ${ip})" ]; then
+        # Avoid duplicated one since task_savedisk might already list it already.
+        target_parts="$target_parts ${ip}"
+      fi
+    fi
+  done
+
   # Let task_restoreparts do the real job
   # However, we do not check md5sums, sha1sums in task_restoreparts, since maybe there are some files (like create-ocs-tmp-img will convert hda img to sda...) will be created later. We have to check them before the image was converted.
   check_md5sum="no"; check_sha1sum="no"
@@ -7288,6 +7390,7 @@ task_restoreparts() {
   local whole_disk=""
   local cmd_restore_minix_sub_parts_table
   local resize_ntfsfix_opt part_is_lvm
+  local pv_on_dsk
 
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -7497,17 +7600,8 @@ task_restoreparts() {
   if [ -n "$(echo "$ocs_sr_type" | grep -Ei "restoredisk")" ]; then
     for ihd in $target_hd; do
       # Get the partition type from parted output
-      if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
-        ptype="gpt"
-      elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
-        ptype="mbr"
-      else
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-	echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-        exit 1
-      fi
+      # Decide if the partition is gpt or mbr
+      ptype="$(get_partition_table_type_from_img "$target_dir_fullpath" "${ihd}")"
       case "$ptype" in
        mbr)
 	  echo "Finding swap partition(s) in MBR table $target_dir_fullpath/$(to_filename ${ihd})-pt.sf..." | tee --append $OCS_LOGFILE
@@ -7553,15 +7647,39 @@ task_restoreparts() {
           echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
         done
         ;;
+       unknown)
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+	echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+        exit 1
+        ;;
       esac
     done
   fi
+
+  # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+  # instead it's on a disk (e.g. /dev/sdb).
+  pv_on_dsk="$(get_pv_on_disk_from_PV_conf_list "$PV_PARSE_CONF")"
+  for ip in $pv_on_dsk; do
+    if [ -n "$(LC_ALL=C echo "$target_hd" | grep -Ew "${ip}")" ]; then
+      # Found PV on disk, force do_LVM_restore as "yes"
+      do_LVM_restore="yes"
+      # Only when it's listed in the target_hd, we add it.
+      if [ -z "$(echo $target_parts | grep -Ew ${ip})" ]; then
+        # Avoid duplicated one since task_savedisk might already list it already.
+        target_parts="$target_parts ${ip}"
+      fi
+    fi
+  done
 
   # We have to do restore LVM (PV/VG/LV) together, not follow every partition
   target_logv=""
   if [ "$do_LVM_restore" = "yes" ]; then
     # LVM exists, restore PV/VG/LV.
     echo "LVM exists, restoring PV/VG/LV." | tee --append ${OCS_LOGFILE}
+    # Append the whole disk to the partitions list. Althouth it's a disk, but it contains LV.
+    # However, we do not put the disk name to $target_parts otherwise it might cause confusion.
     restore_logv "$target_parts" $net_mode $port
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
@@ -10362,3 +10480,48 @@ download_clonezilla_live() {
     ;;
   esac
 } # end of download_clonezilla_live
+#
+get_pv_on_disk_from_local_machine() {
+  local pv_list lpv_on_dsk ip
+  pv_list="$(LC_ALL=C pvdisplay 2>/dev/null | grep -Ew "PV Name" | sed -r -e "s/PV Name//g" -e "s/^[[:space:]]*//g")"
+  lpv_on_dsk=""
+  for ip in $pv_list; do
+    if is_whole_disk $ip; then
+      # List it like: sda, not /dev/sda
+      lpv_on_dsk="$lpv_on_dsk ${ip#/dev/*}"
+    fi
+  done
+  # Remove the leading space
+  lpv_on_dsk="$(echo  "$lpv_on_dsk" | sed -r -e "s/^[[:space:]]*//g")" 
+  if [ -n "$lpv_on_dsk" ]; then
+     echo "$lpv_on_dsk"
+     return 0
+  else
+     return 1
+  fi
+} # end of get_pv_on_disk_from_local_machine
+
+#
+get_pv_on_disk_from_PV_conf_list() {
+  # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+  # instead it's on a disk (e.g. /dev/sdb).
+  local pv_cfg_list="$1"  # The PV_PARSE_CONF file from the image dir. Absolute path.
+  local lpv_on_dsk
+  lpv_on_dsk=""
+  if [ -e "$pv_cfg_list" ]; then
+    for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $pv_cfg_list); do
+      if is_whole_disk /dev/$i; then
+        # List it like: sda, not /dev/sda
+        lpv_on_dsk="$lpv_on_dsk ${i}"
+      fi
+    done
+  fi
+  # Remove the leading space
+  lpv_on_dsk="$(echo  "$lpv_on_dsk" | sed -r -e "s/^[[:space:]]*//g")" 
+  if [ -n "$lpv_on_dsk" ]; then
+     echo "$lpv_on_dsk"
+     return 0
+  else
+     return 1
+  fi
+} # end of get_pv_on_disk_from_PV_conf_list
