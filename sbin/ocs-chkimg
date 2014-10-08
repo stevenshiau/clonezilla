@@ -277,7 +277,7 @@ task_checkimage() {
   local target_dir="$1"
   local target_parts="$2"
   local parts_included target_dir_fullpath
-  local ptype rc rct
+  local p_type rc rct
 
   if [ "$target_dir" = "ask_user" ]; then
     get_target_dir_name_when_checking_img_restorable
@@ -353,19 +353,10 @@ task_checkimage() {
   # Start checking partition table.
   echo "Checking the partition table in the image \"$target_dir\"..."
   for ihd in $target_hd; do
-    # Get the partition type from parted output
-    if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
-      ptype="gpt"
-    elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
-      ptype="mbr"
-    else
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      exit 1
-    fi
-    case "$ptype" in
+    # Get the partition type
+    p_type="$(get_partition_table_type_from_img "$target_dir_fullpath" "${ihd}")"
+    # Only check mbr or gpt, skip pv_disk.
+    case "$p_type" in
      mbr)
       if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-pt.sf" ]; then
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -407,6 +398,13 @@ task_checkimage() {
          echo "GPT partition table file for this disk saved by gdisk was found: ${ihd}" | tee --append ${OCS_LOGFILE}
       fi
       ;;
+     unknown)
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Unknown partition table format from the file $img_dir_fullpath/$(to_filename ${hdsk})-pt.parted!" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+      exit 1
+      ;;
     esac
   done
 
@@ -416,19 +414,9 @@ task_checkimage() {
     echo "Checking the swap partition info in the image \"$target_dir\"..."
     # Check swap partition
     for ihd in $target_hd; do
-      # Get the partition type from parted output
-      if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
-        ptype="gpt"
-      elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
-        ptype="mbr"
-      else
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-	echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-        exit 1
-      fi
-      case "$ptype" in
+      p_type="$(get_partition_table_type_from_img "$target_dir_fullpath" "${ihd}")"
+      # Only check mbr or gpt, skip pv_disk.
+      case "$p_type" in
        mbr)
         echo "Finding swap partition(s) in MBR table $target_dir_fullpath/$(to_filename ${ihd})-pt.sf..."
         for partition in `get_swap_partition_sf_format $target_dir_fullpath/$(to_filename ${ihd})-pt.sf`; do
@@ -466,6 +454,13 @@ task_checkimage() {
             read
           fi
         done
+        ;;
+       unknown)
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+        exit 1
         ;;
       esac
     done
