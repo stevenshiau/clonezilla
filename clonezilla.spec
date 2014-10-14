@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Force to add "consolekit sysvinit-core" with lightdm in create-drbl-live-by-pkg because lightdm depends on libpam-systemd | consolekit. Otherwise when systemd is removed, lightdm even task-xfce-desktop will be removed in drbl live.
+
 * Wed Oct 08 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.7-drbl1
 - Bug fixed: options "-fsck-src-part" and ""-fsck-src-part-y" were duplicated in ocs-onthefly expert mode.
 - Bug fixed: The input harddrive of ocs-install-grub might be more than one, therefore ocs-install-grub should take that into consideration.
