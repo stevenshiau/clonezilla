@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.11.7
+Version:	3.11.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Oct 15 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.8-drbl1
 - Force to add "consolekit sysvinit-core" with lightdm in create-drbl-live-by-pkg because lightdm depends on libpam-systemd | consolekit. Otherwise when systemd is removed, lightdm even task-xfce-desktop will be removed in drbl live.
+- Reverted to the original method to search partitions in ocs-install-grub. The latest fixed method was wrong.
 
 * Wed Oct 08 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.7-drbl1
 - Bug fixed: options "-fsck-src-part" and ""-fsck-src-part-y" were duplicated in ocs-onthefly expert mode.
