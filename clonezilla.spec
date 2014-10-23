@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.11.11
+Version:	3.11.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 23 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.12-drbl1
+- Bug fixed: Function remove_cdebootstrap-helper-diverts was renamed as remove_start_stop_daemon_diverts, we should use it for GParted live. 
+
 * Thu Oct 23 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.11-drbl1
 - Keeping kernel untouched for GParted live. Otherwise some required modules might be removed accidently.
 
