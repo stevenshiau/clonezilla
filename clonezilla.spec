@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.11.9
+Version:	3.11.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 23 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.10-drbl1
+- Adding gsmartcontrol menu for GParted live.
+
 * Thu Oct 16 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.9-drbl1
 - Typo about "Portuguese (Brazilian)" in GParted live was fixed. (https://bugzilla.gnome.org/show_bug.cgi?id=738258).
 - Typos about the exit dialog in GParted live were fixed.
