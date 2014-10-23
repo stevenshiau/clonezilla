@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.11.10
+Version:	3.11.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 23 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.11-drbl1
+- Keeping kernel untouched for GParted live. Otherwise some required modules might be removed accidently.
+
 * Thu Oct 23 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.10-drbl1
 - Adding gsmartcontrol menu for GParted live.
 
