@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.11.12
+Version:	3.11.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 23 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.13-drbl1
+- Due to some reason phram and mtdblock were not put in the initramfs of GParted live, while they are shown in Clonezilla live. Now they are forced to be added. Thanks to dud225 for reporting this issue. (http://gparted-forum.surf4.info/viewtopic.php?id=17263).
+
 * Thu Oct 23 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.12-drbl1
 - Bug fixed: Function remove_cdebootstrap-helper-diverts was renamed as remove_start_stop_daemon_diverts, we should use it for GParted live. 
 
