@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.11.14
+Version:	3.11.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Oct 24 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.15-drbl1
+- Bug fixed: start-stop-daemon should be reverted when creating GParted live.
+
 * Thu Oct 23 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.14-drbl1
 - Bug fixed: the added modules phram and mtdblock were not actually put for GParted live. 
 
