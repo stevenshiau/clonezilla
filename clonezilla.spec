@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Adding Ubuntu vivid support for create-ubuntu-live.
+
 * Fri Oct 24 2014 Steven Shiau <steven _at_ nchc org tw> 3.11.15-drbl1
 - Bug fixed: start-stop-daemon should be reverted when creating GParted live.
 
