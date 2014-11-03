@@ -3765,7 +3765,7 @@ get_not_busy_disks_or_parts() {
       # LC_ALL=C perl -i -ne "print if m!^.*[[:space:]]+${chosen_disk}p?[0-9]*[[:space:]].*\$!" $partition_table
       # Ref: https://sourceforge.net/p/clonezilla/bugs/179/
       case "${chosen_disk}" in
-      cciss*|mmcblk*|md*)
+      cciss*|mmcblk*|md*|rd*|ida*)
             LC_ALL=C perl -i -ne "print if m|^.*[[:space:]]+${chosen_disk}p?[0-9]*[[:space:]].*\$|" $partition_table
             ;;
       *)
@@ -9612,22 +9612,26 @@ check_mbr_disk_size_gt_2TiB() {
 is_supported_dev() {
   # //NOTE// If new RE* is added, remember to check the function check_if_disk_busy_before_create_partition and get_not_busy_disks_or_parts have to be modified, too.
   # IDE and SCSI disk: /dev/hda, /dev/hdb, /dev/sda, /dev/sdb...
-  # KVM virtual disk: /dev/vda, /dev/vdb
+  # KVM virtual disk: /dev/vda, /dev/vdb...
   # Xen virtual disk: /dev/xvda, /dev/xvdb, /dev/xdvc...
-  # CCISS RAID disk: /dev/cciss/c0d0, /dev/cciss/c0d1
-  # SD card: /dev/mmcblk0, /dev/mmcblk0p1, /dev/mmcblk0p2, /dev/mmcblk0p3
+  # CCISS RAID disk: /dev/cciss/c0d0, /dev/cciss/c0d1...
+  # SD card: /dev/mmcblk0, /dev/mmcblk0p1, /dev/mmcblk0p2, /dev/mmcblk0p3...
   # FakeRAID: with nodmraid boot parameter, it's shown as /dev/md126, /dev/md126p1, /dev/md126p2...
-  # USB device: /dev/usb
+  # USB device: /dev/usb...
+  # Mylex ExtremeRAID-2000 SCSI RAID controller: /dev/rd/c0d0, /dev/rd/c0d1...
+  # Compaq Smart Array controller: /dev/ida/c0d0, /dev/ida/c0d1...
   local dev_=${1#/dev/*}
   local RE1='x?[hsv]d[a-z]+[0-9]*'
   local RE2='i2o/hd[a-z]+[0-9]*'
   local RE3='cciss/c[0-9]d[0-9](p[0-9]+)?'
   local RE4='mmcblk[0-9]+p*[0-9]*'
   local RE5='md[0-9]+p*[0-9]*'
+  local RE6='rd/c[0-9]d[0-9](p[0-9]+)?'
+  local RE7='ida/c[0-9]d[0-9](p[0-9]+)?'
   local rc=1
 
   if [ -n "$dev_" ]; then
-    echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5)$"
+    echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7)$"
     rc=$?
   fi
   return $rc
@@ -9636,21 +9640,25 @@ is_supported_dev() {
 is_partition() {
   # //NOTE// If new RE* is added, remember to check the function check_if_disk_busy_before_create_partition and get_not_busy_disks_or_parts have to be modified, too.
   # IDE and SCSI disk partition: /dev/hda1, /dev/hdb1, /dev/sda1, /dev/sdb1...
-  # KVM virtual disk partition: /dev/vda1, /dev/vdb1
+  # KVM virtual disk partition: /dev/vda1, /dev/vdb1...
   # Xen virtual disk partition: /dev/xvda1, /dev/xvdb1, /dev/xdvc1...
-  # CCISS RAID disk partition: /dev/cciss/c0d0p1, /dev/cciss/c0d1p1
-  # SD card: /dev/mmcblk0p1, /dev/mmcblk0p2, /dev/mmcblk0p3
+  # CCISS RAID disk partition: /dev/cciss/c0d0p1, /dev/cciss/c0d1p1...
+  # SD card: /dev/mmcblk0p1, /dev/mmcblk0p2, /dev/mmcblk0p3...
   # FakeRAID: with nodmraid boot parameter, /dev/md126p1, /dev/md126p2...
+  # Mylex ExtremeRAID-2000 SCSI RAID controller: /dev/rd/c0d0p1, /dev/rd/c0d1p1...
+  # Compaq Smart Array controller: /dev/ida/c0d0p1, /dev/ida/c0d1p2...
   local dev_=${1#/dev/*}
   local RE1='x?[hsv]d[a-z]+[0-9]+'
   local RE2='i2o/hd[a-z]+[0-9]+'
   local RE3='cciss/c[0-9]d[0-9]p[0-9]+'
   local RE4='mmcblk[0-9]+p+[0-9]+'
   local RE5='md[0-9]+p+[0-9]+'
+  local RE6='rd/c[0-9]d[0-9]p[0-9]+'
+  local RE7='ida/c[0-9]d[0-9]p[0-9]+'
   local rc=1
 
   if [ -n "$dev_" ]; then
-    echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5)$"
+    echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7)$"
     rc=$?
   fi
 
@@ -9679,6 +9687,8 @@ get_part_number() {
     # KVM virtual disk partition: /dev/vda1 -> 1
     # Xen virtual disk partition: /dev/xvda1 -> 1
     # CCISS RAID disk partition: /dev/cciss/c0d0p1 -> p1 (yes, with p)
+    # Mylex ExtremeRAID-2000 SCSI RAID controller: /dev/rd/c0d0p1 -> p1 (yes, with p)
+    # Compaq Smart Array controller: /dev/ida/c0d0p1 -> p1 (yes, with p)
     # SD card: /dev/mmcblk0p3 -> p3 (yes, with p)
     # FakeRAID: with nodmraid boot parameter, /dev/md126p1 -> p1 (yes, with p)
     # Just in case. User might use /dev/cciss/c0d0 to get the part number.
@@ -9689,6 +9699,8 @@ get_part_number() {
     # It's easier we use: sed -r -e 's|cciss/c[0-9]+d[0-9]+||g' for cciss/c0d0p3 cases
   case "$dev_" in
     cciss*) num="$(echo "$dev_" | sed -r -e 's|cciss/c[0-9]+d[0-9]+||g')" ;;
+    rd*)    num="$(echo "$dev_" | sed -r -e 's|rd/c[0-9]+d[0-9]+||g')" ;;
+    ida*)   num="$(echo "$dev_" | sed -r -e 's|ida/c[0-9]+d[0-9]+||g')" ;;
     mmcblk*)num="$(echo "$dev_" | sed -r -e 's|mmcblk[0-9]+||g')" ;;
     md*)    num="$(echo "$dev_" | sed -r -e 's|md[0-9]+||g')" ;;
     *)      num="$(echo "$dev_" | sed -r -e 's/^[^0-9]*-?([0-9]*)$/\1/g')" ;;
@@ -9718,6 +9730,8 @@ get_diskname() {
   [ -z "$dev_" ] && return 1
   case "$dev_" in
     cciss*)  echo "$dev_" | sed -r -e 's/^(.*[0-9]{1,})p[0-9]{1,}$/\1/g' ;;
+    rd*)     echo "$dev_" | sed -r -e 's/^(.*[0-9]{1,})p[0-9]{1,}$/\1/g' ;;
+    ida*)    echo "$dev_" | sed -r -e 's/^(.*[0-9]{1,})p[0-9]{1,}$/\1/g' ;;
     mmcblk*) echo "$dev_" | sed -r -e 's/^([^0-9]*k[0-9]+)p[0-9]*$/\1/g' ;;
     md*)     echo "$dev_" | sed -r -e 's/^([^0-9]*[0-9]+)p[0-9]*$/\1/g' ;;
     *)       echo "$dev_" | sed -r -e 's/^([^0-9]*)[0-9]*$/\1/g' ;;
