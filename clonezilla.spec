@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.12.1
+Version:	3.12.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Nov 04 2014 Steven Shiau <steven _at_ nchc org tw> 3.12.3-drbl1
+- A better way to deal with --rsyncable option of pigz was implemented, too.
+
+* Mon Nov 03 2014 Steven Shiau <steven _at_ nchc org tw> 3.12.2-drbl1
+- A better way to deal with --rsyncable option of gzip was implemented.
+  (https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/8d5f80a6/)
+
 * Mon Nov 03 2014 Steven Shiau <steven _at_ nchc org tw> 3.12.1-drbl1
 - Adding Ubuntu vivid support for create-ubuntu-live.
 - Adding support for device name format like /dev/rd/c0d0 and /dev/ida/c0d0 RAID cards. (https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/e82e1c04/)
