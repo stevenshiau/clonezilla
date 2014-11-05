@@ -550,55 +550,6 @@ restore_hidden_data_after_MBR() {
   dd if=${img_r} of=/dev/${tgt_dsk} seek=1 bs=512 count=$data_size 2>&1 | tee --append ${OCS_LOGFILE}
 } # end of restore_hidden_data_after_MBR
 #
-cciss_dev_map_if_necessary() {
-  #//NOTE// This function is no more used after applied the multipath patch from Miracle Linux on Jan/08/2013.
-  # Function to map the cciss dev (/dev/cciss/c0d0p1, /dev/cciss/c0d0p2...) as normal block dev (Ex, /dev/sda, /dev/sdb...)
-  # Provided by Ron Kelley in June/2007
-  # Modified by Steven Shiau in Aug/2008
-  # This is special for Compaq's SMART Array Controllers (Driver for HP Controller SA5xxx SA6xxx), the driver is "cciss" (Ex. /lib/modules/2.6.17-11-generic/kernel/drivers/block/cciss.ko)
-  # Related ref:
-  # http://kbase.redhat.com/faq/FAQ_79_4929.shtm
-  # https://sourceforge.net/forum/message.php?msg_id=4373795
-  # https://sourceforge.net/forum/message.php?msg_id=4377537
-  # https://sourceforge.net/forum/message.php?msg_id=4381338
-  local part_tab="$1"
-  local cciss_tmp line a b
-  [ -z "$part_tab" ] || [ ! -e "$part_tab" ] && return 1
-  # Check both kernel module loaded and the dev file
-  if [ -d /proc/driver/cciss -a -d /dev/cciss ] || \
-     [ -d /proc/driver/cpqarray -a -d /dev/ida ] || \
-     [ -d /proc/driver/rd -a -d /dev/ra ]; then 
-    echo "Mapping the device list for cciss dev..."
-  else
-    [ "$verbose" = "on" ] && echo "No cciss related disk was detected. Skip cciss related actions..."
-    return 1
-  fi
-  cciss_tmp="$(mktemp /tmp/cciss_out.XXXXXX)"
-  # Create the mapping table and link the device name in /dev
-  create-cciss-mapping $cciss_tmp
-  # The content of part_tab is like:
-  #    Major Minor #blocks name 
-  #    104 0 143367120 cciss/c0d0 
-  #    104 1 104391 cciss/c0d0p1 
-  #    104 2 143259637 cciss/c0d0p2 
-  #    104 16 143367120 cciss/c0d1 
-  #    104 17 143364028 cciss/c0d1p1 
-  #
-  # The content of $cciss_tmp is like:
-  # cciss/c0d0: sdb
-  # cciss/c0d0p1: sdb1
-  # cciss/c0d0p2: sdb2
-  # By using $cciss_tmp, we can convert the cciss/c0d0p1 in $part_tab to sdb1
-  while read line; do 
-    # get the mapping list
-    a="$(echo $line | awk -F":" '{print $1}')"
-    b="$(echo $line | awk -F":" '{print $2}')"
-    perl -pi -e "s|$a\$|$b|g" $part_tab
-  done < $cciss_tmp
-  # clean the tmp file
-  [ -e "$cciss_tmp" ] && rm -f "$cciss_tmp"
-} # end of cciss_dev_map_if_necessary
-#
 gen_proc_partitions_map_file() {
   # partition_table is a global variable
   partition_table="$(mktemp /tmp/parttable.XXXXXX)"
@@ -609,7 +560,6 @@ gen_proc_partitions_map_file() {
      # The devfs is not compiled into kernel, good!
      # We'd better not use "cp -a /proc/partitions $partition_table", use cat to get the kernel param
      cat /proc/partitions > $partition_table
-     #cciss_dev_map_if_necessary $partition_table
   fi
 } # end of gen_proc_partitions_map_file
 #

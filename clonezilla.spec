@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Function cciss_dev_map_if_necessary of ocs-functions was removed.
+- Deprecated program create-cciss-mapping was removed.
+
 * Tue Nov 04 2014 Steven Shiau <steven _at_ nchc org tw> 3.12.3-drbl1
 - A better way to deal with --rsyncable option of pigz was implemented, too.
 
