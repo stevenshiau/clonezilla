@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.12.3
+Version:	3.12.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Nov 05 2014 Steven Shiau <steven _at_ nchc org tw> 3.12.4-drbl1
 - Function cciss_dev_map_if_necessary of ocs-functions was removed.
 - Deprecated program create-cciss-mapping was removed.
 
