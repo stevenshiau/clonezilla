@@ -15,10 +15,38 @@ min() {
     fi
   fi
 }
+# grand_jobs_before_exit and my_ocs_exit are in drbl-functions.
 #
-confirm_continue_or_default_quit() {
+confirm_continue_or_not_default_quit() {
   local ans_continue
-  local job_before_quit="$1"
+  local job_before_quit job_des
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -d|--description)
+         shift
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+           job_des="$1"
+           shift
+         fi
+         if [ -z "$job_des" ]; then
+           echo "-d is used, but no job_des assigned."
+           echo "$msg_program_stop"
+           [ "$save_restore_error_log" = "yes" ] && copy_error_log
+           exit 1
+         fi
+         ;;
+      -*)     echo "${0}: ${1}: invalid option"
+              echo "$msg_program_stop"
+              [ "$save_restore_error_log" = "yes" ] && copy_error_log
+              exit 2 ;;
+      *)      break ;;
+    esac
+  done
+  job_before_quit="$1"
+  if [ -n "$job_des" ]; then
+    echo "$job_des"
+  fi
   echo "$msg_are_u_sure_u_want_to_continue"
   echo -n "[y/N] "
   read ans_continue
@@ -29,9 +57,55 @@ confirm_continue_or_default_quit() {
        *)
           echo "$msg_program_stop!"
           [ -n "$job_before_quit" ] && $job_before_quit
-          exit 1
+	  my_ocs_exit 1
+          ;;
   esac
-} # end of confirm_continue_or_default_quit
+} # end of confirm_continue_or_not_default_quit
+#
+confirm_continue_or_not_default_continue() {
+  local ans_continue
+  local job_before_quit job_des
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -d|--description)
+         shift
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+           job_des="$1"
+           shift
+         fi
+         if [ -z "$job_des" ]; then
+           echo "-d is used, but no job_des assigned."
+           echo "$msg_program_stop"
+           [ "$save_restore_error_log" = "yes" ] && copy_error_log
+           exit 1
+         fi
+         ;;
+      -*)     echo "${0}: ${1}: invalid option"
+              echo "$msg_program_stop"
+              [ "$save_restore_error_log" = "yes" ] && copy_error_log
+              exit 2 ;;
+      *)      break ;;
+    esac
+  done
+  job_before_quit="$1"
+  if [ -n "$job_des" ]; then
+    echo "$job_des"
+  fi
+  echo "$msg_are_u_sure_u_want_to_continue"
+  echo -n "[Y/n] "
+  read ans_continue
+  case "$ans_continue" in
+       n|N|[nN][oO])
+          echo "$msg_program_stop!"
+          [ -n "$job_before_quit" ] && $job_before_quit
+	  my_ocs_exit 1
+          ;;
+       *)
+          echo "$msg_ok_let_do_it!"
+	  ;;
+  esac
+} # end of confirm_continue_or_not_default_continue
 #
 confirm_continue_no_default_answer() {
   local ans_ ans_continue continue_choice
@@ -75,6 +149,9 @@ confirm_continue_no_default_answer() {
           ans_continue="no";;
      esac
    else
+     if [ -n "$job_des" ]; then
+       echo "$job_des"
+     fi
      echo -n "$msg_are_u_sure_u_want_to_continue (y/n) "
      read ans_continue
    fi
@@ -87,7 +164,7 @@ confirm_continue_no_default_answer() {
            continue_choice="no"
            echo "$msg_program_stop!"
            [ -n "$job_before_quit" ] && $job_before_quit
-           exit 1
+	   my_ocs_exit 1
            ;;
         *)
            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -110,7 +187,7 @@ unmount_wait_and_try() {
   done
 } # end of unmount_wait_and_try
 #
-gen_md5_sha1_sums() {
+gen_md5_sha1_sums_if_assigned() {
   local img_dir="$1"  # absolute path
   # Generate MD5SUMS, SHA1SUMS
   if [ "$gen_md5sum" = "yes" ]; then
@@ -121,7 +198,7 @@ gen_md5_sha1_sums() {
     echo "Generating SHA1SUMS for image $target_dir. This might take a while..."
     (cd $img_dir; time sha1sum * > SHA1SUMS)
   fi
-} # end of gen_md5_sha1_sums
+} # end of gen_md5_sha1_sums_if_assigned
 #
 check_md5_sha1_sums() {
   local img_dir="$1"  # absolute path
@@ -137,7 +214,7 @@ check_md5_sha1_sums() {
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "$msg_MD5SUMS_check_failed"
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	confirm_continue_or_default_quit
+	confirm_continue_or_not_default_quit
       fi
       echo $msg_delimiter_star_line
     else
@@ -155,7 +232,7 @@ check_md5_sha1_sums() {
       if [ "$rc" -gt 0 ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "$msg_SHA1SUMS_check_failed"
-	confirm_continue_or_default_quit
+	confirm_continue_or_not_default_quit
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       fi
       echo $msg_delimiter_star_line
@@ -338,9 +415,10 @@ prepare_lshw_disk_info_for_sdx() {
   gen_proc_partitions_map_file
   if [ -n "$(grep -E "sd[a-z]" $partition_table)" ]; then
     lshw_disk_info="$(mktemp /tmp/lshw-disk-info.XXXXXX)"
-    trap "[ -f "$lshw_disk_info" ] && rm -f $lshw_disk_info" HUP INT QUIT TERM EXIT
+    trap "[ -e "$lshw_disk_info" ] && rm -f $lshw_disk_info" HUP INT QUIT TERM EXIT
     echo "Collecting the disk info in this machine..."
     LC_ALL=C lshw -class disk > $lshw_disk_info 2>/dev/null
+    [ -e "$lshw_disk_info" ] && rm -f $lshw_disk_info
   fi
 } # end of prepare_lshw_disk_info_for_sdx
 #
@@ -552,7 +630,7 @@ restore_hidden_data_after_MBR() {
 #
 gen_proc_partitions_map_file() {
   # partition_table is a global variable
-  partition_table="$(mktemp /tmp/parttable.XXXXXX)"
+  partition_table="$(mktemp /tmp/parttable-ocs.XXXXXX)"
   if grep -Eq '(scsi/host|ide/host)' /proc/partitions 2>/dev/null; then
      # It's devfs compiled into kernel, we will use the conv_devfspart_to_tradpart to convert the devfs style partitions into traditional partitions
      conv_devfspart_to_tradpart $partition_table
@@ -936,8 +1014,7 @@ calculate_elapsed_time() {
   # time_elapsed and time_elapsed_in_min are global variable
   time_elapsed="$(LC_ALL=C echo "scale=2; ($end_t - $start_t)/(1*10^9)" | bc -l)"
   time_elapsed_in_min="$(LC_ALL=C echo "scale=3; $time_elapsed / 60 *1.0" | bc -l)"
-}
-# end of calculate_elapsed_time
+} # end of calculate_elapsed_time
 #
 disk_full_test() {
   local tgt_dir rc prompt_msg
@@ -995,7 +1072,7 @@ output_swap_partition_uuid_label() {
     [ -z "$UUID" -a -z "$LABEL" ] && echo "Warning! UUID and LABLE of swap dev $swap_dev are nothing!"
     echo "UUID=\"$UUID\"" > $output_swap_info
     echo "LABEL=\"$LABEL\"" >> $output_swap_info
-    [ -f "$blkinfo" ] && rm -f $blkinfo
+    [ -e "$blkinfo" ] && rm -f $blkinfo
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Program blkid is NOT found! Without it, we can not find the UUID of swap partition! In some GNU/Linux, if it's /etc/fstab is based on UUID, swap partition maybe not be on after it's cloned! Since the swap partition is recreated by mkswap!"
@@ -1056,7 +1133,7 @@ save_part_by_ntfsclone() {
           # $tgt_dir/${tgt_file}.ntfs-img. is prefix, the last "." is necessary
           # make the output file is like hda1.ntfs-img.aa, hda1.ntfs-img.ab.
           # We do not add -d to make it like hda1.ntfs-img.00, hda1.ntfs-img.01, since it will confuse people that it looks like created by partimage (hda1.ntfs-img.000, hda1.ntfs-img.001)
-          split -b ${VOL_LIMIT}m - $tgt_dir/${tgt_file}.ntfs-img.
+          split -b ${VOL_LIMIT}MB - $tgt_dir/${tgt_file}.ntfs-img.
           ;;
        *)
           cat - > $tgt_dir/${tgt_file}.ntfs-img
@@ -1072,7 +1149,7 @@ save_part_by_ntfsclone() {
   get_ntfs_image_info $ntfs_img_info_tmp $start_time $end_time
   # no preparation time, it's accurate enough.
   echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins), average speed: $speed"
-  [ -f "$ntfs_img_info_tmp" ] && rm -f $ntfs_img_info_tmp
+  [ -e "$ntfs_img_info_tmp" ] && rm -f $ntfs_img_info_tmp
   # For better security
   chmod 600 $tgt_dir/${tgt_file}.ntfs-img* 2>/dev/null
   # prepare statistic report
@@ -1188,7 +1265,7 @@ save_part_by_partclone() {
   case "$VOL_LIMIT" in
     [1-9]*)
        # $tgt_dir/${tgt_file}.${fs_pre}-img. is prefix, the last "." is necessary make the output file is like hda1.${fs_pre}-img.aa, hda1.${fs_pre}-img.ab. We do not add -d to make it like hda1.${fs_pre}-img.00, hda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (hda1.${fs_pre}-img.000, hda1.${fs_pre}-img.001)
-       cmd_partclone="${cmd_partclone} | split -b ${VOL_LIMIT}m - $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}. 2> $split_error"
+       cmd_partclone="${cmd_partclone} | split -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}. 2> $split_error"
        ;;
     *)
        cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf} 2> $split_error"
@@ -1265,7 +1342,7 @@ save_part_by_partimage() {
        # "$tgt_dir/${tgt_file}." is prefix, the last "." is necessary
        # make the output file is like hda1.aa, hda1.ab.
        # We do not add -d to make it like hda1.00, hda1.01, since it will confuse people that it looks like created by partimage (hda1.000, hda1.001)
-       cmd_partimage="${cmd_partimage} | split -b ${VOL_LIMIT}m - $tgt_dir/${tgt_file}."
+       cmd_partimage="${cmd_partimage} | split -b ${VOL_LIMIT}MB - $tgt_dir/${tgt_file}."
        ;;
     *)
        cmd_partimage="${cmd_partimage} > $tgt_dir/${tgt_file}"
@@ -1365,7 +1442,7 @@ save_part_by_dd() {
             # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary
             # make the output file is like hda1.dd-img.aa, hda1.dd-img.ab.
             # We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.dd-img.001)
-            split -b ${VOL_LIMIT}m - $tgt_dir/$(to_filename ${tgt_file}).dd-img.
+            split -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).dd-img.
             ;;
          *)
             cat - > $tgt_dir/$(to_filename ${tgt_file}).dd-img
@@ -1390,7 +1467,7 @@ save_part_by_dd() {
     echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename ${tgt_file}).dd-img is incomplete. You have to increase the disk space, then start Clonzilla save mode again."
     get_dd_image_info $dd_img_info_tmp $start_time $end_time
     [ $rc -eq 0 ] && rc=$?
-    [ -f "$dd_img_info_tmp" ] && rm -f $dd_img_info_tmp
+    [ -e "$dd_img_info_tmp" ] && rm -f $dd_img_info_tmp
     ;;
   partclone)
     # assign partclone_img_info tmp file.
@@ -1413,7 +1490,7 @@ save_part_by_dd() {
     case "$VOL_LIMIT" in
       [1-9]*)
          # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary make the output file is like hda1.dd-img.aa, hda1.dd-img.ab. We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.$dd-img.001)
-         cmd_partclone="${cmd_partclone} | split -b ${VOL_LIMIT}m - $tgt_dir/$(to_filename ${tgt_file}).dd-img. 2> $split_error"
+         cmd_partclone="${cmd_partclone} | split -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).dd-img. 2> $split_error"
          ;;
       *)
          cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).dd-img 2> $split_error"
@@ -2933,7 +3010,7 @@ create_partition() {
               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
               echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
               [ "$save_restore_error_log" = "yes" ] && copy_error_log
-              exit 1
+	      my_ocs_exit 1
             fi
             if [ -f $tgt_dir/$(to_filename ${tgt_hd_name})-multipath ]; then
               for i in $(cat $tgt_dir/$(to_filename ${tgt_hd_name})-multipath); do
@@ -3166,7 +3243,12 @@ countdown_or_confirm_before_restore() {
   fi
   if [ "$confirm_before_clone" = "yes" ] && [ "$rest_conf" = "yes" ]; then
     echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
-    img_time="$(get_img_created_time $restore_img_name)"
+    if is_ecryptfs_img $restore_img_name; then
+      . $restore_img_name/ecryptfs.info
+      img_time="$time_of_img"
+    else
+      img_time="$(get_img_created_time $restore_img_name)"
+    fi
     if [ -n "$img_time" ]; then
       img_time_prompt="$msg_img_created_time: $img_time"
     fi
@@ -3202,6 +3284,9 @@ countdown_or_confirm_before_restore() {
 } # end of countdown_or_confirm_before_restore
 #
 task_preprocessing() {
+  # (1) Check if the kernel cmdline wants this client to abort or not...
+  # (2) Load the specified modules
+  # (3) Mount the NFS server if $mount_point exists
   local mode="$1"
   local server_tmp=""
   local mntpnt_tmp=""
@@ -3237,6 +3322,29 @@ task_preprocessing() {
       esac
     fi
   fi
+} # end of task_preprocessing
+#
+prepare_ecryptfs_mount_point_if_necessary() {
+  # Reset the variables ocsroot_orig and target_dir_orig
+  ocsroot_orig=""
+  target_dir_orig=""
+  # Function to prepare ecryptefs mount point
+  case "$ocs_sr_type" in
+   *save*) if [ "$encrypt_ocs_img" = "yes" ]; then 
+	     mkdir -p $ocsroot/$target_dir
+	     task_ecryptfs_mount_point "$ocs_sr_type"
+           fi
+	   ;;
+   *)
+	   # For the rest, we all need the existing image
+	   encrypt_ocs_img="no"
+	   # Check if the image is encrypted or not.
+	   if is_ecryptfs_img $ocsroot/$target_dir; then
+             encrypt_ocs_img="yes"
+	     task_ecryptfs_mount_point "$ocs_sr_type"
+           fi
+	   ;;
+  esac
 } # end of task_preprocessing
 #
 task_processing_after_parameters_checked() {
@@ -3302,13 +3410,26 @@ run_post_cmd_when_clone_end() {
       echo
       ;;
   esac
-}
+} # end of run_post_cmd_when_clone_end
 
 # task for post processing
 task_postprocessing() {
+  # (1) Change the hostname of MS Windows in the restored machine
+  # (2) Restore the inittab so that if ocsmgrd fails to get the message, the client will not clone again.
+  # (3) Restore the udevd rules (if exists) which were disabled by ocs-lvm2-stop.
+  # (4) Unmount NFS mounting poing if $mount_point exists
+  # (5) Enter debug mode if assigned
+  # (6) Notify the server if necessary
+  # (7) Output a file name to tag the image and put the log for saving the image
+  # (8) Unmount ecryptfs if necessary
+  # (9) Remove some temp files
+  # (10) Syncing - flush filesystem buffers
+  # (11) Reboot/poweroff/choose...
+
   local mode="$1"
   local img_dir="$ocsroot/$2"
   local ipart retv
+  local disk_list parts_list img_time disk_size_ disks_size_all
   #
   echo "*****************************************************"
   case "$change_win_hostname" in
@@ -3355,13 +3476,15 @@ task_postprocessing() {
   # notify the server if necessary
   task_notify_job_is_done | tee --append ${OCS_LOGFILE}
 
+  # TODO: many temp partition_table files have to be removed. Find a better
+  # way to remove them.
+  # Remove some temp files
+  if  [ -n "$partition_table" -a \
+	-e "$partition_table" ]; then
+    rm -f $partition_table
+  fi
+
   #
-  echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}
-  sync;sync;sync | tee --append ${OCS_LOGFILE}
-
-  # reboot/poweroff/choose...
-  run_post_cmd_when_clone_end "$postrun" | tee --append ${OCS_LOGFILE}
-
   case "$mode" in
     "saveparts"|"savedisk")
       # Output a file name to tag the image and put the log for saving the image. It's easier for us to identify in the future.
@@ -3371,8 +3494,52 @@ task_postprocessing() {
       cat ${OCS_LOGFILE} >> $img_dir/clonezilla-img
       echo "### End of log ###" >> $img_dir/clonezilla-img
       echo "### Image created time: $(date +%Y-%m%d-%H%M)" >> $img_dir/clonezilla-img
-    ;;
+      # Unmount the encrypted image
+      if [ "$encrypt_ocs_img" = "yes" ]; then
+	# Before unmounting ecryptfs img, we have to keep something for later to be saved in the file ecryptfs.info.
+	if [ -e $ocsroot/$target_dir/disk ]; then
+	  disk_list="$(cat $ocsroot/$target_dir/disk)"
+        fi
+
+	if [ -e $ocsroot/$target_dir/parts ]; then
+	  parts_list="$(cat $ocsroot/$target_dir/parts)"
+        fi
+
+        img_time="$(get_img_created_time $ocsroot/$target_dir)"
+
+	disks_size_all=""
+        for ihd in $disk_list; do 
+          disk_size_=""
+          if [ -e "$ocsroot/$target_dir/$(to_filename ${ihd})-pt.parted.compact" ]; then
+            disk_size_="$(LC_ALL=C grep -E "^Disk /dev/" $ocsroot/$target_dir/$(to_filename ${ihd})-pt.parted.compact | awk -F":" '{print $2}' | sed -r -e "s/[[:space:]]//g")"
+          fi
+          [ -n "$disk_size_" ] && disks_size_all="$(LC_ALL=C echo "${disks_size_all}_${disk_size_}" | tr ' ' _)"
+        done
+
+	#
+        umount_ecryptfs_mount_point_if_necessary
+	# Put a tag file in the original image dir
+	# TODO: It's better to put disk and parts list in the file
+	echo "# This image was saved with ecryptfs" > $ocsroot_orig/$target_dir_orig/ecryptfs.info
+	echo "disk_of_img=\"$disk_list\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
+	echo "parts_of_img=\"$parts_list\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
+	#
+	echo "time_of_img=\"$img_time\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
+	echo "disks_size_all_of_img=\"$disks_size_all\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
+      fi
+      ;;
+    *)
+      # For restoring or others, we still need to unmount the ecryptfs system.
+      umount_ecryptfs_mount_point_if_necessary
+      ;;
   esac
+
+  #
+  echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}
+  sync;sync;sync | tee --append ${OCS_LOGFILE}
+
+  # reboot/poweroff/choose...
+  run_post_cmd_when_clone_end "$postrun" | tee --append ${OCS_LOGFILE}
 
   # 
 } # end of task_postprocessing
@@ -3456,13 +3623,27 @@ ask_time_or_clients_to_wait() {
 #
 rm_target_image_if_exist() {
   local tgt_image="$1"
+  local tgt_image_fs
   if [ "${tgt_image/%\//}" = "${ocsroot/%\//}" -o -z "$tgt_image" ]; then
     echo "Existing destination image is nothing!" | tee --append $OCS_LOGFILE
     echo "$msg_program_stop." | tee --append $OCS_LOGFILE
     exit 1
   else
-    [ -f "$tgt_image" ] && rm -f $tgt_image
-    [ -d "$tgt_image" -a -n "$tgt_image" ] && rm -rf $tgt_image
+    # If it's ecryptfs mounting point, we should not remove it.
+    # Otherwise it will show busy error message.
+    tgt_image_fs="$(LC_ALL=C df -T "$tgt_image" 2>/dev/null | tail -n 1 | awk -F" " '{print $2}')"
+    if [ "$encrypt_ocs_img" = "yes" ] && [ "$tgt_image_fs" = "ecryptfs" ]; then
+      if [ -n "$ocsroot_orig" -a \
+	   -n "$target_dir_orig" -a \
+	   -d "$ocsroot_orig/$target_dir_orig" ]; then
+        # We have to clean all the files in the ecryptfs source dir, otherwise
+	# if there is same file existing, the ecryptfs won't be able to create it.
+        rm -f $ocsroot_orig/$target_dir_orig/*
+      fi
+    else
+      [ -f "$tgt_image" ] && rm -f $tgt_image
+      [ -d "$tgt_image" -a -n "$tgt_image" ] && rm -rf $tgt_image
+    fi
   fi
 } # end of rm_target_image_if_exist
 #
@@ -4039,6 +4220,7 @@ get_existing_disk_image() {
    numfiles=`expr $numfiles + 0`
    # list the previous saved images
    # the list of images can be put in one page
+   # The result shown for each image is like: 2014-1216-0930_sda_8590MB
    filelist=""
    numfiles=0
    for file in `ls $imagedir 2> /dev/null`; do
@@ -4046,19 +4228,28 @@ get_existing_disk_image() {
      # only directory ..., not file
      [ ! -d "$imagedir/$file" ] && continue
      [ ! -f "$imagedir/$file/disk" ] && continue
-     fileinfo="$(get_img_created_time $imagedir/$file)"
-     fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/disk 2>/dev/null)
-     #
-     disks_size_all=""
-     if [ -e "$imagedir/$file/disk" ]; then
-       for ihd in `cat $imagedir/$file/disk` ; do 
-	 disk_size_=""
-         if [ -e "$imagedir/$file/$(to_filename ${ihd})-pt.parted.compact" ]; then
-           disk_size_="$(LC_ALL=C grep -E "^Disk /dev/" $imagedir/$file/$(to_filename ${ihd})-pt.parted.compact | awk -F":" '{print $2}' | sed -r -e "s/[[:space:]]//g")"
-         fi
-	 [ -n "$disk_size_" ] && disks_size_all="$(LC_ALL=C echo "${disks_size_all}_${disk_size_}" | tr ' ' _)"
-       done
+     if is_ecryptfs_img $imagedir/$file; then
+       # Encrypted image
+       . $imagedir/$file/ecryptfs.info
+       fileinfo="${time_of_img}-enc"
+       fileinfo=$fileinfo"_""$(echo "$disk_of_img" | tr ' ' _)"
+       disks_size_all="$disks_size_all_of_img"
+     else
+       # Not encrypted
+       fileinfo="$(get_img_created_time $imagedir/$file)"
+       fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/disk 2>/dev/null)
+       disks_size_all=""
+       if [ -e "$imagedir/$file/disk" ]; then
+         for ihd in `cat $imagedir/$file/disk` ; do 
+           disk_size_=""
+           if [ -e "$imagedir/$file/$(to_filename ${ihd})-pt.parted.compact" ]; then
+             disk_size_="$(LC_ALL=C grep -E "^Disk /dev/" $imagedir/$file/$(to_filename ${ihd})-pt.parted.compact | awk -F":" '{print $2}' | sed -r -e "s/[[:space:]]//g")"
+           fi
+           [ -n "$disk_size_" ] && disks_size_all="$(LC_ALL=C echo "${disks_size_all}_${disk_size_}" | tr ' ' _)"
+         done
+       fi
      fi
+     #
      [ -n "$disks_size_all" ] && fileinfo=${fileinfo}""${disks_size_all}
      filelist="$filelist $file $fileinfo"
      numfiles="$(LC_ALL=C expr $numfiles + 1)"
@@ -4132,11 +4323,22 @@ get_existing_parts_image() {
      # only directory ..., not file
      [ ! -d "$imagedir/$file" ] && continue
      [ ! -f "$imagedir/$file/parts" -a ! -f "$imagedir/$file/disk" ] && continue
-     fileinfo="$(get_img_created_time $imagedir/$file)"
-     if [ -f "$imagedir/$file/parts" ]; then 
-       fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/parts)
-     elif [ -f "$imagedir/$file/disk" ]; then 
-       fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/disk)
+     if is_ecryptfs_img $imagedir/$file; then
+       # Encrypted image
+       . $imagedir/$file/ecryptfs.info
+       fileinfo="${time_of_img}-enc"
+       if [ -f "$imagedir/$file/parts" ]; then 
+	 fileinfo=$fileinfo"_""$(echo $parts_of_img | tr ' ' _)"
+       elif [ -f "$imagedir/$file/disk" ]; then 
+	 fileinfo=$fileinfo"_""$(echo $disk_of_img | tr ' ' _)"
+       fi
+     else
+       fileinfo="$(get_img_created_time $imagedir/$file)"
+       if [ -f "$imagedir/$file/parts" ]; then 
+         fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/parts)
+       elif [ -f "$imagedir/$file/disk" ]; then 
+         fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/disk)
+       fi
      fi
      filelist="$filelist $file $fileinfo"
      numfiles="$(LC_ALL=C expr $numfiles + 1)"
@@ -4249,22 +4451,20 @@ get_existing_partitions_from_img() {
    local tgt_parts ans_
    local ASK_INPUT=1
    local pt_tmp="" TMP prompt_msg_part1
+   local p_list
 
    # skip_mounted_part is the switch to skip the mounted partition if this is running in clonezilla client. i.e. the selected partition will write to the partition in this machine.
    # On the other hand, if this function is called by DRBL server, it's not necessary to skip the mounted partition, since it's nothing to do with the mounted partition in the server.
    # By default, we assume it's running in the client (Clonezilla live mode)
    [ -z "$skip_mounted_part" ] && skip_mounted_part="yes"
-   # If the image is created by savedisk, convert it to partitions lists
-   if [ ! -f "$tgt_file/parts" ]; then
-     for ipt in $tgt_file/*pt.sf; do
-       for part in `get_known_partition_sf_format $ipt`; do
-         pt_tmp="$pt_tmp $part"
-       done
-     done
-     echo "$pt_tmp" > $tgt_file/parts
-   fi
    #
-   NUMPARTS="$(wc -w $tgt_file/parts 2>/dev/null | awk '{print $1}')"
+   if is_ecryptfs_img $tgt_file; then
+     . $tgt_file/ecryptfs.info
+     p_list="$parts_of_img"
+   else
+     p_list="$(cat $tgt_file/parts)"
+   fi
+   NUMPARTS="$(LC_ALL=C echo "$p_list" | wc -w 2>/dev/null | awk '{print $1}')"
    if [ -n "$NUMPARTS" -a "$NUMPARTS" -gt 0 ]; then
      if [ $NUMPARTS -lt $MAX_DIALOG_HEIGHT ]; then
        height="$NUMPARTS"
@@ -4273,14 +4473,17 @@ get_existing_partitions_from_img() {
      fi
      TMP="$(mktemp /tmp/ocs.XXXXXX)"
      trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-     PROMPT="$(for p in `cat $tgt_file/parts` ; do 
-                 # skip the mounted partition if this is running in clonezilla client. i.e. the selected partition will write to the partition in this machine.
-		 # On the other hand, if this function is called by DRBL server, it's not necessary to skip the mounted partition, since it's nothing to do with the mounted partition in the server.
-		 if [ "$skip_mounted_part" = "yes" ]; then
-                   [ -n "$(mount | grep -Ew "^/dev/$p")" ] && continue
-		 fi
-                 echo "$p" "disk("$(get_diskname $p)")_partition("$(get_part_number $p)")" off
-	       done)"
+     # List the partitions in dialog/whiptail like:
+     # [ ] sda1  disk(sda)_partition(1)
+     # [ ] sda5  disk(sda)_partition(5)    
+     # Skip the mounted partition if this is running in clonezilla client. i.e. the selected partition will write to the partition in this machine.
+     # On the other hand, if this function is called by DRBL server, it's not necessary to skip the mounted partition, since it's nothing to do with the mounted partition in the server.
+     PROMPT="$(for p in $p_list; do 
+       if [ "$skip_mounted_part" = "yes" ]; then
+         [ -n "$(mount | grep -Ew "^/dev/$p")" ] && continue
+       fi
+       echo "$p" "disk("$(get_diskname $p)")_partition("$(get_part_number $p)")" off
+     done)"
      if [ "$NUMPARTS" = "1" ]; then
        # If only one dev, turn on it.
        PROMPT="$(echo $PROMPT | sed -e "s/off$/on/g")"
@@ -6515,7 +6718,7 @@ get_target_dir_name_when_saving() {
        ASK_IMG_NAME=0
     fi
   done
-  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+  [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
   # Note! We won't add leading $ocsroot in $target_dir, because when task_saveparts do the real job later, it will add that.
 } # end of get_target_dir_name_when_saving
 #
@@ -6533,7 +6736,7 @@ get_target_hd_name_from_local_machine() {
     target_hd="$(cat $ANS_TMP | tr -d \")"
     [ -n "$target_hd" ] && ASK_DEV_NAME=0
   done
-  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+  [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
   check_input_hd $target_hd
 } # end of get_target_hd_name_from_local_machine
 #
@@ -6553,7 +6756,7 @@ get_target_parts_name_from_local_machine() {
     target_parts="$(cat $ANS_TMP | tr -d \")"
     [ -n "$target_parts" ] && ASK_DEV_NAME=0
   done
-  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+  [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
   check_input_partition $target_parts
 } # end of get_target_parts_name_from_local_machine
 #
@@ -6566,7 +6769,7 @@ get_target_dir_name_when_restoring_disk() {
   # the return name will be only one image name.
   # Note! We won't add leading $ocsroot in $target_dir, because when task_saveparts do the real job later, it will add that.
   target_dir="$(cat $ANS_TMP)"
-  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+  [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
   # conver the clonezilla format for 1.x to 2.x if necessary
   convert_ocs_format_from_1.5_to_2.0_or_newer $ocsroot/$target_dir/
 } # end of get_target_dir_name_when_restoring_disk
@@ -6583,7 +6786,7 @@ get_target_dir_name_when_restoring_parts() {
   target_dir="$(cat $ANS_TMP)"
   # target_image is an important global variable, it's related to the PXE menu tag, and some other important thing.
   target_image="$target_dir"
-  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+  [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
   # conver the clonezilla format for 1.x to 2.x if necessary
   convert_ocs_format_from_1.5_to_2.0_or_newer $ocsroot/$target_dir/
 } # end of get_target_dir_name_when_restoring_parts
@@ -6600,7 +6803,7 @@ get_target_dir_name_when_checking_img_restorable() {
   target_dir="$(cat $ANS_TMP)"
   # target_image is an important global variable, it's related to the PXE menu tag, and some other important thing.
   target_image="$target_dir"
-  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+  [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
 } # end of get_target_dir_name_when_checking_img_restorable
 #
 get_target_dir_name_when_converting_img() {
@@ -6615,7 +6818,7 @@ get_target_dir_name_when_converting_img() {
   target_dir="$(cat $ANS_TMP)"
   # target_image is an important global variable, it's related to the PXE menu tag, and some other important thing.
   target_image="$target_dir"
-  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+  [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
 } # end of get_target_dir_name_when_converting_img
 #
 rm_tmp_cnvt_img() {
@@ -6641,7 +6844,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # Check if target disk name exists in the image.
   tgtdisk_exist_flag=0
   for i in $target_hd; do
-    if [ -z "$(echo $dsksname_from_img | grep -iEw $i)" ]; then
+    if [ -z "$(echo "$dsksname_from_img" | grep -iEw "$i")" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "Target disk $i does not exist in the image saved from disk(s) \"$dsksname_from_img\"."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -6698,7 +6901,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
          -n "${target_dir}-tmp-cnvted" ]; then
       rm -rf "$ocsroot/${target_dir}-tmp-cnvted" 
     fi
-    create-ocs-tmp-img $tmp_img_from_to_opt $target_dir ${target_dir}-tmp-cnvted $dsksname_from_img $target_hd
+    create-ocs-tmp-img -or $ocsroot $tmp_img_from_to_opt $target_dir ${target_dir}-tmp-cnvted $dsksname_from_img $target_hd
     # Change the ocsroot to /tmp now since create-ocs-tmp-img will create the image in /tmp
     ocsroot="/tmp"
     target_dir="${target_dir}-tmp-cnvted"
@@ -6874,7 +7077,7 @@ task_savedisk() {
   if [ "$rc" -gt 0 ]; then
     show_warning_about_write_failed $ocsroot/$target_dir
   else
-    gen_md5_sha1_sums $ocsroot/$target_dir
+    gen_md5_sha1_sums_if_assigned $ocsroot/$target_dir
   fi
   rc_task_savedisk="$(($rc_task_savedisk + $?))"
 
@@ -7210,7 +7413,7 @@ task_saveparts() {
   if [ "$rc" -gt 0 ]; then
     show_warning_about_write_failed $target_dir_fullpath
   else
-    gen_md5_sha1_sums $target_dir_fullpath
+    gen_md5_sha1_sums_if_assigned $target_dir_fullpath
   fi
 
   # TODO: show error message if failing; check image?
@@ -7507,12 +7710,9 @@ task_restoreparts() {
       for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
         if [ "$partition" = "$(get_master_dev_of_multipath $i)" ]; then
           part_is_lvm="yes"
-          # This continue is to skip the multipath do loop, not the partition do loop
-          continue
+          break
         fi
       done
-    elif check_LVM_partition /dev/$partition; then
-      part_is_lvm="yes"
     fi
     # If part_is_lvm is yes, we should skip the rest...
     if [ "$part_is_lvm" = "yes" ]; then
@@ -7801,7 +8001,7 @@ do_startdisk() {
 	     get_existing_disk_image $ANS_TMP
              # the return name will be only one image name.
              target_image="$(cat $ANS_TMP)"
-             [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+             [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
            fi
            ;;
         "multicast_restore")
@@ -7815,7 +8015,7 @@ do_startdisk() {
 	   get_existing_disk_image $ANS_TMP
            # the return name will be only one image name.
            target_image="$(cat $ANS_TMP)"
-           [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+           [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
            ;;
          *)
            echo "Usage: $ocs_file startdisk {save|restore|multicast_restore} target_image target_hd"
@@ -7840,7 +8040,7 @@ do_startdisk() {
              trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
 	     get_existing_disks_from_img $ANS_TMP $imagedir/$target_image
              target_hd="$(cat $ANS_TMP | tr -d \")"
-             [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+             [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
              # target name exists, but file "disk" is empty ?
              check_target_hd $imagedir/$target_image/disk "$target_hd"
            fi
@@ -7854,7 +8054,7 @@ do_startdisk() {
            trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
 	   get_existing_disks_from_img $ANS_TMP $imagedir/$target_image
            target_hd="$(cat $ANS_TMP | tr -d \")"
-           [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+           [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
            # target name exists, but file "disk" is empty ?
            check_target_hd $imagedir/$target_image/disk "$target_hd"
            ;;
@@ -7909,7 +8109,7 @@ do_startparts () {
 	     get_existing_parts_image $ANS_TMP restore
              # the return name will be only one image name.
              target_image="$(cat $ANS_TMP)"
-             [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+             [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
            fi
            ;;
         "multicast_restore")
@@ -7923,7 +8123,7 @@ do_startparts () {
 	   get_existing_parts_image $ANS_TMP restore
            # the return name will be only one image name.
            target_image="$(cat $ANS_TMP)"
-           [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+           [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
            ;;
          *)
            echo "Usage: $ocs_file startparts {save|restore|multicast_restore} target_image target_parts"
@@ -7950,7 +8150,7 @@ do_startparts () {
              # we have to remove " (comes with checklist in dialog) 
              # so that for loop will work (Specially for FC3/4...)
              target_parts="$(cat $ANS_TMP | tr -d \")"
-             [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+             [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
              # target name exists, but file "parts" is empty ?
              check_target_parts $imagedir/$target_image/parts "$target_parts"
            fi
@@ -7966,7 +8166,7 @@ do_startparts () {
            # we have to remove " (comes with checklist in dialog) 
            # so that for loop will work (Specially for FC3/4...)
            target_parts="$(cat $ANS_TMP | tr -d \")"
-           [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+           [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
            # target name exists, but file "parts" is empty ?
            check_target_parts $imagedir/$target_image/parts "$target_parts"
            ;;
@@ -8089,7 +8289,7 @@ get_multicast_restore_mode_if_mcast() {
        [ -n "$time_to_wait" ] && mcast_wait_time="$time_to_wait"
        [ -n "$clients_to_wait" ] && n_clients="$clients_to_wait"
        [ -n "$max_time_to_wait" ] && mcast_max_wait_time="$max_time_to_wait"
-       [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+       [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
       fi
     fi
 } # end of get_multicast_restore_mode_if_mcast
@@ -8303,10 +8503,12 @@ USAGE_reserved_word_for_restore() {
 #
 USAGE_common_save(){
     # Common save usage help messages for both drbl-ocs and ocs-sr
+    echo " -enc, --enc-ocs-img  To encrypt the image with passphrase."
     echo " -fsck-src-part, --fsck-src-part  Run fsck interactively on the source file system before saving it."
     echo " -fsck-src-part-y, --fsck-src-part-y  Run fsck automatically on the source file system before saving it. This option will always attempt to fix any detected filesystem corruption automatically. //NOTE// Use this option in caution."
     echo " -gm, --gen-md5sum   Generate the MD5 checksum for the image. Later you can use -cm|--check-md5sum option to check the image when restoring the image. Note! It might take a lot of time to generate if the image size is large."
     echo " -gs, --gen-sha1sum  Generate the SHA1 checksum for the image. Later you can use -cs|--check-sha1sum option to check the image when restoring the image. Note! It might take a lot of time to generate if the image size is large."
+    echo " -i, --image-size SIZE  Set the size in MB to split the partition image file into multiple volumes files. For the FAT32 image repository, the SIZE should not be larger than 4096."
     echo " -j2, --clone-hidden-data  Use dd to clone the image of the data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool."
     echo " -ntfs-ok, --ntfs-ok      Assume the NTFS integrity is OK, do NOT check again (for ntfsclone only)"
     echo " -rm-win-swap-hib, --rm-win-swap-hib  Try to remove the MS windows swap file in the source partition."
@@ -8970,7 +9172,7 @@ check_if_ocsroot_a_mountpoint() {
     echo "Clonezilla image home directory $ocsroot is not a mounting point! Failed to mount other device as $ocsroot!" | tee --append ${OCS_MOUNT_LOG}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     rc=1
-    confirm_continue_or_default_quit
+    confirm_continue_or_not_default_quit
   }
   success_mountpoint() {
     echo "$msg_df_report" | tee --append ${OCS_MOUNT_LOG}
@@ -9387,7 +9589,8 @@ get_live_auto_login_id_home() {
 } # end of get_live_auto_login_id_home
 #
 check_image_if_restorable() {
-  local ans_continue
+  local ocs_root_="$1"
+  local ans_continue ocs_root_opt
   # This function is used to test the intrgrity of clonzilla image
   if [ -z "$chk_img_restoreable" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -9400,6 +9603,9 @@ check_image_if_restorable() {
     n|N|[nN][oO]) chk_img_restoreable="no" ;;
     *)            chk_img_restoreable="yes" ;;
   esac
+  if [ -n "$ocs_root_" ]; then
+    ocs_root_opt="--ocsroot ${ocs_root_}"
+  fi
 
   if [ "$chk_img_restoreable" = "yes" ]; then
     sleep 1
@@ -9409,7 +9615,7 @@ check_image_if_restorable() {
     else
       OCS_CHKIMG_OPT=""
     fi
-    ocs-chkimg $OCS_CHKIMG_OPT $target_dir
+    ocs-chkimg $ocs_root_opt $OCS_CHKIMG_OPT $target_dir
   else
     echo "Skip checking image $target_dir if restorable..."
   fi
