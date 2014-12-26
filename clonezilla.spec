@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.12.8
+Version:	3.13.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.11.14, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.73, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.12.2, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.73, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,22 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Dec 26 2014 Steven Shiau <steven _at_ nchc org tw> 3.13.2-drbl1
+- Putting prepare_ecryptfs_mount_point_if_necessary after run again prompt no matter it's for saving or restoring.
+- Adding option "-or, --ocsroot" for create-ocs-tmp-img so that it can be used for encrypted image case.
+- Bug fixed: create_temp_image_for_different_target_dev_name_if_necessary failed to use the temp ocsroot for encrypted case.
+- Bug fixed: when checking if LVM exists in restoring, we should only check that in the image dir, not in the local partitions layout.
+
+* Thu Dec 25 2014 Steven Shiau <steven _at_ nchc org tw> 3.13.1-drbl1
+- Adding encryption function for Clonezilla image. Now it's OK for Clonezilla live, not yet for Clonezilla SE.
+- Bug fixed: the volume size unit is MB, while "M" (MiB) was used for split.
+- Set the default volume size as 4096 MB instead of 2000 MB.
+- Adding option "-i, --image-size" description in the usage of ocs-sr (https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/a5814dab)
+- Function name confirm_continue_or_not_default_quit in ocs-functions was changed to confirm_continue_or_default_quit.
+
+* Thu Dec 11 2014 Steven Shiau <steven _at_ nchc org tw> 3.12.9-drbl1
+- Package xresprobe does not exist in Debian repository, so it's removed from the packages list in create-drbl-live-by-pkg.
+
 * Wed Dec 10 2014 Steven Shiau <steven _at_ nchc org tw> 3.12.8-drbl1
 - Now i586 instead of i486 Clonezilla live is in the stable release, therefore the corresponding changes were done.
 
