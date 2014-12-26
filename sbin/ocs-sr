@@ -242,6 +242,9 @@ parse_ocs_sr_cmd_options_with_dash() {
     -d4|--kdialog)  
 	    DIA="kdialog" 
 	    shift;;
+    -enc|--enc-ocs-img)
+            encrypt_ocs_img="yes"
+	    shift; n_shift=$((n_shift+1));;
     -m|--module)
             shift; n_shift=$((n_shift+1))
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -858,6 +861,8 @@ do_partclone_crc_check="yes"
 do_rm_hardware_record="yes"
 # Default to run ocs-update-syslinux to update the syslinux files (ldlinux.sys, *.c32 and *.bin)
 do_update_syslinux="yes"
+# Default not to put yes or no for encrypting the image dir
+encrypt_ocs_img=""
 
 # The parameters, example: 
 # (-b -g auto --nogui --max-time-to-wait 300 --language 0 multicast_restoreparts sarge-base "hda1 hda3" 2232) ->
@@ -909,8 +914,6 @@ fi
 if [ "$ocs_sr_type_assign" = "ask_user" -o \
      "$ocs_sr_mode" = "interactive" ]; then
   ASK_OCS_SR_TYPE=1
-  TMP=$(mktemp /tmp/menu.XXXXXX)
-  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
   case "$ocs_x_mode" in
     "save_only")
       save_only_dia_des
@@ -940,6 +943,8 @@ if [ "$ocs_sr_type_assign" = "ask_user" -o \
 
   #
   echo "Choose the mode for ocs-sr"
+  TMP="$(mktemp /tmp/menu-ocs.XXXXXX)"
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
   while [ "$ASK_OCS_SR_TYPE" -ne 0 ]; do
     $DIA --backtitle "$msg_nchc_free_software_labs" \
     --title "$msg_nchc_clonezilla: $msg_choose_mode" \
@@ -962,7 +967,7 @@ if [ "$ocs_sr_type_assign" = "ask_user" -o \
       ASK_OCS_SR_TYPE=0
     fi
   done
-  [ -f "$TMP" ] && rm -f $TMP
+  [ -e "$TMP" ] && rm -f $TMP
   [ "$ocs_sr_type" = "exit" ] && exit 0
   [ -z "$ocs_sr_type" ] && echo "You must specify the action! Program terminated!!!" && exit 1
   # If ocs_sr_type from ask_user, then we should let ocs_sr_img_name & ocs_sr_dev as ask_user, too
@@ -1077,10 +1082,20 @@ case "$ocs_sr_type" in
 
     run_ocs_sr_again_prompt "$target_dir" "$target_hd"
 
+    # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+    # The original ones will be kept as ocsroot_orig and target_dir_orig.
+    prepare_ecryptfs_mount_point_if_necessary
+
     task_savedisk "$target_dir" "$target_hd"
-    [ -n "$MULTIPATH_INFODIR" ] && rm -rf "$MULTIPATH_INFODIR"
+
+    #
+    if [ -d "$MULTIPATH_INFODIR" -a \
+	 -n "$(echo $MULTIPATH_INFODIR | grep -w "multipath_info")" ]; then
+      rm -rf "$MULTIPATH_INFODIR"
+    fi
+
     if [ "$?" -eq 0 -a "$chk_img_restoreable" = "yes" ]; then
-      check_image_if_restorable
+      check_image_if_restorable "$ocsroot"
     fi
     echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_hd" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
 
@@ -1098,6 +1113,7 @@ case "$ocs_sr_type" in
     else
       target_dir="$ocs_sr_img_name"
     fi
+
     check_input_target_image "$ocsroot/$target_dir"
     source_dsk_no="$(cat $ocsroot/$target_dir/disk | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
 
@@ -1120,8 +1136,19 @@ case "$ocs_sr_type" in
     task_processing_after_parameters_checked
 
     run_ocs_sr_again_prompt "$target_dir" "$target_hd"
+
+    # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+    # The original ones will be kept as ocsroot_orig and target_dir_orig.
+    prepare_ecryptfs_mount_point_if_necessary
+
     task_restoredisk "$target_dir" "$target_hd"
-    [ -n "$MULTIPATH_INFODIR" ] && rm -rf "$MULTIPATH_INFODIR"
+
+    #
+    if [ -d "$MULTIPATH_INFODIR" -a \
+	 -n "$(echo $MULTIPATH_INFODIR | grep -w "multipath_info")" ]; then
+      rm -rf "$MULTIPATH_INFODIR"
+    fi
+
     task_postprocessing "$ocs_sr_type" "$target_dir"
     ;;
   "saveparts")
@@ -1195,9 +1222,13 @@ case "$ocs_sr_type" in
 
     run_ocs_sr_again_prompt "$target_dir" "$target_parts"
 
+    # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+    # The original ones will be kept as ocsroot_orig and target_dir_orig.
+    prepare_ecryptfs_mount_point_if_necessary
+
     task_saveparts "$target_dir" "$target_parts"
     if [ "$?" -eq 0 -a "$chk_img_restoreable" = "yes" ]; then
-      check_image_if_restorable
+      check_image_if_restorable "$ocsroot"
     fi
     echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_parts" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
 
@@ -1259,9 +1290,14 @@ case "$ocs_sr_type" in
 	OCS_OPTS="$OCS_OPTS -f $source_part"
     fi
 
+    run_ocs_sr_again_prompt "$target_dir" "$target_parts"
+
+    # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+    # The original ones will be kept as ocsroot_orig and target_dir_orig.
+    prepare_ecryptfs_mount_point_if_necessary
+
     task_processing_after_parameters_checked
 
-    run_ocs_sr_again_prompt "$target_dir" "$target_parts"
     task_restoreparts "$target_dir" "$target_parts"
     task_postprocessing "$ocs_sr_type" "$target_dir"
     ;;
