@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- A better mechanism to deal with the end of upstart was implemented for S00ocs-start.
+
 * Fri Dec 26 2014 Steven Shiau <steven _at_ nchc org tw> 3.13.2-drbl1
 - Putting prepare_ecryptfs_mount_point_if_necessary after run again prompt no matter it's for saving or restoring.
 - Adding option "-or, --ocsroot" for create-ocs-tmp-img so that it can be used for encrypted image case.
