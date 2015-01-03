@@ -3325,6 +3325,7 @@ task_preprocessing() {
 } # end of task_preprocessing
 #
 prepare_ecryptfs_mount_point_if_necessary() {
+  local rc_
   # Reset the variables ocsroot_orig and target_dir_orig
   ocsroot_orig=""
   target_dir_orig=""
@@ -3333,6 +3334,7 @@ prepare_ecryptfs_mount_point_if_necessary() {
    *save*) if [ "$encrypt_ocs_img" = "yes" ]; then 
 	     mkdir -p $ocsroot/$target_dir
 	     task_ecryptfs_mount_point "$ocs_sr_type"
+	     rc_="$?"
            fi
 	   ;;
    *)
@@ -3342,10 +3344,12 @@ prepare_ecryptfs_mount_point_if_necessary() {
 	   if is_ecryptfs_img $ocsroot/$target_dir; then
              encrypt_ocs_img="yes"
 	     task_ecryptfs_mount_point "$ocs_sr_type"
+	     rc_="$?"
            fi
 	   ;;
   esac
-} # end of task_preprocessing
+  return $rc_
+} # end of prepare_ecryptfs_mount_point_if_necessary
 #
 task_processing_after_parameters_checked() {
   #
@@ -3497,35 +3501,12 @@ task_postprocessing() {
       # Unmount the encrypted image
       if [ "$encrypt_ocs_img" = "yes" ]; then
 	# Before unmounting ecryptfs img, we have to keep something for later to be saved in the file ecryptfs.info.
-	if [ -e $ocsroot/$target_dir/disk ]; then
-	  disk_list="$(cat $ocsroot/$target_dir/disk)"
-        fi
-
-	if [ -e $ocsroot/$target_dir/parts ]; then
-	  parts_list="$(cat $ocsroot/$target_dir/parts)"
-        fi
-
-        img_time="$(get_img_created_time $ocsroot/$target_dir)"
-
-	disks_size_all=""
-        for ihd in $disk_list; do 
-          disk_size_=""
-          if [ -e "$ocsroot/$target_dir/$(to_filename ${ihd})-pt.parted.compact" ]; then
-            disk_size_="$(LC_ALL=C grep -E "^Disk /dev/" $ocsroot/$target_dir/$(to_filename ${ihd})-pt.parted.compact | awk -F":" '{print $2}' | sed -r -e "s/[[:space:]]//g")"
-          fi
-          [ -n "$disk_size_" ] && disks_size_all="$(LC_ALL=C echo "${disks_size_all}_${disk_size_}" | tr ' ' _)"
-        done
-
-	#
+        get_ecryptfs_info  # Inputs are global variables $ocsroot and $target_dir
+	                   # Outputs are disk_list, parts_list, img_time, disks_size_all
         umount_ecryptfs_mount_point_if_necessary
 	# Put a tag file in the original image dir
-	# TODO: It's better to put disk and parts list in the file
-	echo "# This image was saved with ecryptfs" > $ocsroot_orig/$target_dir_orig/ecryptfs.info
-	echo "disk_of_img=\"$disk_list\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
-	echo "parts_of_img=\"$parts_list\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
-	#
-	echo "time_of_img=\"$img_time\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
-	echo "disks_size_all_of_img=\"$disks_size_all\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
+	put_ecryptefs_tag_file_in_img # Inputs are ocsroot_orig, target_dir_orig, 
+	                              # disk_list, parts_list, img_time, disks_size_all
       fi
       ;;
     *)
@@ -3636,7 +3617,7 @@ rm_target_image_if_exist() {
       if [ -n "$ocsroot_orig" -a \
 	   -n "$target_dir_orig" -a \
 	   -d "$ocsroot_orig/$target_dir_orig" ]; then
-        # We have to clean all the files in the ecryptfs source dir, otherwise
+        # We have to clean all the files from the ecryptfs source dir, otherwise
 	# if there is same file existing, the ecryptfs won't be able to create it.
         rm -f $ocsroot_orig/$target_dir_orig/*
       fi
@@ -4307,9 +4288,11 @@ get_existing_parts_image() {
    local ASK_IMGNAME=1
    local TMP="$(mktemp /tmp/ocs.XXXXXX)"
    case "$action_mode" in
-     "check") action_des="$msg_choose_the_image_to_be_checked" ;;
-     "convert") action_des="$msg_choose_the_image_to_be_converted" ;;
-           *) action_des="$msg_choose_the_image_to_restore" ;;
+     "check")   action_des="$msg_choose_the_image_to_be_checked" ;;
+     "convert") action_des="$msg_choose_the_image_to_be_converted_compression" ;;
+     "nonenc")  action_des="$msg_choose_the_image_to_nonenc" ;;
+     "enc")     action_des="$msg_choose_the_image_to_enc" ;;
+     *)         action_des="$msg_choose_the_image_to_restore" ;;
    esac
 
    echo -n "Searching for images..."
@@ -4323,6 +4306,11 @@ get_existing_parts_image() {
      # only directory ..., not file
      [ ! -d "$imagedir/$file" ] && continue
      [ ! -f "$imagedir/$file/parts" -a ! -f "$imagedir/$file/disk" ] && continue
+     # When mode is nonenc or enc, we should skip some dirs.
+     case "$action_mode" in
+       "nonenc") [ -e "$imagedir/$file/ecryptfs.info" ] && continue ;;
+       "enc")    [ ! -e "$imagedir/$file/ecryptfs.info" ] && continue ;;
+     esac
      if is_ecryptfs_img $imagedir/$file; then
        # Encrypted image
        . $imagedir/$file/ecryptfs.info
@@ -6809,10 +6797,35 @@ get_target_dir_name_when_checking_img_restorable() {
 get_target_dir_name_when_converting_img() {
   # target_dir and ocsroot are gloable variables
   local ANS_TMP
+  local only_type  # Available types: enc (encrypted image), nonenc (non-encrypted image)
+  #
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -o|--only)
+         shift
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+           only_type="$1"
+           shift
+         fi
+         [ -z "$only_type" ] && echo "-x is used, but no only_type assigned." && exit 1
+         ;;
+      -*)     echo "${0}: ${1}: invalid option" | tee --append ${OCS_LOGFILE} >&2
+              echo "Unknown option in function get_target_dir_name_when_converting_img" | tee --append ${OCS_LOGFILE} >& 2
+              echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+              [ "$save_restore_error_log" = "yes" ] && copy_error_log
+              exit 2 ;;
+      *)      break ;;
+    esac
+  done
   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
   # get_existing_parts_image will search $imagedir
-  get_existing_parts_image $ANS_TMP convert 
+  case "$only_type" in
+    enc)    get_existing_parts_image $ANS_TMP enc ;;
+    nonenc) get_existing_parts_image $ANS_TMP nonenc ;;
+    *)      get_existing_parts_image $ANS_TMP convert ;;
+  esac
   # the return name will be only one image name.
   # Note! We won't add leading $ocsroot in $target_dir, because when task_restoreparts do the real job later, it will add that.
   target_dir="$(cat $ANS_TMP)"
@@ -10695,3 +10708,46 @@ get_pv_on_disk_from_PV_conf_list() {
      return 1
   fi
 } # end of get_pv_on_disk_from_PV_conf_list
+#
+get_ecryptfs_info() {
+  # Function to get the encrypted image info, including disks list, partitions list, imaging time, and disks' sizes.
+  # It's put in the encrypted image dir while keeping unencrypted so that we can tell the image.
+  # Input variables: $ocsroot, $target_dir
+  local disk_size_
+  # ocsroot, target_dir, disk_list, parts_list, img_time, disks_size_all are global variables
+  disk_list=""
+  parts_list=""
+  img_time=""
+  disks_size_all=""
+  if [ -e $ocsroot/$target_dir/disk ]; then
+    disk_list="$(cat $ocsroot/$target_dir/disk)"
+  fi
+  
+  if [ -e $ocsroot/$target_dir/parts ]; then
+    parts_list="$(cat $ocsroot/$target_dir/parts)"
+  fi
+  
+  img_time="$(get_img_created_time $ocsroot/$target_dir)"
+  
+  disks_size_all=""
+  for ihd in $disk_list; do 
+    disk_size_=""
+    if [ -e "$ocsroot/$target_dir/$(to_filename ${ihd})-pt.parted.compact" ]; then
+      disk_size_="$(LC_ALL=C grep -E "^Disk /dev/" $ocsroot/$target_dir/$(to_filename ${ihd})-pt.parted.compact | awk -F":" '{print $2}' | sed -r -e "s/[[:space:]]//g")"
+    fi
+    [ -n "$disk_size_" ] && disks_size_all="$(LC_ALL=C echo "${disks_size_all}_${disk_size_}" | tr ' ' _)"
+  done
+} # end of get_ecryptfs_info
+#
+put_ecryptefs_tag_file_in_img(){
+  # Function to put the unencrypted file "ecryptfs.info" in the encrypted image dir
+  # Inputs are ocsroot_orig, target_dir_orig, disk_list, parts_list, img_time, disks_size_all
+  # Put a tag file in the original image dir
+  if [ -n "$ocsroot_orig" -a -n "$target_dir_orig" ]; then
+    echo "# This image was saved with ecryptfs" > $ocsroot_orig/$target_dir_orig/ecryptfs.info
+    echo "disk_of_img=\"$disk_list\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
+    echo "parts_of_img=\"$parts_list\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
+    echo "time_of_img=\"$img_time\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
+    echo "disks_size_all_of_img=\"$disks_size_all\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
+  fi
+} # end of put_ecryptefs_tag_file_in_img
