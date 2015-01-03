@@ -1,0 +1,279 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ nchc org tw>
+# Description: To decrypt the image of Clonezilla
+# from existing one.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+verbose="no"
+chk_img_restoreable_def="yes"
+ocs_rm_src_img="no"
+
+#
+USAGE() {
+    echo "$ocs - To decrypt the image of Clonezilla from existing one"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] SRC_IMAGE_NAME DEST_IMAGE_NAME"
+    echo "Options:"
+    echo "-b, --batch-mode   Run image checking in batch mode"
+    echo "-d, --delete-src-img     Force to delete source image after encryption. By default it's kept."
+    echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
+    echo "-nogui, --nogui          Do not show GUI (TUI) of Partclone when checking, use text only"
+    echo "-sc, --skip-check-restorable  Skip checking the image if restorable after it is converted."
+    echo "-v, --verbose            Prints verbose information"
+    echo "SRC_IMAGE_NAME and DEST_IMAGE_NAME are the image dir name, not absolute path"
+    echo "If \"ask_user\" is used as SRC_IMAGE_NAME or DEST_IMAGE_NAME, a dialog menu will be shown to allow selection or inputing."
+    echo "If no SRC_IMAGE_NAME or DEST_IMAGE_NAME is specified, a dialog menu will be shown."
+    echo "Ex:"
+    echo "To decrypt the image \"my-image-enc\", which is located in $ocsroot/ to \"my-image\", run"
+    echo "   $ocs my-image-enc my-image"
+    echo
+} # end of USAGE
+#
+ask_if_check_converted_img() {
+  local TMP=`mktemp /tmp/ocs_chk.XXXXXX`
+  local sc_opt
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  # Question about checking the image after conversion
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+  "$msg_nchc_clonezilla" --menu "$msg_choose_if_checking_image_restorable" \
+  0 0 0 $DIA_ESC \
+  " "    "$msg_check_converted_img_restorable" \
+  "-sc"  "$msg_skip_check_converted_img_restorable" \
+  2> $TMP
+  sc_opt="$(cat $TMP)"
+  case "$sc_opt" in
+   -sc)  chk_img_restoreable="no";;
+     *)  chk_img_restoreable="yes";;
+  esac
+  [ -f "$TMP" ] && rm -f $TMP
+} # ask_if_check_converted_img
+
+#
+task_decrypt_image(){
+  local input_d="$1" # Input the source image name
+  local rc_
+
+  mkdir -p $ocsroot/$ocs_dest_img_name/
+  # Pass the $target_dir tnd $ocs_sr_type to prepare_ecryptfs_mount_point_if_necessary which is required.
+  target_dir="$input_d"
+  ocs_sr_type="restore"
+  # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+  # The original ones will be kept as ocsroot_orig and target_dir_orig.
+  prepare_ecryptfs_mount_point_if_necessary 
+  rc_="$?"
+
+  if [ "$rc_" -eq 0 ]; then
+    # If the existing target image exists, remove it before copying files.
+    # We have to clean all the files from the ecryptfs source dir, otherwise
+    # if there is same file existing, the ecryptfs won't be able to create it.
+    rm_target_image_if_exist "$ocsroot/$ocs_dest_img_name"
+
+    rsync -avP $ocsroot/$target_dir/* $ocsroot_orig/$ocs_dest_img_name/
+    rc_=$?
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$msg_failed_to_encrypt_img: $input_d" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    umount_ecryptfs_mount_point_if_necessary
+    exit 1
+  fi
+  return $rc_
+} # end of task_decrypt_image
+#
+task_remove_src_img() {
+  if [ -n "$ocsroot_orig" -a \
+       -n "$ocs_src_img_name" -a \
+       -d "$ocsroot_orig/$ocs_src_img_name" ]; then
+    # Do not use "rm -rf" here, use 2-step removing to avoid accidents.
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Removing the source image \"$ocs_src_img_name\"..."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    rm -fv $ocsroot_orig/$ocs_src_img_name/*
+    rmdir -v $ocsroot_orig/$ocs_src_img_name
+  fi
+} # end of task_remove_src_img
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -b|--batch) ocs_batch_mode="on"; shift;;
+   -d|--delete-src-img) ocs_rm_src_img="yes"; shift;;
+   -or|--ocsroot)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             ocsroot="$1"
+             shift;
+           fi
+           [ -z "$ocsroot" ] && USAGE && exit 1
+           ;;
+   -nogui|--nogui)
+           # -nogui is for backward compatable, better to use --nogui
+           nogui="on"
+	   shift;;
+   -sc|--skip-check-restorable)
+           # Flag to check if the image is restorable
+           chk_img_restoreable="no"
+	   shift;;
+   -v|--verbose) verbose="yes"; shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+#
+if [ -z "$*" ]; then
+  mode="interactive"
+else
+  ocs_src_img_name="$1"
+  shift
+  ocs_dest_img_name="$1"
+fi
+
+# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
+# otherwise setterm will complain.
+[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
+echo "Setting the TERM as $TERM"
+export TERM="$TERM"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+# check DIA
+check_DIA_set_ESC $DIA
+#
+[ -z "$IMG_CLONE_CMP" ] && IMG_CLONE_CMP="$IMG_CLONE_CMP_def"
+
+# imagedir is a variable which ask_user related function need
+imagedir="$ocsroot"
+[ -z "$ocs_src_img_name" ] && ocs_src_img_name="ask_user"
+[ -z "$ocs_dest_img_name" ] && ocs_dest_img_name="ask_user"
+
+# Prepare the image to be converted
+# 1st, check if "$ocs_dest_img_name" exist
+if [ "$ocs_src_img_name" = "ask_user" ]; then
+  # Since we want to convert encrypted image to unencrypted one,
+  # we should only list the encrypted images.
+  get_target_dir_name_when_converting_img -o enc
+  ocs_src_img_name="$target_dir"
+fi
+
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "$msg_the_image_to_be_convert: $ocs_src_img_name"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+if [ "$ocs_dest_img_name" = "ask_user" ]; then
+  get_target_dir_name_when_saving  ${ocs_src_img_name}-${append_name} # get $target_dir
+  ocs_dest_img_name="$target_dir"
+fi
+
+if [ "$mode" = "interactive" ]; then
+  ask_if_check_converted_img
+else
+  if [ -z "$chk_img_restoreable" ]; then
+    chk_img_restoreable="$chk_img_restoreable_def"
+  fi
+fi
+
+#
+check_input_target_image "$ocsroot/$ocs_src_img_name"
+
+# Check if it's already an unencrypted image or not
+if ! is_ecryptfs_img $ocsroot/$ocs_src_img_name; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$msg_is_unencrypted_image_already: $ocs_src_img_name"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+############
+### Main ###
+############
+# source image: ocs_src_img_name ($ocsroot_orig/$target_dir_orig after prepare_ecryptfs_mount_point_if_necessary is run) -> target_dir_enc_mntpnt (new $ocsroot/$target_dir after prepare_ecryptfs_mount_point_if_necessary is run)
+# destination image: ocs_dest_img_name
+
+encrypt_ocs_img="yes"
+task_decrypt_image "$ocs_src_img_name"
+rc="$?"
+
+#
+if [ "$rc" -eq 0 ]; then
+  if [ "$chk_img_restoreable" = "yes" ]; then
+    if [ "$nogui" = "on" ]; then
+      nogui_opt="-nogui"
+    fi
+    echo $msg_delimiter_star_line
+    echo "Checking the converted image \"$target_dir\"..."
+    ocs-chkimg -or $ocsroot -b $nogui_opt $target_dir
+    rc_ocs_chk="$?"
+  fi
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$msg_failed_to_cnvt_image_to_encrypted: $ocs_dest_img_name"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+fi
+
+umount_ecryptfs_mount_point_if_necessary
+# Deal with the encryption tag file ecryptfs.info
+rm -f $ocsroot_orig/$ocs_dest_img_name/ecryptfs.info
+
+#
+if [ "$mode" = "interactive" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_remove_original_encrypted_img: $ocs_src_img_name?"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n "[y/N] "
+  read ocs_remove_answer1
+  case "$ocs_remove_answer1" in 
+    y|Y|[yY][eE][sS])
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_remove_original_encrypted_img_ask_again: $ocs_src_img_name ?"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo -n "[y/N] "
+    read ocs_remove_answer2
+    case "$ocs_remove_answer2" in 
+       y|Y|[yY][eE][sS]) ocs_rm_src_img="yes";;
+    esac
+    ;;
+  esac
+fi
+if [ "$ocs_rm_src_img" = "yes" ]; then
+  task_remove_src_img
+fi
+
+#
+rc_t="$((rc + rc_ocs_chk))"
+
+if [ "$rc_t" -eq 0 ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+  echo "$msg_cnvt_image_to_unencrypted_successfully: $ocs_dest_img_name"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$msg_failed_to_cnvt_image_to_unencrypted: $ocs_dest_img_name"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+fi
+
+exit $rc_t
