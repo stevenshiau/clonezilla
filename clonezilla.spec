@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.5
+Version:	3.13.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 05 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.6-drbl1
+- Bug fixed: ocs-restore-mdisks failed to run for encrypted image.
+
 * Mon Jan 05 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.5-drbl1
 - Using functions get_disk_list_from_img and get_parts_list_from_img to deal with all the image info.
 - All the image related programs were improved to support encrypted image. They are create-ocs-tmp-img, ocs-chkimg, ocs-cvtimg-comp, ocs-img-2-vdk, ocs-restore-mdisks,
