@@ -220,6 +220,12 @@ if [ "$run_again_flag" = "true" ]; then
   [ -e "$run_again_bfname" ] && chmod 755 $run_again_bfname
 fi
 
+#
+if [ "$batch_mode" = "false" ]; then
+  echo -n "$msg_press_enter_to_continue..."
+  read
+fi
+
 # Give warnings. 
 echo $msg_delimiter_star_line
 if [ "$batch_mode" = "false" ]; then
@@ -235,7 +241,7 @@ fi
 # Calculate the disk number
 disk_no="$(LC_ALL=C echo $tgt_dsks | wc -w)"
 
-# Find the original disk
+# Check the source disk number. Only 1 is allowed in this case.
 src_disk="$(get_disk_list_from_img $ocsroot/$image_name)"
 src_disk_no="$(LC_ALL=C echo $src_disk | wc -w)"
 if [ "$src_disk_no" -ne 1 ]; then
@@ -243,14 +249,38 @@ if [ "$src_disk_no" -ne 1 ]; then
   echo "$msg_source_disks_more_than_1"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "$msg_program_stop"
-  exit 1
+  my_ocs_exit 1
 fi
 
-# Prepare the temp images, we put them in the /tmp otherwise if the original repository might be readonly or FAT (no support for soft link).
-# From now on we switch the image repository to /tmp/.
-ocsroot="/tmp"
+ecryptfs_rc="1"
+if is_ecryptfs_img $ocsroot/$image_name; then
+  # If it's encrypted image, we have to decrypt it.
+  ocs_sr_type="restore"
+  target_dir="$image_name"
+  # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+  # The original ones will be kept as ocsroot_orig and target_dir_orig.
+  prepare_ecryptfs_mount_point_if_necessary
+  ecryptfs_rc="$?"
+  if [ "$ecryptfs_rc" -eq 0 ]; then
+    # From now on we switch the image repository to $ocsroot (-or option of create-ocs-tmp-img) (i.e. /tmp/ in this case).
+    # i.e. image repository is in $ocsroot (/tmp, -or option of create-ocs-tmp-img), and
+    #      temp image (-t option of create-ocs-tmp-img) is in /tmp/, too.
+    image_name="$target_dir"
+    ocs_tmp_img_opt="-or $ocsroot"
+  else
+    echo "$msg_program_stop"
+    my_ocs_exit 1
+  fi
+else
+  # Prepare the temp images (-t option of create-ocs-tmp-img), we put them in the /tmp otherwise if the original repository might be readonly or FAT (no support for soft link).
+  # From now on we switch the image repository to /tmp/.
+  # i.e. image repository is in $ocsroot (/home/partimag, -or option of create-ocs-tmp-img), and
+  #      temp image (-t option of create-ocs-tmp-img) is in /tmp/.
+  ocsroot="/tmp"
+fi
+
 for i in $tgt_dsks; do
-  create-ocs-tmp-img -t $ocsroot $image_name ${image_name}_cnvt_${i} $src_disk ${i}
+  create-ocs-tmp-img $ocs_tmp_img_opt -t $ocsroot $image_name ${image_name}_cnvt_${i} $src_disk ${i}
 done
 
 if [ "$separate_fdisk" = "true" ]; then
@@ -283,3 +313,4 @@ done
 
 # wait for all processes to finish before exit
 wait 
+my_ocs_exit 1
