@@ -171,7 +171,7 @@ img_covert_to_diff_compression() {
     echo "The file system can not be decided in function img_covert_to_diff_compression!!!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!"
-    exit 1
+    my_ocs_exit 1
   fi
  
   if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img")" ]; then
@@ -209,7 +209,7 @@ img_covert_to_diff_compression() {
     echo "Failed to find the compression format of source image!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!"
-    exit 1
+    my_ocs_exit 1
   fi
   # E.g. 
   # (1) New format without split, e.g. 
@@ -233,7 +233,7 @@ img_covert_to_diff_compression() {
     echo "Failed to decide the compression format of destination image!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!"
-    exit 1
+    my_ocs_exit 1
   fi
 
   # Check if source and destination compression program is the same format. If it's the same, we can not go on, otherwise the source file will be overwritten, and it will be broken due to source and destination are the same one.
@@ -242,7 +242,7 @@ img_covert_to_diff_compression() {
     echo "Source compression format and destination format are the same: $img_comp_format"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!"
-    exit 1
+    my_ocs_exit 1
   else
     echo "Now process the image file of partition: $img_file_prefix"
     echo "Converting compression format: $img_comp_format -> $t_comp_suf by \"$compress_prog_opt\""
@@ -283,7 +283,7 @@ img_covert_to_diff_compression() {
     case "$VOL_LIMIT" in
       [1-9]*)
          # $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf}. is prefix, the last "." is necessary make the output file is like sda1.${fs_pre}-img.aa, sda1.${fs_pre}-img.ab. We do not add -d to make it like sda1.${fs_pre}-img.00, sda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (sda1.${fs_pre}-img.000, sda1.${fs_pre}-img.001)
-         pv -pae $used_size_opt | ${cmd_compress} | split -b ${VOL_LIMIT}m - $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf}. 2> $split_error
+         pv -pae $used_size_opt | ${cmd_compress} | split -b ${VOL_LIMIT}MB - $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf}. 2> $split_error
          ;;
       *)
          pv -pae $used_size_opt | ${cmd_compress} | cat - > $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf} 2> $split_error
@@ -425,11 +425,11 @@ task_logv_convert() {
 task_convertimage() {
   local target_dir="$1"
   local parts_included target_dir_fullpath
-  local ptype rc rct
+  local ptype rc rct part_is_lvm
   local f_parent
 
   #
-  target_parts="$(LC_ALL=C cat $ocsroot/$target_dir/parts)"
+  target_parts="$(get_parts_list_from_img $ocsroot/$target_dir)"
 
   # target_hd will be extract from $target_parts, maybe we will have one more
   # find the target hd
@@ -447,13 +447,13 @@ task_convertimage() {
   if [ -e "$ocsroot/$target_dir/disk" ]; then
     image_type="disk"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_a_disk_image_saved_from_hd: $(cat $ocsroot/$target_dir/disk)"
+    echo "$msg_a_disk_image_saved_from_hd: $(get_disk_list_from_img $ocsroot/$target_dir)"
     echo "$msg_the_part_image_to_be_convert: $target_parts"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   elif [ -e "$ocsroot/$target_dir/parts" ]; then
     image_type="partition"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_a_part_image_saved_from_partitions: $(cat $ocsroot/$target_dir/parts)"
+    echo "$msg_a_part_image_saved_from_partitions: $(get_parts_list_from_img $ocsroot/$target_dir)"
     echo "$msg_the_part_image_to_be_cheked: $target_parts"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   else
@@ -481,16 +481,20 @@ task_convertimage() {
   for partition in $target_parts; do
     # hda1 -> hda
     hd_tmp="$(get_diskname $partition)"
+    part_is_lvm="no"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
     if [ -e $PV_PARSE_CONF ]; then
       for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
         if [ "$partition" = "$(get_master_dev_of_multipath $i)" ]; then
-          do_LVM_restore="yes"
-          continue
+          part_is_lvm="yes"
+          break
         fi
       done
-    elif check_LVM_partition /dev/$partition; then
+    fi
+    # If part_is_lvm is yes, we should skip the rest...
+    if [ "$part_is_lvm" = "yes" ]; then
       do_LVM_restore="yes"
+      # This continue is to skip the rest of this partition do loop
       continue
     fi
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -525,6 +529,8 @@ task_convertimage() {
         rct="$(($rct + $rc))"
       fi
     done
+    # Since the converted image is not encrypted, we should remove ecryptfs.info
+    rm -f $target_dir_fullpath/ecryptfs.info
   fi
 
   if [ "$rct" -gt 0 ]; then
@@ -541,11 +547,12 @@ task_convertimage() {
     # Careful... Do not remove all the images...
     if [ -n "$target_dir_fullpath" ]; then
       if [ "$target_dir_fullpath" != "$ocsroot" ]; then
-        rm -rfv $target_dir_fullpath
+        rm -fv $target_dir_fullpath/*
+	rmdir -v $target_dir_fullpath
       fi
     fi
     echo "$msg_program_stop!"
-    exit 1
+    my_ocs_exit 1
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_succeeded_convert_the_img_compression: $target_dir" | tee --append ${OCS_LOGFILE}
@@ -560,7 +567,7 @@ check_if_old_format_img() {
   local img_f
 
   target_dir_fullpath="$ocsroot/$target_dir"
-  target_parts="$(LC_ALL=C cat $ocsroot/$target_dir/parts)"
+  target_parts="$(get_parts_list_from_img $ocsroot/$target_dir)"
   # strip the leading spaces
   target_parts="$(echo $target_parts | sed -e "s/^[[:space:]]*//g")"
 
@@ -581,7 +588,7 @@ check_if_old_format_img() {
         read
       fi
       echo "$msg_program_stop!"
-      exit 1
+      my_ocs_exit 1
     elif [ -f "$target_dir_fullpath/$img_f.ntfs-img" -o \
            -f "$target_dir_fullpath/$img_f.ntfs-img.aa" ]; then
       # The saved image is from ntfsclone
@@ -594,7 +601,7 @@ check_if_old_format_img() {
         read
       fi
       echo "$msg_program_stop!"
-      exit 1
+      my_ocs_exit 1
     fi
   done
 } # end of check_if_old_format_img
@@ -753,9 +760,31 @@ else
   fi
 fi
 
+ecryptfs_rc="1"
+if is_ecryptfs_img $ocsroot/$ocs_src_img_name; then
+  # If it's encrypted image, we have to decrypt it.
+  ocs_sr_type="restore"
+  target_dir="$ocs_src_img_name"
+  # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+  # The original ones will be kept as ocsroot_orig and target_dir_orig.
+  prepare_ecryptfs_mount_point_if_necessary 
+  ecryptfs_rc="$?"
+  if [ "$ecryptfs_rc" -eq 0 ]; then
+    ocs_src_img_name="$target_dir"
+    ocs_tmp_img_opt="-or $ocsroot"
+  fi
+fi
+
 #
 check_if_old_format_img "$ocs_src_img_name"
-create-ocs-tmp-img -t $ocsroot -n "$ocs_src_img_name" "$ocs_dest_img_name"
+
+# Before creating the destination image, we have to set the correct ocsroot otherwise it's reset by prepare_ecryptfs_mount_point_if_necessary. 
+if [ "$ecryptfs_rc" -eq 0 ]; then
+  # The image to be processed is encrypted, and we have to let create-ocs-tmp-img create the image in the original image repository
+  ocsroot="$ocsroot_orig"
+fi
+# Use create-ocs-tmp-img to create a temp dir in image repository, then we will convert all link files to regular files.
+create-ocs-tmp-img $ocs_tmp_img_opt -n -t $ocsroot "$ocs_src_img_name" "$ocs_dest_img_name"
 
 task_convertimage "$ocs_dest_img_name"
 
@@ -771,6 +800,9 @@ if [ "$chk_img_restoreable" = "yes" ]; then
   if [ "$rc_ocs" -eq 0 ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
     echo "$msg_new_compression_format_image_created_successfully: $ocs_dest_img_name"
+    if [ "$ecryptfs_rc" -eq 0 ]; then
+      echo "$msg_converted_img_is_not_encrypted"
+    fi
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -779,4 +811,4 @@ if [ "$chk_img_restoreable" = "yes" ]; then
   fi
 fi
 
-exit $rc_ocs
+my_ocs_exit $rc_ocs

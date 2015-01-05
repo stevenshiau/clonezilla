@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.4
+Version:	3.13.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 05 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.5-drbl1
+- Using functions get_disk_list_from_img and get_parts_list_from_img to deal with all the image info.
+- All the image related programs were improved to support encrypted image. They are create-ocs-tmp-img, ocs-chkimg, ocs-cvtimg-comp, ocs-img-2-vdk, ocs-restore-mdisks,
+- Bug fixed: the volume size unit is MB, while "M" (MiB) was used for split in ocs-cvtimg-comp.
+
 * Sat Jan 03 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.4-drbl1
 - Adding return code for function prepare_ecryptfs_mount_point_if_necessary.
 - Adding functions get_ecryptfs_info and put_ecryptefs_tag_file_in_img so they can be reused.

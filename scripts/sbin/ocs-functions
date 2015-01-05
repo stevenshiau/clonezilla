@@ -3166,23 +3166,6 @@ warning_about_run_parts_in_debian() {
   fi
 } # end of warning_about_run_parts_in_debian
 #
-get_img_created_time() {
-  local img_path="$1" # img_path is $ocsroot/$target_dir/
-  local img_tm
-  if [ -z "$img_path" ]; then
-    echo "$img_tm"
-    return 1
-  fi
-  img_tm=""
-  # First we find the tag in the file "clonezilla-img". Suppress all the space because it might be used in dialog prompt.
-  img_tm="$(LC_ALL=C grep -E "^### Image created time: " $img_path/clonezilla-img 2>/dev/null | awk -F":" '{print $2}' | sed -r -e "s|[[:space:]]*||g")"
-  if [ -z "$img_tm" ]; then
-    # No tag found. Use the image dir created time.
-    img_tm="$(LC_ALL=C ls -ld --time-style=+%Y-%m%d-%H%M $img_path | awk '{ print $6;}')"
-  fi
-  echo "$img_tm"
-  return 0
-} # end of get_img_created_time
 #
 countdown_or_confirm_before_restore() {
   local restore_img_name new_dev_to_be_restore
@@ -3219,7 +3202,7 @@ countdown_or_confirm_before_restore() {
       *)      break ;;
     esac
   done
-  restore_img_name="$1"
+  restore_img_name="$1"  # full path of image dir
   new_dev_to_be_restore="$2"
 
   if [ -n "$TIME_to_wait" ] && [ "$ctdn" = "yes" ]; then
@@ -3243,12 +3226,7 @@ countdown_or_confirm_before_restore() {
   fi
   if [ "$confirm_before_clone" = "yes" ] && [ "$rest_conf" = "yes" ]; then
     echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
-    if is_ecryptfs_img $restore_img_name; then
-      . $restore_img_name/ecryptfs.info
-      img_time="$time_of_img"
-    else
-      img_time="$(get_img_created_time $restore_img_name)"
-    fi
+    img_time="$(get_img_created_time $restore_img_name)"
     if [ -n "$img_time" ]; then
       img_time_prompt="$msg_img_created_time: $img_time"
     fi
@@ -4221,7 +4199,7 @@ get_existing_disk_image() {
        fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/disk 2>/dev/null)
        disks_size_all=""
        if [ -e "$imagedir/$file/disk" ]; then
-         for ihd in `cat $imagedir/$file/disk` ; do 
+         for ihd in `get_disk_list_from_img $imagedir/$file` ; do 
            disk_size_=""
            if [ -e "$imagedir/$file/$(to_filename ${ihd})-pt.parted.compact" ]; then
              disk_size_="$(LC_ALL=C grep -E "^Disk /dev/" $imagedir/$file/$(to_filename ${ihd})-pt.parted.compact | awk -F":" '{print $2}' | sed -r -e "s/[[:space:]]//g")"
@@ -4390,7 +4368,7 @@ get_existing_disks_from_img() {
      fi
      TMP="$(mktemp /tmp/ocs.XXXXXX)"
      trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-     PROMPT="$(for p in `cat $tgt_file/disk` ; do echo "$p" "disk("${p:0:2}")_disk("${p:2}")" off ; done)"
+     PROMPT="$(for p in `get_disk_list_from_img $tgt_file` ; do echo "$p" "disk("${p:0:2}")_disk("${p:2}")" off ; done)"
      if [ "$NUMDISKS" = "1" ]; then
        # If only one dev, turn on it.
        PROMPT="$(echo $PROMPT | sed -e "s/off$/on/g")"
@@ -4446,12 +4424,7 @@ get_existing_partitions_from_img() {
    # By default, we assume it's running in the client (Clonezilla live mode)
    [ -z "$skip_mounted_part" ] && skip_mounted_part="yes"
    #
-   if is_ecryptfs_img $tgt_file; then
-     . $tgt_file/ecryptfs.info
-     p_list="$parts_of_img"
-   else
-     p_list="$(cat $tgt_file/parts)"
-   fi
+   p_list="$(get_parts_list_from_img "$tgt_file")"
    NUMPARTS="$(LC_ALL=C echo "$p_list" | wc -w 2>/dev/null | awk '{print $1}')"
    if [ -n "$NUMPARTS" -a "$NUMPARTS" -gt 0 ]; then
      if [ $NUMPARTS -lt $MAX_DIALOG_HEIGHT ]; then
@@ -6435,7 +6408,7 @@ start_ocs_service() {
         target_hd="$(< $imagedir/$target_dir/disk)"
       fi
       for ihd in $target_hd; do
-        for partition in `cat $imagedir/$target_dir/parts`; do
+        for partition in `get_parts_list_from_img $imagedir/$target_dir`; do
           if [ -n "$(echo "$partition" | grep -iE "$ihd")" ]; then
             # Ex. hda2 is for hda, so when hda is chosen, we will include hda2 as target partition.
             target_parts="$target_parts $partition"
@@ -7456,7 +7429,7 @@ task_restoredisk() {
   check_input_target_image "$ocsroot/$target_dir"
 
   #
-  dsksname_from_img="$(cat $ocsroot/$target_dir/disk | sed -e "s/ *$//g")"
+  dsksname_from_img="$(get_disk_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g")"
   src_dsk_no="$(echo $dsksname_from_img | wc -w)"
 
   case "$target_hd" in
@@ -7490,7 +7463,7 @@ task_restoredisk() {
   # Note! $target_dir is not absolute path, because when task_saveparts do the real job later, it will add $ocsroot, so we have to put $ocsroot here.
   # //NOTE// file parts already contained all the available partitions name.
   for ihd in $target_hd; do
-    for partition in `cat $ocsroot/$target_dir/parts`; do
+    for partition in `get_parts_list_from_img $ocsroot/$target_dir`; do
       if [ -n "$(echo "$partition" | grep -iE "$ihd")" ]; then
         # Ex. hda2 is for hda, so when hda is chosen, we will include hda2 as target partition.
         target_parts="$target_parts $partition"
@@ -7578,7 +7551,7 @@ task_restoreparts() {
   fi
 
   #
-  source_parts_no="$(cat $ocsroot/$target_dir/parts | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+  source_parts_no="$(get_parts_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
 
   #
   if [ "$target_parts" = "ask_user" ]; then
@@ -7614,7 +7587,7 @@ task_restoreparts() {
   done
 
   # Find the source hd
-  for jpart in `cat $ocsroot/$target_dir/parts`; do
+  for jpart in `get_parts_list_from_img $ocsroot/$target_dir`; do
     shd_tmp="$(get_diskname $jpart)"
     if [ -z "$source_hd" ]; then
       source_hd="$shd_tmp"
@@ -8692,7 +8665,7 @@ convert_ocs_format_from_1.5_to_2.0_or_newer() {
     #
     if [ -f "$img_path/disk" ]; then
       # This is for image from savedisk
-      hd_dev="$(cat $img_path/disk 2>/dev/null)"
+      hd_dev="$(get_disk_list_from_img $img_path 2>/dev/null)"
       if [ "$(echo $hd_dev | wc -w)" -gt 1 ]; then
         # clonezilla 1.x format, should only for one disk, no multiple disks.
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -8706,7 +8679,7 @@ convert_ocs_format_from_1.5_to_2.0_or_newer() {
       # This is for image from saveparts
       # we need get disk name: hda1 hda2 hda3 -> hda
       # we choose the first one in partitions to convert, since in old format, when image of partitions exists, 
-      tgt_hd_tmp="$(cat $img_path/parts | awk -F" " '{print $1}')"
+      tgt_hd_tmp="$(get_parts_list_from_img $img_path | awk -F" " '{print $1}')"
       hd_dev="$(get_diskname $tgt_hd_tmp)"
     fi
     for ifile in mbr pt.sf chs.sf; do
@@ -10720,11 +10693,11 @@ get_ecryptfs_info() {
   img_time=""
   disks_size_all=""
   if [ -e $ocsroot/$target_dir/disk ]; then
-    disk_list="$(cat $ocsroot/$target_dir/disk)"
+    disk_list="$(get_disk_list_from_img $ocsroot/$target_dir)"
   fi
   
   if [ -e $ocsroot/$target_dir/parts ]; then
-    parts_list="$(cat $ocsroot/$target_dir/parts)"
+    parts_list="$(get_parts_list_from_img $ocsroot/$target_dir)"
   fi
   
   img_time="$(get_img_created_time $ocsroot/$target_dir)"
@@ -10751,3 +10724,62 @@ put_ecryptefs_tag_file_in_img(){
     echo "disks_size_all_of_img=\"$disks_size_all\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
   fi
 } # end of put_ecryptefs_tag_file_in_img
+#
+get_parts_list_from_img() {
+  local img_path="$1"  # Full path for the image dir
+  local p_lst
+  if [ -z "$img_path" -o \
+       ! -d "$img_path" ]; then
+    my_ocs_exit 1
+  fi
+  p_lst=""
+  if is_ecryptfs_img $img_path; then
+    . $img_path/ecryptfs.info
+    p_lst="$parts_of_img"
+  else
+    p_lst="$(LC_ALL=C cat $img_path/parts)"
+  fi
+  echo "$p_lst"
+  return 0
+} # end of get_parts_list_from_img
+#
+get_disk_list_from_img() {
+  local img_path="$1"  # Full path for the image dir
+  local d_lst
+  if [ -z "$img_path" -o \
+       ! -d "$img_path" ]; then
+    my_ocs_exit 1
+  fi
+  d_lst=""
+  if is_ecryptfs_img $img_path; then
+    . $img_path/ecryptfs.info
+    d_lst="$disk_of_img"
+  else
+    d_lst="$(LC_ALL=C cat $img_path/disk)"
+  fi
+  echo "$d_lst"
+  return 0
+} # end of get_disk_list_from_img
+#
+get_img_created_time() {
+  local img_path="$1" # img_path is $ocsroot/$target_dir/
+  local img_tm
+  if [ -z "$img_path" -o \
+       ! -d "$img_path" ]; then
+    my_ocs_exit 1
+  fi
+  img_tm=""
+  if is_ecryptfs_img $img_path; then
+    . $img_path/ecryptfs.info
+    img_tm="$time_of_img"
+  else
+    # First we find the tag in the file "clonezilla-img". Suppress all the space because it might be used in dialog prompt.
+    img_tm="$(LC_ALL=C grep -E "^### Image created time: " $img_path/clonezilla-img 2>/dev/null | awk -F":" '{print $2}' | sed -r -e "s|[[:space:]]*||g")"
+    if [ -z "$img_tm" ]; then
+      # No tag found. Use the image dir created time.
+      img_tm="$(LC_ALL=C ls -ld --time-style=+%Y-%m%d-%H%M $img_path | awk '{ print $6;}')"
+    fi
+  fi
+  echo "$img_tm"
+  return 0
+} # end of get_img_created_time

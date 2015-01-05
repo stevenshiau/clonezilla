@@ -101,16 +101,19 @@ new_imgname="$2"
 src_dev="$3"
 tgt_dev="$4"
 
+#
+ask_and_load_lang_set $specified_lang
+
 if [ -z "$imgname" ]; then
   echo "No EXISTING_IMAGE!"
-  echo "Program terminated!"
+  echo "$msg_program_stop!"
   USAGE
   exit 1
 fi
 
 if [ -z "$new_imgname" ]; then
   echo "No NEW_IMAGE!"
-  echo "Program terminated!"
+  echo "$msg_program_stop!"
   USAGE
   exit 1
 fi
@@ -119,21 +122,36 @@ fi
 if [ "$cvt_dev" = "yes" ]; then
   if [ -z "$src_dev" ]; then
     echo "No ORIGINAL_DEV!"
-    echo "Program terminated!"
+    echo "$msg_program_stop!"
     USAGE
     exit 1
   fi
   
   if [ -z "$tgt_dev" ]; then
     echo "No NEW_DEV!"
-    echo "Program terminated!"
+    echo "$msg_program_stop!"
     USAGE
     exit 1
   fi
 fi
 
-# We put the new image in /tmp, since we need a filesystem can be symbolic linked. Otherwise it will fail, like CD (readonly) or samba server (FAT does not support symbolic link)
-[ -z "$new_imghome" ] && new_imghome="/tmp"
+# By default we put the new image in /tmp, since we need a filesystem can be symbolic linked. Otherwise it will fail, like CD (readonly) or samba server (FAT does not support symbolic link)
+if [ -z "$new_imghome" ]; then
+  new_imghome="/tmp"
+else
+  # Check if the assigned new_imghome supports software link
+  OCS_LN_TMP="$(mktemp $new_imghome/ocs_ln_tmp.XXXXXX)"
+  if ! ln -fs ${OCS_LN_TMP} ${OCS_LN_TMP}.ln &>/dev/null; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "File system for $new_imghome does not support software link!"
+    echo "You have to use a file system supporting software link for $new_imghome."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    my_ocs_exit 1
+  fi
+  [ -L "${OCS_LN_TMP}.ln" ] && rm -f ${OCS_LN_TMP}.ln
+  [ -e "$OCS_LN_TMP" ] && rm -f $OCS_LN_TMP
+fi
 # If the new image dir exists, only when the tag file converted-not-portable inside that we remove all the files. Otherwise it might happen to be the same dir name.
 if [ -d "$new_imghome/$new_imgname" -a -n "$new_imgname" -a \
      -e "$new_imghome/$new_imgname/converted-not-portable" ]; then
@@ -145,7 +163,7 @@ echo "Creating a temporary image based on image $imgname..."
 # Find the file to be linked, not be copied.
 
 # Part 1: normal partition (hda1, sda1...)
-PARTIMG_LIST_TMP="$(cat $ocsroot/$imgname/parts)"
+PARTIMG_LIST_TMP="$(get_parts_list_from_img $ocsroot/$imgname)"
 pt_found=""
 for i in $PARTIMG_LIST_TMP; do
   if [ -z "$(unalias ls 2>/dev/null; ls $ocsroot/$imgname/$(to_filename $i)* 2>/dev/null)" ]; then

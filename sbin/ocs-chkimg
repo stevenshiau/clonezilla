@@ -59,7 +59,7 @@ img_check_by_partclone() {
     echo "The file system can not be decided in function img_check_by_partclone!!!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!"
-    exit 1
+    my_ocs_exit 1
   fi
  
   if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img")" ]; then
@@ -277,17 +277,27 @@ task_checkimage() {
   local target_dir="$1"
   local target_parts="$2"
   local parts_included target_dir_fullpath
-  local p_type rc rct
+  local p_type rc rct part_is_lvm ecryptfs_rc
 
   if [ "$target_dir" = "ask_user" ]; then
-    get_target_dir_name_when_checking_img_restorable
+    get_target_dir_name_when_checking_img_restorable # output: target_dir
   fi
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "$msg_the_image_to_be_cheked: $target_dir"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
+  ecryptfs_rc="1"
+  if is_ecryptfs_img $ocsroot/$target_dir; then
+    # If it's encrypted image, we have to decrypt it.
+    ocs_sr_type="restore"
+    # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+    # The original ones will be kept as ocsroot_orig and target_dir_orig.
+    prepare_ecryptfs_mount_point_if_necessary 
+    ecryptfs_rc="$?"
+  fi
+
   #
-  source_parts_no="$(cat $ocsroot/$target_dir/parts | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+  source_parts_no="$(get_parts_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
 
   #
   if [ "$target_parts" = "ask_user" ]; then
@@ -301,7 +311,7 @@ task_checkimage() {
     # target name exists, but file "parts" is empty ?
     check_target_parts $ocsroot/$target_dir/parts "$target_parts"
   elif [ -z "$target_parts" ]; then
-    target_parts="$(LC_ALL=C cat $ocsroot/$target_dir/parts)"
+    target_parts="$(get_parts_list_from_img $ocsroot/$target_dir)"
   else
     echo "$msg_the_requested_partition_to_be_checked: $target_parts"
   fi
@@ -322,19 +332,21 @@ task_checkimage() {
   if [ -e "$ocsroot/$target_dir/disk" ]; then
     image_type="disk"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_a_disk_image_saved_from_hd: $(cat $ocsroot/$target_dir/disk)"
+    echo "$msg_a_disk_image_saved_from_hd: $(get_disk_list_from_img $ocsroot/$target_dir)"
     echo "$msg_the_part_image_to_be_cheked: $target_parts"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   elif [ -e "$ocsroot/$target_dir/parts" ]; then
     image_type="partition"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_a_part_image_saved_from_partitions: $(cat $ocsroot/$target_dir/parts)"
+    echo "$msg_a_part_image_saved_from_partitions: $(get_parts_list_from_img $ocsroot/$target_dir)"
     echo "$msg_the_part_image_to_be_cheked: $target_parts"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "$msg_broken_image_dir"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    my_ocs_exit 1
   fi
 
   # Use $target_dir_fullpath as the absolute path, i.e. put leading $ocsroot, since from now on we need the full path dir to access them.
@@ -403,7 +415,7 @@ task_checkimage() {
       echo "Unknown partition table format from the file $img_dir_fullpath/$(to_filename ${hdsk})-pt.parted!" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      exit 1
+      my_ocs_exit 1
       ;;
     esac
   done
@@ -460,7 +472,7 @@ task_checkimage() {
         echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-        exit 1
+        my_ocs_exit 1
         ;;
       esac
     done
@@ -495,20 +507,20 @@ task_checkimage() {
   for partition in $target_parts; do
     # hda1 -> hda
     hd_tmp="$(get_diskname $partition)"
+    part_is_lvm="no"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
     if [ -e $PV_PARSE_CONF ]; then
       for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
         if [ "$partition" = "$(get_master_dev_of_multipath $i)" ]; then
-          do_LVM_restore="yes"
-          continue
+          part_is_lvm="yes"
+          break
         fi
       done
-    elif check_LVM_partition /dev/$partition; then
-      do_LVM_restore="yes"
     fi
-    # If this partition contain LVM, not the partition, instead we will check LV later.
-    if [ "$do_LVM_restore" = "yes" ]; then
-      # exit the do loop, do LV check later.
+    # If part_is_lvm is yes, we should skip the rest...
+    if [ "$part_is_lvm" = "yes" ]; then
+      do_LVM_restore="yes"
+      # This continue is to skip the rest of this partition do loop
       continue
     fi
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -611,4 +623,4 @@ echo "=========================="
 tail -n +$log_line_start $OCS_LOGFILE
 echo "=========================="
 
-exit $rc
+my_ocs_exit $rc
