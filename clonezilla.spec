@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: Forgot to change the partition or LV permission after image is converted by ocs-cvtimg-comp.
+- Avoid using "rm -r" if possible in ocs-functions.
+- The created temp dirs in /tmp should be removed after ocs-restore-mdisks is run.
+- Bug fixed: ocs-img-2-vdk failed to run for encrypted image.
+
 * Mon Jan 05 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.6-drbl1
 - Bug fixed: ocs-restore-mdisks failed to run for encrypted image.
 

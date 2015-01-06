@@ -3601,7 +3601,10 @@ rm_target_image_if_exist() {
       fi
     else
       [ -f "$tgt_image" ] && rm -f $tgt_image
-      [ -d "$tgt_image" -a -n "$tgt_image" ] && rm -rf $tgt_image
+      if [ -d "$tgt_image" -a -n "$tgt_image" ]; then
+	rm -f $tgt_image/*
+	rmdir $tgt_image
+      fi
     fi
   fi
 } # end of rm_target_image_if_exist
@@ -10212,7 +10215,9 @@ ocs_log_rotate() {
   # clonezilla.log.1 -> clonezilla.log.2,...
   for i in `seq $last_digit -1 0`; do
     if [ -e ${file_}.${i} ]; then
-      mv -f ${file_}.${i} ${file_}.$((i+1))
+      # Suppress the error messages, especially it might occur when
+      # ocs-restore-mdisks is run. Parallel programs compete each other.
+      mv -f ${file_}.${i} ${file_}.$((i+1)) 2>/dev/null
     fi
   done
   # The last one, i.e. clonezilla.log -> clonezilla.log.0,
