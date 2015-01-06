@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: the description about choosing image name in ocs-img-2-vdk was wrong.
+
 * Tue Jan 06 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.7-drbl1
 - Bug fixed: Forgot to change the partition or LV permission after image is converted by ocs-cvtimg-comp.
 - Avoid using "rm -r" if possible in ocs-functions.
