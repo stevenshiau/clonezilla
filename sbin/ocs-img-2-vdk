@@ -182,7 +182,7 @@ WD="$(pwd)"
 if [ "$ocs_src_img_name" = "ask_user" ]; then
   get_target_dir_name_when_converting_img
   if [ -n "$target_dir" ]; then
-    ocs_src_img_name=$target_dir
+    ocs_src_img_name="$target_dir"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "The image to convert to virtual disk: $ocs_src_img_name"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -218,6 +218,25 @@ if [ "$mode" = "interactive" ]; then
 else
   if [ -z "$create_vmdk_format" ]; then
     create_vmdk_format="$create_vmdk_format_def"
+  fi
+fi
+
+#
+ecryptfs_rc="1"
+if is_ecryptfs_img $ocsroot/$ocs_src_img_name; then
+  # If it's encrypted image, we have to decrypt it.
+  ocs_sr_type="restore"
+  target_dir="$ocs_src_img_name"
+  # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+  # The original ones will be kept as ocsroot_orig and target_dir_orig.
+  prepare_ecryptfs_mount_point_if_necessary 
+  ecryptfs_rc="$?"
+  if [ "$ecryptfs_rc" -eq 0 ]; then
+    # Now new ocs_src_img_name is the one from prepare_ecryptfs_mount_point_if_necessary
+    ocs_src_img_name="$target_dir"
+  else
+    echo "$msg_program_stop"
+    my_ocs_exit 1
   fi
 fi
 
@@ -262,7 +281,8 @@ rsync -aqP $ocs_iso_mnt/. $ocs_wdir/
 # Patch boot parameters in isolinux.cfg, syslinux.cfg, and grub config in live CD/USB
 # //NOTE// ocs_kvm_cvt_begin and ocs_kvm_cvt_end are used to mark the append, so that
 # it won't be append more than once.
-append_param="ocs_kvm_cvt_begin noeject keyboard-layouts=NONE locales=en_US.UTF-8 ocs_prerun1=\"mount -t 9p -o trans=virtio,version=9p2000.L hostshare $ocsroot\" ocs_prerun2=\"sleep 2\" live-getty console=ttyS0,115200n81 ocs_kvm_cvt_end"
+# //NOTE// Here the virtio mounting point we use the fixed one /home/partimag, not $ocsroot. Otherwise if it's changed by prepare_ecryptfs_mount_point_if_necessary to /tmp, then some temp files after ocs_prerun1 won't be written. It will fail the converting.
+append_param="ocs_kvm_cvt_begin noeject keyboard-layouts=NONE locales=en_US.UTF-8 ocs_prerun1=\"mount -t 9p -o trans=virtio,version=9p2000.L hostshare /home/partimag/\" ocs_prerun2=\"sleep 2\" live-getty console=ttyS0,115200n81 ocs_kvm_cvt_end"
 cfg_list="isolinux syslinux"
 cfg_tmp="$(mktemp /tmp/syslinux_cfg.XXXXXX)"
 # mktemp will create file in mode 600 without honoring umask, we want mode 644
@@ -433,3 +453,4 @@ fi
 rm -f $kvm_pid_f $cfg_tmp
 
 echo "Program finished!"
+my_ocs_exit 0
