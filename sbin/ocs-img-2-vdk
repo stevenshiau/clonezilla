@@ -376,7 +376,7 @@ if [ -z "$src_dsk_n" ]; then
   echo "No disk name was found in image $ocs_src_img_name"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "$msg_program_stop!"
-  exit 1
+  my_ocs_exit 1
 fi
 src_disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $ocsroot/$ocs_src_img_name/$(to_filename ${src_dsk_n})-pt.parted | awk -F":" '{print $2}' | sed -r -e "s/s$//g" -e "s/^[[:space:]]*//g")"
 vmdk_size_GB="$(LC_ALL=C echo "scale=1; $src_disk_size_sec*512/1000.0^3" | bc -l)"
@@ -387,7 +387,7 @@ if [ -z "$vmdk_size_GB" ]; then
   echo "No disk size was found from image $ocs_src_img_name"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "$msg_program_stop!"
-  exit 1
+  my_ocs_exit 1
 fi
 
 # 
@@ -432,7 +432,7 @@ if [ "$kvm_job_rc" -ne 0 ]; then
   echo "$msg_failed_to_start_kvm_to_convert"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "$msg_program_stop!"
-  exit 1
+  my_ocs_exit 1
 else
   kvm_pid="$(cat $kvm_pid_f)"
   echo "KVM process pid: $kvm_pid"
@@ -451,6 +451,10 @@ fi
 
 # Clean the tmp files
 rm -f $kvm_pid_f $cfg_tmp
+# The downloaded clonezilla live file
+if [ -d "$ocslive_tmp" -a -n "$(echo "$ocslive_tmp" | grep "ocslive")" ]; then
+  rm -rf $ocslive_tmp
+fi
 
 echo "Program finished!"
 my_ocs_exit 0
