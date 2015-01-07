@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.7
+Version:	3.13.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.12.7, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.75, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.12.8, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.75, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,7 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jan 07 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.8-drbl1
 - Bug fixed: the description about choosing image name in ocs-img-2-vdk was wrong.
+- Adding encrypting, decrypting and p2v menus in ocs-sr.
+- Bug fixed: ocs-img-2-vdk did not remove the temp downloaded clonezilla live iso.
 
 * Tue Jan 06 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.7-drbl1
 - Bug fixed: Forgot to change the partition or LV permission after image is converted by ocs-cvtimg-comp.
@@ -50,7 +53,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 * Mon Jan 05 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.5-drbl1
 - Using functions get_disk_list_from_img and get_parts_list_from_img to deal with all the image info.
-- All the image related programs were improved to support encrypted image. They are create-ocs-tmp-img, ocs-chkimg, ocs-cvtimg-comp, ocs-img-2-vdk, ocs-restore-mdisks,
+- All the image related programs were improved to support encrypted image. They are create-ocs-tmp-img, ocs-chkimg, ocs-cvtimg-comp, ocs-img-2-vdk, ocs-restore-mdisks.
 - Bug fixed: the volume size unit is MB, while "M" (MiB) was used for split in ocs-cvtimg-comp.
 
 * Sat Jan 03 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.4-drbl1
