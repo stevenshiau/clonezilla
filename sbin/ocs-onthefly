@@ -94,11 +94,8 @@ check_pt_then_run_create_part_table() {
   # Turn off swap and LVM2, unlock the busy partitions.
   turn_off_swap_and_LVM2
 
-  # Clean the MBR and GPT partition table on the destination disk first
-  if type sgdisk &>/dev/null; then
-    echo "Trying to clean the MBR and GPT partition table on the destination disk first: /dev/$target_hd"
-    LC_ALL=C sgdisk --zap-all /dev/$target_hd &>/dev/null
-  fi
+  #
+  clean_mbr_gpt_part_table /dev/$target_hd
 
   # From the output file of parted, we can decide if the partition is gpt or mbr
   if `is_gpt_partitition_table_file $tgt_parted_info`; then
@@ -152,10 +149,7 @@ check_pt_then_run_create_part_table() {
     fi
 
     #
-    echo "Informing the OS that partition table has changed..."
-    partprobe /dev/$target_hd
-    sfdisk -R /dev/$target_hd
-    sleep 2
+    inform_kernel_partition_table_changed gpt /dev/$target_hd
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_the_partition_in_the_system_now:"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -195,10 +189,7 @@ check_pt_then_run_create_part_table() {
         RETVAL="$?"
         echo "This was done by \"sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp\""
         #
-        echo "Informing the OS that partition table has changed..."
-        partprobe /dev/$target_hd
-        sfdisk -R /dev/$target_hd
-        sleep 2
+	inform_kernel_partition_table_changed mbr /dev/$target_hd
         # Add another checking mechanism by parted, since sfdisk with -f won't return correct code.
         echo "Checking the integrity of partition table in the disk /dev/$target_hd... "
         dsk_chk_tmp="$(mktemp /tmp/ocs_dskchk_tmp.XXXXXX)"
