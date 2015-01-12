@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.8
+Version:	3.13.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.12.8, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.75, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.12.9, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.75, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 12 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.9-drbl1
+- Using functions inform_kernel_partition_table_changed and clean_mbr_gpt_part_table in ocs-onthefly and some functions in ocs-functions.
+- Bug fixed: pvcreate failed to create PV on a disk with existing partition table.
+- Program will quit if encrypted image is assigned for restoring in Clonezilla SE.
+- Only unencrypted image could be restored in Clonezilla SE.
+
 * Wed Jan 07 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.8-drbl1
 - Bug fixed: the description about choosing image name in ocs-img-2-vdk was wrong.
 - Adding encrypting, decrypting and p2v menus in ocs-sr.
