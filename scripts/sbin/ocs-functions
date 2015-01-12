@@ -360,7 +360,8 @@ is_mbr_partitition_table_disk() {
 #
 inform_kernel_partition_table_changed() {
   # Function to inform kernel the partition table has changed
-  local ptype=$1  # e.g. mbr, gpt
+  local ptype=$1  # e.g. mbr, gpt, or both. Actually mbr covers the gpt one,
+  		  # but with "both" it's clearer.
   local tdisk=$2  # e.g. /dev/sda
   if [ -z "$ptype" -o -z "$tdisk" ]; then
     echo "No ptype or tdisk parameter was assigned in function inform_kernel_partition_table_changed. Program terminated."
@@ -371,9 +372,9 @@ inform_kernel_partition_table_changed() {
   if ! is_whole_disk $tdisk; then
     return 3
   fi
-  echo -n "Informing kernel the file system has been changed..."
+  echo -n "Informing the OS of partition table changes..."
   case "$ptype" in
-  mbr)
+  mbr|both)
     # //NOTE// Put "sfdisk -R $tdisk" as the last action, since for BSD partitions, partprobe does not know, and if it is the last one, kernel info (/proc/partitions) won't show any partitions. "sleep 1" is also required, otherwise we might see the error message: "BLKRRPART: Device or resource busy"
     LC_ALL=C partprobe $tdisk
     echo -n "."
@@ -2852,6 +2853,39 @@ create_gpt_table_if_no_table() {
     LC_ALL=C parted -s $gpt_disk mklabel gpt | tee --append $OCS_LOGFILE
   fi
 } # end of create_gpt_table_if_no_table
+#
+clean_mbr_gpt_part_table() {
+  local dsk_dev="$1"  # Device name like /dev/sdc
+  # Clean the MBR and GPT partition table on the destination disk first
+  if [ -z "$dsk_dev" ]; then
+    echo "No dsk_dev was assigned in function clean_mbr_gpt_part_table!" | tee --append ${OCS_LOGFILE}
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    # Saving mode, always copy error log to image dir.
+    copy_error_log 
+    exit 1
+  fi
+  if [ ! -e "$dsk_dev" ]; then
+    echo "Disk \"$tdsk_dev\" not found on the system!" | tee --append ${OCS_LOGFILE}
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    # Saving mode, always copy error log to image dir.
+    copy_error_log 
+    exit 1
+  fi
+  if type sgdisk &>/dev/null; then
+    echo "Trying to clean the MBR and GPT partition table on the destination disk first: $dsk_dev" | tee --append ${OCS_LOGFILE}
+    LC_ALL=C sgdisk --zap-all $dsk_dev &>/dev/null
+    sleep 1
+    inform_kernel_partition_table_changed both $dsk_dev | tee --append ${OCS_LOGFILE}
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Missing program \"sgdisk\"! Without it, no way to clean the MBR and GPT partition table on disk \"$dsk_dev\"" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    # Saving mode, always copy error log to image dir.
+    copy_error_log 
+    exit 1
+  fi
+} # end of clean_mbr_gpt_part_table
 # create partition from file
 create_partition() {
   # tgt_hd_file: /dev/hda, /dev/hdb...
@@ -2889,14 +2923,7 @@ create_partition() {
     fi
   fi
 
-  # Clean the MBR and GPT partition table on the destination disk first
-  if type sgdisk &>/dev/null; then
-    echo "Trying to clean the MBR and GPT partition table on the destination disk first: $tgt_hd_file" | tee --append ${OCS_LOGFILE}
-    LC_ALL=C sgdisk --zap-all $tgt_hd_file &>/dev/null
-    sleep 1
-    echo "Informing kernel the partition table has changed..." | tee --append ${OCS_LOGFILE}
-    inform_kernel_partition_table_changed mbr $tgt_hd_file | tee --append ${OCS_LOGFILE}
-  fi
+  clean_mbr_gpt_part_table $tgt_hd_file
 
   # Decide if the partition is gpt or mbr
   pt_type="$(get_partition_table_type_from_img "$tgt_dir" "${tgt_hd_name}")"
@@ -3031,7 +3058,6 @@ create_partition() {
       echo "LV is still active, try to deactive it..."
       ocs-lvm2-stop
     fi
-    echo "Informing kernel the partition table has changed..."
     inform_kernel_partition_table_changed mbr $tgt_hd_file | tee --append ${OCS_LOGFILE}
     ;;
   gpt)
@@ -3103,7 +3129,6 @@ create_partition() {
       LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-2nd of=$tgt_hd_file seek=${to_seek} bs=512 count=33 2>&1 | tee -a $OCS_LOGFILE
     fi
 
-    echo "Informing kernel the partition table has changed..." | tee -a $OCS_LOGFILE
     inform_kernel_partition_table_changed gpt $tgt_hd_file | tee --append ${OCS_LOGFILE}
     sleep 1
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -5856,10 +5881,17 @@ restore_logv() {
   echo "Creating the PV... " | tee --append $OCS_LOGFILE
   while read vg dev uuid; do
     if [ "$vg" = "/NOT_FOUND" -o ! -e $target_dir_fullpath/lvm_$vg.conf ]; then
+      if is_whole_disk $dev; then
+        # Make sure there is no any partition on the disk. Otherwise even -ff is used, pvcreate will still quit it.
+        clean_mbr_gpt_part_table $dev
+      fi
       pvcreate -ff --yes --uuid $uuid --zero y $dev 3<&- 4<&-
     else
       cp -f $target_dir_fullpath/lvm_$vg.conf $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
-      #pvcreate -ff --yes --uuid $uuid $dev
+      if is_whole_disk $dev; then
+        # Make sure there is no any partition on the disk. Otherwise even -ff is used, pvcreate will still quit it.
+        clean_mbr_gpt_part_table $dev
+      fi
       pvcreate -ff --yes --uuid $uuid --zero y --restorefile $lvm_tmp/lvm_$vg.conf $dev 3<&- 4<&-
       rm -f $lvm_tmp/lvm_$vg.conf
     fi
@@ -9886,7 +9918,7 @@ get_diskname() {
 } # end of get_diskname
 #
 is_whole_disk() {
-  local dev_=${1#/dev/*}
+  local dev_=${1#/dev/*} # Input is like /dev/sda, so dev_ becomes sda
 
   test "$dev_" = "$(get_diskname $dev_)"
   return $?
