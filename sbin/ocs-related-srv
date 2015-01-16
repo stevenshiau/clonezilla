@@ -35,7 +35,8 @@ USAGE() {
 
 # Setting:
 # summarize the services, this will be used when ocs is stopped.
-non_rc1_service="portmap rpcbind nfslock netfs sshd kudzu harddrake ocs-run mountall.sh mountnfs.sh mountnfs.sh ssh discover hwscan arm-wol"
+# ocs-ssh is the ssh service we copy from the system and modify to what we want. We only use it in rc1.d. Therefore we do not want to affect that for all run levels.
+non_rc1_service="portmap rpcbind nfslock netfs sshd kudzu harddrake ocs-run mountall.sh mountnfs.sh mountnfs.sh ssh discover hwscan arm-wol ocs-ssh"
 
 # Parse command-line options
 while [ $# -gt 0 ]; do
@@ -94,14 +95,15 @@ if [ -e /etc/debian_version ]; then
   if [ -x $RCX_REL_INITD/ssh ]; then
     if grep -q check_for_upstart $RCX_REL_INITD/ssh; then
     # For Ubuntu >= 13.10, it will check if it's upstart mechanism. If it is, then ssh won't be started here. However, we want it to be started in rc1.d.
-    cp -a $RCX_REL_INITD/ssh S16ssh
-    line="$(LC_ALL=C grep -n -Ew "if init_is_upstart; then" S16ssh | awk -F":" '{print $1}')"
+    # We have to changed the name from ssh to different name. Otherwise if it's still ssh, /lib/lsb/init-functions.d/01-upstart-lsb will quit if there is a same name service in /etc/init/ (for upstart).
+    cp -a $RCX_REL_INITD/ssh S16ocs-ssh
+    line="$(LC_ALL=C grep -n -Ew "if init_is_upstart; then" S16ocs-ssh | awk -F":" '{print $1}')"
     if [ -n "$line" ]; then
       line_2_mod="$((line + 1))"
-      perl -pi -e "if ($((line_2_mod))..$((line_2_mod))) {s/^([[:space:]]*)exit.*/\$1true; #commented by DRBL/g}" S16ssh
+      perl -pi -e "if ($((line_2_mod))..$((line_2_mod))) {s/^([[:space:]]*)exit.*/\$1true; #commented by DRBL/g}" S16ocs-ssh
     fi
     else
-      ln -fs $RCX_REL_INITD/ssh S16ssh
+      ln -fs $RCX_REL_INITD/ssh S16ocs-ssh
     fi
   fi
   [ -x $RCX_REL_INITD/mountall.sh ] && ln -fs $RCX_REL_INITD/mountall.sh S17mountall.sh
