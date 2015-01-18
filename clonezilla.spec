@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- A different name "chromium_ext4" for the ext4 on ChromiumOS/ChromeOS's root fs will be given in ocs-get-part-info. This is due to it can not be saved correctly by Partclone due to some special features which are not compatible to Linux Extfs. We have to deal with dd.
+
 * Fri Jan 16 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.10-drbl1
 - Bug fixed: ssh service was not started in rc1.d in Ubuntu 14.10 when running Clonezilla job.
 

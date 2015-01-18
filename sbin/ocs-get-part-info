@@ -374,6 +374,30 @@ get_fs_from_blkid() {
 	;;
       esac
     fi
+    # For Ext, especially on ChromiumOS/ChromeOS, the root filesystem (/dev/sda3) is like:
+    # /dev/sda1: LABEL="STATE" UUID="0b2b024a-2226-44d6-b482-5304c0ba1ad3" TYPE="ext4" PARTLABEL="STATE" PARTUUID="aff6ee6c-1f3d-e640-ac20-662a4e4321ac"
+    # /dev/sda3: LABEL="ROOT-A" SEC_TYPE="ext2" TYPE="ext4" PARTLABEL="ROOT-A" PARTUUID="d84d1434-e366-994a-9b63-07230c2ba241"
+    # /dev/sda8: LABEL="OEM" UUID="9c727706-030f-4fc8-9860-9cd49f301c99" TYPE="ext4" PARTLABEL="OEM" PARTUUID="a2db8f6d-6171-f14a-8c9e-409655a1dfdf"
+    # /dev/sda12: SEC_TYPE="msdos" LABEL="EFI-SYSTEM" UUID="C9BF-10DC" TYPE="vfat" PARTLABEL="EFI-SYSTEM" PARTUUID="de94c6c7-2d57-9c44-8ecd-d1271d66afc2"
+    # /dev/sda2: PARTLABEL="KERN-A" PARTUUID="290e0120-49f1-5246-aff4-95790db5419e"
+    # /dev/sda4: PARTLABEL="KERN-B" PARTUUID="98361589-6471-6c46-8ebf-28225baec874"
+    # /dev/sda5: PARTLABEL="ROOT-B" PARTUUID="75f18b32-d4fe-4d43-be2c-f44edb73c463"
+    # /dev/sda11: PARTLABEL="RWFW" PARTUUID="d1d19fae-1141-554d-915b-e1534ef4333d"
+    # It implements some special features (not compatible with Linux Extfs) which could not be saved correctly by Partclone:
+    # fsck -n /dev/sda3
+    # fsck from util-linux 2.25.2
+    # e2fsck 1.42.12 (29-Aug-2014)
+    # /dev/sda3 has unsupported feature(s): FEATURE_R24 FEATURE_R25 FEATURE_R26 FEATURE_R27 FEATURE_R28 FEATURE_R29 FEATURE_R30 FEATURE_R31
+    # e2fsck: Get a newer version of e2fsck!
+    # ROOT-A: ********** WARNING: Filesystem still has errors **********
+    if [ -n "$(LC_ALl=C echo $TYPE | grep -iE "ext")" ]; then
+      if [ -n "$(LC_ALL=C blkid -c /dev/null $part_ | grep -iw 'LABEL="ROOT-A"' )" ]; then
+         # /dev/sda3: LABEL="ROOT-A" SEC_TYPE="ext2" TYPE="ext4" PARTLABEL="ROOT-A" PARTUUID="d84d1434-e366-994a-9b63-07230c2ba241"
+	 if [ -n "$(LC_ALL=C fsck -n $part_ 2>&1 | grep -iw "has unsupported feature(s): FEATURE_.*")" ]; then
+	   TYPE="chromium_ext4"
+	 fi
+      fi
+    fi
     echo "$TYPE"
     [ -f "$blkinfo" ] && rm -f $blkinfo
   fi
