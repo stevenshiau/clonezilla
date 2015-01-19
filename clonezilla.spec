@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Package xresprobe does not exist in Debian repository, so it's removed from the packages list in create-gparted-live.
+
 * Mon Jan 19 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.11-drbl1
 - A different name "chromium_ext4" for the ext4 on ChromiumOS/ChromeOS's root fs will be given in ocs-get-part-info. This is due to it can not be saved correctly by Partclone due to some special features which are not compatible to Linux Extfs. We have to deal with dd.
 
