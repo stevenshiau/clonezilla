@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Setting debian_mirror_url_def as http://http.debian.org/debian (redirector) in drbl-ocs.conf.
+
 * Fri Jan 23 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.13-drbl1
 - GParted Live boot picture was updated. Thanks to Curtis Gedak and his wife.
 - A file "dev-fs.list" containing device and file system list is added to Clonezilla image.
