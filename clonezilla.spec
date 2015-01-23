@@ -38,6 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 - GParted Live boot picture was updated. Thanks to Curtis Gedak and his wife.
+- A file "dev-fs.list" containing device and file system list is added to Clonezilla image.
 
 * Mon Jan 19 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.12-drbl1
 - Package xresprobe does not exist in Debian repository, so it's removed from the packages list in create-gparted-live.
