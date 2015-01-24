@@ -38,6 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 - Setting debian_mirror_url_def as http://http.debian.org/debian (redirector) in drbl-ocs.conf.
+- Swap info is also listed in dev-fs.list. More comments were added in the beginning of dev-fs.list.
 
 * Fri Jan 23 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.13-drbl1
 - GParted Live boot picture was updated. Thanks to Curtis Gedak and his wife.
