@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.13
+Version:	3.13.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.13.2, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.76, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.13.3, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.76, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,9 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jan 25 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.14-drbl1
 - Setting debian_mirror_url_def as http://http.debian.org/debian (redirector) in drbl-ocs.conf.
 - Swap info is also listed in dev-fs.list. More comments were added in the beginning of dev-fs.list.
 - Make sure that deprecated program create-cciss-mapping is removed.
+- Programs create-debian-live, create-ubuntu-live, create-drbl-live and create-gparted-live now should work for both live-build v3 and v4.
 
 * Fri Jan 23 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.13-drbl1
 - GParted Live boot picture was updated. Thanks to Curtis Gedak and his wife.
