@@ -890,7 +890,8 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   (
   cd debian-live
   $pref lb config --archive-areas "$categories"
-  $pref lb config --parent-mirror-bootstrap $mirror_url --parent-mirror-binary $mirror_url --parent-mirror-binary-updates $mirror_url --parent-mirror-chroot $mirror_url --parent-mirror-chroot-updates $mirror_url --parent-mirror-chroot-security $mirror_security_url --parent-mirror-binary-security $mirror_security_url --parent-mirror-debian-installer $mirror_url
+  # It's important to make the url for --parent-mirror-binary is different from that of --parent-mirror-chroot so that in /usr/lib/live/build/chroot_archives the "lb config --cache-packages false", "lb config --apt-indices false" and lb config --apt-source-archives false" can work and those /var/cache/apt/{pkgcache.bin,srcpkgcache.bin} and those /var/lib/apt/lists/{*_Packages,*Release*,*_Sources} won't be cached.
+  $pref lb config --parent-mirror-bootstrap $mirror_url --parent-mirror-binary $debian_mirror_url_def --parent-mirror-chroot $mirror_url --parent-mirror-chroot-security $mirror_security_url --parent-mirror-binary-security $debian_mirror_security_url_def --parent-mirror-debian-installer $debian_mirror_url_def
   # Since we use Debian Sid normally, disable updates.
   $pref lb config --updates false
   $pref lb config --mirror-debian-installer $mirror_url
@@ -915,7 +916,9 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   # Enable cache-indices, by doing this, "apt-get upgrade" won't be run in lb chroot_sources after hook since we might assign older package version when building.
   # This is important especially when there is newer live-boot in Sid. E.g. on 2014/Apr/1 live-boot 4.0 alpha is aviailable, but we still want to keep using 3.0.1-1.drbl4. If --cache-indices is set true, live-boot is upgraded, and 4.0 is installed on the system after filesystem.squashfs is created. Then the initrd.img is re-created again, with live-boot 4.x in initrd.img. It will be inconsistent with what we want.
   $pref lb config --cache-indices true
-  #$pref lb config --apt-indices none
+  $pref lb config --cache-packages false
+  $pref lb config --apt-indices false
+  $pref lb config --apt-source-archives false
   $pref lb config --tasksel none
 
   if [ "$debian_dist" = "lenny" ]; then
@@ -994,12 +997,25 @@ AddDRBLRepository
   # Build it.
   $pref lb build
   )
-  mv -f debian-live/binary*.iso $stage1_target_iso
-  if [ "$gen_source_tarball" = "yes" ]; then
-    mv -f debian-live/source.debian.tar.gz $target_src_tarball
-    mv -f debian-live/source.debian.contents $target_src_tarball_list
-    mv -f debian-live/source.debian-live.tar.gz $target_src_debian_live_tarball
-    mv -f debian-live/source.debian-live.contents $target_src_debian_live_tarball_list
+  lb_ver="$(LC_ALL=C lb --version)"  # e.g. 3.0.5-1
+  if [ "$lb_ver" \> 3 ] && [ "$lb_ver" \< 4 ]; then
+    # Live build version 3 
+    mv -f debian-live/binary*.iso $stage1_target_iso
+    if [ "$gen_source_tarball" = "yes" ]; then
+      mv -f debian-live/source.debian.tar.gz $target_src_tarball
+      mv -f debian-live/source.debian.contents $target_src_tarball_list
+      mv -f debian-live/source.debian-live.tar.gz $target_src_debian_live_tarball
+      mv -f debian-live/source.debian-live.contents $target_src_debian_live_tarball_list
+    fi
+  else
+    # Live build version 4
+    mv -f debian-live/live-image*.iso $stage1_target_iso
+    if [ "$gen_source_tarball" = "yes" ]; then
+      mv -f debian-live/live-image-source.debian.contents $target_src_tarball_list
+      mv -f debian-live/live-image-source.debian.tar.gz $target_src_tarball
+      mv -f debian-live/live-image-source.live.contents $target_src_debian_live_tarball_list
+      mv -f debian-live/live-image-source.live.tar.gz $target_src_debian_live_tarball
+    fi
   fi
 else
   echo "Use existing temp iso file: $stage1_target_iso"
