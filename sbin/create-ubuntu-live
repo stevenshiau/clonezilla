@@ -74,7 +74,10 @@ build_it(){
   
   $pref lb config --archive-areas "$categories"
   $pref lb config --parent-archive-areas "$categories"
-  $pref lb config --parent-mirror-bootstrap $mirror_url --parent-mirror-binary $mirror_url --parent-mirror-binary-updates $mirror_url --parent-mirror-chroot $mirror_url --parent-mirror-chroot-updates $mirror_url --parent-mirror-chroot-security $mirror_security_url --parent-mirror-binary-security $mirror_security_url --parent-mirror-debian-installer $mirror_url
+  # It's important to make the url for --parent-mirror-binary is different from that of --parent-mirror-chroot so that in /usr/lib/live/build/chroot_archives the "lb config --cache-packages false", "lb config --apt-indices false" and lb config --apt-source-archives false" can work and those /var/cache/apt/{pkgcache.bin,srcpkgcache.bin} and those /var/lib/apt/lists/{*_Packages,*Release*,*_Sources} won't be cached.
+  $pref lb config --parent-mirror-bootstrap $mirror_url --parent-mirror-binary $ubuntu_mirror_url_def --parent-mirror-chroot $mirror_url --parent-mirror-chroot-security $mirror_security_url --parent-mirror-binary-security $ubuntu_mirror_security_url_def --parent-mirror-debian-installer $ubuntu_mirror_url_def
+  # Here we could not turn on --updates because if it's on, and there is no way to assign binary updates source list (because "--parent-mirror-binary-updates" was removed in live-build v4.x ref: https://lists.debian.org/debian-live/2015/01/msg00204.html). It will use the same repository with that of --parent-mirror-binary, which will be as "http://ftp.debian.org/debian/" (from /usr/share/live/build/functions/defaults.sh) because we force LB_MODE as "debian" even this is for Ubuntu. We will later put binary updates in config/archives/*list* like that for security updates.
+  $pref lb config --updates false
   $pref lb config --mirror-debian-installer $mirror_url
   $pref lb config --mirror-binary $mirror_url --mirror-binary-security $mirror_security_url 
   $pref lb config --mirror-bootstrap $mirror_url
@@ -165,6 +168,9 @@ build_it(){
   # Enable cache-indices, by doing this, "apt-get upgrade" won't be run in lb chroot_sources after hook since we might assign older package version when building.
   # This is important especially when there is newer live-boot in Sid. E.g. on 2014/Apr/1 live-boot 4.0 alpha is aviailable, but we still want to keep using 3.0.1-1.drbl4. If --cache-indices is set true, live-boot is upgraded, and 4.0 is installed on the system after filesystem.squashfs is created. Then the initrd.img is re-created again, with live-boot 4.x in initrd.img. It will be inconsistent with what we want.
   $pref lb config --cache-indices true
+  $pref lb config --cache-packages false
+  $pref lb config --apt-indices false
+  $pref lb config --apt-source-archives false
   
   # Disable the firmware included automatically. It will be too large. We will do that in hook.
   $pref lb config --firmware-binary false --firmware-chroot false
@@ -219,8 +225,11 @@ HOOK_APPEND_END
   # Put hook file to be run in the binary_local-hooks
   cp $ocs_live_script_dir/$run_binary_hook_script config/hooks/${run_binary_hook_script}.binary
   
-  # prepare ubuntu security source list and drbl source list
+  # prepare ubuntu updates and security source list and drbl source list
+  # The reason we want to add updates source list here is because "--parent-mirror-binary-updates" was removed in live-build v4. Ref: https://lists.debian.org/debian-live/2015/01/msg00204.html
   cat << AddDRBLRepository > config/archives/ubuntu-drbl-repository.list.chroot
+deb $mirror_security_url ${debian_dist}-updates $categories
+deb-src $mirror_security_url ${debian_dist}-updates $categories
 deb $mirror_security_url ${debian_dist}-security $categories
 deb-src $mirror_security_url ${debian_dist}-security $categories
 deb $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
@@ -474,10 +483,23 @@ fi
 # Use sub shell to keep the working dir
 (build_it)
 
-mv -f $workdir/binary*.iso $target_iso
-if [ "$gen_source_tarball" = "yes" ]; then
-  mv -f $workdir/source.debian.tar.gz $target_src_tarball
-  mv -f $workdir/source.debian.contents $target_src_tarball_list
-  mv -f $workdir/source.debian-live.tar.gz $target_src_debian_live_tarball
-  mv -f $workdir/source.debian-live.contents $target_src_debian_live_tarball_list
+lb_ver="$(LC_ALL=C lb --version)"  # e.g. 3.0.5-1
+if [ "$lb_ver" \> 3 ] && [ "$lb_ver" \< 4 ]; then
+  # Live build version 3 
+  mv -f $workdir/binary*.iso $target_iso
+  if [ "$gen_source_tarball" = "yes" ]; then
+    mv -f $workdir/source.debian.tar.gz $target_src_tarball
+    mv -f $workdir/source.debian.contents $target_src_tarball_list
+    mv -f $workdir/source.debian-live.tar.gz $target_src_debian_live_tarball
+    mv -f $workdir/source.debian-live.contents $target_src_debian_live_tarball_list
+  fi
+else
+  # Live build version 4
+  mv -f $workdir/live-image*.iso $target_iso
+  if [ "$gen_source_tarball" = "yes" ]; then
+    mv -f $workdir/live-image-source.debian.contents $target_src_tarball_list
+    mv -f $workdir/live-image-source.debian.tar.gz $target_src_tarball
+    mv -f $workdir/live-image-source.live.contents $target_src_debian_live_tarball_list
+    mv -f $workdir/live-image-source.live.tar.gz $target_src_debian_live_tarball
+  fi
 fi
