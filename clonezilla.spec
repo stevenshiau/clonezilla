@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.16
+Version:	3.13.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jan 27 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.17-drbl1
+- Bug fixed: Gsplash.png should be interlaced otherwise it can not be shown in grub2.
+
 * Tue Jan 27 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.16-drbl1
 - Bug fixed: accidentally disabled --apt-source-archives in create-*-live.
 
