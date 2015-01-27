@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.14
+Version:	3.13.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jan 27 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.15-drbl1
+- Bug fixed: S03prep-drbl-clonezilla failed to enable PasswordAuthentication.
+- Bug fixed: Debian repository redirector should be http.debian.net/debian instead of http.debian.org/debian.
+
 * Sun Jan 25 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.14-drbl1
 - Setting debian_mirror_url_def as http://http.debian.org/debian (redirector) in drbl-ocs.conf.
 - Swap info is also listed in dev-fs.list. More comments were added in the beginning of dev-fs.list.
