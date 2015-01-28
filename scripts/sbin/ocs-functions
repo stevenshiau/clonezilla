@@ -10866,3 +10866,59 @@ get_img_created_time() {
   echo "$img_tm"
   return 0
 } # end of get_img_created_time
+#
+is_drbl_clonezilla_live_env() {
+  # Function to check if it's in DRBL/Clonezilla live env (not in the installed system)
+  local rc
+  # We check: (1) /etc/ocs/ocs-live.d/ (2) /proc/cmdline contains username=
+  if [ -d /etc/ocs/ocs-live.d/ ] && [ -n "$(grep -E "username=" /proc/cmdline)" ]; then
+    rc=0
+  else
+    rc=1
+  fi
+  return $rc
+} # end of is_drbl_clonezilla_live_env
+#
+is_davfs_ocsroot() {
+  # Function to check if the image repository is davfs
+  local rc mnt_pnts im check_flag
+  # root@vivid:/tmp# df
+  # Filesystem                          1K-blocks      Used Available Use% Mounted on
+  # overlayfs                             1033564      8056   1025508   1% /
+  # udev                                  1023868         4   1023864   1% /dev
+  # tmpfs                                  206716       552    206164   1% /run
+  # /dev/sr0                               168644    168644         0 100% /lib/live/mount/medium
+  # /dev/loop0                             132096    132096         0 100% /lib/live/mount/rootfs/filesystem.squashfs
+  # tmpfs                                 1033564         0   1033564   0% /lib/live/mount/overlay
+  # none                                        4         0         4   0% /sys/fs/cgroup
+  # tmpfs                                 1033564       644   1032920   1% /tmp
+  # none                                     5120         0      5120   0% /run/lock
+  # none                                  1033564         0   1033564   0% /run/shm
+  # none                                   102400         0    102400   0% /run/user
+  # http://192.168.120.254:8080/share/ 1333333332 800000000 533333332  61% /home/partimag
+  # http://192.168.120.254:8080/share/ 1333333332 800000000 533333332  61% /mnt
+  # root@vivid:/tmp# mount -l -t davfs
+  # http://192.168.120.254:8080/share/ on /home/partimag type davfs (rw,nosuid,noexec,nodev,_netdev,uid=0,gid=0)
+  # http://192.168.120.254:8080/share/ on /mnt type davfs (rw,nosuid,nodev,_netdev,uid=0,gid=0)
+  # root@vivid:/tmp# mount -l -t davfs | awk -F" " '{print $3}'
+  # /home/partimag
+  # /mnt
+  
+  # //NOTE// Maybe there are 2 or more davfs.
+  mnt_pnts="$(LC_ALL=C mount -l -t davfs 2>/dev/null | awk -F" " '{print $3}')"
+  rc="1"
+  check_flag="false"
+  for im in $mnt_pnts; do
+    # Use dirname and basename to avoid something like "/home//partimag/" != "/home/partimag".
+    if [ "$(dirname $ocsroot)/$(basename $ocsroot)" = "$(dirname $im)/$(basename $im)" ]; then
+      check_flag="true"
+      break
+    fi
+  done
+  if [ "$check_flag" = "true" ]; then
+    rc=0
+  else
+    rc=1
+  fi
+  return $rc
+} # end of is_davfs_ocsroot
