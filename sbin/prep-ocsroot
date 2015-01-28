@@ -847,12 +847,10 @@ do_mount_ftp_server(){
    LC_ALL=C curlftpfs -o direct_io,kernel_cache,nonempty,user=$ftp_account ftp://$ftp_srv/$ftpfs_dir $ocsroot 
    [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
 } # end of do_mount_ftp_server
-
+#
 do_mount_webdav_server(){
-   # ///NOTE/// This function will NOT work since davfs2 is not suitable for larger file transfer. The cache mechanism is the key problem (ref: https://sourceforge.net/forum/forum.php?thread_id=2248597&forum_id=82589).
-   # Here we keep this to avoid writting it again in the future.
-   # Use davfs2 to mount webdav server
-   local TMP srv_default url_default davfs_url
+   # ///NOTE/// Although davfs2 is not suitable for larger file transfer. The cache mechanism is the key problem (ref: https://sourceforge.net/forum/forum.php?thread_id=2248597&forum_id=82589), yet we have use some workaround to make it work. The key is in ocs-tune-conf-for-wevdav.
+   local TMP srv_default url_default davfs_url ask_
    local default_dav_path_prompt="webdav"
 
    network_config_if_necessary
@@ -864,18 +862,36 @@ do_mount_webdav_server(){
    # (1) davfs server url 
    srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
    url_default="http://$srv_default/$default_dav_path_prompt"
-   while [ -z "$davfs_url" ]; do
+   ask_="true"
+   while [ "$ask_" = "true" ]; do
      $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
-     "Mount WebDAV fs" --inputbox "msg_url_of_davfs_server:" \
+     "Mount WebDAV fs" --inputbox "$msg_url_of_davfs_server" \
      0 0 $url_default $DIA_ESC \
      2> $TMP
      davfs_url="$(cat $TMP)"
+     if [ -z "$davfs_url" ]; then
+       $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+       --yesno "$msg_you_must_input_the_path_to_image\n$msg_do_u_want_to_do_it_again" 0 0
+       ans_="$?"
+       case "$ans_" in
+         0) # yes is chosen
+            ask_="true";;
+         1) # no is chosen
+            echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+            [ -f "$TMP" ] && rm -f $TMP
+            exit 1;;
+       esac
+     else
+       # Got the one we want
+       ask_="false"
+     fi
    done
    echo "WebDAV URL is: $davfs_url"
    # clean tmp file
    echo "" > $TMP
    $DIA --backtitle "$msg_nchc_free_software_labs" --title "Mount WebDAV server" \
-   --msgbox "msg_now_you_might_have_to_enter_username_passwd $davfs_url" 0 0 
+   --msgbox "$msg_now_you_have_to_enter_passwd: $davfs_url" 0 0 
+   ocs-tune-conf-for-wevdav
    echo "Mounting davfs by:"
    echo "mount -t davfs -o noexec $davfs_url $ocsroot ..." 
    LC_ALL=C mount -t davfs -o noexec $davfs_url $ocsroot
@@ -932,8 +948,16 @@ find_ocsroot_dev_description(){
   [ -z "$livemedia_des" ] && livemedia_des="$msg_unknown"
 } # end of find_ocsroot_dev_description
 #
+webdav_ocsroot_dia_des() {
+  webdav_ocsroot_msg_1="webdav_server"
+  webdav_ocsroot_msg_2="$(rep_whspc_w_udrsc "$msg_mount_webdav_server")"
+}
+#
 get_ocsroot_resource() {
   find_ocsroot_dev_description
+  if is_drbl_clonezilla_live_env; then
+    webdav_ocsroot_dia_des
+  fi
   local TMP
   #
   if [ -z "$ocsroot_src" ]; then
@@ -946,6 +970,7 @@ get_ocsroot_resource() {
     "ssh_server"   "$msg_mount_sshfs" \
     "samba_server" "$msg_mount_smbfs" \
     "nfs_server"   "$msg_mount_nfs" \
+    $webdav_ocsroot_msg_1 $webdav_ocsroot_msg_2 \
     "enter_shell"  "$msg_enter_cml. $msg_do_it_manually" \
     "skip"         "$msg_skip_this_use_existing_ocsroot ($livemedia_des)" \
     2> $TMP
@@ -953,8 +978,6 @@ get_ocsroot_resource() {
     #"ftp_server"   "$msg_mount_ftpfs ($msg_experimental, $msg_not_stable)" \
     # Since iSCSI is not ready yet. comment this:
     #"iscsi_server" "msg_mount_iscsi_server" \
-    # Since davfs is not ready yet. comment this:
-    #"webdav_server" "msg_mount_webdav_server" \
     ocsroot_src="$(cat $TMP)"
     echo "ocsroot device is $ocsroot_src"
     [ -f "$TMP" ] && rm -f $TMP
@@ -1018,15 +1041,13 @@ fi
 
 #
 case "$ocsroot_src" in
-  local_dev)    do_mount_local_dev;;
-  iscsi_server) do_mount_iscsi_server;;
-  ssh_server)   do_mount_ssh_server;;
-  samba_server) do_mount_samba_server;;
-  nfs_server)   do_mount_nfs_server;;
-  ftp_server)   do_mount_ftp_server;;
-  webdav_server)
-      # ///NOTE/// webdav_server will NOT work since davfs2 is not suitable for larger file transfer. The cache mechanism is the key problem (ref: https://sourceforge.net/forum/forum.php?thread_id=2248597&forum_id=82589).
-      do_mount_webdav_server;;
+  local_dev)     do_mount_local_dev;;
+  iscsi_server)  do_mount_iscsi_server;;
+  ssh_server)    do_mount_ssh_server;;
+  samba_server)  do_mount_samba_server;;
+  nfs_server)    do_mount_nfs_server;;
+  ftp_server)    do_mount_ftp_server;;
+  webdav_server) do_mount_webdav_server;;
   enter_shell) 
       echo $msg_enter_another_shell_hint_with_netcfg_prompt
       echo -n "$msg_press_enter_to_continue..."
