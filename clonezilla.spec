@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.18
+Version:	3.13.19
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jan 29 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.19-drbl1
+- Bug fixed: Forgot to put the default values for davfs2 in drbl-ocs.conf.
+
 * Thu Jan 29 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.18-drbl1
 - With the workaround proposed by Thomas Tsai, now the image repository could be on WebDAV server.
 
