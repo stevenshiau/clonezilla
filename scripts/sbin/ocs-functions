@@ -9230,26 +9230,28 @@ get_fb_term(){
    exit 1
   fi
 } # end of get_fb_term
+ocs_fail_mountpoint() {
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Clonezilla image home directory $ocsroot is not a mounting point! Failed to mount other device as $ocsroot!" | tee --append ${OCS_MOUNT_LOG}
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  rc=1
+  confirm_continue_or_not_default_quit
+} # end of ocs_fail_mountpoint
+#
+ocs_success_mountpoint() {
+  echo "$msg_df_report" | tee --append ${OCS_MOUNT_LOG}
+  echo $msg_delimiter_star_line | tee --append ${OCS_MOUNT_LOG}
+  df -ah 2>&1 | tee --append ${OCS_MOUNT_LOG}
+  echo $msg_delimiter_star_line  | tee --append ${OCS_MOUNT_LOG}
+  echo -n "$msg_press_enter_to_continue..."
+  read
+  rc=0
+} # end of ocs_success_mountpoint
+#
 check_if_ocsroot_a_mountpoint() {
   local mntpnt_continue
   local rc
   ocs_log_rotate ${OCS_MOUNT_LOG}
-  fail_mountpoint() {
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Clonezilla image home directory $ocsroot is not a mounting point! Failed to mount other device as $ocsroot!" | tee --append ${OCS_MOUNT_LOG}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    rc=1
-    confirm_continue_or_not_default_quit
-  }
-  success_mountpoint() {
-    echo "$msg_df_report" | tee --append ${OCS_MOUNT_LOG}
-    echo $msg_delimiter_star_line | tee --append ${OCS_MOUNT_LOG}
-    df -ah 2>&1 | tee --append ${OCS_MOUNT_LOG}
-    echo $msg_delimiter_star_line  | tee --append ${OCS_MOUNT_LOG}
-    echo -n "$msg_press_enter_to_continue..."
-    read
-    rc=0
-  }
   # check if $ocsroot is a mounting point
   if ! mountpoint $ocsroot &>/dev/null; then
     # A workaround to avoid false alarm for cifs.
@@ -9257,15 +9259,15 @@ check_if_ocsroot_a_mountpoint() {
     if [ -n "$(LC_ALL=C mount | grep -Ew "$ocsroot" | grep -i cifs)" ]; then
       # For cifs, we check in another method
       if [ -n "$(LC_ALL=C mount |grep -Ew "$ocsroot")" ]; then
-        success_mountpoint
+        ocs_success_mountpoint
       else
-        fail_mountpoint
+        ocs_fail_mountpoint
       fi
     else
-      fail_mountpoint
+      ocs_fail_mountpoint
     fi
   else
-    success_mountpoint
+    ocs_success_mountpoint
   fi
   return $r
 } # end of check_if_ocsroot_a_mountpoint
