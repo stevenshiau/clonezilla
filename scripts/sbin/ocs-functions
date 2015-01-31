@@ -10905,9 +10905,15 @@ is_davfs_ocsroot() {
   # root@vivid:/tmp# mount -l -t davfs | awk -F" " '{print $3}'
   # /home/partimag
   # /mnt
-  
   # //NOTE// Maybe there are 2 or more davfs.
+  # "mount -l -t davfs" only works for Ubuntu. On Debian system, it's marked as fuse:
+  # mount | grep davfs
+  # http://192.168.120.254:8080/share/ on /home/partimag type fuse (rw,nosuid,nodev,noexec,relatime,user_id=0,group_id=0,allow_other,max_read=10481664,uid=0,gid=0,helper=davfs)
   mnt_pnts="$(LC_ALL=C mount -l -t davfs 2>/dev/null | awk -F" " '{print $3}')"
+  if [ -z "$mnt_pnts" ]; then
+    # Try again, use different method (for Debian case)	  
+    mnt_pnts="$(LC_ALL=C mount -l | grep -E "helper=davfs" | awk -F" " '{print $3}')"
+  fi
   rc="1"
   check_flag="false"
   for im in $mnt_pnts; do
