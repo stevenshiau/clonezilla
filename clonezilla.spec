@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.22
+Version:	3.13.23
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jan 31 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.23-drbl1
+- File name typo fixed: ocs-tune-conf-for-wevdav -> ocs-tune-conf-for-webdav.
+
 * Sat Jan 31 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.22-drbl1
 - Bug fixed: function is_davfs_ocsroot failed to check davfs ocsroot on Debian.
 
