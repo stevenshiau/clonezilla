@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.20
+Version:	3.13.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jan 31 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.21-drbl1
+- Improved the mechanism to check if webdav server is mounted or not.
+
 * Fri Jan 30 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.20-drbl1
 - Failed to accept webdav_server as a correct type in prep-ocsroot.
 - A better mechanism was added to check if webdav server is mounted or not.
