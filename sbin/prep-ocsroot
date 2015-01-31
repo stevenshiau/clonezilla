@@ -852,7 +852,7 @@ do_mount_webdav_server(){
    # ///NOTE/// Although davfs2 is not suitable for larger file transfer. The cache mechanism is the key problem (ref: https://sourceforge.net/forum/forum.php?thread_id=2248597&forum_id=82589), yet we have use some workaround to make it work. The key is in ocs-tune-conf-for-wevdav.
    local TMP srv_default url_default davfs_url ask_
    local default_dav_path_prompt="webdav"
-   local webdav_tmp
+   local rc webdav_tmp
 
    network_config_if_necessary
    prepare_mnt_point_ocsroot
@@ -896,6 +896,7 @@ do_mount_webdav_server(){
    echo "Mounting davfs by:"
    echo "mount -t davfs -o noexec $davfs_url $ocsroot ..." 
    LC_ALL=C mount -t davfs -o noexec $davfs_url $ocsroot
+   rc=$?
    # For webdev_server we do not use check_if_ocsroot_a_mountpoint function because the mounting status might be weird:
    # //NOTE// Even check_if_ocsroot_a_mountpoint passes, it still might be false:
    # root@vivid:~# mount -t davfs -o noexec http://192.168.120.254/webdav /home/partimag
@@ -911,24 +912,29 @@ do_mount_webdav_server(){
    # mounting anyway
    # root@vivid:~# echo $?
    # 0
-   # Therefore we have to use touch to test it.
-   # However, if it's read-only service, what to do?
-   if [ "$chk_ocsroot_mountpont" = "yes" ]; then
-     webdav_tmp="$(mktemp $ocsroot/webdav_tmp.XXXXXX 2>/dev/null)"
-     if [ ! -e "$webdav_tmp" ]; then
-       # Failed. i.e read-only. We have to check if any clonezilla image exists. If it is, this is still OK because it's the case for restoring.
-       if check_if_any_image_exists; then
-         # OK for restoring even it's read-only
-         true
+   # Therefore we have to use mktemp to test it.
+   if [ "$rc" -eq 0 ]; then
+     if [ "$chk_ocsroot_mountpont" = "yes" ]; then
+       webdav_tmp="$(mktemp $ocsroot/webdav_tmp.XXXXXX 2>/dev/null)"
+       if [ ! -e "$webdav_tmp" ]; then
+         # Failed. i.e read-only. We have to check if any clonezilla image exists. If it is, this is still OK because it can be used for restoring.
+         if check_if_any_image_exists; then
+           # OK for restoring even it's read-only
+           true
+         else
+           # No image exists, and read-only. Then this is false mounting point for webdav server.
+           umount $ocsroot 2>/dev/null
+           ocs_fail_mountpoint
+         fi
        else
-         # No image exists, and read-only. Then this is false mounting point for webdav server.
-         umount $ocsroot 2>/dev/null
-         ocs_fail_mountpoint
+         # Writable, OK for saving and restoring.
+         rm -f $webdav_tmp
+	 ocs_success_mountpoint
        fi
-     else
-       # Writable, OK for saving and restoring.
-       rm -f $webdav_tmp
      fi
+   else
+     umount $ocsroot 2>/dev/null
+     ocs_fail_mountpoint
    fi
 } # end of do_mount_webdav_server
 #
