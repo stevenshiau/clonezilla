@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.23
+Version:	3.13.24
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Feb 02 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.24-drbl1
+- Bug fixed: S03prep-drbl-clonezilla failed to enable sshd password auth for live-build v4 environment..
+- create-*-live: Force to add "lb config --initsystem sysvinit".
+
 * Sat Jan 31 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.23-drbl1
 - File name typo fixed: ocs-tune-conf-for-wevdav -> ocs-tune-conf-for-webdav.
 
