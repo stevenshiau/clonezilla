@@ -68,7 +68,7 @@ img_check_by_partclone() {
       # New format with image split, e.g. sda1.ext4-ptcl-img.gz.aa
       get_image_cat_zip_cmd ${file_basename}
       # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
-      img_file_prefix="$(echo ${file_basename} | sed -e "s/\.aa$//").*"
+      img_file_prefix="$(echo ${file_basename} | sed -r -e "s/\.aa*$//").*"
     else
       # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
       get_image_cat_zip_cmd ${file_basename}
@@ -77,6 +77,7 @@ img_check_by_partclone() {
     fi
   else
     # Old format
+    # The split suffix length for old format is only 2, so we do not have to consider >=3 (*.aaa or more).
     if [ -f "$target_d/$img_file.${fs_}-img.aa" ]; then
       # Old format with image split
       get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img.aa
@@ -110,7 +111,7 @@ do_partition_or_lv_img_check() {
   # get the cat program: cat, zcat or bzcat
 
   if [ -f "$target_d/$img_file.000" -o \
-       -f "$target_d/$img_file.aa" -o \
+       -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" -o \
        -f "$target_d/$img_file" ]; then
     # The saved image is from partimage
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -122,7 +123,8 @@ do_partition_or_lv_img_check() {
       echo -n "$msg_press_enter_to_continue..."
       read
     fi
-  elif [ -f "$target_d/$img_file.ntfs-img" -o -f "$target_d/$img_file.ntfs-img.aa" ]; then
+  elif [ -f "$target_d/$img_file.ntfs-img" -o \
+	 -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
     # The saved image is from ntfsclone
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "This partition image was saved by ntfsclone." | tee --append ${OCS_LOGFILE}
@@ -148,7 +150,8 @@ do_partition_or_lv_img_check() {
       echo "$msg_this_part_in_the_img_is_ok: $img_file" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
     fi
-  elif [ -f "$target_d/$img_file.dd-img" -o -f "$target_d/$img_file.dd-img.aa" ]; then
+  elif [ -f "$target_d/$img_file.dd-img" -o \
+	 -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
     if [ "$dd_checking_method" = "no-check" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "Image was saved by dd. No need to check the file system integrity: $img_file" | tee --append ${OCS_LOGFILE}
