@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.24
+Version:	3.13.25
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 03 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.25-drbl1
+- A parameter "split_suf_len" was added in drbl-ocs.conf so that it can be used to specify the suffix length when spliting an image.
+- The suffix length of each image chunk now could be >=2.
+- For webdav image repository, the suffix length of split command was changed to 3 so it could have enough chunks for large file (~2.8 TB).
+
 * Mon Feb 02 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.24-drbl1
 - Bug fixed: S03prep-drbl-clonezilla failed to enable sshd password auth for live-build v4 environment..
 - create-*-live: Force to add "lb config --initsystem sysvinit".
