@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.25
+Version:	3.13.26
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Feb 08 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.26-drbl1
+- Make sure ocs/ocs-live.d/S00ocs-start work for upstart both in live-config v3 and v4.
+
 * Tue Feb 03 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.25-drbl1
 - A parameter "split_suf_len" was added in drbl-ocs.conf so that it can be used to specify the suffix length when spliting an image.
 - The suffix length of each image chunk now could be >=2.
