@@ -180,7 +180,7 @@ img_covert_to_diff_compression() {
       # New format with image split, e.g. sda1.ext4-ptcl-img.gz.aa
       get_image_cat_zip_cmd ${file_basename}
       # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
-      img_file_prefix="$(echo ${file_basename} | sed -e "s/\.aa$//").*"
+      img_file_prefix="$(echo ${file_basename} | sed -r -e "s/\.aa*$//").*"
     else
       # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
       get_image_cat_zip_cmd ${file_basename}
@@ -189,6 +189,7 @@ img_covert_to_diff_compression() {
     fi
   else
     # Old format
+    # The split suffix length for old format is only 2, so we do not have to consider >=3 (*.aaa or more).
     if [ -f "$target_d/$img_file.${fs_}-img.aa" ]; then
       # Old format with image split
       get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img.aa
@@ -283,7 +284,7 @@ img_covert_to_diff_compression() {
     case "$VOL_LIMIT" in
       [1-9]*)
          # $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf}. is prefix, the last "." is necessary make the output file is like sda1.${fs_pre}-img.aa, sda1.${fs_pre}-img.ab. We do not add -d to make it like sda1.${fs_pre}-img.00, sda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (sda1.${fs_pre}-img.000, sda1.${fs_pre}-img.001)
-         pv -pae $used_size_opt | ${cmd_compress} | split -b ${VOL_LIMIT}MB - $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf}. 2> $split_error
+         pv -pae $used_size_opt | ${cmd_compress} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf}. 2> $split_error
          ;;
       *)
          pv -pae $used_size_opt | ${cmd_compress} | cat - > $target_dir_fullpath/$t_img_file_prefix.${t_comp_suf} 2> $split_error
@@ -337,7 +338,7 @@ do_partition_or_lv_img_convert() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
   elif [ -f "$target_d/$img_file.dd-img" -o \
-         -f "$target_d/$img_file.dd-img.aa" ]; then
+	 -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Image was saved by dd. No converting it. Copy the file later: $img_file" | tee --append ${OCS_LOGFILE}
     sleep 1
@@ -577,7 +578,7 @@ check_if_old_format_img() {
   for partition in $target_parts; do
     img_f="$(to_filename $partition)"
     if [ -f "$target_dir_fullpath/$img_f.000" -o \
-         -f "$target_dir_fullpath/$img_f.aa" -o \
+	 -n "$(ls $target_dir_fullpath/$img_f.aa* 2>/dev/null)" -o \
          -f "$target_dir_fullpath/$img_f" ]; then
       # The saved image is from partimage
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -592,7 +593,7 @@ check_if_old_format_img() {
       echo "$msg_program_stop!"
       my_ocs_exit 1
     elif [ -f "$target_dir_fullpath/$img_f.ntfs-img" -o \
-           -f "$target_dir_fullpath/$img_f.ntfs-img.aa" ]; then
+	   -n "$(ls $target_dir_fullpath/$img_f.ntfs-img.aa* 2>/dev/null)" ]; then
       # The saved image is from ntfsclone
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "This partition image was saved by ntfsclone." | tee --append ${OCS_LOGFILE}

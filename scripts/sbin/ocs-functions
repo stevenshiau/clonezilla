@@ -1083,6 +1083,24 @@ output_swap_partition_uuid_label() {
   echo $msg_delimiter_star_line
 } # end of output_swap_partition_uuid_label
 #
+get_split_img_1st_chunk() {
+  # Function to get the 1st chunk of split image. The image might be split as
+  # sda1.ext4-ptcl-img.gz.aa, sda1.ext4-ptcl-img.gz.ab, sda1.ext4-ptcl-img.gz.ac...  or
+  # sda1.ext4-ptcl-img.gz.aaa, sda1.ext4-ptcl-img.gz.aab, sda1.ext4-ptcl-img.gz.aac...
+  local wkd="$1"
+  local f_prefix="$2"
+  local ic
+  if [ -z "$wkd" -o ! -d "$wkd" -o -z "$f_prefix" ]; then
+    return 1
+  fi
+  for ic in $wkd/${f_prefix}*; do
+    if [ -e "$ic" ]; then
+      echo "$ic"
+      break
+    fi
+  done
+} # end of get_split_img_1st_chunk
+#
 save_part_by_ntfsclone() {
   # case (1): ntfsclone is preferred
   compress_prog_opt="$IMG_CLONE_CMP"
@@ -1135,7 +1153,7 @@ save_part_by_ntfsclone() {
           # $tgt_dir/${tgt_file}.ntfs-img. is prefix, the last "." is necessary
           # make the output file is like hda1.ntfs-img.aa, hda1.ntfs-img.ab.
           # We do not add -d to make it like hda1.ntfs-img.00, hda1.ntfs-img.01, since it will confuse people that it looks like created by partimage (hda1.ntfs-img.000, hda1.ntfs-img.001)
-          split -b ${VOL_LIMIT}MB - $tgt_dir/${tgt_file}.ntfs-img.
+          split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/${tgt_file}.ntfs-img.
           ;;
        *)
           cat - > $tgt_dir/${tgt_file}.ntfs-img
@@ -1267,7 +1285,7 @@ save_part_by_partclone() {
   case "$VOL_LIMIT" in
     [1-9]*)
        # $tgt_dir/${tgt_file}.${fs_pre}-img. is prefix, the last "." is necessary make the output file is like hda1.${fs_pre}-img.aa, hda1.${fs_pre}-img.ab. We do not add -d to make it like hda1.${fs_pre}-img.00, hda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (hda1.${fs_pre}-img.000, hda1.${fs_pre}-img.001)
-       cmd_partclone="${cmd_partclone} | split -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}. 2> $split_error"
+       cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}. 2> $split_error"
        ;;
     *)
        cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf} 2> $split_error"
@@ -1344,7 +1362,7 @@ save_part_by_partimage() {
        # "$tgt_dir/${tgt_file}." is prefix, the last "." is necessary
        # make the output file is like hda1.aa, hda1.ab.
        # We do not add -d to make it like hda1.00, hda1.01, since it will confuse people that it looks like created by partimage (hda1.000, hda1.001)
-       cmd_partimage="${cmd_partimage} | split -b ${VOL_LIMIT}MB - $tgt_dir/${tgt_file}."
+       cmd_partimage="${cmd_partimage} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/${tgt_file}."
        ;;
     *)
        cmd_partimage="${cmd_partimage} > $tgt_dir/${tgt_file}"
@@ -1444,7 +1462,7 @@ save_part_by_dd() {
             # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary
             # make the output file is like hda1.dd-img.aa, hda1.dd-img.ab.
             # We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.dd-img.001)
-            split -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).dd-img.
+            split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).dd-img.
             ;;
          *)
             cat - > $tgt_dir/$(to_filename ${tgt_file}).dd-img
@@ -1492,7 +1510,7 @@ save_part_by_dd() {
     case "$VOL_LIMIT" in
       [1-9]*)
          # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary make the output file is like hda1.dd-img.aa, hda1.dd-img.ab. We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.$dd-img.001)
-         cmd_partclone="${cmd_partclone} | split -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).dd-img. 2> $split_error"
+         cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).dd-img. 2> $split_error"
          ;;
       *)
          cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).dd-img 2> $split_error"
@@ -4709,8 +4727,9 @@ unicast_restore_by_partimage() {
     # The files are split by partimage, like hda1.000, hda1.001, so we have to add "."
     img_file_prefix="$img_file.*"
     split_by="partimage"
-  elif [ -f "$target_d/$img_file.aa" ]; then
-    get_image_cat_zip_cmd $target_d/$img_file.aa
+  elif [ -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd $target_d/$img_file.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file`
     # The files are split by split, like hda1.aa, hda1.ab, so we have to add "."
     img_file_prefix="$img_file.*"
     split_by="split"
@@ -4773,8 +4792,9 @@ _EOT_
 } # end of unicast_restore_by_partimage
 #
 unicast_restore_by_ntfsclone() {
-  if [ -f "$target_d/$img_file.ntfs-img.aa" ]; then
-    get_image_cat_zip_cmd $target_d/$img_file.ntfs-img.aa
+  if [ -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd $target_d/$img_file.ntfs-img.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file.ntfs-img`
     # The files are split, like hda1.00, hda1.01, so we have to add "."
     img_file_prefix="$img_file.ntfs-img.*"
   else
@@ -4848,7 +4868,8 @@ unicast_restore_by_partclone() {
       # New format with image split, e.g. sda1.ext4-ptcl-img.gz.aa
       get_image_cat_zip_cmd ${file_basename}
       # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
-      img_file_prefix="$(echo ${file_basename} | sed -e "s/\.aa$//").*"
+      # e.g. sda1.ext4-ptcl-img.gz.aaa -> sda1.ext4-ptcl-img.gz.*
+      img_file_prefix="$(echo ${file_basename} | sed -r -e "s/\.aa*$//").*"
     else
       # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
       get_image_cat_zip_cmd ${file_basename}
@@ -4857,6 +4878,7 @@ unicast_restore_by_partclone() {
     fi
   else
     # Old format
+    # The split suffix length for old format is only 2, so we do not have to consider >=3 (*.aaa or more).
     if [ -f "$target_d/$img_file.${fs_}-img.aa" ]; then
       # Old format with image split
       get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img.aa
@@ -4937,8 +4959,9 @@ unicast_restore_by_dd() {
   local dd_retcode_file dd_retcode
   local unzip_stdin_cmd_error
   local -a retcodes='()'
-  if [ -f "$target_d/$img_file.dd-img.aa" ]; then
-    get_image_cat_zip_cmd $target_d/$img_file.dd-img.aa
+  if [ -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd $target_d/$img_file.dd-img.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file.dd-img`
     # The files are split, like hda1.00, hda1.01, so we have to add "."
     img_file_prefix="$img_file.dd-img.*"
   else
@@ -5073,8 +5096,9 @@ multicast_restore_by_partimage() {
   # get $unzip_stdin_cmd from image file
   if [ -f "$target_d/$img_file.000" ]; then
     get_image_cat_zip_cmd $target_d/$img_file.000
-  elif [ -f "$target_d/$img_file.aa" ]; then
-    get_image_cat_zip_cmd $target_d/$img_file.aa
+  elif [ -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd $target_d/$img_file.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file`
   else
     get_image_cat_zip_cmd $target_d/$img_file
   fi
@@ -5100,8 +5124,9 @@ _EOT_
 #
 multicast_restore_by_ntfsclone() {
   # get $unzip_stdin_cmd from image file
-  if [ -f "$target_d/$img_file.ntfs-img.aa" ]; then
-    get_image_cat_zip_cmd $target_d/$img_file.ntfs-img.aa
+  if [ -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd $target_d/$img_file.ntfs-img.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file.ntfs-img`
   else
     get_image_cat_zip_cmd $target_d/$img_file.ntfs-img
   fi
@@ -5212,8 +5237,9 @@ _EOT_
 multicast_restore_by_dd() {
   local partclone_img_info_tmp
   # get $unzip_stdin_cmd from image file
-  if [ -f "$target_d/$img_file.dd-img.aa" ]; then
-    get_image_cat_zip_cmd $target_d/$img_file.dd-img.aa
+  if [ -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd $target_d/$img_file.dd-img.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file.dd-img`
   else
     get_image_cat_zip_cmd $target_d/$img_file.dd-img
   fi
@@ -5302,12 +5328,13 @@ do_unicast_stdin_restore() {
   # time_elapsed, time_elapsed_in_min and speed are global variables
   # get the cat program: cat, zcat or bzcat
   if [ -f "$target_d/$img_file.000" -o \
-       -f "$target_d/$img_file.aa" -o \
+       -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" -o \
        -f "$target_d/$img_file" ]; then
     # The saved image is from partimage
     clean_filesystem_header_in_partition $part
     unicast_restore_by_partimage
-  elif [ -f "$target_d/$img_file.ntfs-img" -o -f "$target_d/$img_file.ntfs-img.aa" ]; then
+  elif [ -f "$target_d/$img_file.ntfs-img" -o \
+	 -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
     # The saved image is from ntfsclone
     clean_filesystem_header_in_partition $part
     unicast_restore_by_ntfsclone
@@ -5315,7 +5342,8 @@ do_unicast_stdin_restore() {
     # The saved image is from partclone
     clean_filesystem_header_in_partition $part
     unicast_restore_by_partclone
-  elif [ -f "$target_d/$img_file.dd-img" -o -f "$target_d/$img_file.dd-img.aa" ]; then
+  elif [ -f "$target_d/$img_file.dd-img" -o \
+	 -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
     # The saved image is from dd
     clean_filesystem_header_in_partition $part
     unicast_restore_by_dd
@@ -5346,12 +5374,13 @@ do_multicast_udpcast_restore() {
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   echo "Starting to restore image ${target_d##*/} to $part..."
   if [ -f "$target_d/$img_file.000" -o \
-       -f "$target_d/$img_file.aa" -o \
+       -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" -o \
        -f "$target_d/$img_file" ]; then
     # The saved image is from partimage
     clean_filesystem_header_in_partition $part
     multicast_restore_by_partimage
-  elif [ -f "$target_d/$img_file.ntfs-img" -o -f "$target_d/$img_file.ntfs-img.aa" ]; then
+  elif [ -f "$target_d/$img_file.ntfs-img" -o \
+	 -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
     # The saved image is from ntfsclone
     clean_filesystem_header_in_partition $part
     multicast_restore_by_ntfsclone
@@ -5359,7 +5388,8 @@ do_multicast_udpcast_restore() {
     # The saved image is from partclone
     clean_filesystem_header_in_partition $part
     multicast_restore_by_partclone
-  elif [ -f "$target_d/$img_file.dd-img" -o -f "$target_d/$img_file.dd-img.aa" ]; then
+  elif [ -f "$target_d/$img_file.dd-img" -o \
+	 -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
     # The saved image is from dd
     clean_filesystem_header_in_partition $part
     multicast_restore_by_dd
@@ -5402,8 +5432,9 @@ multicast_feed_img_for_partimage() {
     # The files are split by partimage, like hda1.000, hda1.001, so we have to add "."
     img_file_prefix="$img_file.*"
     split_by="partimage"
-  elif [ -f "$imagedir/$target_d/$img_file.aa" ]; then
-    get_image_cat_zip_cmd $imagedir/$target_d/$img_file.aa
+  elif [ -n "$(ls $imagedir/$target_d/$img_file.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd $imagedir/$target_d/$img_file.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk $imagedir/$target_d $img_file`
     # The files are split by split, like hda1.aa, hda1.ab, so we have to add "."
     img_file_prefix="$img_file.*"
     split_by="split"
@@ -5452,8 +5483,8 @@ multicast_feed_img_for_partimage() {
 #
 multicast_feed_img_for_ntfsclone() {
   # here we do not have to run get_image_cat_zip_cmd since ntfsclone image does not contain its own special header, so we do not have to uncompress and strip that.
-  if [ -f "$imagedir/$target_d/$img_file.ntfs-img.aa" ]; then
-    # The files are split, like hda1.00, hda1.01, so we have to add "."
+  if [ -n "$(ls $imagedir/$target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
+    # The files are split, like sda1.ntfs-img.aa, sda1.ntfs-img.ab, so we have to add "."
     img_file_prefix="$img_file.ntfs-img.*"
   else
     # The file is NOT split, so the file name is just like "hda1" only, no "."
@@ -5498,7 +5529,8 @@ multicast_feed_img_for_partclone() {
     if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img.*.aa")" ]; then
       # New format with image split, e.g. sda1.ext4-ptcl-img.gz.aa
       # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
-      img_file_prefix="$(echo ${file_basename} | sed -e "s/\.aa$//").*"
+      # e.g. sda1.ext4-ptcl-img.gz.aaa -> sda1.ext4-ptcl-img.gz.*
+      img_file_prefix="$(echo ${file_basename} | sed -r -e "s/\.aa*$//").*"
     else
       # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
       # The file is NOT split, so the file name is just like "sda1.ext4-ptcl-img.gz" only, no "."
@@ -5506,6 +5538,7 @@ multicast_feed_img_for_partclone() {
     fi
   else
     # Old format
+    # The split suffix length for old format is only 2, so we do not have to consider >=3 (*.aaa or more).
     if [ -f "$imagedir/$target_d/$img_file.${fs_}-img.aa" ]; then
       # The files are split, like hda1.00, hda1.01, so we have to add "."
       img_file_prefix="$img_file.${fs_}-img.*"
@@ -5525,8 +5558,8 @@ multicast_feed_img_for_partclone() {
 #
 multicast_feed_img_for_dd() {
   # here we do not have to run get_image_cat_zip_cmd since dd image does not contain its own special header, so we do not have to uncompress and strip that.
-  if [ -f "$imagedir/$target_d/$img_file.dd-img.aa" ]; then
-    # The files are split, like hda1.00, hda1.01, so we have to add "."
+  if [ -n "$(ls $imagedir/$target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
+    # The files are split, like sda1.dd-img.aa, sda1.dd-img.ab, so we have to add "."
     img_file_prefix="$img_file.dd-img.*"
   else
     # The file is NOT split, so the file name is just like "hda1" only, no "."
@@ -5555,17 +5588,19 @@ udp_send_part_img() {
   [ -n "$mcast_max_wait_time" -a $ipart -gt 1 ] && udpcast_hold_opt3="--max-wait $PART_PREPARE_TIME" 
   udpcast_send_cmd="udp-sender $udp_sender_extra_opt $udpcast_hold_opt1 $udpcast_hold_opt2 $udpcast_hold_opt3 --interface $eth_for_multicast --nokbd --mcast-all-addr $MULTICAST_ALL_ADDR --portbase $port $TIME_TO_LIVE_OPT"
   if [ -f "$imagedir/$target_d/$img_file.000" -o \
-       -f "$imagedir/$target_d/$img_file.aa" -o \
+       -n "$(ls $imagedir/$target_d/$img_file.aa* 2>/dev/null)" -o \
        -f "$imagedir/$target_d/$img_file" ]; then
     # The saved image is from partimage
     multicast_feed_img_for_partimage
-  elif [ -f "$imagedir/$target_d/$img_file.ntfs-img" -o -f "$imagedir/$target_d/$img_file.ntfs-img.aa" ]; then
+  elif [ -f "$imagedir/$target_d/$img_file.ntfs-img" -o \
+	 -n "$(ls $imagedir/$target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
     # The saved image is from ntfsclone
     multicast_feed_img_for_ntfsclone
   elif is_partclone_image $imagedir/$target_d $img_file; then
     # The saved image is from partclone
     multicast_feed_img_for_partclone
-  elif [ -f "$imagedir/$target_d/$img_file.dd-img" -o -f "$imagedir/$target_d/$img_file.dd-img.aa" ]; then
+  elif [ -f "$imagedir/$target_d/$img_file.dd-img" -o \
+	 -n "$(ls $imagedir/$target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
     # The saved image is from dd
     multicast_feed_img_for_dd
   fi
