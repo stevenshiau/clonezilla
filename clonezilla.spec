@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Switching to use mode "ubuntu" for create-ubuntu-live, no more using "debian" mode. This is done by using 'lb config --bootappend-live "boot=live config username=user"' for create-*-live.
+
 * Sat Feb 08 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.26-drbl1
 - Make sure ocs/ocs-live.d/S00ocs-start work for upstart both in live-config v3 and v4.
 
