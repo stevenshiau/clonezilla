@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.26
+Version:	3.13.27
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,9 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Feb 09 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.27-drbl1
 - Switching to use mode "ubuntu" for create-ubuntu-live, no more using "debian" mode. This is done by using 'lb config --bootappend-live "boot=live config username=user"' for create-*-live.
 
-* Sat Feb 08 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.26-drbl1
+* Sat Feb 07 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.26-drbl1
 - Make sure ocs/ocs-live.d/S00ocs-start work for upstart both in live-config v3 and v4.
 
 * Tue Feb 03 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.25-drbl1
