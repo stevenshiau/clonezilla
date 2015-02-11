@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.27
+Version:	3.13.28
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Feb 11 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.28-drbl1
+- Bug fixed: the single white space for target_parts should be treated as nothing. Thanks to Borksoft for reporting this issue.
+
 * Mon Feb 09 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.27-drbl1
 - Switching to use mode "ubuntu" for create-ubuntu-live, no more using "debian" mode. This is done by using 'lb config --bootappend-live "boot=live config username=user"' for create-*-live.
 
