@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.28
+Version:	3.13.29
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Feb 12 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.29-drbl1
+- A boot parameter "ocs_dmesg_n" was added so that it can be used to set the level at which logging of messages is done to the console. If not assigned, prevents all messages, except emergency (panic) messages, i.e. n=1. Thanks to Greg Bell.
+
 * Wed Feb 11 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.28-drbl1
 - Bug fixed: the single white space for target_parts should be treated as nothing. Thanks to Borksoft for reporting this issue.
 
