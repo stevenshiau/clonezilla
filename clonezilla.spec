@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.13.30
+Version:	3.13.31
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.13.7, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.76, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.13.8, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.76, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,7 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-* Tue Mar 04 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.30-drbl1
+* Thu Mar 05 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.31-drbl1
+- Some ecryptfs-related options were moved to drbl-functions.
+
+* Wed Mar 04 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.30-drbl1
 - Two more parameters ocs_ecryptfs_cipher and ocs_ecryptfs_key_bytes could be assigned in the boot parameters.
 
 * Thu Feb 12 2015 Steven Shiau <steven _at_ nchc org tw> 3.13.29-drbl1
