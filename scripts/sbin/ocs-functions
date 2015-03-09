@@ -7627,6 +7627,7 @@ task_restoreparts() {
   local cmd_restore_minix_sub_parts_table
   local resize_ntfsfix_opt part_is_lvm
   local pv_on_dsk
+  local p_fs ipartition
 
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -7943,6 +7944,20 @@ task_restoreparts() {
       echo "Running: ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition" | tee --append $OCS_LOGFILE
       ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition | tee --append $OCS_LOGFILE
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    done
+  fi
+
+  # Clear the NTFS volume dirty flag if the volume can be fixed and mounted.
+  if [ "$rm_ntfs_vol_dirty_flag" = "yes" ]; then
+    for ipartition in $target_parts; do
+      is_whole_disk $ipartition && continue
+      p_fs="$(LC_ALL=C ocs-get-part-info /dev/$ipartition filesystem)"
+      if [ "$p_fs" = "ntfs" ]; then
+        echo "Now clear the NTFS volume dirty flag if the volume can be fixed and mounted: /dev/$ipartition..." | tee --append $OCS_LOGFILE
+        echo "Running: ntfsfix -d /dev/$ipartition" | tee --append $OCS_LOGFILE
+        LC_ALL=C ntfsfix -d /dev/$ipartition | tee --append $OCS_LOGFILE
+        echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+      fi
     done
   fi
 
@@ -8581,6 +8596,7 @@ USAGE_common_restore(){
     echo " -k, --no-fdisk, --no-create-partition   Do NOT create partition in target harddisk. If this option is set, you must make sure there is an existing partition table in the current restored harddisk. Default is to create the partition table."
     echo " -icrc, --icrc            Skip Partclone CRC checking."
     echo " -irhr, --irhr            Skip removing the Linux udev hardware records on the restored GNU/Linux."
+    echo " -irvd, --irvd            Skip removing the NTFS volume dirty flag after the file system is restored."
     echo " -ius, --ius              Skip updating syslinux-related files on the restored GNU/Linux."
     echo " -icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
     echo "-iefi, --ignore-update-efi-nvram  Skip updating boot entries in EFI NVRAM after restoring."
