@@ -57,6 +57,7 @@ rm_udev_persistent_record() {
           [ -d "$hd_img" -a -n "$hd_img" ] && rmdir $hd_img
 	  continue
         fi
+	# NIC
 	for inet in `get-nic-devs`; do
           # If MAC address is not found in 70-persistent-net.rules, it means the image is not restored to the same machine, therefore remove it. Even just one does not match.
           imac="$(LC_ALL=C drbl-get-macadd $inet)"
@@ -80,9 +81,18 @@ rm_udev_persistent_record() {
             fi
           fi
         done
+	# CD
         if [ -e "$hd_img/etc/udev/rules.d/70-persistent-cd.rules" -a \
 		"$remove_udev_cd" = "true" ]; then
           rm -fv $hd_img/etc/udev/rules.d/70-persistent-cd.rules
+        fi
+	# Dbus machine id 
+	# Ref: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=639261
+	#      http://unix.stackexchange.com/questions/120612/why-cant-i-run-gnome-apps-over-remote-ssh-session
+	# Thanks to Peter Sun for reporting this.
+        if [ -e "$hd_img/var/lib/dbus/machine-id" -a \
+		"$remove_dbus_machine_id" = "true" ]; then
+          rm -fv $hd_img/var/lib/dbus/machine-id
         fi
         [ "$mrc" -eq 0 ] && unmount_wait_and_try $target_p
         [ -d "$hd_img" -a -n "$hd_img" ] && rmdir $hd_img
@@ -103,15 +113,23 @@ ocs=`basename $ocs_file`
 # Default settings
 remove_udev_cd="true"
 remove_udev_nic="true"
+remove_dbus_machine_id="true"
 #
 while [ $# -gt 0 ]; do
  case "$1" in
    -c|--cd-only) remove_udev_cd="true"
                  remove_udev_nic="false"
+                 remove_dbus_machine_id="false"
 	         shift;;
    -n|--nic-only) 
 	         remove_udev_cd="false"
                  remove_udev_nic="true"
+                 remove_dbus_machine_id="false"
+	         shift;;
+   -m|--machine-id-only) 
+	         remove_udev_cd="false"
+                 remove_udev_nic="false"
+                 remove_dbus_machine_id="true"
 	         shift;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
