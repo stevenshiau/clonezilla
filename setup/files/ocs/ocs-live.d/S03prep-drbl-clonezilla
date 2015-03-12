@@ -66,6 +66,9 @@ for ARGUMENT in $(cat /proc/cmdline); do
     live-config.keyboard-layouts=*|keyboard-layouts=*)
     	    live_keyboard_layouts="${ARGUMENT#*keyboard-layouts=}"
     	    ;;
+    live-config.username=*|username=*)
+	    live_username="${ARGUMENT#*username=}"
+    	    ;;
   esac
 done
 
@@ -83,6 +86,10 @@ for ik in $param_2_be_parsed live_keyboard_layouts; do
   fi
 done
 echo "done!"
+
+# put username in /run/live/live-config
+mkdir -p /run/live/
+echo "username=\"${live_username}\"" > /run/live/live-config
 
 # Forget about this. From Ubuntu Karmic, we use the /usr/share/initramfs-tools/scripts/init-top/framebuffer comes with initramfs-tools to deal with this. i.e. we use the format mode_option:<xres>x<yres>[-<bpp>][@<refresh>] in the boot parameter to start uvesafb. //NOTE// video=uvesafb:1024x768 won't work in Karmic. We have to use something like video=uvesafb:mode_option=1024x768. Ref: https://bugs.launchpad.net/ubuntu/+source/initramfs-tools/+bug/437871
 # # Parse the cmdline then add options for uvesafb
@@ -107,12 +114,12 @@ perl -pi -e 's|^[#]*[[:space:]]*(PasswordAuthentication) .*|$1 yes|' /etc/ssh/ss
 # Process the daemon on and off
 for i in $ocs_daemonon; do
   # /etc/init.d/$i start
-  service $i start
+  drbl_service_ctl $i start
 done
 
 for i in $ocs_daemonoff; do
   # /etc/init.d/$i stop
-  service $i stop
+  drbl_service_ctl $i stop
 done
 
 # Suppress dmesg on console if no ocs_dmesg_on
