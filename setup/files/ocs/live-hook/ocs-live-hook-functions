@@ -109,7 +109,24 @@ preseed_autologin_account() {
 # In the past the reason we put start scripts in rcS.d instead of rc2.d is because the upstart in Ubuntu will enter command line prompt in rc2.d.
 # Now since there is no such problem, we put them in rc2.d.
 cp_ocs_live_startup_to_rc.d() {
-  if [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
+  if is_systemd_init; then
+    # Systemd
+    # (1) Prepare the clonezilla live starting service
+    # (2) Prepare autologin for tty*, serial console [Ref: https://wiki.archlinux.org/index.php/automatic_login_to_virtual_console]
+    cp -af /live-hook-dir/systemd/start-ocs-live.service /lib/systemd/system/; chown root.root /lib/systemd/system/start-ocs-live.service
+    for i in `seq 1 6`; do
+      # tty1-6
+      mkdir /etc/systemd/system/getty\@tty${i}.service.d/
+      cp -af /live-hook-dir/systemd/tty-autologin-override.conf /etc/systemd/system/getty\@tty${i}.service.d/override.conf
+      chown root.root /etc/systemd/system/getty\@tty${i}.service.d/override.conf
+    done
+    for i in `seq 0 3`; do
+      # ttyS0-3
+      mkdir /etc/systemd/system/serial-getty\@ttyS${i}.service.d/
+      cp -af /live-hook-dir/systemd/serial-console-autologin.conf /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
+      chown root.root /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
+    done
+  elif [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
     # Ubuntu's upstart. We use the compatibility mode of sysv-init in upstart
     cp -af /live-hook-dir/start-ocs-live /etc/rc2.d/S99start-ocs-live; chown root.root /etc/rc2.d/S99start-ocs-live
     cp -af /live-hook-dir/stop-ocs-live /etc/rc0.d/K19stop-ocs-live; chown root.root /etc/rc0.d/K19stop-ocs-live
@@ -277,8 +294,11 @@ remove_service_in_system() {
     echo "Disabling auto start service $srv in /etc/init/..."
     echo "manual" > /etc/init/$srv.override
   fi
-  if [ -e "/etc/init.d/$srv" ]; then
-  # For sysV service
+  if is_systemd_init; then
+    # For systemd service
+    systemctl disable $srv
+  elif [ -e "/etc/init.d/$srv" ]; then
+    # For sysV service
     if [ "$DISTRIB_ID" = "Ubuntu" ]; then
       # Ubuntu
       # For Ubuntu system (even 11.04), we keep using update-rc.d. Otherwise if we use insserv it will confuse upstart and init.d system. E.g. The "halt" in rc0.d might be S03, and others in S04, like:
