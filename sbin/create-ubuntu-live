@@ -109,6 +109,12 @@ build_it(){
   echo "The kernel version in this live CD will be: $release_kernel_ver"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   
+  # Due to a bug, we have to include some essential packages otherwise it will failed in debian_type=minimal. The size difference between minimal and standard for intrepid is about 8 MB. Ref: https://bugs.launchpad.net/ubuntu/+source/cdebootstrap/+bug/189474
+  if [ "$debian_type" = "minimal" -o  "$debian_type" = "minbase" ]; then
+    CDEBOOTSTRAP_OPTIONS="$CDEBOOTSTRAP_OPTIONS --include=sysv-rc,system-services,gnupg,initramfs-tools"
+    DEBOOTSTRAP_OPTIONS="$DEBOOTSTRAP_OPTIONS --include=ubuntu-keyring,gnupg,initramfs-tools"
+  fi
+  
   if [     "$debian_dist" = "precise" \
   	-o "$debian_dist" = "trusty" \
   	-o "$debian_dist" = "utopic" \
@@ -144,12 +150,6 @@ build_it(){
     echo "This distribution \"$debian_dist\" is not supported!"
     echo "Program terminated!"
     exit 1
-  fi
-  
-  # Due to a bug, we have to include some essential packages otherwise it will faild in debian_type=minimal. The size difference between minimal and standard for intrepid is about 8 MB. Ref: https://bugs.launchpad.net/ubuntu/+source/cdebootstrap/+bug/189474
-  if [ "$debian_type" = "minimal" -o  "$debian_type" = "minbase" ]; then
-    export CDEBOOTSTRAP_OPTIONS="$CDEBOOTSTRAP_OPTIONS --include=sysv-rc,upstart,system-services,gnupg"
-    export DEBOOTSTRAP_OPTIONS="$DEBOOTSTRAP_OPTIONS --include=ubuntu-keyring,gnupg"
   fi
   
   # We force to use 486 kernel only.
@@ -205,7 +205,7 @@ build_it(){
   #$pref lb config --syslinux-theme "live-build"
   
   # Ubuntu uses upstart instead of sysvinit
-  $pref lb config --initsystem upstart
+  $pref lb config --initsystem systemd
   
   # Put files to be included in the chroot hook
   mkdir -p config/includes.chroot/live-hook-dir
