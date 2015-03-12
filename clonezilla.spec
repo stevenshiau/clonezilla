@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.0
+Version:	3.14.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Mar 12 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.1-drbl1
+- Bug fixed: forgot to enable start-ocs-live.service.
+
 * Thu Mar 12 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.0-drbl1
 - Adding systemd for Clonezilla live.
 
