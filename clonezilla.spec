@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.1
+Version:	3.14.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Mar 13 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.2-drbl1
+- Dropping stdin and stdout assignment in start-ocs-live.service. Use the default values.
+- Wrong agetty path in serial-console-autologin.conf.
+- For non-framebuffer mode, TERM was not defined. It's OK for sysv/upstart, but not for systemd.
+
 * Thu Mar 12 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.1-drbl1
 - Bug fixed: forgot to enable start-ocs-live.service.
 
