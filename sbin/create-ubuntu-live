@@ -115,10 +115,8 @@ build_it(){
     DEBOOTSTRAP_OPTIONS="$DEBOOTSTRAP_OPTIONS --include=ubuntu-keyring,gnupg,initramfs-tools"
   fi
   
-  if [     "$debian_dist" = "precise" \
-  	-o "$debian_dist" = "trusty" \
-  	-o "$debian_dist" = "utopic" \
-  	-o "$debian_dist" = "vivid" \
+  if [  "$debian_dist" = "utopic" -o \
+  	"$debian_dist" = "vivid" \
      ]; then
     # For Uubntu 12.10+, linux-image has spilt as linux-image and linux-image-extra
     # Ref: https://lists.ubuntu.com/archives/kernel-team/2012-May/020448.html
@@ -204,8 +202,12 @@ build_it(){
   # Force to set the theme as live-build, so that /usr/lib/live/build/lb_binary_syslinux will copy /usr/share/live/build/bootloaders/isolinux/* to binary/isolinux/, which will trigger moving /live/vmlinuz-3.5.0-10-generic as /live/vmlinuz, and live/initrd.img-3.5.0-10-generic as live/initrd.img, for example. Then isolinux could boot since isolinux only work for shorter file name.
   #$pref lb config --syslinux-theme "live-build"
   
-  # Ubuntu uses upstart instead of sysvinit
-  $pref lb config --initsystem systemd
+  # Ubuntu <= 14.10 uses upstart instead of sysvinit, while >=15.04 uses systemd.
+  if [  "$debian_dist" = "utopic" ]; then
+    $pref lb config --initsystem upstart
+  else
+    $pref lb config --initsystem systemd
+  fi
   
   # Put files to be included in the chroot hook
   mkdir -p config/includes.chroot/live-hook-dir
