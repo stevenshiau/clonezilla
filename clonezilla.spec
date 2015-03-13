@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.2
+Version:	3.14.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Mar 13 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.3-drbl1
+- When terminal is dumb, force it as vt102 in ocs-lang-kbd-conf.
+
 * Fri Mar 13 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.2-drbl1
 - Dropping stdin and stdout assignment in start-ocs-live.service. Use the default values.
 - Wrong agetty path in serial-console-autologin.conf.
