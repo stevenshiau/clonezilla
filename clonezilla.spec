@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.5
+Version:	3.14.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Mar 14 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.6-drbl1
+- Bug fixed: systemd for GParted live was not working.
+
 * Sat Mar 14 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.5-drbl1
 - Bug fixed: function is_systemd_init was not defined for create-gparted-live.
 
