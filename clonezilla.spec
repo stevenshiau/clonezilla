@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.3
+Version:	3.14.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Mar 14 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.4-drbl1
+- Switching to use systemd in create-gparted-live.
+- Upstart is only used for Utopic in create-ubuntu-live. For Vivid the systemd is used.
+- Option "--mirror-chroot-updates" in create-gparted-live was removed since it does not exist for live-build v4.
+
 * Fri Mar 13 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.3-drbl1
 - When terminal is dumb, force it as vt102 in ocs-lang-kbd-conf.
 
