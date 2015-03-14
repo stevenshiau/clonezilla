@@ -8,7 +8,7 @@
 # load functions
 . /live-hook-dir/ocs-live-hook-functions 
 
-#
+# Function borrowed from drbl-functions because we do not have drbl/clonezilla packages in GParted live env.
 is_systemd_init() {
   # Function to test if system is really using systemd by checking if /sbin/init is link to /lib/systemd/systemd.
   local real_init re_code
@@ -122,8 +122,17 @@ cp -af /live-hook-dir/gparted/fluxbox/apps $gparted_desktop_rep
 if is_systemd_init; then
   # Systemd
   # (1) Prepare the gparted live starting service
+  # (2) Prepare autologin for tty*
   cp -af /live-hook-dir/systemd/start-gparted-live.service /lib/systemd/system/; chown root.root /lib/systemd/system/start-gparted-live.service
   ( cd /etc/systemd/system/getty.target.wants/; ln -fs /lib/systemd/system/start-gparted-live.service .)
+  for i in `seq 1 6`; do
+    # tty1-6
+    mkdir /etc/systemd/system/getty\@tty${i}.service.d/
+    cp -af /live-hook-dir/systemd/tty-autologin-override.conf /etc/systemd/system/getty\@tty${i}.service.d/override.conf
+    chown root.root /etc/systemd/system/getty\@tty${i}.service.d/override.conf
+  done
+  # Put the script "start-gparted-live" to start /etc/gparted/gparted.d/
+  cp -af /live-hook-dir/start-gparted-live /etc/gparted/start-gparted-live
 elif [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
   # Ubuntu's upstart. We use the compatibility mode of sysv-init in upstart
   cp -af /live-hook-dir/start-gparted-live /etc/rc2.d/S99start-gparted-live
