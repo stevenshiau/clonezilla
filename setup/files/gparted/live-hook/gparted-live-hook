@@ -98,7 +98,12 @@ cp -af /live-hook-dir/gparted/idesktop $gparted_desktop_rep/idesktop
 cp -af /live-hook-dir/gparted/fluxbox/apps $gparted_desktop_rep
 
 # Put main gparted live start service
-if [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
+if is_systemd_init; then
+  # Systemd
+  # (1) Prepare the gparted live starting service
+  cp -af /live-hook-dir/systemd/start-gparted-live.service /lib/systemd/system/; chown root.root /lib/systemd/system/start-gparted-live.service
+  ( cd /etc/systemd/system/getty.target.wants/; ln -fs /lib/systemd/system/start-gparted-live.service .)
+elif [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
   # Ubuntu's upstart. We use the compatibility mode of sysv-init in upstart
   cp -af /live-hook-dir/start-gparted-live /etc/rc2.d/S99start-gparted-live
 elif type insserv &>/dev/null; then
