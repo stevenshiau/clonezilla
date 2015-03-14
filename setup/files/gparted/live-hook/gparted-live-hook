@@ -8,6 +8,27 @@
 # load functions
 . /live-hook-dir/ocs-live-hook-functions 
 
+#
+is_systemd_init() {
+  # Function to test if system is really using systemd by checking if /sbin/init is link to /lib/systemd/systemd.
+  local real_init re_code
+  if [ -x "/bin/systemctl" -a -d "/lib/systemd/system/" ]; then
+    real_init="$(LC_ALL=C stat -c "%N" /sbin/init | awk -F"->" '{print $2}' | sed -r -e "s/^[[:space:]]*//g" -e "s/\`//g" -e "s/'//g")"
+    if [ -n "$real_init" ]; then
+      if [ "$(LC_ALL=C basename $real_init)" = "systemd" ]; then
+        re_code=0
+      else
+        re_code=1
+      fi
+    else
+      re_code=1
+    fi
+  else
+    re_code=1
+  fi
+  return $re_code
+} # end of is_systemd_init
+
 # Overwrite the locale_to_keep in /live-hook-dir/ocs-live-hook.conf. We just keep C and en_US only. Later we will restore the gparted locales file.
 locale_to_keep="C.UTF-8, en_US.UTF-8"
 
