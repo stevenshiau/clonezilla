@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.8
+Version:	3.14.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 15 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.9-drbl1
+- Disable the booting status, otherwise the messages might be shown on the dialog menu (of keyboard/language for Clonezilla/GParted live) which is annoying.
+
 * Sun Mar 15 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.8-drbl1
 - Failed to put start-gparted-live in /etc/gparted-live/ in gparted-live-hook.
 
