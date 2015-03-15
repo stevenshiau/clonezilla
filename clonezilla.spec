@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.7
+Version:	3.14.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 15 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.8-drbl1
+- Failed to put start-gparted-live in /etc/gparted-live/ in gparted-live-hook.
+
 * Sat Mar 14 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.7-drbl1
 - Prevents all messages, except emergency (panic) messages in GParted live booting console.
 - Bug fixed: wrong path for start-gparted-live.
