@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.10
+Version:	3.14.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Mar 16 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.11-drbl1
+- Put start-ocs-live in the path /etc/ocs of Clonezilla live.
+
 * Sun Mar 15 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.10-drbl1
 - Make start-ocs-live.service and start-gparted-live.service after systemd-user-sessions.service so that the screen won't be re-set by something like setupcon.
 - Set the TERM as linux for non-framebuffer mode in ocs-lang-kbd-conf and S05kbd-conf (gparted live) so that color output can be shown.
