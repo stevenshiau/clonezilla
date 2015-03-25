@@ -76,6 +76,7 @@ check_grub1_config_file() {
   fi
 } # end of check_grub1_config_file
 do_run_grub1_from_restored_os() {
+  local boot_loader_pos
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Trying to use the grub1 in the restored OS..."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -86,13 +87,22 @@ do_run_grub1_from_restored_os() {
   # rmdir: failed to remove `/tmp/hd_img.weAw4i': Device or resource busy
   [ -d "$hd_img/boot" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img/boot)
   [ -d "$hd_img" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img)
-  echo "Running: run_grub1_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$grub_hd\""
-  run_grub1_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd"
+  if [ -n "$rootp_installed_grub" ]; then
+    # Boot loader on root partition
+    boot_loader_pos="$rootp_installed_grub"
+  else
+    # Boot loader on MBR
+    boot_loader_pos="$grub_hd"
+  fi
+  echo "Running: run_grub1_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$boot_loader_pos\""
+  run_grub1_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$boot_loader_pos"
   rc="$?"
 } # end of do_run_grub1_from_restored_os
+#
 do_run_grub1_from_running_os() {
   local grub1_patch_flag=""
   local rc_grub1_ext4
+  local boot_loader_pos
   prepare_grub1_files_if_required
   show_grub1_ext4_warning $grub_partition
   rc_grub1_ext4=$?
@@ -102,8 +112,15 @@ do_run_grub1_from_running_os() {
     check_grub_install_version 1
     rc_grub_check=$?
     if [ "$rc_grub_check" -eq 0 ]; then
-      echo "Running: $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd"
-      $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd
+      if [ -n "$rootp_installed_grub" ]; then
+        # Boot loader on root partition
+        boot_loader_pos="$rootp_installed_grub"
+      else
+        # Boot loader on MBR
+        boot_loader_pos="$grub_hd"
+      fi
+      echo "Running: $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$boot_loader_pos"
+      $grub_install_exec $grub_no_floopy_opt --root-directory=$hd_img /dev/$boot_loader_pos
       rc="$?"
       # Remove the device.map in case it provents the restored OS fails to run update-grub due to different boot device name (e.g. sda <-> hda issue)
       [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
@@ -127,7 +144,9 @@ do_run_grub1_from_running_os() {
   [ -d "$hd_img/boot" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img/boot)
   [ -d "$hd_img" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img)
 } # end of do_run_grub1_from_running_os
+#
 do_run_grub2_from_restored_os() {
+  local boot_loader_pos
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Trying to use the grub2 in the restored OS..."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -138,13 +157,21 @@ do_run_grub2_from_restored_os() {
   # rmdir: failed to remove `/tmp/hd_img.weAw4i': Device or resource busy
   [ -d "$hd_img/boot" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img/boot)
   [ -d "$hd_img" -a -n "$hd_img" ] && (sleep 0.5; rmdir $hd_img)
-  echo "Running: run_grub2_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$grub_hd\""
-  run_grub2_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$grub_hd"
+  if [ -n "$rootp_installed_grub" ]; then
+    # Boot loader on root partition
+    boot_loader_pos="$rootp_installed_grub"
+  else
+    # Boot loader on MBR
+    boot_loader_pos="$grub_hd"
+  fi
+  echo "Running: run_grub2_from_restored_os \"$grub_partition\" \"$found_root_partition\" \"/dev/$boot_loader_pos\""
+  run_grub2_from_restored_os "$grub_partition" "$found_root_partition" "/dev/$boot_loader_pos"
   rc="$?"
 } # end of do_run_grub2_from_restored_os
 #
 do_run_grub2_from_running_os() {
   local grub2_patch_flag=""
+  local boot_loader_pos
   prepare_grub2_files_if_required
   [ -f "$hd_img/boot/grub/device.map" ] && rm -f $hd_img/boot/grub/device.map
   echo "Trying to use the grub2 from the running OS..."
@@ -159,8 +186,15 @@ do_run_grub2_from_running_os() {
       perl -pi -e 's|(^grubdir=.*)/grub(\".*)|$1/grub2$2|g' "$(which $grub_install_exec)"
       grub2_patch_flag="true"
     fi
-    echo "Running: $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd"
-    $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$grub_hd
+    if [ -n "$rootp_installed_grub" ]; then
+      # Boot loader on root partition
+      boot_loader_pos="$rootp_installed_grub"
+    else
+      # Boot loader on MBR
+      boot_loader_pos="$grub_hd"
+    fi
+    echo "Running: $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$boot_loader_pos"
+    $grub_install_exec --force --recheck $grub_no_floopy_opt --root-directory=$hd_img /dev/$boot_loader_pos
     rc="$?"
     # Revert
     if [ "$grub2_patch_flag" = "true" ]; then
@@ -370,13 +404,76 @@ if ! `is_mbr_partitition_table_disk /dev/$grub_hd`; then
   exit 5
 fi
 
+# Even it's blank hard drive, because this program is run after partitions and MBR restored, so we can just detect the MBR on the disk.
 if [ "$check_before_install" = "yes" ]; then
   # Check if grub exists on the MBR. If not, skip this function.
   if [ -z "$(LANG=C dd if=/dev/$grub_hd bs=512 count=1 2>/dev/null | strings | grep "GRUB")" ]; then
-     echo "The boot loader on /dev/$grub_hd is not grub. Skip running grub-install."
-     exit 5
+    # Maybe the boot loader is not on MBR, and it's on root partition.
+    # E.g.
+    # (1) For MBR, its content is like the mbr.bin from syslinux:
+    # root@debian:/tmp# dd if=/dev/sda bs=512 count=1 2>/dev/null |strings
+    # RPf1
+    # Missing operating system.
+    # f`f1
+    # |fRfP
+    # Ht[y9Y[
+    # Multiple active partitions.
+    # |XFSBu  f
+    # Operating system load error.
+    # (2) Instead, the grub boot loader is on root partition (/dev/sda2) for OpenSuSE 13.2 default installation
+    # root@debian:/tmp# dd if=/dev/sda2 bs=512 count=1 2>/dev/null |strings
+    # ZRr=
+    # `|f
+    # \|f1
+    # GRUB 
+    # Geom
+    # Hard Disk
+    # Read
+    #  Error
+    # (3) partition table for OpenSuSE 13.2 default installation
+    # root@debian:/tmp# parted -s /dev/sda print
+    # Model: VMware, VMware Virtual S (scsi)
+    # Disk /dev/sda: 21.5GB
+    # Sector size (logical/physical): 512B/512B
+    # Partition Table: msdos
+    # Disk Flags: 
+    # 
+    # Number  Start   End     Size    Type     File system     Flags
+    #  1      1049kB  1185MB  1184MB  primary  linux-swap(v1)
+    #  2      1185MB  11.9GB  10.7GB  primary  btrfs           boot
+    #  3      11.9GB  21.5GB  9548MB  primary  xfs
+    # Therefore check:
+    # (1) mbr.bin in /dev/$grub_hd
+    # (2) grub in partition
+    rootp_installed_grub=""
+    mbr_strings="$(LC_ALL=C dd if=/dev/$grub_hd bs=512 count=1 2>/dev/null | strings)"
+    if [ -n "$(echo "$mbr_strings" | grep -E "Missing operating system")" -a \
+         -n "$(echo "$mbr_strings" | grep -E "Multiple active partitions")" -a \
+         -n "$(echo "$mbr_strings" | grep -E "Operating system load error")" ]; then
+      # Use all possible partitions if it's auto
+      if [ -z "$selected_parts" ]; then
+        get_partition_list false
+        # The variable "partition_list" is got from get_partition_list.
+        avail_part="$partition_list"
+      else
+        avail_part="$selected_parts"
+      fi
+      for ip in $avail_part; do
+        rootp_strings="$(LC_ALL=C dd if=/dev/$ip bs=512 count=1 2>/dev/null | strings | grep -E "GRUB")"
+        if [ -n "$rootp_strings" ]; then
+	  rootp_installed_grub="$ip"
+	  break
+	fi
+      done
+      if [ -n "$rootp_installed_grub" ]; then
+        echo "Found boot loader grub in the root partition /dev/$rootp_installed_grub."
+      fi
+    else
+      echo "The boot loader on /dev/$grub_hd is not grub. Skip running grub-install."
+      exit 5
+    fi
   else 
-     echo "Found boot loader grub in the MBR of disk /dev/$grub_hd."
+    echo "Found boot loader grub in the MBR of disk /dev/$grub_hd."
   fi
 fi
 # process the boot loader

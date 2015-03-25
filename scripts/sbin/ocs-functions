@@ -2363,8 +2363,8 @@ run_grub1_from_restored_os() {
   local mnt_pnt grub1_run_sh ival rc_
   local grub1_prt="$1"  # e.g. /dev/sda1, the partition where /boot/grub exists
   local root_prt="$2"   # e.g. /dev/sda2, the partition where / exists
-  local grub1_hd="$3"   # e.g. /dev/sda, the disk to install grub
-  for i in grub1_prt root_prt grub1_hd; do
+  local grub1_hd_p="$3" # e.g. /dev/sda, the disk to install grub boot loader, or like /dev/sda2, the partition where grub boot loader is installed.
+  for i in grub1_prt root_prt grub1_hd_p; do
     eval ivar=\$${i}
     if [ -z "$ivar" ]; then
       echo "No \"$i\" assigned in function run_grub1_from_restored_os!"
@@ -2372,7 +2372,7 @@ run_grub1_from_restored_os() {
       exit 1
     fi
   done
-  echo "Re-installing grub1 on disk $grub1_hd with grub1 dir in partition $grub1_prt and root partition $root_prt... "
+  echo "Re-installing grub1 on disk/partition $grub1_hd_p with grub1 dir in partition $grub1_prt and root partition $root_prt... "
   mnt_pnt="$(mktemp -d /tmp/root_reinst.XXXXXX)"
   mount $root_prt $mnt_pnt
   rc_=$?
@@ -2399,7 +2399,7 @@ fi
 rm -f /boot/grub/device.map
 # touch a file to avoid grep error in grub-install
 touch /boot/grub/device.map
-grub-install --recheck --no-floppy ${grub1_hd}
+grub-install --recheck --no-floppy ${grub1_hd_p}
 SH_END
   chmod 755 $grub1_run_sh
   # If grub partition is not in the same partition as root partition, we have to mount grub partition in the root partition.
@@ -2480,8 +2480,8 @@ run_grub2_from_restored_os() {
   local mnt_pnt grub2_run_sh ival rc_
   local grub2_prt="$1"  # e.g. /dev/sda1, the partition where /boot/grub exists
   local root_prt="$2"   # e.g. /dev/sda2, the partition where / exists
-  local grub2_hd="$3"   # e.g. /dev/sda, the disk to install grub
-  for i in grub2_prt root_prt grub2_hd; do
+  local grub2_hd_p="$3" # e.g. /dev/sda, the disk to install grub boot loader, or like /dev/sda2, the partition where grub boot loader is installed.
+  for i in grub2_prt root_prt grub2_hd_p; do
     eval ivar=\$${i}
     if [ -z "$ivar" ]; then
       echo "No \"$i\" assigned in function run_grub2_from_restored_os." | tee --append ${OCS_LOGFILE}
@@ -2490,7 +2490,7 @@ run_grub2_from_restored_os() {
       exit 1
     fi
   done
-  echo "Re-installing grub2 on disk $grub2_hd with grub2 dir in partition $grub2_prt and root partition $root_prt... "
+  echo "Re-installing grub2 on disk/partition $grub2_hd_p with grub2 dir in partition $grub2_prt and root partition $root_prt... "
   mnt_pnt="$(mktemp -d /tmp/root_reinst.XXXXXX)"
   mount $root_prt $mnt_pnt
   rc_=$?
@@ -2523,7 +2523,7 @@ else
   grub_install_cmd="grub-install"
 fi
 rm -f /boot/grub/device.map
-\$grub_install_cmd --force --recheck --no-floppy ${grub2_hd}
+\$grub_install_cmd --force --recheck --no-floppy ${grub2_hd_p}
 SH_END
   chmod 755 $grub2_run_sh
   # If grub partition is not in the same partition as root partition, we have to mount grub partition in the root partition.
@@ -2559,9 +2559,9 @@ do_run_update_initrd_from_restored_os() {
   local mnt_pnt mkinitrd_run_sh mkinitrd_cmd ival rc_
   local grub2_prt="$1"  # e.g. /dev/sda1, the partition where /boot/grub exists
   local root_prt="$2"   # e.g. /dev/sda2, the partition where / exists
-  local grub2_hd="$3"   # e.g. /dev/sda, the disk to install grub
+  local grub2_hd_p="$3" # e.g. /dev/sda, the disk to install grub boot loader, or like /dev/sda2, the partition where grub boot loader is installed.
   local kver_initrd req_mod_for_vm_candi
-  for i in grub2_prt root_prt grub2_hd; do
+  for i in grub2_prt root_prt grub2_hd_p; do
     eval ivar=\$${i}
     if [ -z "$ivar" ]; then
       echo "No \"$i\" assigned in function run_grub2_from_restored_os." | tee --append ${OCS_LOGFILE}
@@ -2570,7 +2570,7 @@ do_run_update_initrd_from_restored_os() {
       exit 1
     fi
   done
-  echo "Re-creating initrd on disk $grub2_hd with boot dir in partition $grub2_prt and root partition $root_prt... "
+  echo "Re-creating initrd on disk $grub2_hd_p with boot dir in partition $grub2_prt and root partition $root_prt... "
   mnt_pnt="$(mktemp -d /tmp/root_reinst.XXXXXX)"
   mount $root_prt $mnt_pnt
   rc_=$?
