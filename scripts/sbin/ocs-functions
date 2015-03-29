@@ -5720,6 +5720,7 @@ save_logv() {
   local VG
   local UUID
   local LOGV
+  local TF
   local image_name_ rc_save_logv FND_PV
   local target="$1"
   # target_dir_fullpath is local (in function task_saveparts) global variable, since save_logv is used in function task_saveparts 
@@ -5730,8 +5731,12 @@ save_logv() {
   [ -z "$report_msg" ] && report_msg="Saved $image_name_,"
   rm -f $PV_PARSE_CONF $LOGV_PARSE_CONF
   ocs-lvm2-start
-  echo "Parsing LVM layout..." | tee --append $OCS_LOGFILE
-  LC_ALL=C pvscan 2>/dev/null 3<&- 4<&- | grep -Ew lvm2 | while read LINE; do
+  echo "Parsing LVM layout for ${target} ..." | tee --append $OCS_LOGFILE
+  # Ref: https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/075d3f5a/
+  # Thanks to Uditha De Silva for providing a better mechanism to parse the PV we are interested here.
+  # Was using: LC_ALL=C pvscan 2>/dev/null 3<&- 4<&- | grep -Ew lvm2 | while read LINE; do
+  TF="devices { filter = [ 'a:(${target/ /|})\$:', 'r:.*:' ] }"
+  LC_ALL=C pvscan --config "$TF" 2>/dev/null 3<&- 4<&- | grep -Ew lvm2 | while read LINE; do
     DEV="$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f2)"
     if [ "$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f3)" = "VG" ]; then
       VG="$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f4)"
