@@ -10,8 +10,12 @@ SHELL := bash -e
 DESTDIR =
 SHAREDIR = /usr/share/drbl/
 
-all: 
+all:	ocs-sbin 
 	@echo "No need to compile..."
+
+ocs-sbin:
+	(cd sbin; ln -fs prep-ocsroot ocs-prep-home)
+	(cd sbin; ln -fs cnvt-ocs-dev ocs-cvt-dev)
 
 build:
 	@echo "Nothing to build."
