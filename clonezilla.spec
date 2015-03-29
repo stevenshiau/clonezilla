@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.13
+Version:	3.14.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 29 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.14-drbl1
+- Adding a link file ocs-prep-home to prep-ocsroot.
+- Adding a link file ocs-cvt-dev to cnvt-ocs-dev.
+- A better mechanism to parse the PV was implemented. Thanks to Uditha De Silva.
+
 * Wed Mar 25 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.13-drbl1
 - Improvement: ocs-install-grub now could handle the grub boot loader is on root partition instead of MBR.
 
