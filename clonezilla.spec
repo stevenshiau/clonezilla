@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.14
+Version:	3.14.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Mar 30 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.15-drbl1
+- Bug fixed: ocs-onthefly failed to clone swap partition for GPT disk. Thanks to Uwe Dippel for reporting this issue (https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/907b3c87).
+
 * Sun Mar 29 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.14-drbl1
 - Adding a link file ocs-prep-home to prep-ocsroot.
 - Adding a link file ocs-cvt-dev to cnvt-ocs-dev.
