@@ -76,8 +76,7 @@ build_it(){
   $pref lb config --parent-archive-areas "$categories"
   # It's important to make the url for --parent-mirror-binary is different from that of --parent-mirror-chroot so that in /usr/lib/live/build/chroot_archives the "lb config --cache-packages false" and "lb config --apt-indices false" can work and those /var/cache/apt/{pkgcache.bin,srcpkgcache.bin} and those /var/lib/apt/lists/{*_Packages,*Release*,*_Sources} won't be cached.
   $pref lb config --parent-mirror-bootstrap $mirror_url --parent-mirror-binary $ubuntu_mirror_url_def --parent-mirror-chroot $mirror_url --parent-mirror-chroot-security $mirror_security_url --parent-mirror-binary-security $ubuntu_mirror_security_url_def --parent-mirror-debian-installer $ubuntu_mirror_url_def
-  # Here we could not turn on --updates because if it's on, and there is no way to assign binary updates source list (because "--parent-mirror-binary-updates" was removed in live-build v4.x ref: https://lists.debian.org/debian-live/2015/01/msg00204.html). It will use the same repository with that of --parent-mirror-binary, which will be as "http://ftp.debian.org/debian/" (from /usr/share/live/build/functions/defaults.sh) because we force LB_MODE as "debian" even this is for Ubuntu. We will later put binary updates in config/archives/*list* like that for security updates.
-  $pref lb config --updates false
+  $pref lb config --updates true
   $pref lb config --mirror-debian-installer $mirror_url
   $pref lb config --mirror-binary $mirror_url --mirror-binary-security $mirror_security_url 
   $pref lb config --mirror-bootstrap $mirror_url
@@ -135,7 +134,7 @@ build_it(){
     # $pref lb config --volatile false
     # Disable the firmware packages automatically inclusion
     $pref lb config --firmware-binary false --firmware-chroot false
-    $pref lb config --security false
+    $pref lb config --security true
     # ///NOTE/// From intrepid with kernel 2.6.26-4 or later, linux-ubuntu-modules no more exists, and aufs is builtin in linux-image (not as a module)
     $pref lb config --distribution $debian_dist --parent-distribution $debian_dist
     $pref lb config --linux-packages "linux-image-$release_kernel_ver"
@@ -186,9 +185,6 @@ build_it(){
   # Disable the firmware packages automatically inclusion
   $pref lb config --firmware-binary false --firmware-chroot false
   
-  # Disable the security, otherwise live-helper >= 1.0~a37 does not support Ubuntu and will create a wrong sources.list for ubuntu updates and securit. We will create it by ourself.
-  $pref lb config --security false
-  
   # Create a source tarball or not.
   if [ "$gen_source_tarball" = "yes" ]; then
     $pref lb config --source true
@@ -233,13 +229,10 @@ HOOK_APPEND_END
   # Put hook file to be run in the binary_local-hooks
   cp $ocs_live_script_dir/$run_binary_hook_script config/hooks/${run_binary_hook_script}.binary
   
-  # prepare ubuntu updates and security source list and drbl source list
-  # The reason we want to add updates source list here is because "--parent-mirror-binary-updates" was removed in live-build v4. Ref: https://lists.debian.org/debian-live/2015/01/msg00204.html
-  cat << AddDRBLRepository > config/archives/ubuntu-drbl-repository.list.chroot
-deb $mirror_security_url ${debian_dist}-updates $categories
-deb-src $mirror_security_url ${debian_dist}-updates $categories
-deb $mirror_security_url ${debian_dist}-security $categories
-deb-src $mirror_security_url ${debian_dist}-security $categories
+  # prepare drbl source list
+  # //NOTE// Use drbl-repository.list instead of drbl-repository.list.chroot because 
+  # with ".chroot" it means only for chroot and it will be removed from the squashfs.
+  cat << AddDRBLRepository > config/archives/drbl-repository.list
 deb $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
 deb-src $DRBL_REPOSITORY_URL drbl $LIVE_REPOSITORY_SECTIONS_drbl
 AddDRBLRepository
