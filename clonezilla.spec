@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.16
+Version:	3.14.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.13.13, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.76, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.13.15, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.76, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,7 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-* Wed Apr 1 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.16-drbl1
+* Fri Apr 03 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.17-drbl1
+- util-linux >= 2.26 removes support for "sfdisk -R". Therefore we switched to "blockdev --rereadpt". Thanks to Ismael (razzziel _at_ users sf net) for reporting this.
+
+* Wed Apr 01 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.16-drbl1
 - Enabling the updates, security and drbl repository settings in Clonezilla/DRBL/GParted live.
 
 * Mon Mar 30 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.15-drbl1
