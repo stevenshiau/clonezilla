@@ -375,14 +375,15 @@ inform_kernel_partition_table_changed() {
   echo -n "Informing the OS of partition table changes..."
   case "$ptype" in
   mbr|both)
-    # //NOTE// Put "sfdisk -R $tdisk" as the last action, since for BSD partitions, partprobe does not know, and if it is the last one, kernel info (/proc/partitions) won't show any partitions. "sleep 1" is also required, otherwise we might see the error message: "BLKRRPART: Device or resource busy"
+    # //NOTE// Put "blockdev --rereadpt $tdisk" as the last action, since for BSD partitions, partprobe does not know, and if it is the last one, kernel info (/proc/partitions) won't show any partitions. "sleep 1" is also required, otherwise we might see the error message: "BLKRRPART: Device or resource busy"
+    # //NOTE// util-linux >= 2.26 removes support for "sfdisk -R". Therefore we switched to "blockdev --rereadpt". Thanks to Ismael (razzziel _at_ users sf net) for reporting this.
     LC_ALL=C partprobe $tdisk
     echo -n "."
     sleep 1
     LC_ALL=C kpartx $tdisk &>/dev/null
     echo -n "."
     sleep 1
-    LC_ALL=C sfdisk -R $tdisk
+    LC_ALL=C blockdev --rereadpt $tdisk
     echo -n "."
     sleep 1
     ;;
@@ -2650,7 +2651,7 @@ output_HD_CHS() {
      eval num=\$$i
      echo "$i=$num" >> $target_d/$(to_filename ${DEV})-chs.sf
    done
-} # output the CHS values of a HD
+} # end of output_HD_CHS
 #
 load_HD_geometry_opt_from_image() {
   local target_d="$1"
@@ -3005,7 +3006,8 @@ create_partition() {
         RETVAL="${PIPESTATUS[0]}"
         if [ "$RETVAL" -eq 0 ]; then
           echo -n "Making kernel re-read the partition table of $tgt_hd_file... " | tee --append $OCS_LOGFILE
-          sfdisk -R $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
+          # //NOTE// util-linux >= 2.26 removes support for "sfdisk -R". Therefore we switched to "blockdev --rereadpt". Thanks to Ismael (razzziel _at_ users sf net) for reporting this.
+          blockdev --rereadpt $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
           echo "done." | tee --append $OCS_LOGFILE
           echo "The partition table of $tgt_hd_file is:" | tee --append $OCS_LOGFILE
           fdisk -l $tgt_hd_file | tee --append $OCS_LOGFILE
@@ -3072,7 +3074,7 @@ create_partition() {
 	esac
         ;;
     esac
-    # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "sfdisk -R..." to make the kernel know the new partition table again.
+    # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
     echo $msg_delimiter_star_line
     if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
       echo "LV is still active, try to deactive it..."
