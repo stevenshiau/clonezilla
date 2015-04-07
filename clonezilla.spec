@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.17
+Version:	3.14.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Apr 07 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.18-drbl1
+- The program ocs-tune-conf-for-s3 was added so it can be used for AWS S3.
+
 * Fri Apr 03 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.17-drbl1
 - util-linux >= 2.26 removes support for "sfdisk -R". Therefore we switched to "blockdev --rereadpt". Thanks to Ismael (razzziel _at_ users sf net) for reporting this.
 
