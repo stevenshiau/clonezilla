@@ -29,8 +29,9 @@ free_dsk_space="$(LC_ALL=C df -BM /tmp/ | tail -n 1 | awk -F" " '{print $4}')"
 # We set the cache size as that of davfs2 (i.e. 20% from drbl-ocs.conf) of the system. Unit: MiByte
 s3_split_vol_size="$(LC_ALL=C printf "%.0f" "$(echo "${free_dsk_space%M} * ${ratio_davfs2_cache_2_free_disk}" | bc -l)")"
 [ -z "$s3_split_vol_size" ] && s3_split_vol_size="$davfs2_cache_size_def"
-# Therefore the cache_size get in ocs-tune-conf-for-webdav is actually applied to VOL_LIMIT_DEFAULT and VOL_LIMIT_IN_INTERACTIVE, too, so that single file won't be over size.
+# The s3_split_vol_size is actually applied to VOL_LIMIT_DEFAULT and VOL_LIMIT_IN_INTERACTIVE, too, so that single file won't be over size.
 # volume size in drbl-ocs.conf has to be adjusted, too.
+echo "Preparing the AWS S3 friendly environment..."
 perl -pi -e "s/^VOL_LIMIT_DEFAULT=.*/VOL_LIMIT_DEFAULT=$s3_split_vol_size # Modified by prep-ocsroot for s3fs/" /etc/drbl/drbl-ocs.conf
 perl -pi -e "s/^VOL_LIMIT_IN_INTERACTIVE=.*/VOL_LIMIT_IN_INTERACTIVE=$s3_split_vol_size # Modified by prep-ocsroot for s3fs/" /etc/drbl/drbl-ocs.conf
 # Change split suffixes of length to 3 so that the total size for single image file could be large enough.
