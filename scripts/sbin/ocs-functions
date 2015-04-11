@@ -11010,3 +11010,40 @@ is_davfs_ocsroot() {
   fi
   return $rc
 } # end of is_davfs_ocsroot
+#
+is_s3fs_ocsroot() {
+  # Function to check if the image repository is davfs
+  local rc mnt_pnts im check_flag
+  # root@vivid:/tmp# df
+  # Filesystem        1K-blocks   Used    Available Use% Mounted on
+  # udev                1021160      0      1021160   0% /dev
+  # tmpfs                206288   4912       201376   3% /run
+  # /dev/sr0             184706 184706            0 100% /lib/live/mount/medium
+  # /dev/loop0           147456 147456            0 100% /lib/live/mount/rootfs/filesystem.squashfs
+  # tmpfs               1031432      0      1031432   0% /lib/live/mount/overlay
+  # overlayfs           1031432 132592       898840  13% /
+  # tmpfs               1031432      0      1031432   0% /dev/shm
+  # tmpfs                  5120      0         5120   0% /run/lock
+  # tmpfs               1031432      0      1031432   0% /sys/fs/cgroup
+  # tmpfs               1031432     32      1031400   1% /tmp
+  # s3fs           274877906944      0 274877906944   0% /home/partimag
+  #
+  # root@vivid:/tmp# mount -l | grep -Ew s3fs
+  # s3fs on /home/partimag type fuse.s3fs (rw,nosuid,nodev,relatime,user_id=0,group_id=0)
+  mnt_pnts="$(LC_ALL=C mount -l | grep -Ew "fuse.s3fs" | awk -F" " '{print $3}')"
+  rc="1"
+  check_flag="false"
+  for im in $mnt_pnts; do
+    # Use dirname and basename to avoid something like "/home//partimag/" != "/home/partimag".
+    if [ "$(dirname $ocsroot)/$(basename $ocsroot)" = "$(dirname $im)/$(basename $im)" ]; then
+      check_flag="true"
+      break
+    fi
+  done
+  if [ "$check_flag" = "true" ]; then
+    rc=0
+  else
+    rc=1
+  fi
+  return $rc
+} # end of is_s3fs_ocsroot
