@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.20
+Version:	3.14.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Apr 17 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.21-drbl1
+- File ocs-tune-conf-for-s3 was renamed as ocs-tune-conf-for-s3-swift so it can be used for both S3 and Swift repository.
+
 * Thu Apr 16 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.20-drbl1
 - A mechanism to avoid cloudfuse with ecryptfs was added because there is
 an similar issue as https://github.com/s3fs-fuse/s3fs-fuse/issues/166
