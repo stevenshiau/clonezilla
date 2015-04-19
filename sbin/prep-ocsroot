@@ -938,6 +938,67 @@ do_mount_webdav_server(){
    fi
 } # end of do_mount_webdav_server
 #
+do_mount_s3_server(){
+   # ///NOTE/// Although AWS S3 is not suitable for larger file transfer. The cache mechanism is the key problem (ref: https://sourceforge.net/forum/forum.php?thread_id=2248597&forum_id=82589), yet we have use some workaround to make it work. The key is in ocs-tune-conf-for-s3-swift.
+   network_config_if_necessary
+   prepare_mnt_point_ocsroot
+   ocs-tune-conf-for-s3-swift
+   echo "To mount AWS S3 as image repository, you have to"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+   echo "(1) Prepare the password file as this format:"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   echo "accessKeyId:secretAccessKey (use this format if you have only one set of credentials)"
+   echo "bucketName:accessKeyId:secretAccessKey (If you have more than one set of credentials)"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+   echo "(2) Save it as file /root/.passwd-s3fs"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   echo "If it's ready on remote manchine, you can run something like to copy it:"
+   echo "scp myaccount@myserver:/root/.passwd-s3fs /root/.passwd-s3fs"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+   echo "(3) Run command: chmod 600 /root/.passwd-s3fs"
+   echo "(4) Run command: s3fs bucket[:/path] mountpoint  [options]"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   echo "    E.g. s3fs my-ocs-img $ocsroot"
+   echo $msg_enter_another_shell_hint_wo_netcfg_prompt
+   echo -n "$msg_press_enter_to_continue..."
+   read
+   /bin/bash
+
+} # end of do_mount_s3_server
+#
+do_mount_swift_server(){
+   # ///NOTE/// Although OpenStack S3 is not suitable for larger file transfer. The cache mechanism is the key problem (ref: https://sourceforge.net/forum/forum.php?thread_id=2248597&forum_id=82589), yet we have use some workaround to make it work. The key is in ocs-tune-conf-for-s3-swift.
+   network_config_if_necessary
+   prepare_mnt_point_ocsroot
+   ocs-tune-conf-for-s3-swift
+   echo "To mount OpenStack Swift as image repository, you have to"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+   echo "(1) Prepare the password file as this format:"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   echo "username=demo"
+   echo "api_key=643afce8b5187d40ba15e4827384fc5b"
+   echo "(for use with Rackspace)"
+   echo "username=demo"
+   echo "tenant=demo"
+   echo "password=supersecret"
+   echo "authurl=http://10.10.0.1:5000/v2.0"
+   echo "(for use with OpenStack, noting that 'tenant' should be the tenant name, rather than the ID)"
+   echo "If it's ready on remote manchine, you can run something like to copy it:"
+   echo "scp myaccount@myserver:/root/.cloudfuse /root/.cloudfuse"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+   echo "(2) Save it as file /root/.cloudfuse"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+   echo "(3) Run command: chmod 600 /root/.cloudfuse"
+   echo "(4) Run command: cloudfuse -o You_Options... mountpoint/"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   echo "    E.g. cloudfuse $ocsroot"
+   echo $msg_enter_another_shell_hint_wo_netcfg_prompt
+   echo -n "$msg_press_enter_to_continue..."
+   read
+   /bin/bash
+
+} # end of do_mount_swift_server
+#
 find_ocsroot_dev_description(){
   local ocsroot_parent filesystem writable rw_test_file
   filesystem="$(get_dir_filesystem $ocsroot)"
@@ -993,10 +1054,22 @@ webdav_ocsroot_dia_des() {
   webdav_ocsroot_msg_2="$(rep_whspc_w_udrsc "$msg_mount_webdav_server")"
 }
 #
+s3_ocsroot_dia_des() {
+  s3_ocsroot_msg_1="s3_server"
+  s3_ocsroot_msg_2="$(rep_whspc_w_udrsc "$msg_mount_S3_server")"
+}
+#
+swift_ocsroot_dia_des() {
+  swift_ocsroot_msg_1="swift_server"
+  swift_ocsroot_msg_2="$(rep_whspc_w_udrsc "$msg_mount_swift_server")"
+}
+#
 get_ocsroot_resource() {
   find_ocsroot_dev_description
   if is_drbl_clonezilla_live_env; then
     webdav_ocsroot_dia_des
+    s3_ocsroot_dia_des
+    swift_ocsroot_dia_des
   fi
   local TMP
   #
@@ -1011,6 +1084,8 @@ get_ocsroot_resource() {
     "samba_server" "$msg_mount_smbfs" \
     "nfs_server"   "$msg_mount_nfs" \
     $webdav_ocsroot_msg_1 $webdav_ocsroot_msg_2 \
+    $s3_ocsroot_msg_1 $s3_ocsroot_msg_2 \
+    $swift_ocsroot_msg_1 $swift_ocsroot_msg_2 \
     "enter_shell"  "$msg_enter_cml. $msg_do_it_manually" \
     "skip"         "$msg_skip_this_use_existing_ocsroot ($livemedia_des)" \
     2> $TMP
@@ -1023,7 +1098,7 @@ get_ocsroot_resource() {
     [ -f "$TMP" ] && rm -f $TMP
   fi
   case "$ocsroot_src" in
-    "local_dev"|"ssh_server"|"samba_server"|"nfs_server"|"webdav_server"|"enter_shell"|"skip")
+    "local_dev"|"ssh_server"|"samba_server"|"nfs_server"|"webdav_server"|"s3_server"|"swift_server"|"enter_shell"|"skip")
        true;;
     *)
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -1092,6 +1167,8 @@ case "$ocsroot_src" in
   nfs_server)    do_mount_nfs_server;;
   ftp_server)    do_mount_ftp_server;;
   webdav_server) do_mount_webdav_server;;
+  s3_server)     do_mount_s3_server;;
+  swift_server)  do_mount_swift_server;;
   enter_shell) 
       echo $msg_enter_another_shell_hint_with_netcfg_prompt
       echo -n "$msg_press_enter_to_continue..."
