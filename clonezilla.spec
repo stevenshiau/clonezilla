@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.22
+Version:	3.14.23
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Apr 19 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.23-drbl1
+- Updating the comments about swift in prep-ocsroot.
+
 * Sun Apr 19 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.22-drbl1
 - Adding S3 and Swift in the prep-ocsroot menu.
 
