@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.14.25
+Version:	3.14.26
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon May 04 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.26-drbl1
+- Bug fixed: start-drbl-live service for systemd not implemented in drbl live.
+
 * Mon May 04 2015 Steven Shiau <steven _at_ nchc org tw> 3.14.25-drbl1
 - Switching to systemd instead of sysvinit-core for DRBL live.
 

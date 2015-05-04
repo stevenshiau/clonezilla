@@ -113,23 +113,23 @@ cp_ocs_live_startup_to_rc.d() {
     # Systemd
     # (1) Prepare the clonezilla live starting service
     # (2) Prepare autologin for tty*, serial console [Ref: https://wiki.archlinux.org/index.php/automatic_login_to_virtual_console]
-    cp -af /live-hook-dir/systemd/start-ocs-live.service /lib/systemd/system/; chown root.root /lib/systemd/system/start-ocs-live.service
+    cp -af /live-hook-dir/systemd/ocs-live/start-ocs-live.service /lib/systemd/system/; chown root.root /lib/systemd/system/start-ocs-live.service
     ( cd /etc/systemd/system/getty.target.wants/; ln -fs /lib/systemd/system/start-ocs-live.service .)
     # Disable the booting status, otherwise the messages might be shown on the dialog menu (of keyboard/language for Clonezilla/GParted live) which is annoying.
     perl -pi -e "s/^[#]ShowStatus=.*/ShowStatus=no/g" /etc/systemd/system.conf
     for i in `seq 1 6`; do
       # tty1-6
       mkdir /etc/systemd/system/getty\@tty${i}.service.d/
-      cp -af /live-hook-dir/systemd/tty-autologin-override.conf /etc/systemd/system/getty\@tty${i}.service.d/override.conf
+      cp -af /live-hook-dir/systemd/ocs-live/tty-autologin-override.conf /etc/systemd/system/getty\@tty${i}.service.d/override.conf
       chown root.root /etc/systemd/system/getty\@tty${i}.service.d/override.conf
     done
     for i in `seq 0 3`; do
       # ttyS0-3
       mkdir /etc/systemd/system/serial-getty\@ttyS${i}.service.d/
-      cp -af /live-hook-dir/systemd/serial-console-autologin.conf /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
+      cp -af /live-hook-dir/systemd/ocs-live/serial-console-autologin.conf /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
       chown root.root /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
     done
-    # Put the script "start-ocs-live" to start /etc/ocs/ocs.d/
+    # Put the script "start-ocs-live" to start /etc/ocs/
     cp -af /live-hook-dir/start-ocs-live /etc/ocs/
   elif [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
     # Ubuntu's upstart. We use the compatibility mode of sysv-init in upstart
@@ -152,7 +152,29 @@ cp_ocs_live_startup_to_rc.d() {
 # Put the drbl live script in rcS.d
 # The reason we put in rcS.d instead of rc2.d is because it's easier to do so before gdm is started.
 cp_drbl_live_startup_to_rc.d() {
-  if [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
+  if is_systemd_init; then
+    # Systemd
+    # (1) Prepare the drbl live starting service
+    # (2) Prepare autologin for tty*, serial console [Ref: https://wiki.archlinux.org/index.php/automatic_login_to_virtual_console]
+    cp -af /live-hook-dir/systemd/drbl-live/start-drbl-live.service /lib/systemd/system/; chown root.root /lib/systemd/system/start-drbl-live.service
+    ( cd /etc/systemd/system/getty.target.wants/; ln -fs /lib/systemd/system/start-drbl-live.service .)
+    # Disable the booting status, otherwise the messages might be shown on the dialog menu (of keyboard/language for Clonezilla/GParted live) which is annoying.
+    perl -pi -e "s/^[#]ShowStatus=.*/ShowStatus=no/g" /etc/systemd/system.conf
+    for i in `seq 1 6`; do
+      # tty1-6
+      mkdir /etc/systemd/system/getty\@tty${i}.service.d/
+      cp -af /live-hook-dir/systemd/drbl-live/tty-autologin-override.conf /etc/systemd/system/getty\@tty${i}.service.d/override.conf
+      chown root.root /etc/systemd/system/getty\@tty${i}.service.d/override.conf
+    done
+    for i in `seq 0 3`; do
+      # ttyS0-3
+      mkdir /etc/systemd/system/serial-getty\@ttyS${i}.service.d/
+      cp -af /live-hook-dir/systemd/drbl-live/serial-console-autologin.conf /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
+      chown root.root /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
+    done
+    # Put the script "start-drbl-live" to start /etc/drbl/
+    cp -af /live-hook-dir/start-drbl-live /etc/drbl/
+  elif [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
     # Ubuntu's upstart. We use the compatibility mode of sysv-init in upstart
     cp -af /live-hook-dir/start-drbl-live /etc/rcS.d/S97start-drbl-live; chown root.root /etc/rcS.d/S97start-drbl-live
     cp -af /live-hook-dir/stop-drbl-live /etc/rc0.d/K19stop-drbl-live; chown root.root /etc/rc0.d/K19stop-drbl-live
