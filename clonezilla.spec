@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.15.5
+Version:	3.15.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu May 14 2015 Steven Shiau <steven _at_ nchc org tw> 3.15.6-drbl1
+- Package libpam-systemd and policykit-1 were added in pkgs_for_task_xfce_desktop of create-drbl-live-by-pkg.
+
 * Wed May 13 2015 Steven Shiau <steven _at_ nchc org tw> 3.15.5-drbl1
 - Switching to use "union=overlay" in DRBL/Clonezilla/GParted live. It's the default union filesystem for Linux kernel v4, and also available in Ubuntu Vivid's linux kernel. 
 
