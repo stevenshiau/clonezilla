@@ -38,6 +38,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 - File system overlay was added as one of the known file systems in prep-ocsroot.
+- A better mechanism was used to parse the boot parameters in ocs-run so that it could deal with that from grub efi network booting.
 
 * Thu May 14 2015 Steven Shiau <steven _at_ nchc org tw> 3.15.6-drbl1
 - Package libpam-systemd and policykit-1 were added in pkgs_for_task_xfce_desktop of create-drbl-live-by-pkg.
