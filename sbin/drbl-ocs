@@ -639,8 +639,11 @@ if [ "$LIST_HOST" = "on" ]; then
   # copy the skeleton file
   PXE_CONF="$PXELINUX_DIR/default_skeleton"
   cp -f $PXELINUX_DIR/default $PXE_CONF
+  GRUB_CONF="$GRUB_EFINB_DIR/grub.cfg_skeleton"
+  cp -f $GRUB_EFINB_DIR/grub.cfg $GRUB_CONF
 else
   PXE_CONF="$PXELINUX_DIR/default"
+  GRUB_CONF="$GRUB_EFINB_DIR/grub.cfg"
   # Clean all the previous saved config file.
   # These files maybe look like: 01-MAC address, something like C0A8XXXX (only for 192.168.x), default_skeleton
   echo -n "Clean all the previous saved config file if they exist..."
@@ -739,6 +742,9 @@ case "$drbl_ocs_type" in
     # (1) for NFSroot-based
     hide_reveal_pxe_img clonezilla hide $PXE_CONF
     remove_opt_in_pxelinux_cfg_block clonezilla ocs_opt
+    remove_opt_in_grub_efi_cfg_block "--id clonezilla-se-client" ocs_opt
+    # Because there is no way to hide the clonezilla menuentry in grub.cfg, here we have to update the description.
+    force_grub_efi_clients_boot_label clonezilla-se-client "Clonezilla"
     # (2) for Clonezila-live-based
     if [ -n "$(LC_ALL=C grep -E '^label Clonezilla-live' $PXE_CONF)" ]; then
       hide_reveal_pxe_img Clonezilla-live hide $PXE_CONF
@@ -753,6 +759,7 @@ case "$drbl_ocs_type" in
     # the always_restore mode is only useful with local OS exists.
     if [ "$always_restore" = "yes" ]; then
       force_pxe_clients_boot_label local "$local_os_menu_label"
+      # TODO: for grub EFI NB
     fi
     ;;
   *)

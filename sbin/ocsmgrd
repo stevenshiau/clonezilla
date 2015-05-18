@@ -109,6 +109,31 @@ sub gen_pxe_cfg {
   unlink ($PXECFG_MACFN_FULL) if -f $PXECFG_MACFN_FULL;
   system("LC_ALL=C cp -f $PXECFGFN_FULL $PXECFG_MACFN_FULL");
 }
+#
+sub gen_grub_efi_cfg {
+  my $peeraddr="$_[0]";
+  my $peermac="$_[1]";
+  # create GRUB EFI NB config file in $config{tftpboot}/grub-efi.cfg/ 
+  my $GRUBCFGFN="grub.cfg-".`drbl-gethostip $peeraddr`;
+  chomp($GRUBCFGFN);
+  my $GRUBCFGFN_FULL=$config{tftpboot}."/grub-efi.cfg/".$GRUBCFGFN;
+  my $pxe_conf_default=$config{tftpboot}."/grub-efi.cfg/grub.cfg";
+  system("cp -f $pxe_conf_default $GRUBCFGFN_FULL");
+  system("set-default-grub-efi-img -i shutdown -c $GRUBCFGFN_FULL >/dev/null 2>&1");
+  #
+  # TODO: We might have Clonezilla-live-based client
+  #system("[ -n \"\$(LC_ALL=C grep -iE '^label Clonezilla-live' $GRUBCFGFN_FULL)\" ] && hide_reveal_pxe_img Clonezilla-live hide $GRUBCFGFN_FULL >/dev/null 2>&1");
+
+  close(GRUBCFG);
+
+  # HOST_OPTION_MODIFY: modified since we specify hosts by MAC.
+  # for GRUB EFI NB MAC config style, like grub.cfg-01-00-50-56-01-01-01
+  my $GRUBCFG_MACFN=`echo $peermac | tr ":" "-"`;
+  $GRUBCFG_MACFN="grub.cfg-01-".$GRUBCFG_MACFN;
+  my $GRUBCFG_MACFN_FULL=$config{tftpboot}."/grub-efi.cfg/".$GRUBCFG_MACFN;
+  unlink ($GRUBCFG_MACFN_FULL) if -f $GRUBCFG_MACFN_FULL;
+  system("LC_ALL=C cp -f $GRUBCFGFN_FULL $GRUBCFG_MACFN_FULL");
+}
 
 sub log($) {
   my $line = shift;
@@ -165,6 +190,7 @@ sub start_server(%) {
           &client_joblog("client $peeraddr ($peermac) finished cloning. Stats: $peermsg");
 	  if ( "$config{write_pxe_cfg}" eq "0" ) {
             gen_pxe_cfg("$peeraddr", "$peermac");
+            gen_grub_efi_cfg("$peeraddr", "$peermac");
           }
           &log("connection closed: ".$fh->peerhost());
           $fh->close();
