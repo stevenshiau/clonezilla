@@ -31,7 +31,8 @@ USAGE() {
 } # end of USAGE
 
 do_check_and_update_efi_nvram() {
-  #
+  # On VMWare VM:
+  # ==========================================
   # root@trusty64-10-0-0-1:~# efibootmgr -v
   # BootCurrent: 0002
   # BootOrder: 0002,0004,0001,0003,0000
@@ -40,6 +41,39 @@ do_check_and_update_efi_nvram() {
   # Boot0002* EFI Network   ACPI(a0341d0,0)PCI(11,0)PCI(1,0)MAC(000c2968f323,0)
   # Boot0003* EFI Internal Shell (Unsupported option)       MM(b,3efcb000,3f355fff)
   # Boot0004* Ubuntu 12.10  HD(1,800,5f000,9323f65d-c6ca-4041-abb7-18148a3fb6ab)File(\EFI\ubuntu\grubx64.efi)
+  # ==========================================
+  # On a real machine (output from newer version of efibootmgr, version 0.8.0):
+  # ==========================================
+  # BootCurrent: 0003
+  # Timeout: 1 seconds
+  # BootOrder: 0003,0004,0002,0001
+  # Boot0001* Network Card 	BIOS(6,0,00)..GO..NO........q.I.B.A. .G.E. .S.l.o.t. .0.0.C.8. .v.1.5.4.3.........................rN.D+..,.\...........B..Gd-.;.A..MQ..L.I.B.A. .G.E. .S.l.o.t. .0.0.C.8. .v.1.5.4.3........BO..NO........q.I.B.A. .G.E. .S.l.o.t. .0.6.0.0. .v.1.5.4.3.........................rN.D+..,.\...........B..Gd-.;.A..MQ..L.I.B.A. .G.E. .S.l.o.t. .0.6.0.0. .v.1.5.4.3........BO
+  # Boot0002* Hard Drive 	BIOS(2,0,00)..GO..NO........o.T.O.S.H.I.B.A. .D.T.0.1.A.C.A.2.0.0....................A...........................>..Gd-.;.A..MQ..L. . . . . . . . . . .5. .S.4.S.D.P.W.S.G........BO
+  # Boot0003* UEFI: IP4 Intel(R) Ethernet Connection (2) I218-V	ACPI(a0341d0,0)PCI(19,0)MAC(MAC(fcaa147f3db5,0)..BO
+  # Boot0004* UEFI: IP4 Intel(R) I210 Gigabit  Network Connection	ACPI(a0341d0,0)PCI(1c,4)PCI(0,0)MAC(MAC(fcaa147f3db7,0)..BO
+  # ==========================================
+  # On another real machine:
+  # ==========================================
+  # # efibootmgr -v (output from older version of efibootmgr, version 0.5.4)
+  # BootCurrent: 0007
+  # Timeout: 1 seconds
+  # BootOrder: 0004,0000,0001,0002,0003,0007,0009,0006,0005,000A
+  # Boot0000* Diskette Drive        BIOS(1,0,00)
+  # Boot0001* Internal HDD  BIOS(2,0,00)P0: TOSHIBA MK5061GSYN        .
+  # Boot0002* USB Storage Device    BIOS(5,0,00)
+  # Boot0003* CD/DVD/CD-RW Drive    BIOS(3,0,00)P3: HL-DT-ST DVD+/-RW GU40N   .
+  # Boot0004* Onboard NIC   BIOS(6,0,00)IBA GE Slot 00C8 v1376.
+  # Boot0005* Redhat 6.4 Installer  ACPI(a0341d0,0)PCI(1f,2)03120a000000ffff0000HD(1,800,64000,34e7f37a-1ec6-4709-a697-8c05a7900056)File(\EFI\REDHAT\GRUB.EFI)
+  # Boot0006* Redhat Installer EFI  ACPI(a0341d0,0)PCI(1f,2)03120a000300ffff0000CD-ROM(1,269,2e8)File(\EFI\BOOT\BOOTX64.EFI)
+  # Boot0007* Red Hat Enterprise Linux 6    HD(1,800,64000,34e7f37a-1ec6-4709-a697-8c05a7900056)File(\EFI\redhat\grub.efi)
+  # Boot0009* CentOS        HD(1,800,64000,34e7f37a-1ec6-4709-a697-8c05a7900056)File(\EFI\centos\shim.efi)
+  # Boot000A* UEFI: HL-DT-ST DVD+/-RW GU40N ACPI(a0341d0,0)PCI(1f,2)03120a000300ffff0000CD-ROM(1,4b3,2e8)
+  # BootFFFA* Internal Shell        Vendor(5990c250-676b-4ff7-8a0d-529319d0b254,)
+  # BootFFFB* Diagnostic Boot       Vendor(5990c250-676b-4ff7-8a0d-529319d0b254,)
+  # BootFFFC* Temporary Boot Menu   Vendor(5990c250-676b-4ff7-8a0d-529319d0b254,)
+  # BootFFFD* Graphic Setup         Vendor(5990c250-676b-4ff7-8a0d-529319d0b254,)
+  # BootFFFE* Text Setup            Vendor(5990c250-676b-4ff7-8a0d-529319d0b254,)
+  # ==========================================
   
   # root@trusty64-10-0-0-1:~# efibootmgr -v | grep -Ew "^BootCurrent:" | awk -F" " '{print $2}'
   # 0002
@@ -50,7 +84,7 @@ do_check_and_update_efi_nvram() {
   bootorder="$(LC_ALL=C efibootmgr -v | grep -Eiw "^BootOrder:" | awk -F" " '{print $2}')"
   bootcurrent="Boot${bootcurrent_no}"
   if [ -n "$(LC_ALL=C efibootmgr -v | grep -Eiw "^$bootcurrent" |\
-             grep -Eiw "EFI Network")" ]; then
+             grep -Eiw "(EFI Network|Onboard NIC|UEFI.*IP.*MAC)")" ]; then
     # Change EFI network boot to 1st order.
     # E.g. BootOrder: 0004,0002,0001,0003,0000 -> 0002,0004,0001,0003,0000
     # Two possibilities, between numbers, or in the end, i.e.
@@ -61,10 +95,10 @@ do_check_and_update_efi_nvram() {
     new_bootorder=""
     if [ -n "$(echo "$bootorder" | grep -E ",${bootcurrent_no},")" ]; then
       # case 1: 0004,0002,0001,0003,0000 -> 0002,0004,0001,0003,0000
-      new_bootorder="$(echo $bootorder | sed -r -e "s|(.*)${bootcurrent_no}|${bootcurrent_no},\1|g")"
+      new_bootorder="$(echo $bootorder | sed -r -e "s|(.*),${bootcurrent_no},(.*)|${bootcurrent_no},\1,\2|g")"
     elif [ -n "$(echo "$bootorder" | grep -E ",${bootcurrent_no}$")" ]; then
       # case 2: 0004,0000,0001,0003,0002 -> 0002,0004,0001,0003,0000
-      new_bootorder="$(echo $bootorder | sed -r -e "s|(.*)${bootcurrent_no}|${bootcurrent_no},\1|g")"
+      new_bootorder="$(echo $bootorder | sed -r -e "s|(.*),${bootcurrent_no}|${bootcurrent_no},\1|g")"
     fi
     if [ -n "$new_bootorder" ]; then
       echo "Running: efibootmgr -o \"$new_bootorder\""
