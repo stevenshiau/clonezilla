@@ -113,14 +113,18 @@ sub gen_pxe_cfg {
 sub gen_grub_efi_cfg {
   my $peeraddr="$_[0]";
   my $peermac="$_[1]";
+  my $peerefiosl="$_[2]";
+  my $peerefipt="$_[3]";
+  my $peerefibf="$_[4]";
   # create GRUB EFI NB config file in $config{tftpboot}/grub-efi.cfg/ 
   my $GRUBCFGFN="grub.cfg-".`drbl-gethostip $peeraddr`;
   chomp($GRUBCFGFN);
   my $GRUBCFGFN_FULL=$config{tftpboot}."/grub-efi.cfg/".$GRUBCFGFN;
-  my $pxe_conf_default=$config{tftpboot}."/grub-efi.cfg/grub.cfg";
-  system("cp -f $pxe_conf_default $GRUBCFGFN_FULL");
-  system("set-default-grub-efi-img -i shutdown -c $GRUBCFGFN_FULL >/dev/null 2>&1");
-  #
+  my $grub_conf_default=$config{tftpboot}."/grub-efi.cfg/grub.cfg";
+  system("cp -f $grub_conf_default $GRUBCFGFN_FULL");
+  system("hide_reveal_grub_efi_ent -l $peerefiosl -p $peerefipt -b $peerefibf local-disk reveal $GRUBCFGFN_FULL >/dev/null 2>&1");
+  system("set-default-grub-efi-img -i local-disk -c $GRUBCFGFN_FULL >/dev/null 2>&1");
+  system("hide_reveal_grub_efi_ent clonezilla-se-client hide $GRUBCFGFN_FULL >/dev/null 2>&1");
   # TODO: We might have Clonezilla-live-based client
   #system("[ -n \"\$(LC_ALL=C grep -iE '^label Clonezilla-live' $GRUBCFGFN_FULL)\" ] && hide_reveal_pxe_img Clonezilla-live hide $GRUBCFGFN_FULL >/dev/null 2>&1");
 
@@ -182,7 +186,10 @@ sub start_server(%) {
 	  my @peerdata=split(" ",$peeraddr_mac);
 	  my $peeraddr="$peerdata[0]";
 	  my $peermac="$peerdata[1]";
-	  my $peermsg="@peerdata[2..$#peerdata]";
+	  my $peerefioslable="$peerdata[2]";  # for EFI client
+	  my $peerefipart="$peerdata[3]";  # for EFI client
+	  my $peerefibootf="$peerdata[4]"; # for EFI client
+	  my $peermsg="@peerdata[5..$#peerdata]";
 	  if (! $peermsg) {$peermsg="N/A"};
           &log("connection opened: ".$fh->peerhost());
           # add code to parse if it is IP ? or other keyword to check...
@@ -190,7 +197,7 @@ sub start_server(%) {
           &client_joblog("client $peeraddr ($peermac) finished cloning. Stats: $peermsg");
 	  if ( "$config{write_pxe_cfg}" eq "0" ) {
             gen_pxe_cfg("$peeraddr", "$peermac");
-            gen_grub_efi_cfg("$peeraddr", "$peermac");
+            gen_grub_efi_cfg("$peeraddr", "$peermac", "$peerefioslable", "$peerefipart", "$peerefibootf");
           }
           &log("connection closed: ".$fh->peerhost());
           $fh->close();
