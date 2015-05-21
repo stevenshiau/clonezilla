@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: some bash errors were fixed in ocs-resize-part.
+- Supporting local boot in uEFI mode after clonezilla job is done.
+- The clonezilla-se-client and local-disk menuentry in GRUB EFI NB not could be hidden or revealed.
+- Bug fixed: "drbl-ocs stop" won't kill itself by killing its ppid.
+
 * Mon May 18 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.1-drbl1
 - File system overlay was added as one of the known file systems in prep-ocsroot.
 - A better mechanism was used to parse the boot parameters in ocs-run so that it could deal with that from grub efi network booting.
