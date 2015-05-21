@@ -28,6 +28,7 @@
 ocs_file="$0"
 ocs=`basename $ocs_file`
 ocs_myself_id="$$"
+ocs_myself_ppid="$(LC_ALL=C ps -q "$ocs_myself_id" -o ppid=)"
 # log file for sfdisk when restoring
 # RESTORE_SFDISK_LOG is loaded from drbl.conf
 
@@ -647,17 +648,8 @@ else
   # Clean all the previous saved config file.
   # These files maybe look like: 01-MAC address, something like C0A8XXXX (only for 192.168.x), default_skeleton
   echo -n "Clean all the previous saved config file if they exist..."
-  for ifile in $PXELINUX_DIR/*; do
-    # we'd better not to affect the default_skeleton since when in DRBL_SSI and clonezilla box mode, it will always stop clonezilla before it generates the template. If we remove default_skeleton, when clonezilla box mode with LIST_HOST=on, this will have a problem!!! (we'd better to modify drbl-gen-ssi-files to support LIST_HOST=on/off so that this won't be confused)
-    if [ "$ifile" != "$PXELINUX_DIR/default" -a \
-	 "$ifile" != "$PXELINUX_DIR/default_skeleton" -a \
-	 "$ifile" != "$PXELINUX_DIR/bios" -a \
-	 "$ifile" != "$PXELINUX_DIR/efi32" -a \
-	 "$ifile" != "$PXELINUX_DIR/efi64" ]; then
-      [ -f "$ifile" ] && rm -f $ifile
-    fi
-  done
-  echo "done!"
+  clean_stale_node_pxe_cfg
+  clean_stale_node_grub_efi_cfg
 fi
 
 if [ ! -d "$ocsroot" ]; then
@@ -694,6 +686,7 @@ case "$drbl_ocs_type" in
       hide_reveal_pxe_img Clonezilla-live reveal $PXE_CONF
     else
       hide_reveal_pxe_img clonezilla reveal $PXE_CONF
+      hide_reveal_grub_efi_ent clonezilla-se-client reveal $GRUB_CONF
     fi
     [ "$copy_rc1d_for_drbl_ssi_clone_box" = "yes" ] && copy_rc1d_for_drbl_ssi
     prompt_to_turn_on_client $task
@@ -706,6 +699,7 @@ case "$drbl_ocs_type" in
       hide_reveal_pxe_img Clonezilla-live reveal $PXE_CONF
     else
       hide_reveal_pxe_img clonezilla reveal $PXE_CONF
+      hide_reveal_grub_efi_ent clonezilla-se-client reveal $GRUB_CONF
     fi
     [ "$copy_rc1d_for_drbl_ssi_clone_box" = "yes" ] && copy_rc1d_for_drbl_ssi
     prompt_to_turn_on_client $task
@@ -716,6 +710,7 @@ case "$drbl_ocs_type" in
       hide_reveal_pxe_img Clonezilla-live reveal $PXE_CONF
     else
       hide_reveal_pxe_img clonezilla reveal $PXE_CONF
+      hide_reveal_grub_efi_ent clonezilla-se-client reveal $GRUB_CONF
     fi
     [ "$copy_rc1d_for_drbl_ssi_clone_box" = "yes" ] && copy_rc1d_for_drbl_ssi
     prompt_to_turn_on_client "select_in_client"
@@ -734,21 +729,25 @@ case "$drbl_ocs_type" in
         . /etc/drbl/drbl_deploy.conf
       fi
       case "$drbl_mode" in
-        none) force_pxe_clients_boot_label local ;;
-           *) force_pxe_clients_boot_label drbl ;;
+        none) force_pxe_clients_boot_label local 
+              force_grub_efi_clients_boot_label local-disk "Local"
+              ;;
+           *) force_pxe_clients_boot_label drbl
+              force_grub_efi_clients_boot_label drbl-client
+              ;;
       esac
     )
     # When stopping the service, we disable all, no matter it's NFSroot-based or Clonezilla-live based.
     # (1) for NFSroot-based
-    hide_reveal_pxe_img clonezilla hide $PXE_CONF
+    # For GRUB EFI NB config, it's important we have to remove the option first, then hide it.
     remove_opt_in_pxelinux_cfg_block clonezilla ocs_opt
-    remove_opt_in_grub_efi_cfg_block "--id clonezilla-se-client" ocs_opt
-    # Because there is no way to hide the clonezilla menuentry in grub.cfg, here we have to update the description.
-    force_grub_efi_clients_boot_label clonezilla-se-client "Clonezilla"
+    remove_opt_in_grub_efi_cfg_block "clonezilla-se-client" ocs_opt
+    hide_reveal_pxe_img clonezilla hide $PXE_CONF
+    hide_reveal_grub_efi_ent clonezilla-se-client hide $GRUB_CONF
     # (2) for Clonezila-live-based
     if [ -n "$(LC_ALL=C grep -E '^label Clonezilla-live' $PXE_CONF)" ]; then
-      hide_reveal_pxe_img Clonezilla-live hide $PXE_CONF
       remove_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run
+      hide_reveal_pxe_img Clonezilla-live hide $PXE_CONF
     fi
     # Since now we separate Clonezilla and DRBL label block in PXE menu, 
     # Clonezilla will always with runlevel 1. Skip this.
@@ -759,7 +758,7 @@ case "$drbl_ocs_type" in
     # the always_restore mode is only useful with local OS exists.
     if [ "$always_restore" = "yes" ]; then
       force_pxe_clients_boot_label local "$local_os_menu_label"
-      # TODO: for grub EFI NB
+      force_grub_efi_clients_boot_label local-disk "Local" >/dev/null 
     fi
     ;;
   *)
