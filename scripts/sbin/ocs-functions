@@ -6217,9 +6217,10 @@ stop_ocs_service() {
     remove_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run
   else
     remove_opt_in_pxelinux_cfg_block clonezilla ocs_opt
-    remove_opt_in_grub_efi_cfg_block "--id clonezilla-se-client" ocs_opt
-    # Because there is no way to hide the clonezilla menuentry in grub.cfg, here we have to update the description.
+    remove_opt_in_grub_efi_cfg_block "clonezilla-se-client" ocs_opt
+    # Update the description to avoid confusion.
     force_grub_efi_clients_boot_label clonezilla-se-client "Clonezilla"
+    hide_reveal_grub_efi_ent "clonezilla-se-client" hide $GRUB_CONF
   fi
   # prepare the HOSTNAME-IP-MAC table
   OCS_TMP=`mktemp /tmp/ocs_clean_tmp.XXXXXX`
@@ -6645,7 +6646,7 @@ prep_client_inittab_rc_srv() {
         remove_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run
       else
         remove_opt_in_pxelinux_cfg_block clonezilla ocs_opt
-        remove_opt_in_grub_efi_cfg_block "--id clonezilla-se-client" ocs_opt
+        remove_opt_in_grub_efi_cfg_block "clonezilla-se-client" ocs_opt
       fi
       if [ -d "$drblroot/$node_ip/etc/" ]; then
 	# We can not just mkdir -p $drblroot/$node_ip/etc/ocs/, otherwise it will make DRBL SSI template fail... since if it's created, the etc tarball will just contains one file /etc/ocs/ocs-run.param. We will only test if $drblroot/$node_ip/etc/ exists, if so, it's full drbl/clonezilla mode. we can create the dir $drblroot/$node_ip/etc/ocs/, and put the param.
@@ -6671,7 +6672,7 @@ prep_client_inittab_rc_srv() {
       else
         # For nfsroot's client, we process select_in_client in /etc/rc1.d/s19ocs-run
         add_opt_in_pxelinux_cfg_block clonezilla ocs_opt "-l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
-        add_opt_in_grub_efi_cfg_block "--id clonezilla-se-client" ocs_opt "-l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+        add_opt_in_grub_efi_cfg_block "clonezilla-se-client" ocs_opt "-l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
       fi
       ;;
     both)
@@ -6695,7 +6696,7 @@ prep_client_inittab_rc_srv() {
       else
         # For nfsroot's client, we process select_in_client in /etc/rc1.d/s19ocs-run
         add_opt_in_pxelinux_cfg_block clonezilla ocs_opt "-l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
-        add_opt_in_grub_efi_cfg_block "--id clonezilla-se-client" ocs_opt "-l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+        add_opt_in_grub_efi_cfg_block "clonezilla-se-client" ocs_opt "-l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
       fi
       ;;
     *)
@@ -6746,8 +6747,8 @@ task_notify_job_is_done() {
   time="$(get_random_time $NOTIFY_OCS_SERVER_TIME_LIMIT)"
   countdown $time
   echo
-  echo -n "Sending info \"$ip $mac $report_msg\" to $ocs_server:$OCSMGRD_PORT... "
-  ocs-socket -m "$ip $mac $report_msg" -h $ocs_server -p $OCSMGRD_PORT
+  echo -n "Sending info \"$ip $mac $efi_os_label $efi_system_part_no $efi_sys_part_boot_file $report_msg\" to $ocs_server:$OCSMGRD_PORT... "
+  ocs-socket -m "$ip $mac $efi_os_label $efi_system_part_no $efi_sys_part_boot_file $report_msg" -h $ocs_server -p $OCSMGRD_PORT
   echo "done!"
   echo $msg_delimiter_star_line
   echo "Finished!"
@@ -7661,6 +7662,7 @@ task_restoreparts() {
   local resize_ntfsfix_opt part_is_lvm
   local pv_on_dsk
   local p_fs ipartition
+  local efi_info_tmp
 
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -8048,8 +8050,12 @@ task_restoreparts() {
   if [ "$update_efi_nvram" = "yes" ]; then
     for ihd in $target_hd; do
       if `is_gpt_partitition_table_disk /dev/$ihd`; then
-        echo "Running: update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat /dev/$ihd" | tee --append $OCS_LOGFILE
-        update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat /dev/$ihd | tee --append $OCS_LOGFILE
+        efi_info_tmp="$(mktemp /tmp/efi_info.XXXXXX)"
+        echo "Running: update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat -f $efi_info_tmp /dev/$ihd" | tee --append $OCS_LOGFILE
+        update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat -f $efi_info_tmp /dev/$ihd | tee --append $OCS_LOGFILE
+        # Get the new efi_os_label, efi_system_part_no and efi_sys_part_boot_file
+        . $efi_info_tmp
+        rm -f $efi_info_tmp
         if [ "$efi_netboot_1st_in_nvram" = "yes" ]; then
           # "efi_netboot_1st_in_nvram" is from drbl-ocs.conf.
           is_spawned_by_drbl_ocs $ocs_ppid
@@ -8104,10 +8110,12 @@ kill_ps_by_kill_9() {
     # This is better than killall -9, more exactly
     local prog="$1"
     local pids
-    pids="$(ps -e -o pid,args | grep -E "$prog" | grep -v "grep" | awk -F" " '{print $1}')"
+    pids="$(LC_ALL=C ps -C "$prog" -o pid=)"
     if [ -n "$pids" ]; then
       for p in $pids; do
-        [ "$p" != "$ocs_myself_id" ] && kill -9 $p &> /dev/null
+        if [ "$p" != "$ocs_myself_id" ] && [ "$p" != "$ocs_myself_ppid" ]; then
+          kill -9 $p &> /dev/null
+        fi
       done
     fi
 }   
@@ -10631,8 +10639,15 @@ get_efi_hd_boot_entry_info() {
 get_part_uuid_in_harddrive() {
   # Function to get partition UUID in hard drive. The output strings will be lowercase.
   local part_="$1"
+  local uuid_ret=""
   [ -z "${part_}" ] && return 2
-  LC_ALL=C udevadm info -q env -n ${part_} 2>/dev/null | grep -E "^UDISKS_PARTITION_UUID=" | sed -r -e "s/^UDISKS_PARTITION_UUID=//g" | tr '[:upper:]' '[:lower:]'
+  # For old udevadm info output format: UDISKS_PARTITION_UUID=B5BC1DC2-779B-4895-AD7D-6606D7841A5C
+  # For new udevadm info output format: ID_PART_ENTRY_UUID=e8d785ed-a65f-4ea1-adf0-cc61e75677eb
+  uuid_ret="$(LC_ALL=C udevadm info -q env -n ${part_} 2>/dev/null | grep -E "^ID_PART_ENTRY_UUID=" | sed -r -e "s/^ID_PART_ENTRY_UUID=//g" | tr '[:upper:]' '[:lower:]')"
+  if [ -z "$uuid_ret" ]; then
+    uuid_ret="$(LC_ALL=C udevadm info -q env -n ${part_} 2>/dev/null | grep -E "^UDISKS_PARTITION_UUID=" | sed -r -e "s/^UDISKS_PARTITION_UUID=//g" | tr '[:upper:]' '[:lower:]')"
+  fi
+  echo $uuid_ret
 } # end of get_uuid_in_harddrive
 #
 get_best_console_font_size() {
@@ -11115,7 +11130,7 @@ is_cloudfuse_ocsroot() {
 #
 add_opt_in_grub_efi_cfg_block() {
   # add something like: ocs_opt="--language 0  -g auto -p true restoredisk 2disks hda hdb" in grub efi nb config file
-  local entry_id="$1" # e.g. "--id clonezilla-se-client"
+  local entry_id="$1" # e.g. "clonezilla-se-client"
   local opt_name="$2" # can be ocs_opt (for NFSRoot-based Clonezilla client) or ocs_live_run (for Clonezilla-live-based client)
   local opt_content="$3"
   local tag_found
@@ -11123,7 +11138,11 @@ add_opt_in_grub_efi_cfg_block() {
   [ -z "$entry_id" ] && echo "No entry_id in add_opt_in_grub_efi_cfg_block!" && exit 1
   [ -z "$opt_name" ] && echo "opt_name NOT specified in add_opt_in_grub_efi_cfg_block! Abort!" && exit 1
   [ -z "$opt_content" ] && echo "opt_content NOT specified in add_opt_in_grub_efi_cfg_block! Abort!" && exit 1
-  lines="$(get_grub_efi_image_block "$entry_id" $GRUB_CONF)"
+  # Before adding option, we have to enable it because with grub there is no
+  # way to hide unless with use # to comment the whole menuentry.
+  hide_reveal_grub_efi_ent "$entry_id" reveal $GRUB_CONF
+  #
+  lines="$(get_grub_efi_image_block "--id $entry_id" $GRUB_CONF)"
   begin_line="$(echo $lines | awk -F" " '{print $1}')"
   end_line="$(echo $lines | awk -F" " '{print $2}')"
   if [ -z "$begin_line" -o -z "$end_line" ]; then
@@ -11149,14 +11168,17 @@ add_opt_in_grub_efi_cfg_block() {
 } # end of add_opt_in_grub_efi_cfg_block
 #
 remove_opt_in_grub_efi_cfg_block() {
-  local entry_id="$1" # e.g. "--id clonezilla-se-client"
+  local entry_id="$1" # e.g. "clonezilla-se-client"
   local opt_name="$2" # can be ocs_opt (for NFSRoot-based Clonezilla client) or ocs_live_run (for Clonezilla-live-based client)
   local tag_found
   local sub_menu_entry_cmd
   [ -z "$entry_id" ] && echo "No entry_id in remove_opt_in_pxelinux_cfg_block!" && exit 1
+  # Before adding option, we have to enable it because with grub there is no
+  # way to hide unless with use # to comment the whole menuentry.
+  hide_reveal_grub_efi_ent "$entry_id" reveal $GRUB_CONF
   # remove something like ocs_opt=... from the append .... like this in pxelinux config:
   # append ... ocs_opt="--language 0  -g auto -p true restoredisk 2disks hda hdb"...
-  lines="$(get_grub_efi_image_block "$entry_id" $GRUB_CONF)"
+  lines="$(get_grub_efi_image_block "--id $entry_id" $GRUB_CONF)"
   begin_line="$(echo $lines | awk -F" " '{print $1}')"
   end_line="$(echo $lines | awk -F" " '{print $2}')"
   if [ -z "$begin_line" -o -z "$end_line" ]; then
@@ -11224,3 +11246,34 @@ remove_runlevel_1_in_grub_efi_cfg_block() {
   sub_menu_entry_cmd="if ($begin_line..$end_line) {s|(^[[:space:]]*linux[[:space:]]+.*)[[:space:]]+1([[:space:]]+.*)|\$1\$2|i}"
   LC_ALL=C perl -pi -e "$sub_menu_entry_cmd" $GRUB_CONF
 } # end of remove_runlevel_1_in_grub_efi_cfg_block()
+#
+clean_stale_node_pxe_cfg(){
+  # $PXE_CONF is global variable.
+  # Clean all the previous saved config file.
+  # These files maybe look like: 01-MAC address (with ":" -> "-"), something like C0A8XXXX (only for 192.168.x), default_skeleton
+  echo -n "Clean all the previous saved PXELINUX config files if they exist..."
+  for ifile in $PXELINUX_DIR/*; do
+    # we'd better not to affect the default_skeleton since when in DRBL_SSI and clonezilla box mode, it will always stop clonezilla before it generates the template. If we remove default_skeleton, when clonezilla box mode with LIST_HOST=on, this will have a problem!!! (we'd better to modify drbl-gen-ssi-files to support LIST_HOST=on/off so that this won't be confused)
+    if [ "$ifile" != "$PXELINUX_DIR/default" -a \
+	 "$ifile" != "$PXELINUX_DIR/default_skeleton" -a \
+	 "$ifile" != "$PXELINUX_DIR/bios" -a \
+	 "$ifile" != "$PXELINUX_DIR/efi32" -a \
+	 "$ifile" != "$PXELINUX_DIR/efi64" ]; then
+      [ -f "$ifile" ] && rm -f $ifile
+    fi
+  done
+  echo "done!"
+} # end of clean_stale_node_pxe_cfg
+#
+clean_stale_node_grub_efi_cfg(){
+  # $GRUB_CONF is global variable.
+  # Clean all the previous saved config file.
+  # These files maybe look like: grub.cfg-01-MAC address (with ":" -> "-"), something like grub.cfg-C0A8XXXX (only for 192.168.x), grub.cfg_skeleton
+  echo -n "Clean all the previous saved GRUB EFI NB config files if they exist..."
+  for ifile in $GRUB_EFINB_DIR/grub.cfg-*; do
+    if [ -e "$ifile" ]; then
+      rm -f $ifile
+    fi
+  done
+  echo "done!"
+} # end of clean_stale_node_grub_efi_cfg
