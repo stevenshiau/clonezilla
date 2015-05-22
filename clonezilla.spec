@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.2
+Version:	3.16.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.15.5, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.78, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.15.8, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.78, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri May 22 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.3-drbl1
+- Using "isohybrid --uefi" to make dd iso file work. Thanks to Patrick Verner and Kubuist for this.
+- Only for those non-stop cases we will clean the GRUB UEFI NB config files in drbl-ocs. Otherwise the local-disk boot in grub.cfg normally won't work.
+
 * Thu May 21 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.2-drbl1
 - Bug fixed: some bash errors were fixed in ocs-resize-part.
 - Supporting local boot in uEFI mode after clonezilla job is done.
