@@ -6236,20 +6236,23 @@ stop_ocs_service() {
     fi
     echo "Stop OCS mode for node $IP, no matter it's in OCS mode or not."
     [ -f "$ihost/etc/inittab.ocs" ] && mv -f $ihost/etc/inittab.ocs $ihost/etc/inittab
-    # Remove the pxe config file in $pxecfg_pd/pxelinux.cfg/ (IP-based), like C0A84601
-    # Remove the GRUB uEFI NB config file in $pxecfg_pd/grub-efi.cfg/ (IP-based), like grub.cfg-C0A84601
-    pxecfg="$(drbl-gethostip $IP)"
-    grubcfg="grub.cfg-""$pxecfg"
-    [ -f "$PXELINUX_DIR/$pxecfg" ] && rm -f $PXELINUX_DIR/$pxecfg
-    [ -f "$GRUB_EFINB_DIR/$grubcfg" ] && rm -f $GRUB_EFINB_DIR/$grubcfg
 
-    # HOST_OPTION_MODIFY: maybe it's not IP based, it's MAC based.
-    # These files look like: 01-MAC address (with ":" -> "-"),
-    pxecfg_MAC="01-$(grep ${ihost##*/} $OCS_TMP | awk -F" " '{print $3}' | tr ":" "-")"
-    grubcfg_MAC="grub.cfg-""$pxecfg_MAC"
-    [ -f "$PXELINUX_DIR/$pxecfg_MAC" ] && rm -f $PXELINUX_DIR/$pxecfg_MAC
-    [ -f "$GRUB_EFINB_DIR/$grubcfg_MAC" ] && rm -f $GRUB_EFINB_DIR/$grubcfg_MAC
-
+    # The stale PXE config files and GRUB EFI NB config files are removed when drbl-ocs is started in
+    # the beginning. We should not process here again.
+    ## Remove the pxe config file in $pxecfg_pd/pxelinux.cfg/ (IP-based), like C0A84601
+    ## Remove the GRUB uEFI NB config file in $pxecfg_pd/grub-efi.cfg/ (IP-based), like grub.cfg-C0A84601
+    #pxecfg="$(drbl-gethostip $IP)"
+    #grubcfg="grub.cfg-""$pxecfg"
+    #[ -f "$PXELINUX_DIR/$pxecfg" ] && rm -f $PXELINUX_DIR/$pxecfg
+    #[ -f "$GRUB_EFINB_DIR/$grubcfg" ] && rm -f $GRUB_EFINB_DIR/$grubcfg
+    #
+    ## HOST_OPTION_MODIFY: maybe it's not IP based, it's MAC based.
+    ## These files look like: 01-MAC address (with ":" -> "-"),
+    #pxecfg_MAC="01-$(grep ${ihost##*/} $OCS_TMP | awk -F" " '{print $3}' | tr ":" "-")"
+    #grubcfg_MAC="grub.cfg-""$pxecfg_MAC"
+    #[ -f "$PXELINUX_DIR/$pxecfg_MAC" ] && rm -f $PXELINUX_DIR/$pxecfg_MAC
+    #[ -f "$GRUB_EFINB_DIR/$grubcfg_MAC" ] && rm -f $GRUB_EFINB_DIR/$grubcfg_MAC
+    
     # remove the stalled ocs-run.param.
     rm -f $drblroot/$IP/etc/ocs/ocs-run.param
     if [ "$clean_client_all_ocs_related_srv" = "yes" ]; then
@@ -6284,7 +6287,7 @@ stop_ocs_service() {
     echo $msg_delimiter_star_line
   fi
 
-} # end of stop_ocs_servic
+} # end of stop_ocs_service
 
 #
 # start ocs services
