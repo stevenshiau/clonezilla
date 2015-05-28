@@ -38,11 +38,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 %changelog
 * Thu May 28 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.7-drbl1
-- Functions add_opt_in_pxelinux_cfg_block, remove_opt_in_pxelinux_cfg_block, add_opt_in_grub_efi_cfg_block and remove_opt_in_grub_efi_cfg_block were moved from ocs-functions to drbl-functions.
+- Functions confirm_continue_or_not_default_quit, confirm_continue_or_not_default_continue, and confirm_continue_no_default_answer were moved from ocs-functions.
 
 * Thu May 28 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.6-drbl1
 - Making S03prep-drbl-clonezilla for DRBL live work with systemd.
 - Turn on the ssh password remote login in drbl live, while still using tcpwrapper to block it.
+- Functions confirm_continue_or_not_default_quit, confirm_continue_or_not_default_continue, and confirm_continue_no_default_answer were moved to drbl-functions.
 
 * Wed May 27 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.5-drbl1
 - Functions add_opt_in_pxelinux_cfg_block, remove_opt_in_pxelinux_cfg_block, add_opt_in_grub_efi_cfg_block and remove_opt_in_grub_efi_cfg_block were moved from ocs-functions to drbl-functions.
