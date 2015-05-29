@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.7
+Version:	3.16.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri May 29 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.8-drbl1
+- Bug fixed: sfidsk >= 2.26 does not support -C, -H, and -S. Skip using that when sfdisk >= 2.26. Thanks to Matt Ross for reporting this (https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/1734996f).
+
 * Thu May 28 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.7-drbl1
 - Functions confirm_continue_or_not_default_quit, confirm_continue_or_not_default_continue, and confirm_continue_no_default_answer were moved from ocs-functions.
 

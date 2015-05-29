@@ -2758,6 +2758,7 @@ create_partition() {
   local pt_type=""
   local src_disk_size_sec src_disk_size_GB tgt_disk_size_sec tgt_disk_size_GB to_seek do_gpt_dd gdisk_tmp sgdisk_rc
   local ocs_expand_mbr_pt_opt=""
+  local sfdisk_cyl_opt_flag=""
 
   check_input_hd $tgt_hd_name
 
@@ -2810,19 +2811,34 @@ create_partition() {
 	use_HD_CHS_from_EDD="yes"
       fi
     fi
+    # Check if sfdisk supports --cylinders. For sfdisk >= 2.26 (util-linux >= 2.26),
+    # There is no -C, --cylinders, -H, --heads, and -S, --sectors
+    if [ -n "$(LC_ALL=C sfdisk --help | grep -E -- "--cylinders")" ]; then
+      sfdisk_cyl_opt_flag="yes"
+    else
+      sfdisk_cyl_opt_flag="no"
+    fi
     if [ "$use_HD_CHS_from_EDD" = "yes" ]; then
-      rawhead=""
-      rawsector=""
-      rawcylinder=""
-      get_RawCHS_of_HD_from_EDD $tgt_hd_file
-      if [ -n "$rawhead" -a -n "$rawsector" -a -n "$rawcylinder" ]; then
-        sfdisk_opt="$sfdisk_opt -C $rawcylinder -H $rawhead -S $rawsector"
+      if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
+        rawhead=""
+        rawsector=""
+        rawcylinder=""
+        get_RawCHS_of_HD_from_EDD $tgt_hd_file
+        if [ -n "$rawhead" -a -n "$rawsector" -a -n "$rawcylinder" ]; then
+          sfdisk_opt="$sfdisk_opt -C $rawcylinder -H $rawhead -S $rawsector"
+        else
+          echo "No CHS value was found from EDD info for disk $tgt_hd_file." | tee --append $OCS_LOGFILE
+        fi
       else
-        echo "No CHS value was found from EDD info for disk $tgt_hd_file." | tee --append $OCS_LOGFILE
+        echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option."
       fi
     elif [ "$load_HD_CHS_from_img" = "yes" ]; then
-      # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
-      load_HD_geometry_opt_from_image $tgt_dir $tgt_hd_name
+      if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
+        # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
+        load_HD_geometry_opt_from_image $tgt_dir $tgt_hd_name
+      else
+        echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option."
+      fi
     fi
     # If the partition table is tag as "gpt", change it as msdos
     if `is_gpt_partitition_table_disk $tgt_hd_file`; then
