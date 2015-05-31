@@ -697,15 +697,38 @@ else
   done
 fi
 # same reason, we have to use different name in isolinux
-ipxe_lkn="$($query_pkglist_cmd ipxe 2>/dev/null | grep -E "ipxe.lkrn$")"
+# For ipxe from Debian, there are 2 "ipxe.lkrn", and one of them is symbolic file:
+# $ dpkg -c ipxe_1.0.0+git-20150424.a25a16d-1_all.deb | grep ipxe.lkrn
+# -rw-r--r-- root/root    279677 2015-04-30 03:04 ./boot/ipxe.lkrn
+# lrwxrwxrwx root/root         0 2015-04-30 03:04 ./usr/lib/ipxe/ipxe.lkrn -> /boot/ipxe.lkrn
+# Therefore we force to use "-L" option in cp command
+ipxe_lkn="$(LC_ALL=C $query_pkglist_cmd ipxe 2>/dev/null | grep -Ew "ipxe.lkrn$" | tail -n 1)"
 if [ -n "$ipxe_lkn" ]; then
   # This is run in DRBL server
-  cp -af $ipxe_lkn $BOOT_ITEM_DIR/ipxe.lkn
+  cp -afL $ipxe_lkn $BOOT_ITEM_DIR/ipxe.lkn
 else
   # This is run in Clonezilla live with casper or live mechanism
   for i in $live_sys_files_dir_list; do
     if [ -e "$LIVE_MEDIA/$i/ipxe.lkn" ]; then
-      cp -af $LIVE_MEDIA/$i/ipxe.lkn $BOOT_ITEM_DIR/ipxe.lkn
+      cp -afL $LIVE_MEDIA/$i/ipxe.lkn $BOOT_ITEM_DIR/ipxe.lkn
+      break
+    fi
+  done
+fi
+# For ipxe from Debian, there are 2 "ipxe.efi", and one of them is symbolic file:
+# $ dpkg -c ipxe_1.0.0+git-20150424.a25a16d-1_all.deb | grep ipxe.efi
+# -rw-r--r-- root/root    754752 2015-04-30 03:04 ./boot/ipxe.efi
+# lrwxrwxrwx root/root         0 2015-04-30 03:04 ./usr/lib/ipxe/ipxe.efi -> /boot/ipxe.efi
+# Therefore we force to use "-L" option in cp command
+ipxe_efi="$(LC_ALL=C $query_pkglist_cmd ipxe 2>/dev/null | grep -Ew "ipxe.efi$" | tail -n 1)"
+if [ -n "$ipxe_efi" ]; then
+  # This is run in DRBL server
+  cp -afL $ipxe_efi $BOOT_ITEM_DIR/ipxe.efi
+else
+  # This is run in Clonezilla live with casper or live mechanism
+  for i in $live_sys_files_dir_list; do
+    if [ -e "$LIVE_MEDIA/$i/ipxe.efi" ]; then
+      cp -afL $LIVE_MEDIA/$i/ipxe.efi $BOOT_ITEM_DIR/ipxe.efi
       break
     fi
   done

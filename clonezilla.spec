@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Using the ipxe package from Debian, no more packaging that. Therefore the correspoing programs (ocs-iso, ocs-live-dev, ocs-live-boot-menu, and create-drbl-live) were modified to fit that.
+
 * Fri May 29 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.8-drbl1
 - Bug fixed: sfidsk >= 2.26 does not support -C, -H, and -S. Skip using that when sfdisk >= 2.26. Thanks to Matt Ross for reporting this (https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/1734996f).
 
