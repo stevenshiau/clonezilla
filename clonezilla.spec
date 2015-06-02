@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.9
+Version:	3.16.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jun 02 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.10-drbl1
+- Adding packages gddrescue and ddrescueview for GParted live in create-gparted-live. (https://bugzilla.gnome.org/show_bug.cgi?id=750240).
+
 * Sun May 31 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.9-drbl1
 - Using the ipxe package from Debian, no more packaging that. Therefore the correspoing programs (ocs-iso, ocs-live-dev, ocs-live-boot-menu, and create-drbl-live) were modified to fit that.
 
