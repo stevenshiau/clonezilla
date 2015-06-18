@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.11
+Version:	3.16.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jun 18 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.12-drbl1
+- Adding "net.ifnames=0" in the boot parameters of ocs-live-boot-menu for Clonezilla/DRBL/GParted live system. One day we will switch to the predicable network device name, but not now.
+ 
 * Wed Jun 17 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.11-drbl1
 - "ps -q" in drbl-ocs is only for SysV, we have to use "ps --pid" so that it will work both in BSD and SysV GNU/Linux system.
 
