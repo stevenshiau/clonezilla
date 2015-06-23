@@ -197,10 +197,11 @@ for ifile in $files_2_be_mod_about_parts; do
   [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
   echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
   case $tgt_dev in
-  cciss*|mmcblk*|md*|rd*|ida*)
+  cciss*|mmcblk*|md*|rd*|ida*|nvme*)
     # sda1 -> cciss/c0d0p1 or sda1 -> mmcblk0p1
     # How about cciss/c0d0p1 -> cciss/c0d1p1?
     # How about mmcblk0p1 -> sda1? OK!
+    # nvme0n1p1 -> sda1
     LC_ALL=C perl -pi -e "s|$src_dev[p]?|${tgt_dev}p|g" $ocsroot/$image_name/$ifile
     ;;
   *)
@@ -214,7 +215,7 @@ done
 if [ -f "$ocsroot/$image_name/lvm_vg_dev.list" ]; then
   echo -n "Change /dev/$src_dev to /dev/$tgt_dev in $ocsroot/$image_name/lvm_vg_dev.list... "
   case $tgt_dev in
-  cciss*|mmcblk*|md*|rd*|ida*)
+  cciss*|mmcblk*|md*|rd*|ida*|nvme*)
     LC_ALL=C perl -pi -e "s|/dev/$src_dev[p]?|/dev/${tgt_dev}p|g" $ocsroot/$image_name/lvm_vg_dev.list
     ;;
   *)
@@ -257,7 +258,7 @@ for im in $filenames_2_be_mod_about_parts; do
   # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
   # cciss/c0d0p1 -> sda1
   case $tgt_dev in
-  cciss*|mmcblk*|md*|rd*|ida*)
+  cciss*|mmcblk*|md*|rd*|ida*|nvme*)
     newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
     ;;
   *)
@@ -278,7 +279,7 @@ for im in $filenames_2_be_mod_about_swap; do
   [ ! -e "$im" ] && continue
   imname="$(LC_ALL=C basename $im)"
   case $tgt_dev in
-  cciss*|mmcblk*|md*|rd*|ida*)
+  cciss*|mmcblk*|md*|rd*|ida*|nvme*)
    newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
    ;;
   *)
