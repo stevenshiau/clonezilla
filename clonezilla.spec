@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.13
+Version:	3.16.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jun 23 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.14-drbl1
+- Adding the support for NVME device.
+
 * Thu Jun 18 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.13-drbl1
 - The useless note about option "-z3" was removed. Thanks to Marc Grondin (marcfgrondin _at_ gmail com) for reporting this.
 
