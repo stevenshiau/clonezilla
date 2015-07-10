@@ -2811,13 +2811,7 @@ create_partition() {
 	use_HD_CHS_from_EDD="yes"
       fi
     fi
-    # Check if sfdisk supports --cylinders. For sfdisk >= 2.26 (util-linux >= 2.26),
-    # There is no -C, --cylinders, -H, --heads, and -S, --sectors
-    if [ -n "$(LC_ALL=C sfdisk --help | grep -E -- "--cylinders")" ]; then
-      sfdisk_cyl_opt_flag="yes"
-    else
-      sfdisk_cyl_opt_flag="no"
-    fi
+    get_sfdisk_cyl_opt_flag  # sfdisk_cyl_opt_flag will be got.
     if [ "$use_HD_CHS_from_EDD" = "yes" ]; then
       if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
         rawhead=""
@@ -2830,14 +2824,14 @@ create_partition() {
           echo "No CHS value was found from EDD info for disk $tgt_hd_file." | tee --append $OCS_LOGFILE
         fi
       else
-        echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option."
+        echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append $OCS_LOGFILE
       fi
     elif [ "$load_HD_CHS_from_img" = "yes" ]; then
       if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
         # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
         load_HD_geometry_opt_from_image $tgt_dir $tgt_hd_name
       else
-        echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option."
+        echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append $OCS_LOGFILE
       fi
     fi
     # If the partition table is tag as "gpt", change it as msdos
@@ -11001,3 +10995,14 @@ clean_stale_node_grub_efi_cfg(){
   done
   echo "done!"
 } # end of clean_stale_node_grub_efi_cfg
+#
+get_sfdisk_cyl_opt_flag() {
+  # sfdisk_cyl_opt_flag is global variable
+  # Check if sfdisk supports --cylinders. For sfdisk >= 2.26 (util-linux >= 2.26),
+  # There is no -C, --cylinders, -H, --heads, and -S, --sectors
+  if [ -n "$(LC_ALL=C sfdisk --help | grep -E -- "--cylinders")" ]; then
+    sfdisk_cyl_opt_flag="yes"
+  else
+    sfdisk_cyl_opt_flag="no"
+  fi
+} # get_sfdisk_cyl_opt_flag

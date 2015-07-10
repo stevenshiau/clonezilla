@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.15
+Version:	3.16.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jul 09 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.16-drbl1
+- Bug fixed: sfidsk >= 2.26 does not support -C, -H, and -S. Skip using that when sfdisk >= 2.26, especiall in ocs-onthefly. Thanks for Dorzalty reporting this: https://sourceforge.net/p/clonezilla/discussion/Help/thread/8a7397fc
+
 * Tue Jul 07 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.15-drbl1
 - Enabled vmfs3 and vmfs5 since partclone 0.2.79 solved the issue.
 

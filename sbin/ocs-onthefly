@@ -588,20 +588,29 @@ prepare_local_clone_dev_info() {
       use_HD_CHS_from_EDD="yes"
     fi
   fi
+  get_sfdisk_cyl_opt_flag  # sfdisk_cyl_opt_flag will be got.
   # get sfdisk_opt if load_HD_CHS_from_img is yes
   if [ "$use_HD_CHS_from_EDD" = "yes" ]; then
-    rawhead=""
-    rawsector=""
-    rawcylinder=""
-    get_RawCHS_of_HD_from_EDD /dev/$target_hd
-    if [ -n "$rawhead" -a -n "$rawsector" -a -n "$rawcylinder" ]; then
-      sfdisk_opt="$sfdisk_opt -C $rawcylinder -H $rawhead -S $rawsector"
+    if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
+      rawhead=""
+      rawsector=""
+      rawcylinder=""
+      get_RawCHS_of_HD_from_EDD /dev/$target_hd
+      if [ -n "$rawhead" -a -n "$rawsector" -a -n "$rawcylinder" ]; then
+        sfdisk_opt="$sfdisk_opt -C $rawcylinder -H $rawhead -S $rawsector"
+      else
+        echo "No CHS value was found from EDD info for disk /dev/$target_hd." | tee --append ${OCS_LOGFILE}
+      fi
     else
-      echo "No CHS value was found from EDD info for disk /dev/$target_hd." | tee --append ${OCS_LOGFILE}
+      echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append ${OCS_LOGFILE}
     fi
   elif [ "$load_HD_CHS_from_img" = "yes" ]; then
-    # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
-    load_HD_geometry_opt_from_image $hd_tgt_tmp/ $target_hd
+    if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
+      # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
+      load_HD_geometry_opt_from_image $hd_tgt_tmp/ $target_hd
+    else
+      echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append ${OCS_LOGFILE}
+    fi
   fi
   [ -f "$partition_table" ] && rm -f $partition_table
 } # end of prepare_local_clone_dev_info
@@ -925,20 +934,29 @@ ADVAN_PARAM_END
 	use_HD_CHS_from_EDD="yes"
       fi
     fi
+    get_sfdisk_cyl_opt_flag  # sfdisk_cyl_opt_flag will be got.
     # get sfdisk_opt if load_HD_CHS_from_img is yes
     if [ "$use_HD_CHS_from_EDD" = "yes" ]; then
-      rawhead=""
-      rawsector=""
-      rawcylinder=""
-      get_RawCHS_of_HD_from_EDD /dev/$target_hd
-      if [ -n "$rawhead" -a -n "$rawsector" -a -n "$rawcylinder" ]; then
-        sfdisk_opt="$sfdisk_opt -C $rawcylinder -H $rawhead -S $rawsector"
+      if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
+        rawhead=""
+        rawsector=""
+        rawcylinder=""
+        get_RawCHS_of_HD_from_EDD /dev/$target_hd
+        if [ -n "$rawhead" -a -n "$rawsector" -a -n "$rawcylinder" ]; then
+          sfdisk_opt="$sfdisk_opt -C $rawcylinder -H $rawhead -S $rawsector"
+        else
+          echo "No CHS value was found from EDD info for disk /dev/$target_hd." | tee --append $OCS_LOGFILE
+        fi
       else
-        echo "No CHS value was found from EDD info for disk /dev/$target_hd." | tee --append $OCS_LOGFILE
+        echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append $OCS_LOGFILE
       fi
     elif [ "$load_HD_CHS_from_img" = "yes" ]; then
-      # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
-      load_HD_geometry_opt_from_image $hd_tgt_tmp/ $target_hd
+      if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
+        # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
+        load_HD_geometry_opt_from_image $hd_tgt_tmp/ $target_hd
+      else
+        echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append $OCS_LOGFILE
+      fi
     fi
   fi
 } # end of prepare_network_clone_dev_info
