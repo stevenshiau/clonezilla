@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.16
+Version:	3.16.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jul 12 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.17-drbl1
+- When /home/partimag is a mount point, prep-ocsroot should use "skip" as the default item. Thanks to Bruce Solomon [rufovillosum _at_ yahoo com].
+
 * Thu Jul 09 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.16-drbl1
 - Bug fixed: sfidsk >= 2.26 does not support -C, -H, and -S. Skip using that when sfdisk >= 2.26, especiall in ocs-onthefly. Thanks for Dorzalty reporting this: https://sourceforge.net/p/clonezilla/discussion/Help/thread/8a7397fc
 

@@ -1072,6 +1072,7 @@ swift_ocsroot_dia_des() {
 }
 #
 get_ocsroot_resource() {
+  local default_menu
   find_ocsroot_dev_description
   if is_drbl_clonezilla_live_env; then
     webdav_ocsroot_dia_des
@@ -1081,9 +1082,15 @@ get_ocsroot_resource() {
   local TMP
   #
   if [ -z "$ocsroot_src" ]; then
+    # If $ocsroot is a mount point, then default in "skip", otherwise default in "local_dev"
+    if mountpoint $ocsroot >/dev/null 2>&1; then 
+      default_menu="skip"
+    else
+      default_menu="local_dev"
+    fi
     TMP=$(mktemp /tmp/ocsrootmenu.XXXXXX)
     trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    $DIA --backtitle "$msg_nchc_free_software_labs" --default-item "$default_menu" --title  \
     "$msg_mount_ocsroot_img_hint_short_des" --menu "$msg_mount_ocsroo_img_hint_long_des\n$msg_choose_mode:" \
     0 0 0 $DIA_ESC \
     "local_dev"    "$msg_mount_local_dev" \
