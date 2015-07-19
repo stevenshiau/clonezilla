@@ -10397,6 +10397,17 @@ get_efi_hd_boot_entry_info() {
   # Boot0002* EFI Network   ACPI(a0341d0,0)PCI(11,0)PCI(1,0)MAC(000c297f5675,0)
   # Boot0003* EFI Internal Shell (Unsupported option)       MM(b,3f055000,3f3b5fff)
   # Boot0004* CentOS 6	HD(1,800,64000,e8d785ed-a65f-4ea1-adf0-cc61e75677eb)File(\EFI\redhat\grub.efi)
+  # For efibootmgr >= 0.12, the output format has been changed as something like (note! "GPT"):
+  # BootCurrent: 0003
+  # BootOrder: 0003,0004,0001,0000,0002,0005
+  # Boot0000* EFI VMware Virtual SCSI Hard Drive (1.0)      PciRoot(0x0)/Pci(0x10,0x0)/SCSI(1,0)
+  # Boot0001* EFI Network   PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x1,0x0)/MAC(000c2968f323,0)
+  # Boot0002* EFI VMware Virtual SCSI Hard Drive (0.0)      PciRoot(0x0)/Pci(0x10,0x0)/SCSI(0,0)
+  # Boot0003* EFI VMware Virtual SATA CDROM Drive (1.0)     PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x5,0x0)/Sata(1,0,0)
+  # Boot0004* opensuse  HD(1,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\opensuse\grubx64.efi)
+  # Boot0005* EFI Internal Shell (Unsupported option)       MemoryMapped(11,0x7efcb000,0x7f355fff)/FvFile(c57ad6b7-0515-40a8-9d21-551652854e37)
+  # Thanks to johnv-valve for reporting this
+  # Ref: https://github.com/stevenshiau/clonezilla/issues/9
   local type_="$1" # nvram, full_path_to_efi_nvram_data_file
   local term_="$2" # boot_order, label, no, uuid, boot_file
   local cmd_ boot_order label part_no uuid boot_file
@@ -10407,7 +10418,9 @@ get_efi_hd_boot_entry_info() {
     nvram) 
 	   # From nvram in the running system
 	   cmd_="efibootmgr -v 2>/dev/null"
-           efibootmgr_v="$(LC_ALL=C efibootmgr --version | awk -F " " '{print $2}')"
+	   # We only need to get the major version number here, i.e. e.g. 0.11.0 -> 0.11
+	   # Otherwise the following version number comparision in bash won't work (0.11.0 vs 0.11)
+           efibootmgr_v="$(LC_ALL=C efibootmgr --version | awk -F " " '{print $2}' | awk -F"." '{print $1,"."$2}' | sed -r -e "s/[[:space:]]//g")"
 	   ;;
     *)  
 	   # From saved nvram file in the image dir.
