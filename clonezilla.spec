@@ -37,6 +37,8 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+- Bug fixed: efibootmgr >= 0.12 has newer output format. Thanks to johnv-valve for reporting this (https://github.com/stevenshiau/clonezilla/issues/9).
+
 * Sun Jul 12 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.17-drbl1
 - When /home/partimag is a mount point, prep-ocsroot should use "skip" as the default item. Thanks to Bruce Solomon [rufovillosum _at_ yahoo com].
 
