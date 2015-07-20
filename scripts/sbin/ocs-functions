@@ -2935,8 +2935,66 @@ create_partition() {
     ;;
   gpt)
     echo $msg_delimiter_star_line
-    if [ -e "$tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk" ]; then
+    # sfdisk >= 2.26 supports GPT, therefore we use it in higher priority.
+    # The output of sda-pt.sf <= 0.25 which does not support GPT is like:
+    # ===================================================
+    # partition table of /dev/sda
+    # unit: sectors
+    # 
+    # /dev/sda1 : start=        1, size=4294967295, Id=ee
+    # /dev/sda2 : start=        0, size=        0, Id= 0
+    # /dev/sda3 : start=        0, size=        0, Id= 0
+    # /dev/sda4 : start=        0, size=        0, Id= 0
+    # ===================================================
+    # The output of sda-pt.sf >= 0.26 which supports GPT is like:
+    # label: gpt
+    # label-id: 0E63D1AA-A8B4-4D91-A001-679409116352
+    # device: /dev/sda
+    # unit: sectors
+    # first-lba: 34
+    # last-lba: 125829086
+
+    # /dev/sda1 : start=        2048, size=      614400, type=DE94BBA4-06D1-4D40-A16A-BFD50179D6AC, uuid=7163ACE9-9949-453E-8DF2-F1723DAFD051, name="Basic data partition", attrs="RequiredPartiton GUID:63"
+    # /dev/sda2 : start=      616448, size=      202752, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=EA6B87BC-3976-4F47-A72E-793C9CEC6303, name="EFI system partition", attrs="GUID:63"
+    # /dev/sda3 : start=      819200, size=      262144, type=E3C9E316-0B5C-4DB8-817D-F92DF00215AE, uuid=B3E0D044-8F53-423F-9C37-90F3D8F84815, name="Microsoft reserved partition", attrs="GUID:63"
+    # /dev/sda4 : start=     1081344, size=   124745728, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, uuid=A3E73070-CFBD-4D9F-ADB9-8372BFB5AC0B, name="Basic data partition"
+    # ===================================================
+    if [ -n "$(LC_ALL=C grep -Ew "^label: gpt" "$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf")" ]; then
       clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
+      # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
+      echo $msg_delimiter_star_line
+      if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
+        echo "LV is still active, try to deactive it..."
+        ocs-lvm2-stop
+      fi
+      create_gpt_table_if_no_table $tgt_hd_file
+      echo "Running sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
+      LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf 2>&1 | tee -a $OCS_LOGFILE
+      RETVAL="${PIPESTATUS[0]}"
+      echo "This was done by sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
+      # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
+      if [ "$RETVAL" -ne 0 ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "$msg_failed_to_create_partition_table_on_disk: $tgt_hd_file" | tee -a $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "$msg_is_this_disk_too_small: $tgt_hd_file?" | tee -a $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+        [ "$save_restore_error_log" = "yes" ] && copy_error_log
+        my_ocs_exit 1
+      fi
+      # Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
+      if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -E "^Partition Table: unknown")" ]; then
+        do_gpt_dd="yes"
+      fi
+    elif [ -e "$tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk" ]; then
+      clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
+      # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
+      echo $msg_delimiter_star_line
+      if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
+        echo "LV is still active, try to deactive it..."
+        ocs-lvm2-stop
+      fi
       create_gpt_table_if_no_table $tgt_hd_file
       gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
       echo "Running: sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file"
@@ -2958,6 +3016,10 @@ create_partition() {
         else
           do_gpt_dd="no"
         fi
+	# Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
+	if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -E "^Partition Table: unknown")" ]; then
+          do_gpt_dd="yes"
+	fi
       else
         do_gpt_dd="yes"
       fi
@@ -10388,7 +10450,7 @@ get_efi_hd_boot_entry_info() {
   # To get the label from the saved file (it's from the saved image full_path_to_efi_nvram_data_file/efi-nvram.dat):
   # get_efi_hd_boot_entry_info full_path_to_efi_nvram_data_file label
 
-  # A normal output for "efibootmgr -v":
+  # A normal output for "efibootmgr -v" (version <= 0.11):
   # root@debian:~# efibootmgr -v
   # BootCurrent: 0001
   # BootOrder: 0004,0000,0001,0002,0003
@@ -10397,7 +10459,7 @@ get_efi_hd_boot_entry_info() {
   # Boot0002* EFI Network   ACPI(a0341d0,0)PCI(11,0)PCI(1,0)MAC(000c297f5675,0)
   # Boot0003* EFI Internal Shell (Unsupported option)       MM(b,3f055000,3f3b5fff)
   # Boot0004* CentOS 6	HD(1,800,64000,e8d785ed-a65f-4ea1-adf0-cc61e75677eb)File(\EFI\redhat\grub.efi)
-  # For efibootmgr >= 0.12, the output format has been changed as something like (note! "GPT"):
+  # For efibootmgr >= 0.12, the output format has been changed to something like (note! "GPT"):
   # BootCurrent: 0003
   # BootOrder: 0003,0004,0001,0000,0002,0005
   # Boot0000* EFI VMware Virtual SCSI Hard Drive (1.0)      PciRoot(0x0)/Pci(0x10,0x0)/SCSI(1,0)
