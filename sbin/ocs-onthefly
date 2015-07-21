@@ -100,13 +100,73 @@ check_pt_then_run_create_part_table() {
   # From the output file of parted, we can decide if the partition is gpt or mbr
   if `is_gpt_partitition_table_file $tgt_parted_info`; then
     # The type is GPT
-    if [ -e "$tgt_gpt_gdisk" ]; then
+    echo $msg_delimiter_star_line
+    # sfdisk >= 2.26 supports GPT, therefore we use it in higher priority.
+    # The output of sda-pt.sf <= 0.25 which does not support GPT is like:
+    # ===================================================
+    # partition table of /dev/sda
+    # unit: sectors
+    # 
+    # /dev/sda1 : start=        1, size=4294967295, Id=ee
+    # /dev/sda2 : start=        0, size=        0, Id= 0
+    # /dev/sda3 : start=        0, size=        0, Id= 0
+    # /dev/sda4 : start=        0, size=        0, Id= 0
+    # ===================================================
+    # The output of sda-pt.sf >= 0.26 which supports GPT is like:
+    # label: gpt
+    # label-id: 0E63D1AA-A8B4-4D91-A001-679409116352
+    # device: /dev/sda
+    # unit: sectors
+    # first-lba: 34
+    # last-lba: 125829086
+
+    # /dev/sda1 : start=        2048, size=      614400, type=DE94BBA4-06D1-4D40-A16A-BFD50179D6AC, uuid=7163ACE9-9949-453E-8DF2-F1723DAFD051, name="Basic data partition", attrs="RequiredPartiton GUID:63"
+    # /dev/sda2 : start=      616448, size=      202752, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=EA6B87BC-3976-4F47-A72E-793C9CEC6303, name="EFI system partition", attrs="GUID:63"
+    # /dev/sda3 : start=      819200, size=      262144, type=E3C9E316-0B5C-4DB8-817D-F92DF00215AE, uuid=B3E0D044-8F53-423F-9C37-90F3D8F84815, name="Microsoft reserved partition", attrs="GUID:63"
+    # /dev/sda4 : start=     1081344, size=   124745728, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, uuid=A3E73070-CFBD-4D9F-ADB9-8372BFB5AC0B, name="Basic data partition"
+    # ===================================================
+    if [ -n "$(LC_ALL=C grep -Ew "^label: gpt" $tgt_pt_tmp)" ]; then
+      clean_mbr_partition_table_before_gen_gpt_table /dev/$target_hd
+      # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
+      echo $msg_delimiter_star_line
+      if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
+        echo "LV is still active, try to deactive it..."
+        ocs-lvm2-stop
+      fi
+      create_gpt_table_if_no_table /dev/$target_hd
+      echo "Running sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp" | tee -a $OCS_LOGFILE
+      LC_ALL=C sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp | tee -a $OCS_LOGFILE
+      RETVAL="${PIPESTATUS[0]}"
+      echo "This was done by \"sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp\""
+      # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
+      if [ "$RETVAL" -ne 0 ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "$msg_failed_to_create_partition_table_on_disk: /dev/$target_hd" | tee -a $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "$msg_is_this_disk_too_small: /dev/$target_hd?" | tee -a $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+        [ "$save_restore_error_log" = "yes" ] && copy_error_log
+        my_ocs_exit 1
+      fi
+      # Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
+      if [ -n "$(LC_ALL=C parted -s /dev/$target_hd print | grep -E "^Partition Table: unknown")" ]; then
+        do_gpt_dd="yes"
+      fi
+    elif [ -e "$tgt_gpt_gdisk" ]; then
       # Use sgdisk to create that.
+      clean_mbr_partition_table_before_gen_gpt_table /dev/$target_hd
+      # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
+      echo $msg_delimiter_star_line
+      if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
+        echo "LV is still active, try to deactive it..."
+        ocs-lvm2-stop
+      fi
       create_gpt_table_if_no_table /dev/$target_hd
       gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
-      echo "Running: sgdisk -l $tgt_gpt_gdisk /dev/$target_hd"
-      LC_ALL=C sgdisk -l $tgt_gpt_gdisk /dev/$target_hd
-      sgdisk_rc=$?
+      echo "Running: sgdisk -l $tgt_gpt_gdisk /dev/$target_hd" | tee -a $OCS_LOGFILE
+      LC_ALL=C sgdisk -l $tgt_gpt_gdisk /dev/$target_hd | tee $gdisk_tmp
+      sgdisk_rc="${PIPESTATUS[0]}"
       if [ "$sgdisk_rc" -eq 0 ]; then
         # There is a bug about sgdisk 0.6.14, i.e.
         # sgdisk -l /home/partimag/2011-02-27-02-img-hfsplus-gdisk/sda-gpt.gdisk /dev/sdb
@@ -123,6 +183,10 @@ check_pt_then_run_create_part_table() {
         else
           do_gpt_dd="no"
         fi
+	# Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
+	if [ -n "$(LC_ALL=C parted -s /dev/$target_hd print | grep -E "^Partition Table: unknown")" ]; then
+          do_gpt_dd="yes"
+	fi
       else
         do_gpt_dd="yes"
       fi
@@ -140,10 +204,10 @@ check_pt_then_run_create_part_table() {
     fi
     if [ "$do_gpt_dd" = "yes" ]; then
       # Use dd to create that.
-      echo "Creating primary GPT info on /dev/$target_hd..."
+      echo "Creating primary GPT info on /dev/$target_hd..." | tee -a $OCS_LOGFILE
       LC_ALL=C dd if=$tgt_1st_gpt of=/dev/$target_hd bs=512 count=34 &>/dev/null
       # 2nd GPT
-      echo "Creating the secondary GPT to /dev/$target_hd..."
+      echo "Creating the secondary GPT to /dev/$target_hd..." | tee -a $OCS_LOGFILE
       to_seek="$((${tgt_disk_size_sec}-33+1))"
       LC_ALL=C dd if=$tgt_2nd_gpt of=/dev/$target_hd seek=${to_seek} bs=512 count=33 &>/dev/null
     fi

@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.19
+Version:	3.16.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jul 21 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.20-drbl1
+- Using the same mechanism to deal with GPT partition table in ocs-onthefly for disk to disk cloning.
+
 * Mon Jul 20 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.19-drbl1
 - When restoring the image of a GPT disk, if the file "sda-pt.sf" for example is dumped by sfdisk >= 2.26, use sfdisk in higher priority than gdisk.
 - Bug fixed: the output file of update-efi-nvram-boot-entry failed to assign the correct variables.
