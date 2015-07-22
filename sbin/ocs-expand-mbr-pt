@@ -219,6 +219,7 @@ perl -pi -e "s/://g" $new_sf_tmp
 
 #
 echo "unit: sectors" > $new_sf
+echo "" >> $new_sf
 start_no_keep=""
 size_no_keep=""
 extended_part=""
@@ -227,9 +228,8 @@ append_to_next="0"
 # Initial gap for the 1st partition. After this, it should be 0.
 logical_part_gap="2"
 while read dev start start_no size size_no id flag; do
-  if `is_partition $dev` && \
-  [ "$(LC_ALL=C get_part_number $dev | \
-    sed -r -e "s|^[^[:digit:]]*||g")" -le 4 ]; then
+  pt_no="$(LC_ALL=C get_part_number $dev | sed -r -e "s|^[^[:digit:]]*||g")"
+  if `is_partition $dev` && [ "$pt_no" -le 4 ]; then
    # primary/extended partitions
     [ -z "$start_no_keep" ] && start_no_keep=${start_no/,/}  # The 1st one
     [ -z "$size_no_keep" ] && size_no_keep=0
@@ -248,7 +248,7 @@ while read dev start start_no size size_no id flag; do
       # Ref: http://windows7forums.com/windows-7-discussion/15629-hack-remove-100-mb-system-reserved-partition-when-installing-windows-7-a.html
       expand="true"
       if [ "${size_no/,/}" -eq "409600" -o "${size_no/,/}" -eq "204800" ]; then
-	if [ -n "$(echo $id | grep -iE "id=7")" -a \
+        if [ -n "$(echo $id | grep -iE "(id|type)=7")" -a \
              -n "$(echo $flag | grep -iE "bootable")" ]; then
           expand="false"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -264,7 +264,7 @@ while read dev start start_no size size_no id flag; do
 	fi
       fi
       # For Linux Swap partition
-      if [ -n "$(echo $id | grep -iE "id=82")" ]; then
+      if [ -n "$(echo $id | grep -iE "(id|type)=82")" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
 	echo "Linux swap partition \"$id\" found. Not to expand this partition."
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -284,7 +284,7 @@ while read dev start start_no size size_no id flag; do
 	append_to_next="$(LC_ALL=C printf "%.0f" "$(echo "${size_no}*$ratio - ${size_no}" | bc -l)")"
       fi
     fi
-    if [ -n "$(echo $id | grep -iE "(id=5|id=f)")" ]; then
+    if [ -n "$(echo $id | grep -iE "((id|type)=5|(id|type)=f)")" ]; then
       # keep the extended partition, we need it for logical partitions.
       extended_part="$dev"
       extended_start_no="$start_no"
@@ -306,7 +306,7 @@ while read dev start start_no size size_no id flag; do
     else
       expand="true"
       # For Linux Swap partition
-      if [ -n "$(echo $id | grep -iE "id=82")" ]; then
+      if [ -n "$(echo $id | grep -iE "(id|type)=82")" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
 	echo "Linux swap partition \"$id\" found. Not to expand this partition."
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -331,6 +331,8 @@ while read dev start start_no size size_no id flag; do
     [ "$size_no" -ne 0 ] && size_no_keep="${size_no/,/}"
   fi
 done < $new_sf_tmp
+# For sfdisk <= 0.25, only "Id=" is accepted, not "type=".
+perl -pi -e "s/type=/Id=/g" $new_sf
 
 echo "The partition table to write in $target_disk:"
 echo "*****************************************"
