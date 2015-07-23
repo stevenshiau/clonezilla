@@ -2997,8 +2997,8 @@ create_partition() {
       fi
       create_gpt_table_if_no_table $tgt_hd_file
       gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
-      echo "Running: sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file"
-      LC_ALL=C sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file | tee $gdisk_tmp
+      echo "Running: sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file" | tee --append ${OCS_LOGFILE}
+      LC_ALL=C sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file 2>&1 | tee $gdisk_tmp | tee --append ${OCS_LOGFILE}
       sgdisk_rc="${PIPESTATUS[0]}"
       if [ "$sgdisk_rc" -eq 0 ]; then
         # There is a bug about sgdisk 0.6.14, i.e.
@@ -9205,7 +9205,8 @@ ocs_fail_mountpoint() {
 ocs_success_mountpoint() {
   echo "$msg_df_report" | tee --append ${OCS_MOUNT_LOG}
   echo $msg_delimiter_star_line | tee --append ${OCS_MOUNT_LOG}
-  df -ah 2>&1 | tee --append ${OCS_MOUNT_LOG}
+  # Option "df_extra_opt" is from prep-ocsroot.
+  df $df_extra_opt -h 2>&1 | tee --append ${OCS_MOUNT_LOG}
   echo $msg_delimiter_star_line  | tee --append ${OCS_MOUNT_LOG}
   echo -n "$msg_press_enter_to_continue..."
   read
