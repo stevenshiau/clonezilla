@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.21
+Version:	3.16.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jul 23 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.22-drbl1
+- The output of sgdisk will be logged in clonezilla.log, too.
+- Separating the option "-a" of df in different cases in prep-ocsroot.
+
 * Wed Jul 22 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.21-drbl1
 - Bug fixed: option "-k1" failed due to ocs-expand-mbr-pt failed to read the output of sfdisk >= 2.26.
 
