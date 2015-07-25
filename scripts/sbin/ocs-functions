@@ -2577,15 +2577,15 @@ check_integrity_of_partition_table_in_disk() {
   if [ "$rc" -gt 0 ]; then
     # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
     pv_on_dsk="$(get_pv_on_disk_from_local_machine)"
-    pv_on_dsk_flag="0"
+    pv_on_dsk_flag="false"
     for ip in $pv_on_dsk; do
       if [ -n "$(LC_ALL=C echo "${disk_file#/dev/*}" | grep -Ew "${ip}")" ]; then
         # Found PV on disk
-        pv_on_dsk_flag="1"
+        pv_on_dsk_flag="true"
         break
       fi
     done
-    if [ "$pv_on_dsk_flag" -eq 0 ]; then
+    if [ "$pv_on_dsk_flag" = "false" ]; then
       # No PV on disk, it does not make sense for this bare disk.
       disk_name="$(basename $disk_file)"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -5650,7 +5650,11 @@ save_logv() {
   # Ref: https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/075d3f5a/
   # Thanks to Uditha De Silva for providing a better mechanism to parse the PV we are interested here.
   # Was using: LC_ALL=C pvscan 2>/dev/null 3<&- 4<&- | grep -Ew lvm2 | while read LINE; do
-  TF="devices { filter = [ 'a:(${target/ /|})\$:', 'r:.*:' ] }"
+  # Run "man lvm.conf" and search "filter  — List of patterns to apply to devices found by a scan"
+  # to see the "--config" option for filtering device
+  # Thanks to SLLabs Louis for the patch to that of Uditha De Silva. 
+  # Ref: http://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/075d3f5a/?limit=25#f533
+  TF="devices { filter = [ 'a:(${target// /|})\$:', 'r:.*:' ] }"
   LC_ALL=C pvscan --config "$TF" 2>/dev/null 3<&- 4<&- | grep -Ew lvm2 | while read LINE; do
     DEV="$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f2)"
     if [ "$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f3)" = "VG" ]; then
@@ -7267,6 +7271,7 @@ task_saveparts() {
     check_integrity_of_partition_table_in_disk /dev/$ihd
     echo -n "Reading the partition table for /dev/$ihd..." | tee --append $OCS_LOGFILE
     # No matter it's MBR or GPT, we use sfdisk to dump partition table since if dual boot (Mac OS, Linux) on Mac book, this partition table is required for Linux normally.
+    # For sfdisk >=2.26, both GPT and MBR format are supported.
     LC_ALL=C sfdisk -d /dev/$ihd > $target_dir_fullpath/$(to_filename ${ihd})-pt.sf 2>/dev/null
     RETVAL="$?"
     echo "RETVAL=$RETVAL" | tee --append $OCS_LOGFILE
@@ -7280,6 +7285,14 @@ task_saveparts() {
     # //NOTE// Here we can not use function "get_partition_table_type_from_img"
     # because the image is not created completely yet.
     if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
+      if [ "$RETVAL" -ne 0 ]; then
+        # sfdisk failed to save the partition table
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "$msg_failed_to_save_partition_table_for_disk: $ihd" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+        exit 1
+      fi
       # GPT, output the GPT data. Ref: http://en.wikipedia.org/wiki/GUID_Partition_Table
       # Legacy MBR (LBA 0), Partition table header (LBA 1), Partition entries (LBA 2-33)
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
@@ -7313,6 +7326,14 @@ task_saveparts() {
         echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       fi
     elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
+      if [ "$RETVAL" -ne 0 ]; then
+        # sfdisk failed to save the partition table
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "$msg_failed_to_save_partition_table_for_disk: $ihd" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+        exit 1
+      fi
       # MBR disk, we can save the hidden data between MBR and 1st partition. Maybe the data is useless, maybe it's useful. Since some of the recovery programs put data on that.
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       if [ "$clone_hidden_data" = "yes" ]; then
@@ -7347,31 +7368,26 @@ task_saveparts() {
       fi
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     else
+      # Disk with no GPT or MBR partition.
+      # In this case, sfdisk should fail to save the partition table, but if PV on a disk, not partition.
       # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
       pv_on_dsk="$(get_pv_on_disk_from_local_machine)"
-      pv_on_dsk_flag="0"
+      pv_on_dsk_flag="false"
       for ip in $pv_on_dsk; do
         if [ -n "$(LC_ALL=C echo "$ihd" | grep -Ew "${ip}")" ]; then
           # Found PV on disk
-          pv_on_dsk_flag="1"
+          pv_on_dsk_flag="true"
 	  break
         fi
       done
-      if [ "$pv_on_dsk_flag" -eq 0 ]; then
-        # No PV on disk, it does not make sense to save this bare disk.
+      if [ "$pv_on_dsk_flag" = "false" ]; then
+        # No PV on disk, it does not make sense to save this bare disk, and sfdisk definitely should fail.
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
         echo "Unknown partition table format on disk /dev/$ihd." | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
         exit 1
       fi
-    fi
-    if [ "$RETVAL" -ne 0 ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "$msg_failed_to_save_partition_table_for_disk: $ihd" | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      exit 1
     fi
   done
   echo "done!"
@@ -7452,7 +7468,7 @@ task_saveparts() {
 
   rc_saveparts="$(($rc_saveparts + $rc))"
   return $rc_saveparts
-} # end of task_saveparts()
+} # end of task_saveparts
 
 # task "restoredisk" 
 # parameter:
