@@ -17,6 +17,13 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
 # Settings
 default_dns_server="8.8.8.8"
+# Default timeout for getting linking status of each ethernet card. Unit: sec.
+# For Cisco switch with STP (Spanning Tree Protocol) enabled, listening delay is 30 secs, and learning delay is 15 secs.
+# Therefore total forwarding delay is 45 secs. This is old protocol.
+# For network with RSTP (Rapid Spanning Tree Protocol), it could be only 6 secs (default: 3 times 2 seconds).
+# Ref: https://en.wikipedia.org/wiki/Spanning_Tree_Protocol
+# Here we set 30 secs as the default value.
+default_link_det_timeout="30"
 
 #
 check_if_root
@@ -34,6 +41,7 @@ USAGE() {
    echo " -n, --netmask NETMASK   Assign the netmask shown in the dialog as NETMASK."
    echo " -g, --gateway GATEWAY   Assign the gateway shown in the dialog as GATEWAY."
    echo " -s, --dns     DNS       Assign the domain name server shown in the dialog as DNS."
+   echo " -t, --timeout TIME      Assign the timeout to get the linking status of each NIC. Unit: sec. Default is $default_link_det_timeout secs."
    echo  " --ignore-gw            Do not set default gateway."
    echo  " --ignore-dns           Do not set domain name server."
    echo  " -r, --ignore-dv  DV    Do not config network device DV, such as 'eth1 eth2'."
@@ -301,6 +309,14 @@ while [ $# -gt 0 ]; do
 	  shift
         fi
 	;;
+    -t|--timeout)
+	shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+	  link_det_timeout="$1"
+	  shift
+        fi
+	;;
     --ignore-gw)
             config_gw="no"
 	    shift;;
@@ -327,6 +343,9 @@ ask_and_load_lang_set $specified_lang
 
 # check DIA
 check_DIA_set_ESC $DIA
+
+# 
+[ -z "$link_det_timeout" ] && link_det_timeout="$default_link_det_timeout"
 
 ##############
 #### main ####
@@ -378,9 +397,29 @@ if [ "$count" -gt 1 ]; then
     [ -z "$dev_model" ] && dev_model="Unknown_NIC"
     # only first 26 characters.
     dev_model="${dev_model:0:25}.."
-    link_status="$(LC_ALL=C ethtool $DEVICE | grep -i "Link detected:" | cut -d":" -f2 | sed -e "s/ //g")"
+    echo -n "Getting the linking status of $DEVICE. Timeout in $link_det_timeout secs."
+    TIMEOUT="$link_det_timeout"
+    link_status=""
+    while [ "$link_status" = "no" -o -z "$link_status" ]; do
+      sleep 1
+      link_status="$(LC_ALL=C ethtool $DEVICE | grep -i "Link detected:" | cut -d":" -f2 | sed -e "s/ //g")"
+      TIMEOUT="$(( $TIMEOUT - 1 ))"
+      if [ "$TIMEOUT" -le 0 ]; then
+        echo
+        echo -n "Timeout when finding linking status of $DEVICE."
+	sleep 2
+        break
+      else
+        echo -n "."
+      fi
+    done
+    if [ "$link_status" = "yes" ]; then
+      echo " Found status \"linked\"."
+    else
+      echo " Status \"not linked\" or \"unknown\"."
+    fi
     if [ -z "$link_status" ]; then
-      link_status="Unknown"	     
+      link_status="Unknown"     
     fi
     hwaddr="$(drbl-get-macadd $DEVICE)"
     DEVICELIST="$DEVICELIST ${DEVICE} $(rep_whspc_w_udrsc "$msg_link_detected"):${link_status}(${dev_model}|${hwaddr})"
