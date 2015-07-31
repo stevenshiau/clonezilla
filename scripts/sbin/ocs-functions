@@ -5702,16 +5702,28 @@ save_logv() {
   
   # We just want the LV in chosen target
   echo "Parsing logical volumes..." | tee --append $OCS_LOGFILE
-  # lvscan results are like:
+  # (1) lvscan results without snapshots are like:
+  # ====================================================
   # ACTIVE            '/dev/vg3/lvol0' [1.20 GB] inherit
   # ACTIVE            '/dev/vg3/lvol1' [648.00 MB] inherit
   # ACTIVE            '/dev/vg/lvol0' [1.50 GB] inherit
   # ACTIVE            '/dev/vg/lvol1' [500.00 MB] inherit
   #                         ^^ The VG
-  
+  # ====================================================
+  # (2) lvscan results with snapshots are like:
+  #  Ref: https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/075d3f5a/#f533/628c
+  #  Thanks to Shaun Rowland for providing the patch.
+  # ====================================================
+  #  ACTIVE   Original '/dev/vg0/root' [19.11 GiB] inherit
+  #  ACTIVE   Snapshot '/dev/vg0/snap-factory' [19.18 GiB] inherit
+  #  ACTIVE   Snapshot '/dev/vg0/snap-update' [19.18 GiB] inherit
+  #  ACTIVE            '/dev/vg1/vault' [100.00 MiB] inherit
+  #  ACTIVE            '/dev/vg1/rescue' [3.90 GiB] inherit
+  # ====================================================
+
   # find LV for chosen PV.
   LC_ALL=C lvscan 2>/dev/null 3<&- 4<&- | grep "/.*/" | while read LINE; do
-    LOGV="$(LC_ALL=C echo $LINE | tr -s ' ' | cut -d' ' -f2 | tr -d "'")"
+    LOGV="$(LC_ALL=C echo $LINE | cut -f 2 -d \')"
     # LOGV is like: /dev/vg3/lvol0
     while read vg dev uuid; do
      if [ "$vg" = "/NOT_FOUND" ]; then
