@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.23
+Version:	3.16.24
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jul 31 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.24-drbl1
+- A better mechanism was added to get the linking status of network card in ocs-live-netcfg.
+- Bug fixed: failed to process LVM with snapshots. Thanks to Shaun Rowland for providing the patch. (https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/075d3f5a/#f533/628c)
+
 * Sat Jul 25 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.23-drbl1
 - Bug fixed: failed to continue after trying to save the partition table for PV on disk.
 - Bug fixed: failed to save image for PV on multiple partitions. Thanks to SLLabs Louis for the patch.
