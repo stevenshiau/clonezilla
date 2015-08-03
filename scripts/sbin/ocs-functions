@@ -1625,12 +1625,23 @@ get_known_partition_sf_format() {
     #/dev/hda12: start=  1867383, size= 14909202, Id=83
     #
     # Therefore we have to remove : in the end also (for hda10:, hda11:...)
+    # //NOTE// for sfdisk >= 2.26, the format is different:
+    # label: dos
+    # label-id: 0x000ea753
+    # device: /dev/sda
+    # unit: sectors
+    # 
+    # /dev/sda1 : start=        2048, size=    97654784, type=83, bootable
+    # /dev/sda2 : start=    97656832, size=     1953792, type=82
+    # /dev/sda3 : start=    99612670, size=    26214402, type=5
+    # /dev/sda5 : start=    99612672, size=    26214400, type=83
+
     [ -z "$partition_table" ] && return 1
-    known_parts="$(LC_ALL=C cat $partition_table | grep "Id=" | awk -F, '{ if($3!=" Id= 0" && $3!=" Id= f" && $3!=" Id=82" && $3!=" Id= 5" && $3!=" Id=85") print $1; }' | cut -d" " -f1 | sed -e 's/\/dev\///g' -e 's/:$//g')"
+    known_parts="$(LC_ALL=C cat $partition_table | grep -E "(Id=|type=)" | awk -F, '{ if($3!=" (Id= 0|type=0)" && $3!=" (Id= f|type=f)" && $3!=" (Id=82|type=82)" && $3!=" (Id= 5|type=5)" && $3!=" (Id=85|type=85)") print $1; }' | cut -d" " -f1 | sed -e 's/\/dev\///g' -e 's/:$//g')"
     # since Id=82 is for swap and Solaris, we have to check it if it's really swap or not. Here we can use the table from parted (ex: sda-pt.parted). Maybe in the future version, we all use the output from parted (REMEMBER! If we do so, the old clonezilla image format won't work!)
     known_parts="$(echo $known_parts)"  # make it a line
-    if grep -qiEw "Id=82" $partition_table 2>/dev/null; then
-       fuzzy_parts="$(LC_ALL=C grep -iEw "Id=82" $partition_table | cut -d" " -f1 | sed -e 's/:$//g')"
+    if grep -qiEw "(Id=82|type=82)" $partition_table 2>/dev/null; then
+       fuzzy_parts="$(LC_ALL=C grep -iEw "(Id=82|type=82)" $partition_table | cut -d" " -f1 | sed -e 's/:$//g')"
        # fuzzy_parts is like /dev/sda2
        workdir="$(dirname $partition_table)"
        for i in $fuzzy_parts; do
@@ -1670,8 +1681,8 @@ get_swap_partition_sf_format() {
     local partition_table="$1"
     local known_parts="" fuzzy_parts workdir dsk_pt index part_fs dev_ file_2_parse
     [ -z "$partition_table" ] && return 1
-    if LC_ALL=C grep -qiEw "Id=82" $partition_table 2>/dev/null; then
-       fuzzy_parts="$(LC_ALL=C grep -iEw "Id=82" $partition_table | cut -d" " -f1 | sed -e 's/:$//g')"
+    if LC_ALL=C grep -qiEw "(Id=82|type=82)" $partition_table 2>/dev/null; then
+       fuzzy_parts="$(LC_ALL=C grep -iEw "(Id=82|type=82)" $partition_table | cut -d" " -f1 | sed -e 's/:$//g')"
        # fuzzy_parts is like /dev/sda2
        workdir="$(LC_ALL=C dirname $partition_table)"
        # Double check by the file *-pt.parted.
@@ -7353,7 +7364,7 @@ task_saveparts() {
       fi
       # Find if the 1st partition (e.g. /dev/sda1) is minix device (Id=81).
       # We do not care about multipath device (e.g. cciss, i.e. /dev/cciss/c0d0p1), since we believe no one will install Minix on multipath device.
-      if [ -n "$(grep -Ew "^/dev/$(to_filename ${ihd})1" $target_dir_fullpath/$(to_filename ${ihd})-pt.sf 2>/dev/null | grep -Ewi "Id=81")" ]; then
+      if [ -n "$(grep -Ew "^/dev/$(to_filename ${ihd})1" $target_dir_fullpath/$(to_filename ${ihd})-pt.sf 2>/dev/null | grep -Ewi "(Id=81|type=81)")" ]; then
         # It's minix slice, we only have to dump the sub-partition table, i.e. 32 sectors.
 	# The slices, sub-partitions list is like:
 	# partx -b -P -o nr,type,scheme,start,end /dev/sda
@@ -7748,7 +7759,7 @@ task_restoreparts() {
         fi
         echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
 	# For minix sub-partition table
-        if [ -n "$(grep -Ew "^/dev/$(to_filename ${ihd})1" $target_dir_fullpath/$(to_filename ${ihd})-pt.sf 2>/dev/null | grep -Ewi "Id=81")" ]; then
+	if [ -n "$(grep -Ew "^/dev/$(to_filename ${ihd})1" $target_dir_fullpath/$(to_filename ${ihd})-pt.sf 2>/dev/null | grep -Ewi "(Id=81|type=81)")" ]; then
 	  if [ -e "$target_dir_fullpath/$(to_filename ${ihd})1-sub-pt.dd" ]; then
 	    cmd_restore_minix_sub_parts_table="dd if=$target_dir_fullpath/$(to_filename ${ihd})1-sub-pt.dd of=/dev/$(to_filename ${ihd})1"
 	    echo "Restoring the Minix sub-partition table to /dev/$(to_filename ${ihd})1 by:" | tee --append ${OCS_LOGFILE}
@@ -9699,7 +9710,7 @@ get_part_id_from_sf_format() {
   # sfdisk --print-id /dev/sdb 1
   # a5
   # ===
-  LC_ALL=C grep -Ew "^/dev/$part_name" $sf_file_in_image 2>/dev/null | grep -Eo "Id=.*" | awk -F "," '{print $1}' | sed -e "s/Id=//g" -e "s/^[[:space:]]*//g"
+  LC_ALL=C grep -Ew "^/dev/$part_name" $sf_file_in_image 2>/dev/null | grep -Eo "(Id=.*|type=.*)" | awk -F "," '{print $1}' | sed -e "s/Id=//g" -e "s/type=//g" -e "s/^[[:space:]]*//g"
 } # end of get_part_id_from_sf_format
 #
 get_bsd_swap_partition() {
