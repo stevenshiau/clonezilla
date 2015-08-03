@@ -357,7 +357,14 @@ get_fs_from_blkid() {
       ptype="$(get_partition_table_type_from_disk $hdtmp)"
       case "$ptype" in
       mbr)
-        pt_id="$(LC_ALL=C sfdisk --print-id $hdtmp $ptno 2>/dev/null)"
+        # sfdisk >= 2.26 "--print-id" is deprecated in favour of "--part-type"
+	if [ -n "$(LC_ALL=C sfdisk --help 2>&1 | grep -- "--part-type")" ]; then
+	  print_id_opt="--part-type"
+        else
+          # old option "--print-id"
+	  print_id_opt="--print-id"
+	fi
+        pt_id="$(LC_ALL=C sfdisk $print_id_opt $hdtmp $ptno 2>/dev/null)"
         # Partition ID a5 (FreeBSD), a6 (OpenBSD), a9 (NetBSD) are slices
         if [ "$(echo "$pt_id" | grep -Ewi "(a5|a6|a9)")" ]; then
           TYPE="BSD_slice"
