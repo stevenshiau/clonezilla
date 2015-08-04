@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.25
+Version:	3.16.26
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Aug 04 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.26-drbl1
+- Bug fixed: when the image saved from sda, for example, was restored to sdb, the swap parttion was not restored correctly due to function get_swap_partition_sf_format failed to parse the file sdb-pt.sf.
+
 * Mon Aug 03 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.25-drbl1
 - The "--print-id" of sfdisk is deprecated in favour of "--part-type". Program ocs-get-part-info has the corresponding change.
 - The output of sfdisk >= 2.26 has the format "type=" instead of "Id=". The corresponding changes have to be done in ocs-functions.
