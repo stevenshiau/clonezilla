@@ -1602,6 +1602,7 @@ check_specify_part_exists() {
 #
 get_known_partition_sf_format() {
     # This function is used with the output format of sfdisk
+    # However, this function is actually not used in Clonezilla.
     local partition_table="$1"
     local known_parts="" fuzzy_parts workdir dsk_pt index part_fs dsk_ file_2_parse
     # Note! https://sourceforge.net/forum/message.php?msg_id=4289601
@@ -1637,8 +1638,8 @@ get_known_partition_sf_format() {
     # /dev/sda5 : start=    99612672, size=    26214400, type=83
 
     [ -z "$partition_table" ] && return 1
-    known_parts="$(LC_ALL=C cat $partition_table | grep -E "(Id=|type=)" | awk -F, '{ if($3!=" (Id= 0|type=0)" && $3!=" (Id= f|type=f)" && $3!=" (Id=82|type=82)" && $3!=" (Id= 5|type=5)" && $3!=" (Id=85|type=85)") print $1; }' | cut -d" " -f1 | sed -e 's/\/dev\///g' -e 's/:$//g')"
-    # since Id=82 is for swap and Solaris, we have to check it if it's really swap or not. Here we can use the table from parted (ex: sda-pt.parted). Maybe in the future version, we all use the output from parted (REMEMBER! If we do so, the old clonezilla image format won't work!)
+    known_parts="$(LC_ALL=C cat $partition_table | grep -E "(Id=|type=)" | awk -F, '{ if($3!=" (Id= 0|type=0)" && $3!=" (Id= f|type=f)" && $3!=" (Id= 5|type=5)" && $3!=" (Id=85|type=85)") print $1; }' | cut -d" " -f1 | sed -e 's/\/dev\///g' -e 's/:$//g')"
+    # since Id=82 is for swap and Solaris, we have to check it if it's really swap or not. Here we can use the table from parted (ex: sda-pt.parted). First we use the output from parted, if it does not exist (unlikely actually), we test the output of lsblk (file blkdev.list).
     known_parts="$(echo $known_parts)"  # make it a line
     if grep -qiEw "(Id=82|type=82)" $partition_table 2>/dev/null; then
        fuzzy_parts="$(LC_ALL=C grep -iEw "(Id=82|type=82)" $partition_table | cut -d" " -f1 | sed -e 's/:$//g')"
@@ -1646,8 +1647,18 @@ get_known_partition_sf_format() {
        workdir="$(dirname $partition_table)"
        for i in $fuzzy_parts; do
          dsk_=${i#/dev/*}
-         # For ocs-onthefly, the file to be checked is tgt-blkdev.list
-         if [ -e "$workdir/blkdev.list" -o -e "$workdir/tgt-blkdev.list" ]; then
+         # /dev/sda2 -> sda2 -> 2
+	 # dsk_pt is like /home/partimag/sarge-r8/sda-pt.parted
+         dsk_pt="$workdir/$(to_filename $(get_diskname $i))-pt.parted"
+         # For cciss partition, e.g. /dev/cciss/c0d0p2 will be "p2" which is got from $(get_part_number /dev/cciss/c0d0p2)", here the part_index we want is only number, hence we need to trip the leading characters.
+         index="$(LC_ALL=C get_part_number $i | sed -r -e "s|^[^[:digit:]]*||g")"  # index is like 2
+         if [ -e "${dsk_pt}" ]; then
+           part_fs="$(LC_ALL=C grep -Ew "^[[:space:]]*$index" ${dsk_pt} | grep -i swap)"
+           if [ -z "$part_fs" ]; then  # No swap keyword in parted table for $index
+             known_parts="$known_parts $dsk_"
+           fi
+         elif [ -e "$workdir/blkdev.list" -o -e "$workdir/tgt-blkdev.list" ]; then
+           # For ocs-onthefly, the file to be checked is tgt-blkdev.list
            # If blkdev.list exits, we use it first. Since it's more precise when dm exists.
            # TODO: Check if cciss partition OK or not.
 	   if [ -e "$workdir/tgt-blkdev.list" ]; then
@@ -1659,18 +1670,6 @@ get_known_partition_sf_format() {
 	            $file_2_parse | grep -i swap)" ]; then
              known_parts="$known_parts $dsk_"
 	   fi
-         else
-           # /dev/sda2 -> sda2 -> 2
-	   # dsk_pt is like /home/partimag/sarge-r8/sda-pt.parted
-           dsk_pt="$workdir/$(to_filename $(get_diskname $i))-pt.parted"
-           # For cciss partition, e.g. /dev/cciss/c0d0p2 will be "p2" which is got from $(get_part_number /dev/cciss/c0d0p2)", here the part_index we want is only number, hence we need to trip the leading characters.
-           index="$(LC_ALL=C get_part_number $i | sed -r -e "s|^[^[:digit:]]*||g")"  # index is like 2
-           if [ -e "${dsk_pt}" ]; then
-             part_fs="$(LC_ALL=C grep -Ew "^[[:space:]]*$index" ${dsk_pt} | grep -i swap)"
-             if [ -z "$part_fs" ]; then  # No swap keyword in parted table for $index
-               known_parts="$known_parts $dsk_"
-             fi
-           fi
          fi
        done
     fi
@@ -1688,8 +1687,26 @@ get_swap_partition_sf_format() {
        # Double check by the file *-pt.parted.
        for i in $fuzzy_parts; do
          dsk_=${i#/dev/*}
-         # For ocs-onthefly, the file to be checked is tgt-blkdev.list
-         if [ -e "$workdir/blkdev.list" -o -e "$workdir/tgt-blkdev.list" ]; then
+         # /dev/sda2 -> sda2 -> 2
+	 # dsk_pt is like /home/partimag/sarge-r8/sda-pt.parted
+         # For ocs-onthefly, the file to be checked is tgt_pt.parted
+         if [ -z "$(LC_ALL=C basename "$partition_table" | grep -Ei "tgt-pt.sf")" ]; then
+           # normal case, i.e. the file name is like sda-pt.sf
+           dsk_pt="$workdir/$(to_filename $(get_diskname $i))-pt.parted"
+         else
+           # Special case for ocs-onthefly, the file name is like tgt_pt.sf
+           dsk_pt="$workdir/tgt-pt.parted"
+         fi
+	 # For /dev/sda2 -> 2
+         # For cciss partition, e.g. /dev/cciss/c0d0p2 will be "p2" which is got from $(get_part_number /dev/cciss/c0d0p2)", here the part_index we want is only number, hence we need to trip the leading characters.
+         index="$(LC_ALL=C get_part_number $i | sed -r -e "s|^[^[:digit:]]*||g")"  # index is like 2
+	 if [ -e "${dsk_pt}" ]; then
+	   part_fs="$(LC_ALL=C grep -Ew "^[[:space:]]*$index" ${dsk_pt} | grep -i swap)"
+           if [ -n "$part_fs" ]; then  # With swap keyword in parted table for $index
+             known_parts="$known_parts ${i/\/dev\/}"
+           fi
+         elif [ -e "$workdir/blkdev.list" -o -e "$workdir/tgt-blkdev.list" ]; then
+           # For ocs-onthefly, the file to be checked is tgt-blkdev.list
            # If blkdev.list exits, we use it first. Since it's more precise when dm exists.
            # TODO: Check if cciss partition OK or not.
 	   if [ -e "$workdir/tgt-blkdev.list" ]; then
@@ -1700,26 +1717,6 @@ get_swap_partition_sf_format() {
 	   if [ -n "$(LC_ALL=C awk -F" " "/^$(to_sysblock_name ${dsk_})[[:space:]]+/ {print \$5}" \
 	            $file_2_parse | grep -i swap)" ]; then
              known_parts="$known_parts $dsk_"
-	   fi
-         else
-           # /dev/sda2 -> sda2 -> 2
-	   # dsk_pt is like /home/partimag/sarge-r8/sda-pt.parted
-           # For ocs-onthefly, the file to be checked is tgt_pt.parted
-           if [ -z "$(LC_ALL=C basename "$partition_table" | grep -Ei "tgt-pt.sf")" ]; then
-             # normal case, i.e. the file name is like sda-pt.sf
-             dsk_pt="$workdir/$(to_filename $(get_diskname $i))-pt.parted"
-           else
-             # Special case for ocs-onthefly, the file name is like tgt_pt.sf
-             dsk_pt="$workdir/tgt-pt.parted"
-           fi
-	   # For /dev/sda2 -> 2
-           # For cciss partition, e.g. /dev/cciss/c0d0p2 will be "p2" which is got from $(get_part_number /dev/cciss/c0d0p2)", here the part_index we want is only number, hence we need to trip the leading characters.
-           index="$(LC_ALL=C get_part_number $i | sed -r -e "s|^[^[:digit:]]*||g")"  # index is like 2
-	   if [ -e "${dsk_pt}" ]; then
-	     part_fs="$(LC_ALL=C grep -Ew "^[[:space:]]*$index" ${dsk_pt} | grep -i swap)"
-             if [ -n "$part_fs" ]; then  # With swap keyword in parted table for $index
-               known_parts="$known_parts ${i/\/dev\/}"
-             fi
 	   fi
          fi
        done
