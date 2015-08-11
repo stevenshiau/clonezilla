@@ -1,8 +1,8 @@
 #!/bin/bash
 # Author: Steven Shiau <steven _at_ nchc org tw>
 # License: GPL
-# A script to expand the partition table by disk size ratio.
-# ///NOTE/// This program only works for MBR partition table, not for GPT.
+# A script to expand the GPT partition table by disk size ratio.
+# ///NOTE/// This program only works for GPT partition table, not for MBR.
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -100,9 +100,19 @@ if [ "$batch_mode" != "yes" ]; then
 fi
 
 # Check if GPT disk, if yes, exit
-if `is_gpt_partitition_table_disk $target_disk`; then
+if `is_mbr_partitition_table_disk $target_disk`; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "Disk $target_disk is GPT format. This program only works for MBR format."
+  echo "Disk $target_disk is MBR format. This program only works for GPT format."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+# Check if the format of sfdisk is created by sfdisk >= 2.26
+if [ -z "$(LC_ALL=C grep -E "^label: gpt" $orig_sf)" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Partition table file \"$orig_sf\" does not contain GPT info."
+  echo "Make sure it's GPT format and outputted by sfdisk >= 2.26."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "$msg_program_stop!"
   exit 1
@@ -140,14 +150,11 @@ ori_disk_size="$(LC_ALL=C grep -E "^Disk /dev" $orig_parted_tab | awk -F":" '{pr
 
 if ! LC_ALL=C parted -s $target_disk unit s print &>/dev/null; then
   # Try to create a partition table so that we can read the size via parted -s $dev unit s print
-  echo -n "No partition table exists in target disk $target_disk, try to initialize one so that we can get the disk size by sfdisk... "
-  echo 1,,83 | sfdisk -f $target_disk &>/dev/null
-  echo "done!"
+  echo "No initial GPT table on disk $target_disk. Create one now by:" | tee --append $OCS_LOGFILE
+  echo "parted -s $target_disk mklabel gpt" | tee --append $OCS_LOGFILE
+  LC_ALL=C parted -s $target_disk mklabel gpt | tee --append $OCS_LOGFILE
 fi
 tgt_disk_size="$(LC_ALL=C parted -s $target_disk unit s print | grep -E "^Disk /dev" | awk -F":" '{print $2}' | sed -e "s/s$//g")"
-
-# If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
-check_mbr_disk_size_gt_2TiB $target_disk exit
 
 #
 ratio=$(echo "scale=10; $tgt_disk_size / $ori_disk_size" | bc -l) || exit 1
@@ -166,28 +173,33 @@ fi
 new_sf="$(mktemp /tmp/new_sf.XXXXXX)" || exit 1
 new_sf_tmp="$(mktemp /tmp/new_sf_tmp.XXXXXX)" || exit 1
 # Increase. Example for sfdisk format:
-#  # partition table of /dev/sda
-#  unit: sectors
-#  
-#  /dev/sda1 : start=       63, size=   586782, Id=83, bootable
-#  /dev/sda2 : start=   586845, size=   391230, Id=82
-#  /dev/sda3 : start=   978075, size=   977130, Id=83
-#  /dev/sda4 : start=  1955205, size= 14821380, Id= 5
-#  /dev/sda5 : start=  1955268, size=   196497, Id=83
-#  /dev/sda6 : start=  2151828, size=   391167, Id=83
-#  /dev/sda7 : start=  2543058, size= 14233527, Id=83
-#  
-# Or
-#  /dev/sda1 : start=       63, size=   196497, Id=83
-#  /dev/sda2 : start=   196560, size= 16580025, Id= 5
-#  /dev/sda3 : start=        0, size=        0, Id= 0
-#  /dev/sda4 : start=        0, size=        0, Id= 0
-#  /dev/sda5 : start=   196623, size= 16579962, Id=83
+# =====================================
+# label: gpt
+# label-id: ADC40CC4-77D7-4858-8F0E-8BC2447052AE
+# device: /dev/sda
+# unit: sectors
+# first-lba: 34
+# last-lba: 125829086
+# 
+# /dev/sda1 : start=        2048, size=      409600, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=E8D785ED-A65F-4EA1-ADF0-CC61E75677EB
+# /dev/sda2 : start=      411648, size=     1024000, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, uuid=AB72A495-4141-4500-AE48-B7AC492160B4
+# /dev/sda3 : start=     1435648, size=    40505344, type=E6D6D379-F507-44C2-A23C-238F2A3DF928, uuid=C7A87C41-72FD-41DB-9B10-DF3568A4089D
+# =====================================
+# label: gpt
+# label-id: D4165706-2FAD-491E-82CA-7866982D196B
+# device: /dev/sda
+# unit: sectors
+# first-lba: 34
+# last-lba: 125829086
+# 
+# /dev/sda1 : start=        2048, size=      614400, type=DE94BBA4-06D1-4D40-A16A-BFD50179D6AC, uuid=0802BFF4-2549-4CD4-A1CA-93D54AEE26F0, name="Basic data partition", attrs="RequiredPartiton GUID:63"
+# /dev/sda2 : start=      616448, size=      202752, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=C9C164D5-5E0F-476D-B2EA-A4D818A266CF, name="EFI system partition", attrs="GUID:63"
+# /dev/sda3 : start=      819200, size=      262144, type=E3C9E316-0B5C-4DB8-817D-F92DF00215AE, uuid=15D5A869-5C6E-4F2C-B234-7D6B91B58555, name="Microsoft reserved partition", attrs="GUID:63"
+# /dev/sda4 : start=     1081344, size=   124745728, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, uuid=E53DEA7E-2639-4AE9-9DFD-DDD2406C3EC0, name="Basic data partition"
+# =====================================
 
 # We only need those required info
 grep -E "^/dev" $orig_sf > $new_sf_tmp
-# Format the output, since something like "Id= 5" is not a good idea for us to parse
-perl -pi -e "s/Id=[[:space:]]+/Id=/g" $new_sf_tmp
 # start=291579750 or size=291563622 is not a good format for us to parse, we need a space between "=" and "number"
 # i.e. 
 # No good:
@@ -203,20 +215,24 @@ perl -pi -e "s/Id=[[:space:]]+/Id=/g" $new_sf_tmp
 # /dev/sda4 : start=        0, size=        0, Id= 0
 
 # //NOTE// For partitions number >=10, it looks like:
-## partition table of /dev/sda
-#unit: sectors
-#
-#/dev/sda1 : start=       63, size=   976562, Id=83
-#/dev/sda2 : start=   976625, size=  1171875, Id=83
-#/dev/sda3 : start=  2148500, size=  1367187, Id=83
-#/dev/sda4 : start=  3515687, size= 13256173, Id= f
-#/dev/sda5 : start=  3515750, size=   195312, Id=83
-#/dev/sda6 : start=  3711063, size=   390624, Id=83
-#/dev/sda7 : start=  4101688, size=   585936, Id=83
-#/dev/sda8 : start=  4687625, size=   781249, Id=83
-#/dev/sda9 : start=  5468875, size=   976561, Id=83
-#/dev/sda10: start=  6445437, size=   976561, Id=83 <-- No space before ":"
-#/dev/sda11: start=  7421999, size=   976561, Id=83
+# label: gpt
+# label-id: 56C0DC13-942C-493F-B141-F9903658453B
+# device: /dev/sda
+# unit: sectors
+# first-lba: 34
+# last-lba: 125829086
+# 
+# /dev/sda1 : start=        2048, size=     2097152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=4F5FF221-D350-4CE7-BADA-20022DA453CC, name="Linux filesystem"
+# /dev/sda2 : start=     2099200, size=     2097152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=975A9722-E2ED-46CC-B0E1-995095A6BB66, name="Linux filesystem"
+# /dev/sda3 : start=     4196352, size=     2097152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=A27C9E16-70B1-48D0-9A3F-915AFBA8FCC7, name="Linux filesystem"
+# /dev/sda4 : start=     6293504, size=     2097152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=3E134963-5B14-49C1-9F83-9BAF9C5F61C9, name="Linux filesystem"
+# /dev/sda5 : start=     8390656, size=     2097152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=FB1FB744-E6DC-48FA-9891-256AD0F3CF7C, name="Linux filesystem"
+# /dev/sda6 : start=    10487808, size=     2097152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=BB764A64-35BF-4415-A8D6-84642339FB3F, name="Linux filesystem"
+# /dev/sda7 : start=    12584960, size=     2097152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=B0D77252-85AB-4AFB-8866-38C21605DB7B, name="Linux filesystem"
+# /dev/sda8 : start=    14682112, size=     2097152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=79E8897A-B821-4C5D-A481-5F8628C57D2E, name="Linux filesystem"
+# /dev/sda9 : start=    16779264, size=     2097152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=2CA8A44E-9A2B-475A-BFC8-1E6295847F6A, name="Linux filesystem"
+# /dev/sda10 : start=    18876416, size=     2097152, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=B454EC36-562F-4844-B8D9-28C5C1C111C9, name="Linux filesystem"
+# /dev/sda11 : start=    20973568, size=   104855519, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=FA55D210-62EE-4948-A853-FDD4360CDCB5, name="Linux filesystem"
 
 # Therefore we force to put a space no matter there is already space or not
 perl -pi -e "s/start=/start= /g" $new_sf_tmp
@@ -224,19 +240,26 @@ perl -pi -e "s/size=/size= /g" $new_sf_tmp
 # Remove ":" in the temp file, since it's only for parsing, won't be used for sfdisk /dev/... < $new_sf_tmp ...
 perl -pi -e "s/://g" $new_sf_tmp
 
-#
-echo "unit: sectors" > $new_sf
+# Get the line number of "last-lba:"
+header_line="$(LC_ALL=C grep -E -n "^last-lba:" $orig_sf | awk -F":" '{print $1}')"
+if [ -z "$header_line" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Failed to find the line \"last-lba:\" in $orig_sf!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+# We do not output the line "last-lba:" in the generated line. Otherwise we have to calculate the last-lba number.
+LC_ALL=C head -n "$((header_line -1))" $orig_sf > $new_sf
 echo "" >> $new_sf
 start_no_keep=""
 size_no_keep=""
-extended_part=""
-flag_1st_logic_drv="off"
 append_to_next="0"
 # Initial gap for the 1st partition. After this, it should be 0.
 logical_part_gap="2"
-while read dev start start_no size size_no id flag; do
+while read dev start start_no size size_no type uuid name attrs; do
   pt_no="$(LC_ALL=C get_part_number $dev | sed -r -e "s|^[^[:digit:]]*||g")"
-  if `is_partition $dev` && [ "$pt_no" -le 4 ]; then
+  if `is_partition $dev` ; then
    # primary/extended partitions
     [ -z "$start_no_keep" ] && start_no_keep=${start_no/,/}  # The 1st one
     [ -z "$size_no_keep" ] && size_no_keep=0
@@ -244,24 +267,33 @@ while read dev start start_no size size_no id flag; do
       start_no=0
       size_no=0
     else
-      # If we found the partition is MS Windows (Vista, 7) "system reserved partition", i.e. size is about 100 MB (204800) or 200 MB (409600 sectors), and Id=7, and flag is bootable, not to expand it. i.e.:
-      # /dev/sda1 : start=     2048, size=   204800, Id= 7, bootable
-      # The files and dirs in MS Windows (Vista, 7) "system reserved partition"
-      # drwxrwxrwx  1 root root 4.0K 2011-07-20 06:22 Boot/
-      # -rwxrwxrwx  1 root root 375K 2009-07-14 01:38 bootmgr*
-      # -rwxrwxrwx  1 root root 8.0K 2011-07-20 06:22 BOOTSECT.BAK*
-      # drwxrwxrwx  1 root root    0 2011-07-20 06:31 System Volume Information/
-      # //NOTE// The above files and dirs will be shown after restoring, not the time when creating partition table. Therefore we can not mount the partition and parse them.
-      # Ref: http://windows7forums.com/windows-7-discussion/15629-hack-remove-100-mb-system-reserved-partition-when-installing-windows-7-a.html
+      # If we found the partition is EFI System partition, keep the size.
+      # EFI System partition: C12A7328-F81F-11D2-BA4B-00A0C93EC93B,
+      # Ref: https://en.wikipedia.org/wiki/GUID_Partition_Table
       expand="true"
-      if [ "${size_no/,/}" -eq "409600" -o "${size_no/,/}" -eq "204800" ]; then
-        if [ -n "$(echo $id | grep -iE "(id|type)=7")" -a \
-             -n "$(echo $flag | grep -iE "bootable")" ]; then
-          expand="false"
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	  echo "MS Windows (Vista or 7) \"system reserved partition\" found. Not to expand this partition."
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        fi
+      if [ -n "$(echo $type | grep -iE "type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B")" ]; then
+        expand="false"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	echo "\"EFI System partition\" found. Not to expand this partition."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      fi
+      # If we found the partition is MS Windows "system reserved partition", keep the size.
+      # Microsoft Reserved Partition (MSR): 	E3C9E316-0B5C-4DB8-817D-F92DF00215AE
+      # Ref: https://en.wikipedia.org/wiki/GUID_Partition_Table
+      if [ -n "$(echo $type | grep -iE "type=E3C9E316-0B5C-4DB8-817D-F92DF00215AE")" ]; then
+        expand="false"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	echo "\"Microsoft Reserved Partition (MSR)\" found. Not to expand this partition."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      fi
+      # If we found the partition is MS Windows "system reserved partition", keep the size.
+      # Windows Recovery Environment 	DE94BBA4-06D1-4D40-A16A-BFD50179D6AC
+      # Ref: https://en.wikipedia.org/wiki/GUID_Partition_Table
+      if [ -n "$(echo $type | grep -iE "type=DE94BBA4-06D1-4D40-A16A-BFD50179D6AC")" ]; then
+        expand="false"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "\"Windows Recovery Environment\" found. Not to expand this partition."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       fi
       # For newer Clonezilla (>=2.4.36-1drbl), a tag file (sda1.info) might exist
       if [ -e "$orig_parted_dir/$(to_filename ${dev}).info" ]; then
@@ -271,9 +303,9 @@ while read dev start start_no size size_no id flag; do
 	fi
       fi
       # For Linux Swap partition
-      if [ -n "$(echo $id | grep -iE "(id|type)=82")" ]; then
+      if [ -n "$(echo $type | grep -iE "type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F")" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	echo "Linux swap partition \"$id\" found. Not to expand this partition."
+	echo "Linux swap partition \"$type\" found. Not to expand this partition."
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         expand="false"
       fi
@@ -301,55 +333,11 @@ while read dev start start_no size size_no id flag; do
       echo "$msg_program_stop!"
       exit 1
     fi
-    if [ -n "$(echo $id | grep -iE "((id|type)=5|(id|type)=f)")" ]; then
-      # keep the extended partition, we need it for logical partitions.
-      extended_part="$dev"
-      extended_start_no="$start_no"
-      extended_size_no="$size_no"
-    fi
-    echo $dev : $start $start_no, $size $size_no, $id $flag >> $new_sf
-    [ "$start_no" -ne 0 ] && start_no_keep="${start_no/,/}"
-    [ "$size_no" -ne 0 ] && size_no_keep="${size_no/,/}"
-  else
-    # logical partitions
-    if [ "$flag_1st_logic_drv" = "off" ]; then
-      start_no_keep="$((extended_start_no))"
-      size_no_keep="0"
-      flag_1st_logic_drv="on"
-    fi
-    if [ "${size_no/,/}" -eq 0 ]; then
-      start_no=0
-      size_no=0
-    else
-      expand="true"
-      # For Linux Swap partition
-      if [ -n "$(echo $id | grep -iE "(id|type)=82")" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	echo "Linux swap partition \"$id\" found. Not to expand this partition."
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        expand="false"
-      fi
-
-      if [ "$expand" = "true" ]; then
-	start_no="$(LC_ALL=C printf "%.0f" "$(echo "($start_no_keep+$size_no_keep+$logical_part_gap)" | bc -l)")"
-	size_no="$(LC_ALL=C printf "%.0f" "$(echo "${size_no/,/}*$ratio + $append_to_next" | bc -l)")"
-        logical_part_gap="0"
-	# Reset the space append_to_next.
-	append_to_next="0"
-      else
-	start_no="$(LC_ALL=C printf "%.0f" "$(echo "($start_no_keep+$size_no_keep+$logical_part_gap)" | bc -l)")"
-        size_no="${size_no/,/}"
-	# Since we do not expand the "swap partition", we append the space to the next partition.
-	append_to_next="$(LC_ALL=C printf "%.0f" "$(echo "${size_no}*$ratio - ${size_no}" | bc -l)")"
-      fi
-    fi
-    echo $dev : $start $start_no, $size $size_no, $id $flag >> $new_sf
+    echo $dev : $start $start_no, $size $size_no, $type $uuid $name $attrs >> $new_sf
     [ "$start_no" -ne 0 ] && start_no_keep="${start_no/,/}"
     [ "$size_no" -ne 0 ] && size_no_keep="${size_no/,/}"
   fi
 done < $new_sf_tmp
-# For sfdisk <= 0.25, only "Id=" is accepted, not "type=".
-perl -pi -e "s/type=/Id=/g" $new_sf
 
 echo "The partition table to write in $target_disk:"
 echo "*****************************************"

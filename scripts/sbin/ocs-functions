@@ -2756,6 +2756,333 @@ clean_mbr_gpt_part_table() {
     exit 1
   fi
 } # end of clean_mbr_gpt_part_table
+#
+create_mbr_partition_table() {
+  # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
+  if [ "$use_HD_CHS_from_EDD_pref" = "yes" ]; then
+    if [ -z "$(LC_ALL=C strings $tgt_dir/$(to_filename ${tgt_hd_name})-mbr | grep -i "grub")" ]
+    then
+      # It's not grub boot loader, set use_HD_CHS_from_EDD as yes
+      echo "Non-grub boot loader found on $tgt_dir/$(to_filename ${tgt_hd_name})-mbr..." | tee --append $OCS_LOGFILE
+      echo "The CHS value of hard drive from EDD will be used for sfdisk." | tee --append $OCS_LOGFILE
+      use_HD_CHS_from_EDD="yes"
+    fi
+  fi
+  get_sfdisk_cyl_opt_flag  # sfdisk_cyl_opt_flag will be got.
+  if [ "$use_HD_CHS_from_EDD" = "yes" ]; then
+    if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
+      rawhead=""
+      rawsector=""
+      rawcylinder=""
+      get_RawCHS_of_HD_from_EDD $tgt_hd_file
+      if [ -n "$rawhead" -a -n "$rawsector" -a -n "$rawcylinder" ]; then
+        sfdisk_opt="$sfdisk_opt -C $rawcylinder -H $rawhead -S $rawsector"
+      else
+        echo "No CHS value was found from EDD info for disk $tgt_hd_file." | tee --append $OCS_LOGFILE
+      fi
+    else
+      echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append $OCS_LOGFILE
+    fi
+  elif [ "$load_HD_CHS_from_img" = "yes" ]; then
+    if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
+      # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
+      load_HD_geometry_opt_from_image $tgt_dir $tgt_hd_name
+    else
+      echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append $OCS_LOGFILE
+    fi
+  fi
+  # If the partition table is tag as "gpt", change it as msdos
+  if `is_gpt_partitition_table_disk $tgt_hd_file`; then
+    echo "The partition table in $tgt_hd_file is for GPT, now make it for MBR." | tee --append $OCS_LOGFILE
+    echo "Running: parted -s $tgt_hd_file mklabel msdos" | tee --append $OCS_LOGFILE
+    LC_ALL=C parted -s $tgt_hd_file mklabel msdos | tee --append $OCS_LOGFILE
+  fi
+  # create partition from file
+  # Before create partition, clean the warning message in ${tgt_hd_name}-pt.sf so that sfdisk will not refuse to do that.
+  echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+  LC_ALL=C date | tee --append $OCS_LOGFILE
+  echo "Writing the partition table..." | tee -a $OCS_LOGFILE
+  # dump partition table only without running sfdisk
+  # ref: http://www.nautilus.com.br/~rei/material/artigos/sistema-de-boot.html
+  # Ref: http://en.wikipedia.org/wiki/Master_boot_record
+  # Master Boot Record (MBR) is the 512-byte boot sector:
+  # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
+  # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
+  case "$create_part_by_sfdisk" in
+    n|N|[nN][oO])
+      dd if=$tgt_dir/$(to_filename $tgt_hd_name)-mbr of=$tgt_hd_file skip=446 seek=446 bs=1 count=66 2>&1 | tee --append $OCS_LOGFILE 
+      RETVAL="${PIPESTATUS[0]}"
+      if [ "$RETVAL" -eq 0 ]; then
+        echo -n "Making kernel re-read the partition table of $tgt_hd_file... " | tee --append $OCS_LOGFILE
+        # //NOTE// util-linux >= 2.26 removes support for "sfdisk -R". Therefore we switched to "blockdev --rereadpt". Thanks to Ismael (razzziel _at_ users sf net) for reporting this.
+        blockdev --rereadpt $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
+        echo "done." | tee --append $OCS_LOGFILE
+        echo "The partition table of $tgt_hd_file is:" | tee --append $OCS_LOGFILE
+        fdisk -l $tgt_hd_file | tee --append $OCS_LOGFILE
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "Unable to use dd to dump the partition table in $tgt_hd_file!" | tee --append $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+        [ "$save_restore_error_log" = "yes" ] && copy_error_log
+        exit 1
+      fi
+      ;;
+    y|Y|[yY][eE][sS])
+      case "$create_part_type" in
+        "proportion")
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Create the proportional partition table in $tgt_hd_file based on $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf and the size of $tgt_hd_file..." | tee --append $OCS_LOGFILE
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          # We use environmental variable EXTRA_SFDISK_OPT so it can be used in ocs-expand-mbr-pt
+          EXTRA_SFDISK_OPT=""
+          [ -n "$sfdisk_opt" ] && EXTRA_SFDISK_OPT="$sfdisk_opt"
+          if [ "$chk_tgt_disk_size_bf_mk_pt" = "no" ]; then
+            ocs_expand_mbr_pt_opt="-icds"
+            PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT -C"
+          fi
+          EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-mbr-pt $ocs_expand_mbr_pt_opt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
+          ;;
+        "manual")
+          echo "$msg_enter_another_shell_for_fdisk" | tee --append $OCS_LOGFILE
+          echo -n "$msg_press_enter_to_continue..."
+          read
+          /bin/bash
+          ;;
+        *)
+          # Create partition table by sfdisk and [hsv]d[a-z]-pt.sf
+          # If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
+          init_mbr_part_table_if_not_existing $tgt_hd_file
+          check_mbr_disk_size_gt_2TiB $tgt_hd_file warning 
+          echo "Running sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
+          LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf 2>&1 | tee -a $OCS_LOGFILE
+          RETVAL="${PIPESTATUS[0]}"
+          echo "This was done by sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
+          # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
+          if [ "$RETVAL" -ne 0 ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+            echo "$msg_failed_to_create_partition_table_on_disk: $tgt_hd_file" | tee -a $OCS_LOGFILE
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "$msg_is_this_disk_too_small: $tgt_hd_file?" | tee -a $OCS_LOGFILE
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+            echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+            [ "$save_restore_error_log" = "yes" ] && copy_error_log
+            my_ocs_exit 1
+          fi
+          if [ -f $tgt_dir/$(to_filename ${tgt_hd_name})-multipath ]; then
+            for i in $(cat $tgt_dir/$(to_filename ${tgt_hd_name})-multipath); do
+              echo -n "Making kernel re-read the partition table of /dev/$i... " | tee --append $OCS_LOGFILE
+              inform_kernel_partition_table_changed mbr /dev/$i | tee --append ${OCS_LOGFILE}
+              echo "done." | tee --append $OCS_LOGFILE
+            done
+          fi
+          # Add another checking mechanism by parted, since sfdisk with -f won't return correct code.
+          check_created_partition_table $tgt_hd_file $tgt_dir
+          ;;
+      esac
+      ;;
+  esac
+  # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
+  echo $msg_delimiter_star_line
+  if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
+    echo "LV is still active, try to deactive it..."
+    ocs-lvm2-stop
+  fi
+  inform_kernel_partition_table_changed mbr $tgt_hd_file | tee --append ${OCS_LOGFILE}
+} # end of create_mbr_partition_table
+#
+create_gpt_partition_table() {
+  echo $msg_delimiter_star_line
+  case "$create_part_type" in
+    "proportion")
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+       echo "Create the proportional partition table in $tgt_hd_file based on $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf and the size of $tgt_hd_file..." | tee --append $OCS_LOGFILE
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
+       # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
+       echo $msg_delimiter_star_line
+       if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
+         echo "LV is still active, try to deactive it..."
+         ocs-lvm2-stop
+       fi
+       create_gpt_table_if_no_table $tgt_hd_file
+
+       # We use environmental variable EXTRA_SFDISK_OPT so it can be used in ocs-expand-mbr-pt
+       EXTRA_SFDISK_OPT=""
+       [ -n "$sfdisk_opt" ] && EXTRA_SFDISK_OPT="$sfdisk_opt"
+       if [ "$chk_tgt_disk_size_bf_mk_pt" = "no" ]; then
+         ocs_expand_gpt_pt_opt="-icds"
+         PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT -C"
+       fi
+       EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-gpt-pt $ocs_expand_gpt_pt_opt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
+
+       RETVAL="${PIPESTATUS[0]}"
+       echo "This was done by sfdisk: EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-gpt-pt $ocs_expand_gpt_pt_opt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE" | tee -a $OCS_LOGFILE
+       # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
+       if [ "$RETVAL" -ne 0 ]; then
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "$msg_failed_to_create_partition_table_on_disk: $tgt_hd_file" | tee -a $OCS_LOGFILE
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+         echo "$msg_is_this_disk_too_small: $tgt_hd_file?" | tee -a $OCS_LOGFILE
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+         [ "$save_restore_error_log" = "yes" ] && copy_error_log
+         my_ocs_exit 1
+       fi
+       # Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
+       if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -E "^Partition Table: unknown")" ]; then
+         do_gpt_dd="yes"
+       fi
+    ;;
+    "manual")
+      echo "$msg_enter_another_shell_for_fdisk" | tee --append $OCS_LOGFILE
+      echo -n "$msg_press_enter_to_continue..."
+      read
+      /bin/bash
+      ;;
+    *)
+      # sfdisk >= 2.26 supports GPT, therefore we use it in higher priority.
+      # The output of sda-pt.sf <= 0.25 which does not support GPT is like:
+      # ===================================================
+      # partition table of /dev/sda
+      # unit: sectors
+      # 
+      # /dev/sda1 : start=        1, size=4294967295, Id=ee
+      # /dev/sda2 : start=        0, size=        0, Id= 0
+      # /dev/sda3 : start=        0, size=        0, Id= 0
+      # /dev/sda4 : start=        0, size=        0, Id= 0
+      # ===================================================
+      # The output of sda-pt.sf >= 0.26 which supports GPT is like:
+      # label: gpt
+      # label-id: 0E63D1AA-A8B4-4D91-A001-679409116352
+      # device: /dev/sda
+      # unit: sectors
+      # first-lba: 34
+      # last-lba: 125829086
+  
+      # /dev/sda1 : start=        2048, size=      614400, type=DE94BBA4-06D1-4D40-A16A-BFD50179D6AC, uuid=7163ACE9-9949-453E-8DF2-F1723DAFD051, name="Basic data partition", attrs="RequiredPartiton GUID:63"
+      # /dev/sda2 : start=      616448, size=      202752, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=EA6B87BC-3976-4F47-A72E-793C9CEC6303, name="EFI system partition", attrs="GUID:63"
+      # /dev/sda3 : start=      819200, size=      262144, type=E3C9E316-0B5C-4DB8-817D-F92DF00215AE, uuid=B3E0D044-8F53-423F-9C37-90F3D8F84815, name="Microsoft reserved partition", attrs="GUID:63"
+      # /dev/sda4 : start=     1081344, size=   124745728, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, uuid=A3E73070-CFBD-4D9F-ADB9-8372BFB5AC0B, name="Basic data partition"
+      # ===================================================
+      if [ -n "$(LC_ALL=C grep -Ew "^label: gpt" "$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf")" ]; then
+        clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
+        # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
+        echo $msg_delimiter_star_line
+        if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
+          echo "LV is still active, try to deactive it..."
+          ocs-lvm2-stop
+        fi
+        create_gpt_table_if_no_table $tgt_hd_file
+        echo "Running sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
+        LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf 2>&1 | tee -a $OCS_LOGFILE
+        RETVAL="${PIPESTATUS[0]}"
+        echo "This was done by sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
+        # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
+        if [ "$RETVAL" -ne 0 ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "$msg_failed_to_create_partition_table_on_disk: $tgt_hd_file" | tee -a $OCS_LOGFILE
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "$msg_is_this_disk_too_small: $tgt_hd_file?" | tee -a $OCS_LOGFILE
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+          [ "$save_restore_error_log" = "yes" ] && copy_error_log
+          my_ocs_exit 1
+        fi
+        # Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
+        if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -E "^Partition Table: unknown")" ]; then
+          do_gpt_dd="yes"
+        fi
+      elif [ -e "$tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk" ]; then
+        clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
+        # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
+        echo $msg_delimiter_star_line
+        if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
+          echo "LV is still active, try to deactive it..."
+          ocs-lvm2-stop
+        fi
+        create_gpt_table_if_no_table $tgt_hd_file
+        gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
+        echo "Running: sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file" | tee --append ${OCS_LOGFILE}
+        LC_ALL=C sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file 2>&1 | tee $gdisk_tmp | tee --append ${OCS_LOGFILE}
+        sgdisk_rc="${PIPESTATUS[0]}"
+        if [ "$sgdisk_rc" -eq 0 ]; then
+          # There is a bug about sgdisk 0.6.14, i.e.
+          # sgdisk -l /home/partimag/2011-02-27-02-img-hfsplus-gdisk/sda-gpt.gdisk /dev/sdb
+          # Warning! Current disk size doesn't match that of the backup!
+          # Adjusting sizes to match, but subsequent problems are possible!
+          # The justLooking flag is set. This probably means you can't write to the disk.
+          # Aborting write of new partition table.
+          # However, its return code is still 0. Therefore we can not use return code to judge that.
+          if [ -n "$(LC_ALL=C grep -iE "Aborting write of new partition table" $gdisk_tmp)" ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Failed to use sgdisk to restore the GPT partition table. Will use dd to restore the GPT partition table."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+            do_gpt_dd="yes"
+          else
+            do_gpt_dd="no"
+          fi
+  	# Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
+  	if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -E "^Partition Table: unknown")" ]; then
+            do_gpt_dd="yes"
+  	fi
+        else
+          do_gpt_dd="yes"
+        fi
+        # Somehow "sgdisk -l" (<= version 0.8.4) does not create protective MBR, either. Therefore we have to use the following workaround to write it again.
+        if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -i "it does not have a valid fake msdos partition table" )" ]; then
+          # FixME. In the future if sgdisk supports an option to do this, we should swith to use sgdisk instead of gdisk+expect.
+          sleep 1
+          LC_ALL=C echo "spawn gdisk $tgt_hd_file; expect Command; send wq\r; expect \"Do you want to proceed? (Y/N)\"; send Y\r; expect eof" | expect -f -
+        fi
+  
+        [ -e "$gdisk_tmp" ] && rm -f $gdisk_tmp
+      else
+        # For old style of image, there is no ${tgt_hd_name}-gpt.gdisk. We have to use dd to create the GPT partition table.
+        do_gpt_dd="yes"
+      fi
+      ;;
+   esac
+   #
+   if [ "$do_gpt_dd" = "yes" ]; then
+     echo "Restoring the primary GPT to $tgt_hd_file..." | tee -a $OCS_LOGFILE
+     # ///NOTE/// We can not use ocs-create-gpt (parted) to clone GPT, since the original GPT contains unique GUID! Ref:  http://developer.apple.com/technotes/tn2006/tn2166.html#SECCOPYINGCONCERNS for more details.
+     # ocs-create-gpt $tgt_dir/${tgt_hd_name}-pt.parted
+     LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-1st of=$tgt_hd_file 2>&1 | tee -a $OCS_LOGFILE
+     retv="${PIPESTATUS[0]}"
+     if [ "$retv" -gt 0 ]; then
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+       echo -n "Failed to restore GPT partition to $tgt_hd_file! $msg_press_enter_to_continue... "
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       read
+     fi
+     # We need to get the total size of disk so that we can skip and dump the last block:
+     # The output of 'parted -s /dev/sda unit s print' is like:
+     # --------------------
+     # Disk /dev/hda: 16777215s
+     # Sector size (logical/physical): 512B/512B
+     # Partition Table: gpt
+     # 
+     # Number  Start     End        Size       File system  Name     Flags  
+     #  1      34s       409640s    409607s    fat32        primary  msftres
+     #  2      409641s   4316406s   3906766s   ext2         primary         
+     #  3      4316407s  15625000s  11308594s  reiserfs     primary         
+     # --------------------
+     echo "Restoring the secondary GPT to $tgt_hd_file..."
+     to_seek="$((${src_disk_size_sec}-33+1))"
+     LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-2nd of=$tgt_hd_file seek=${to_seek} bs=512 count=33 2>&1 | tee -a $OCS_LOGFILE
+   fi
+  
+   inform_kernel_partition_table_changed gpt $tgt_hd_file | tee --append ${OCS_LOGFILE}
+   sleep 1
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+   echo "$msg_the_partition_in_the_system_now:" | tee -a $OCS_LOGFILE
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
+   LC_ALL=C parted -s $tgt_hd_file print | tee -a $OCS_LOGFILE
+   echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
+} # end of create_gpt_partition_table
+
 # create partition from file
 create_partition() {
   # tgt_hd_file: /dev/hda, /dev/hdb...
@@ -2809,278 +3136,9 @@ create_partition() {
     exit 1
     ;;
   mbr)
-    # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
-    if [ "$use_HD_CHS_from_EDD_pref" = "yes" ]; then
-      if [ -z "$(LC_ALL=C strings $tgt_dir/$(to_filename ${tgt_hd_name})-mbr | grep -i "grub")" ]
-      then
-        # It's not grub boot loader, set use_HD_CHS_from_EDD as yes
-	echo "Non-grub boot loader found on $tgt_dir/$(to_filename ${tgt_hd_name})-mbr..." | tee --append $OCS_LOGFILE
-	echo "The CHS value of hard drive from EDD will be used for sfdisk." | tee --append $OCS_LOGFILE
-	use_HD_CHS_from_EDD="yes"
-      fi
-    fi
-    get_sfdisk_cyl_opt_flag  # sfdisk_cyl_opt_flag will be got.
-    if [ "$use_HD_CHS_from_EDD" = "yes" ]; then
-      if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
-        rawhead=""
-        rawsector=""
-        rawcylinder=""
-        get_RawCHS_of_HD_from_EDD $tgt_hd_file
-        if [ -n "$rawhead" -a -n "$rawsector" -a -n "$rawcylinder" ]; then
-          sfdisk_opt="$sfdisk_opt -C $rawcylinder -H $rawhead -S $rawsector"
-        else
-          echo "No CHS value was found from EDD info for disk $tgt_hd_file." | tee --append $OCS_LOGFILE
-        fi
-      else
-        echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append $OCS_LOGFILE
-      fi
-    elif [ "$load_HD_CHS_from_img" = "yes" ]; then
-      if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
-        # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
-        load_HD_geometry_opt_from_image $tgt_dir $tgt_hd_name
-      else
-        echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append $OCS_LOGFILE
-      fi
-    fi
-    # If the partition table is tag as "gpt", change it as msdos
-    if `is_gpt_partitition_table_disk $tgt_hd_file`; then
-      echo "The partition table in $tgt_hd_file is for GPT, now make it for MBR." | tee --append $OCS_LOGFILE
-      echo "Running: parted -s $tgt_hd_file mklabel msdos" | tee --append $OCS_LOGFILE
-      LC_ALL=C parted -s $tgt_hd_file mklabel msdos | tee --append $OCS_LOGFILE
-    fi
-    # create partition from file
-    # Before create partition, clean the warning message in ${tgt_hd_name}-pt.sf so that sfdisk will not refuse to do that.
-    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
-    LC_ALL=C date | tee --append $OCS_LOGFILE
-    echo "Writing the partition table..." | tee -a $OCS_LOGFILE
-    # dump partition table only without running sfdisk
-    # ref: http://www.nautilus.com.br/~rei/material/artigos/sistema-de-boot.html
-    # Ref: http://en.wikipedia.org/wiki/Master_boot_record
-    # Master Boot Record (MBR) is the 512-byte boot sector:
-    # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
-    # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
-    case "$create_part_by_sfdisk" in
-      n|N|[nN][oO])
-	dd if=$tgt_dir/$(to_filename $tgt_hd_name)-mbr of=$tgt_hd_file skip=446 seek=446 bs=1 count=66 2>&1 | tee --append $OCS_LOGFILE 
-        RETVAL="${PIPESTATUS[0]}"
-        if [ "$RETVAL" -eq 0 ]; then
-          echo -n "Making kernel re-read the partition table of $tgt_hd_file... " | tee --append $OCS_LOGFILE
-          # //NOTE// util-linux >= 2.26 removes support for "sfdisk -R". Therefore we switched to "blockdev --rereadpt". Thanks to Ismael (razzziel _at_ users sf net) for reporting this.
-          blockdev --rereadpt $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
-          echo "done." | tee --append $OCS_LOGFILE
-          echo "The partition table of $tgt_hd_file is:" | tee --append $OCS_LOGFILE
-          fdisk -l $tgt_hd_file | tee --append $OCS_LOGFILE
-        else
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-          echo "Unable to use dd to dump the partition table in $tgt_hd_file!" | tee --append $OCS_LOGFILE
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-          echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-          [ "$save_restore_error_log" = "yes" ] && copy_error_log
-          exit 1
-        fi
-        ;;
-      y|Y|[yY][eE][sS])
-        case "$create_part_type" in
-	  "proportion")
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	    echo "Create the proportional partition table in $tgt_hd_file based on $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf and the size of $tgt_hd_file..." | tee --append $OCS_LOGFILE
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    # We use environmental variable EXTRA_SFDISK_OPT so it can be used in ocs-expand-mbr-pt
-	    EXTRA_SFDISK_OPT=""
-	    [ -n "$sfdisk_opt" ] && EXTRA_SFDISK_OPT="$sfdisk_opt"
-	    if [ "$chk_tgt_disk_size_bf_mk_pt" = "no" ]; then
-	      ocs_expand_mbr_pt_opt="-icds"
-              PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT -C"
-            fi
-	    EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-mbr-pt $ocs_expand_mbr_pt_opt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
-	    ;;
-	  "manual")
-	    echo "$msg_enter_another_shell_for_fdisk" | tee --append $OCS_LOGFILE
-            echo -n "$msg_press_enter_to_continue..."
-            read
-            /bin/bash
-	    ;;
-          *)
-            # Create partition table by sfdisk and [hsv]d[a-z]-pt.sf
-            # If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
-	    init_mbr_part_table_if_not_existing $tgt_hd_file
-            check_mbr_disk_size_gt_2TiB $tgt_hd_file warning 
-            echo "Running sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
-            LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf 2>&1 | tee -a $OCS_LOGFILE
-            RETVAL="${PIPESTATUS[0]}"
-            echo "This was done by sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
-            # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
-            if [ "$RETVAL" -ne 0 ]; then
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-              echo "$msg_failed_to_create_partition_table_on_disk: $tgt_hd_file" | tee -a $OCS_LOGFILE
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-              echo "$msg_is_this_disk_too_small: $tgt_hd_file?" | tee -a $OCS_LOGFILE
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-              echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
-              [ "$save_restore_error_log" = "yes" ] && copy_error_log
-	      my_ocs_exit 1
-            fi
-            if [ -f $tgt_dir/$(to_filename ${tgt_hd_name})-multipath ]; then
-              for i in $(cat $tgt_dir/$(to_filename ${tgt_hd_name})-multipath); do
-                echo -n "Making kernel re-read the partition table of /dev/$i... " | tee --append $OCS_LOGFILE
-                inform_kernel_partition_table_changed mbr /dev/$i | tee --append ${OCS_LOGFILE}
-                echo "done." | tee --append $OCS_LOGFILE
-              done
-            fi
-            # Add another checking mechanism by parted, since sfdisk with -f won't return correct code.
-            check_created_partition_table $tgt_hd_file $tgt_dir
-	    ;;
-	esac
-        ;;
-    esac
-    # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
-    echo $msg_delimiter_star_line
-    if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
-      echo "LV is still active, try to deactive it..."
-      ocs-lvm2-stop
-    fi
-    inform_kernel_partition_table_changed mbr $tgt_hd_file | tee --append ${OCS_LOGFILE}
-    ;;
+    create_mbr_partition_table ;;
   gpt)
-    echo $msg_delimiter_star_line
-    # sfdisk >= 2.26 supports GPT, therefore we use it in higher priority.
-    # The output of sda-pt.sf <= 0.25 which does not support GPT is like:
-    # ===================================================
-    # partition table of /dev/sda
-    # unit: sectors
-    # 
-    # /dev/sda1 : start=        1, size=4294967295, Id=ee
-    # /dev/sda2 : start=        0, size=        0, Id= 0
-    # /dev/sda3 : start=        0, size=        0, Id= 0
-    # /dev/sda4 : start=        0, size=        0, Id= 0
-    # ===================================================
-    # The output of sda-pt.sf >= 0.26 which supports GPT is like:
-    # label: gpt
-    # label-id: 0E63D1AA-A8B4-4D91-A001-679409116352
-    # device: /dev/sda
-    # unit: sectors
-    # first-lba: 34
-    # last-lba: 125829086
-
-    # /dev/sda1 : start=        2048, size=      614400, type=DE94BBA4-06D1-4D40-A16A-BFD50179D6AC, uuid=7163ACE9-9949-453E-8DF2-F1723DAFD051, name="Basic data partition", attrs="RequiredPartiton GUID:63"
-    # /dev/sda2 : start=      616448, size=      202752, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=EA6B87BC-3976-4F47-A72E-793C9CEC6303, name="EFI system partition", attrs="GUID:63"
-    # /dev/sda3 : start=      819200, size=      262144, type=E3C9E316-0B5C-4DB8-817D-F92DF00215AE, uuid=B3E0D044-8F53-423F-9C37-90F3D8F84815, name="Microsoft reserved partition", attrs="GUID:63"
-    # /dev/sda4 : start=     1081344, size=   124745728, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, uuid=A3E73070-CFBD-4D9F-ADB9-8372BFB5AC0B, name="Basic data partition"
-    # ===================================================
-    if [ -n "$(LC_ALL=C grep -Ew "^label: gpt" "$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf")" ]; then
-      clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
-      # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
-      echo $msg_delimiter_star_line
-      if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
-        echo "LV is still active, try to deactive it..."
-        ocs-lvm2-stop
-      fi
-      create_gpt_table_if_no_table $tgt_hd_file
-      echo "Running sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
-      LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf 2>&1 | tee -a $OCS_LOGFILE
-      RETVAL="${PIPESTATUS[0]}"
-      echo "This was done by sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
-      # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
-      if [ "$RETVAL" -ne 0 ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "$msg_failed_to_create_partition_table_on_disk: $tgt_hd_file" | tee -a $OCS_LOGFILE
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "$msg_is_this_disk_too_small: $tgt_hd_file?" | tee -a $OCS_LOGFILE
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
-        [ "$save_restore_error_log" = "yes" ] && copy_error_log
-        my_ocs_exit 1
-      fi
-      # Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
-      if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -E "^Partition Table: unknown")" ]; then
-        do_gpt_dd="yes"
-      fi
-    elif [ -e "$tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk" ]; then
-      clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
-      # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
-      echo $msg_delimiter_star_line
-      if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
-        echo "LV is still active, try to deactive it..."
-        ocs-lvm2-stop
-      fi
-      create_gpt_table_if_no_table $tgt_hd_file
-      gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
-      echo "Running: sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file" | tee --append ${OCS_LOGFILE}
-      LC_ALL=C sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file 2>&1 | tee $gdisk_tmp | tee --append ${OCS_LOGFILE}
-      sgdisk_rc="${PIPESTATUS[0]}"
-      if [ "$sgdisk_rc" -eq 0 ]; then
-        # There is a bug about sgdisk 0.6.14, i.e.
-        # sgdisk -l /home/partimag/2011-02-27-02-img-hfsplus-gdisk/sda-gpt.gdisk /dev/sdb
-        # Warning! Current disk size doesn't match that of the backup!
-        # Adjusting sizes to match, but subsequent problems are possible!
-        # The justLooking flag is set. This probably means you can't write to the disk.
-        # Aborting write of new partition table.
-        # However, its return code is still 0. Therefore we can not use return code to judge that.
-        if [ -n "$(LC_ALL=C grep -iE "Aborting write of new partition table" $gdisk_tmp)" ]; then
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-          echo "Failed to use sgdisk to restore the GPT partition table. Will use dd to restore the GPT partition table."
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-          do_gpt_dd="yes"
-        else
-          do_gpt_dd="no"
-        fi
-	# Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
-	if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -E "^Partition Table: unknown")" ]; then
-          do_gpt_dd="yes"
-	fi
-      else
-        do_gpt_dd="yes"
-      fi
-      # Somehow "sgdisk -l" (<= version 0.8.4) does not create protective MBR, either. Therefore we have to use the following workaround to write it again.
-      if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -i "it does not have a valid fake msdos partition table" )" ]; then
-        # FixME. In the future if sgdisk supports an option to do this, we should swith to use sgdisk instead of gdisk+expect.
-        sleep 1
-        LC_ALL=C echo "spawn gdisk $tgt_hd_file; expect Command; send wq\r; expect \"Do you want to proceed? (Y/N)\"; send Y\r; expect eof" | expect -f -
-      fi
-
-      [ -e "$gdisk_tmp" ] && rm -f $gdisk_tmp
-    else
-      # For old style of image, there is no ${tgt_hd_name}-gpt.gdisk. We have to use dd to create the GPT partition table.
-      do_gpt_dd="yes"
-    fi
-    if [ "$do_gpt_dd" = "yes" ]; then
-      echo "Restoring the primary GPT to $tgt_hd_file..." | tee -a $OCS_LOGFILE
-      # ///NOTE/// We can not use ocs-create-gpt (parted) to clone GPT, since the original GPT contains unique GUID! Ref:  http://developer.apple.com/technotes/tn2006/tn2166.html#SECCOPYINGCONCERNS for more details.
-      # ocs-create-gpt $tgt_dir/${tgt_hd_name}-pt.parted
-      LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-1st of=$tgt_hd_file 2>&1 | tee -a $OCS_LOGFILE
-      retv="${PIPESTATUS[0]}"
-      if [ "$retv" -gt 0 ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo -n "Failed to restore GPT partition to $tgt_hd_file! $msg_press_enter_to_continue... "
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        read
-      fi
-      # We need to get the total size of disk so that we can skip and dump the last block:
-      # The output of 'parted -s /dev/sda unit s print' is like:
-      # --------------------
-      # Disk /dev/hda: 16777215s
-      # Sector size (logical/physical): 512B/512B
-      # Partition Table: gpt
-      # 
-      # Number  Start     End        Size       File system  Name     Flags  
-      #  1      34s       409640s    409607s    fat32        primary  msftres
-      #  2      409641s   4316406s   3906766s   ext2         primary         
-      #  3      4316407s  15625000s  11308594s  reiserfs     primary         
-      # --------------------
-      echo "Restoring the secondary GPT to $tgt_hd_file..."
-      to_seek="$((${src_disk_size_sec}-33+1))"
-      LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-2nd of=$tgt_hd_file seek=${to_seek} bs=512 count=33 2>&1 | tee -a $OCS_LOGFILE
-    fi
-
-    inform_kernel_partition_table_changed gpt $tgt_hd_file | tee --append ${OCS_LOGFILE}
-    sleep 1
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_the_partition_in_the_system_now:" | tee -a $OCS_LOGFILE
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
-    LC_ALL=C parted -s $tgt_hd_file print | tee -a $OCS_LOGFILE
-    echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
-    ;;
+    create_gpt_partition_table ;;
   esac
 } # end of create_partition
 #
