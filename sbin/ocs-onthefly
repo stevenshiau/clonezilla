@@ -80,7 +80,7 @@ create_gpt_part_table_in_onthefly() {
        [ -n "$sfdisk_opt" ] && EXTRA_SFDISK_OPT="$sfdisk_opt"
        if [ "$chk_tgt_disk_size_bf_mk_pt" = "no" ]; then
          ocs_expand_gpt_pt_opt="-icds"
-         PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT -C"
+         PARTCLONE_RESTORE_ONTHEFLY_OPT="$PARTCLONE_RESTORE_ONTHEFLY_OPT -C"
        fi
        EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-gpt-pt $ocs_expand_gpt_pt_opt --batch $tgt_pt_tmp /dev/$target_hd 2>&1 | tee --append $OCS_LOGFILE
 
@@ -238,7 +238,7 @@ create_mbr_part_table_in_onthefly() {
   case "$create_part_type" in
    "proportion")
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-     echo "Create the proportional partition table based on $tgt_pt_tmp and the size of /dev/$target_hd..."
+     echo "Create the proportional partition table based on $tgt_pt_tmp and the size of /dev/$target_hd..." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
      # We use environmental variable EXTRA_SFDISK_OPT so it can be used in ocs-expand-mbr-pt
      EXTRA_SFDISK_OPT=""
@@ -247,7 +247,20 @@ create_mbr_part_table_in_onthefly() {
        ocs_expand_mbr_pt_opt="-icds"
        PARTCLONE_RESTORE_ONTHEFLY_OPT="$PARTCLONE_RESTORE_ONTHEFLY_OPT -C"
      fi
-     EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-mbr-pt $ocs_expand_mbr_pt_opt --batch $tgt_pt_tmp /dev/$target_hd
+     EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-mbr-pt $ocs_expand_mbr_pt_opt --batch $tgt_pt_tmp /dev/$target_hd | tee --append $OCS_LOGFILE
+     RETVAL="${PIPESTATUS[0]}"
+     echo "This was done by sfdisk: EXTRA_SFDISK_OPT=\"$EXTRA_SFDISK_OPT\" ocs-expand-mbr-pt $ocs_expand_mbr_pt_opt --batch $tgt_pt_tmp /dev/$target_hd" | tee --append $OCS_LOGFILE
+     # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
+     if [ "$RETVAL" -ne 0 ]; then
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+       echo "$msg_failed_to_create_partition_table_on_disk: /dev/$target_hd" | tee -a $OCS_LOGFILE
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+       echo "$msg_is_this_disk_too_small: /dev/$target_hd?" | tee -a $OCS_LOGFILE
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+       [ "$save_restore_error_log" = "yes" ] && copy_error_log
+       my_ocs_exit 1
+     fi
      ;;
    "manual")
      echo "$msg_enter_another_shell_for_fdisk"
@@ -261,8 +274,8 @@ create_mbr_part_table_in_onthefly() {
       init_mbr_part_table_if_not_existing /dev/$target_hd
       check_mbr_disk_size_gt_2TiB /dev/$target_hd warning 
       echo "sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp"
-      LC_ALL=C sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp
-      RETVAL="$?"
+      LC_ALL=C sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp | tee -a $OCS_LOGFIL
+      RETVAL="${PIPESTATUS[0]}"
       echo "This was done by \"sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp\""
       #
       inform_kernel_partition_table_changed mbr /dev/$target_hd
@@ -273,8 +286,8 @@ create_mbr_part_table_in_onthefly() {
       rc=$?
       if [ "$rc" -gt 0 ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "$msg_the_partition_table_in_disk_is_illegal: /dev/$target_hd"
-        echo "$msg_is_this_disk_too_small ?"
+        echo "$msg_the_partition_table_in_disk_is_illegal: /dev/$target_hd" | tee -a $OCS_LOGFIL
+        echo "$msg_is_this_disk_too_small ?" | tee -a $OCS_LOGFIL
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         if [ -e "$dsk_chk_tmp" ]; then
           echo "$msg_error_messages_from_parted_are:"
@@ -450,7 +463,7 @@ create_partition_table_in_target(){
       else
         partition_table_exist_in_target="no"
       fi
-      check_pt_then_run_create_part_table | tee --append ${OCS_LOGFILE}
+      check_pt_then_run_create_part_table
       # After partition table is created, we can dump the hidden data which is between MBR and 1st partition.
       # Not GPT type of disk. We only deal with MBR for this hidden data
       if `is_mbr_partitition_table_disk /dev/$target_hd`; then
