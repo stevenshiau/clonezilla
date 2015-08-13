@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.29
+Version:	3.16.30
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Aug 13 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.30-drbl1
+- Switched to use "http://http.debian.net/debian" instead of
+"http://httpredir.debian.org/debian" for Debian mirror in drbl-ocs.conf.
+- Added /EFI/debian/grubx64.efi in known_efi_boot_file_chklist of update-efi-nvram-boot-entry.
+
 * Wed Aug 12 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.29-drbl1
 - Bug fixed: Option "-C" failed to pass to partclone in ocs-onthefly when option "-icds" is used for GPT disk.
 
