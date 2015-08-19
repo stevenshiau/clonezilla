@@ -1,0 +1,29 @@
+#!/bin/bash
+# Authors: Steven Shiau <steven _at_ nchc org tw>, Ceasar Sun <ceasar_dot_sun_at_gmail com>
+# License: GPL
+# Description: Get the MAC address of network card interface
+
+ethx=$1
+export LC_ALL=C
+
+Usage() {
+  echo "Get the MAC address of network card interface" 
+  echo "Usage:"
+  echo "$(basename $0) INTERFACE"
+  echo "Ex: $(basename $0) eth0"
+}
+
+[ -z "$ethx" ] && Usage && exit 1
+if ! ifconfig -a 2>/dev/null | grep -i -q "\<$ethx\>"; then
+   exit 1
+fi
+# Ex: eth0      Link encap:Ethernet  HWaddr 00:0C:29:81:A0:D5
+# for FC17: ether 08:00:27:d2:9b:bc  txqueuelen 1000  (Ethernet) 
+
+_nic_mac=$(LC_ALL=C ifconfig $ethx | grep $ethx | grep "HWaddr" | sed -e 's/^.*HWaddr \([0-9a-zA-Z\:]\+\).*$/\1/' | tr '[A-Z]' '[a-z]')
+if [ -n "$_nic_mac" ]; then 
+  echo $_nic_mac
+else
+  LC_ALL=C ifconfig $ethx | grep ether | sed -e 's/^.*ether \([0-9a-zA-Z\:]\+\).*$/\1/' | tr '[A-Z]' '[a-z]'
+fi
+exit 0
