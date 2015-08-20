@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.32
+Version:	3.16.33
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.15.20 partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.81, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.15.21 partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.81, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Aug 20 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.33-drbl1
+- Make sure no extra white space in the end of ocs_live_run and ocs_live_extra_param.
+
 * Wed Aug 19 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.32-drbl1
 - Not only eno*, but also other NIC name like enp* will be searched in ocs-live-netcfg. 
 - Program gl-live-netcfg now supports NIC name en*, and better way to detect linking status.
