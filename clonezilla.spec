@@ -49,8 +49,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 - The configuration for NIC eno* is enabled in ocs-live-netcfg. 
 
 * Thu Aug 13 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.30-drbl1
-- Switched to use "http://http.debian.net/debian" instead of
-"http://httpredir.debian.org/debian" for Debian mirror in drbl-ocs.conf.
+- Switched to use "http://httpredir.debian.org/debian" instead of "http://http.debian.net/debian" for Debian mirror in drbl-ocs.conf.
 - Added /EFI/debian/grubx64.efi in known_efi_boot_file_chklist of update-efi-nvram-boot-entry.
 
 * Wed Aug 12 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.29-drbl1
