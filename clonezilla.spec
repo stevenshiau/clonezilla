@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.34
+Version:	3.16.35
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Aug 27 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.35-drbl1
+- The S03prep-drbl-clonezilla of drbl-live did not parse username from /proc/cmdline.
+
 * Thu Aug 27 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.34-drbl1
 - The S03prep-drbl-clonezilla of drbl-live did not put LIVE_USERNAME in /run/live/live-config.
 - Added util-linux and gdisk info in the files and versions list Info-packages.txt of image directory.
