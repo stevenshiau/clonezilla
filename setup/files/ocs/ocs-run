@@ -60,7 +60,7 @@ wait_for_udevd() {
   local TIMEOUT="300"  # Unit: 0.1 sec, time to wait for udevd to be started
   local DELAY_T="3"   # Unit: sec, time to wait for block device to be started
   # For Fedora, as it uses /usr/lib/udev/udevd instead of udevd
-  local _chk_udevd_path="udevd /usr/lib/udev/udevd"
+  local _chk_udevd_path="/lib/systemd/systemd-udevd udevd /usr/lib/udev/udevd"
   local _miss_udevd="y"
   for _chk_path in $_chk_udevd_path ; do 
     type $_chk_path &>/dev/null && _miss_udevd="n"
@@ -73,7 +73,7 @@ wait_for_udevd() {
   fi
   #
   echo -n "Waiting for udevd to be started..."
-  while [ -z "$(LC_ALL=C ps -ef | grep udevd | grep -v grep)" ]; do
+  while [ -z "$(LC_ALL=C ps -ef | grep -Ew "(udevd|systemd-udevd)" | grep -v grep)" ]; do
     sleep 0.1
     TIMEOUT=$(( $TIMEOUT - 1 ))
     if [ $TIMEOUT -le 0 ]; then
