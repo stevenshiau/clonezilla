@@ -33,6 +33,8 @@ run_binary_hook_script="efi-binary-hook"
 gen_source_tarball="no"
 # Flag to put EFI booting image in iso
 enabled_EFI=""
+# The default init system for live system
+live_initsystem_def="systemd"
 
 #
 check_if_root
@@ -47,6 +49,7 @@ USAGE() {
     echo "$prog [OPTION]"
     echo "OPTION:"
     language_help_prompt_by_idx_no
+    echo "-a, --initsystem [sysvinit|systemd]   Specify the init system for live system. Default is systemd"
     echo "-b, --branch [s|stable|t|testing|u|unstable|e|experimental]  Specify the DRBL branch to be used in Live CD. Default is stable."
     echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (cdebootstrap or debootstrap). If not specified, $bootstrap_default will be used."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
@@ -575,6 +578,15 @@ while [ $# -gt 0 ]; do
             fi
 	    [ -z "$specified_lang" ] && USAGE && exit 1
             ;;
+    -a|--initsystem)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              live_initsystem="$1"
+              shift
+            fi
+	    [ -z "$live_initsystem" ] && USAGE && exit 1
+            ;;
     -b|--branch)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -776,6 +788,7 @@ rm -rf debian-live/.stage/
 [ -z "$mirror_security_url" ] && mirror_security_url="$debian_mirror_security_url_def"
 [ -z "$cpu_flavor" ] && cpu_flavor="$cpu_flavor_default"
 [ -z "$bootstrap" ] && bootstrap=$bootstrap_default
+[ -z "$live_initsystem" ] && live_initsystem=$live_initsystem_def
 
 # Append the extra packages
 [ -n "$extra_pkgs" ] && pkgs="$pkgs $extra_pkgs"
@@ -949,7 +962,7 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
     amd64) os_arch="amd64";;
   esac
   $pref lb config --architectures $os_arch
-  $pref lb config --initsystem systemd
+  $pref lb config --initsystem $live_initsystem
 
   # No memtest from debian, we will use the one from drbl since it's newer.
   $pref lb config --memtest none
