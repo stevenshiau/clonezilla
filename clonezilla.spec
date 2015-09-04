@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.36
+Version:	3.16.37
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Sep 04 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.37-drbl1
+- Force to remove sytemd if not systemd init in drbl live.
+
 * Thu Sep 03 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.36-drbl1
 - Checking systemd-udevd in ocs-run, too.
 - Option -a|--initsystem was added to create-drbl-live-by-pkg and create-drbl-live.
