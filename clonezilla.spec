@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.38
+Version:	3.16.39
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Sep 07 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.39-drbl1
+- Since most of the debian packages are compressed (xz or gzip), no more compressing the source tarball. 
+- Package efibootmgr was added to gparted live. (https://bugzilla.gnome.org/show_bug.cgi?id=754587)
+
 * Mon Sep 07 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.38-drbl1
 - Force to remove systemd-shim if not systemd init in drbl live, too.
 
