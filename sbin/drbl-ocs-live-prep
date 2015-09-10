@@ -26,7 +26,8 @@ USAGE() {
   echo "-b, --branch NAME: Force to use the Clonezilla live from branch NAME (stable, testing, alternative, alternative_testing). If not assigned, stable will be used."
   echo "-s, --server-ip IP_ADDR:  Assign the tftp or NFS server's IP address to be used."
   echo "-t, --use-fetch      By default the boot parameter to load the root file system (e.g. filesystem.squashfs) is nfsroot. With this option, fetch is used. //NOTE// This function only works for live-initramfs based system. E.g. Clonezilla live or GParted live."
-  echo "-i, --iso-url ISO_URL:  Use the ISO_URL (e.g. http://downloads.sourceforge.net/clonezilla/clonezilla-live-2.1.2-35-i686-pae.iso or file:///usr/share/iso/clonezilla-live-2.1.2-35-amd64.iso) instead of the one assigned in drbl-ocs.conf. $0 will download clonezilla-live iso file from ISO_URL then use the as the OS of client when running Clonezilla job. //NOTE// Use iso file name only, not the zip one."
+  echo "-i, --iso-url ISO_URL:  Use the ISO_URL (e.g. http://downloads.sourceforge.net/clonezilla/clonezilla-live-2.1.2-35-i686-pae.iso or file:///usr/share/iso/clonezilla-live-2.1.2-35-amd64.iso) instead of the one assigned in drbl-ocs.conf. $0 will download clonezilla-live iso file from ISO_URL then use the as the OS of client when running Clonezilla job. //NOTE// Use iso file name only, not the zip one. This conflicts with \"-p\" option."
+  echo "-p, --live-path  PATH:  Assign the mounted or unzipped live system as PATH. This conflicts with \"-i\" option."  
   echo "-u, --uninstall:  Uninstall the Clonezilla-live based mode."
   echo "Ex: To use http://downloads.sourceforge.net/clonezilla/clonezilla-live-2.1.2-35-i686-pae.iso as the OS of client when running Clonezilla job, run:"
   echo "    $0 -i http://downloads.sourceforge.net/clonezilla/clonezilla-live-2.1.2-35-i686-pae.iso"
@@ -37,6 +38,10 @@ put_clonezilla_live() {
     # local file
     echo "Try to use the local Clonezilla live iso file..."
     ocs_live_iso_file="$iso_url_for_pxe_ocs_live"
+  elif [ -e "$LIVE_PATH" ]; then
+    # local file mounted or unzipped in the path
+    echo "Use the local DRBL/Clonezilla live dir..."
+    ocs_live_expand_path="$LIVE_PATH"
   else
     echo "Try to download Clonezilla live iso file from network..."
     # Try to download the file. The download file will be in $ocs_live_iso_file
@@ -50,7 +55,11 @@ put_clonezilla_live() {
   esac
   [ -n "$server_IP" ] && server_IP_opt="-s $server_IP"
   echo "Put Clonezilla live in this DRBL server..."
-  drbl-sl $rootfs_location_opt $server_IP_opt -b -n -i $ocs_live_iso_file
+  if [ -n "$ocs_live_iso_file" ]; then
+    drbl-sl $rootfs_location_opt $server_IP_opt -b -n -i $ocs_live_iso_file
+  elif [ -n "$ocs_live_expand_path" ]; then
+    drbl-sl $rootfs_location_opt $server_IP_opt -b -n -p $ocs_live_expand_path
+  fi
   #
   [ -d "$ocslive_tmp" -a -n "$(echo "$ocslive_tmp" | grep "ocslive")" ] && rm -rf $ocslive_tmp
   # (2) Change drbl-ocs.conf as clonezilla-live based Clonezilla SE
@@ -121,6 +130,15 @@ while [ $# -gt 0 ]; do
           # skip the -xx option, in case 
           iso_url_for_pxe_ocs_live="$1"
           [ -z "$iso_url_for_pxe_ocs_live" ] && USAGE && exit 1
+	  shift
+        fi
+	;;
+    -p|--live-path)
+        shift; mode="install"
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+          LIVE_PATH="$1"
+          [ -z "$LIVE_PATH" ] && USAGE && exit 1
 	  shift
         fi
 	;;
