@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.16.39
+Version:	3.17.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.15.31 partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.83, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.16.1 partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.83, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 10 2015 Steven Shiau <steven _at_ nchc org tw> 3.17.1-drbl1
+- Function is_drbl_live_env is added in ocs-functions.
+- No more using ocs_lang and ocs_live_keymap in drbl-ocs, they are replaced by keyboard-layouts and locales. 
+- Option "-p" was added so that drbl-ocs-live-prep supports the mounted or unzipped live path. Now by default the Clonezilla SE client in drbl live use lesser NFS. Most of them are live system.
+
 * Mon Sep 07 2015 Steven Shiau <steven _at_ nchc org tw> 3.16.39-drbl1
 - Since most of the debian packages are compressed (xz or gzip), no more compressing the source tarball. 
 - Package efibootmgr was added to gparted live. (https://bugzilla.gnome.org/show_bug.cgi?id=754587)
