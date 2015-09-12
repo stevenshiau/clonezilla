@@ -111,24 +111,34 @@ prepare_pxecfg_for_pxe_ocs_live_if_required() {
     if [ -n "$ocs_live_keymap_for_pxe_ocs_live" ]; then
       # If ocs_live_keymap_for_pxe_ocs_live is assigned in drbl-ocs.conf, force to update it.
       add_opt_in_pxelinux_cfg_block Clonezilla-live keyboard-layouts "$ocs_live_keymap_for_pxe_ocs_live"
+      add_opt_in_grub_efi_cfg_block "clonezilla-live-client" keyboard-layouts "$ocs_live_keymap_for_pxe_ocs_live"
     fi
     if [ -n "$ocs_lang_for_pxe_ocs_live" ]; then
       add_opt_in_pxelinux_cfg_block Clonezilla-live locales "$ocs_lang_for_pxe_ocs_live"
+      add_opt_in_grub_efi_cfg_block "clonezilla-live-client" locales "$ocs_lang_for_pxe_ocs_live"
     fi
     if [ -n "$ocs_daemonon_for_pxe_ocs_live" ]; then
       add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_daemonon "$ocs_daemonon_for_pxe_ocs_live"
+      add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_daemonon "$ocs_daemonon_for_pxe_ocs_live"
     fi
     server_IP="$(LC_ALL=C get-all-nic-ip -i | awk -F" " '{print $1}')"
     # For Clonezilla live, the mount point is always /home/partimag/
     if [ -n "$ocs_prerun_for_pxe_ocs_live" ]; then
       add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_prerun "$ocs_prerun_for_pxe_ocs_live"
-    elif [ -z "$(grep -E "ocs_prerun=\"[^\"]+\"" $PXE_CONF)" ]; then
-      add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_prerun "mount -t nfs $server_IP:$ocsroot /home/partimag/" 
+      add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_prerun "$ocs_prerun_for_pxe_ocs_live"
+    else
+      if [ -z "$(grep -E "ocs_prerun=\"[^\"]+\"" $PXE_CONF)" ]; then
+        add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_prerun "mount -t nfs $server_IP:$ocsroot /home/partimag/" 
+      fi
+      if [ -z "$(grep -E "ocs_prerun=\"[^\"]+\"" $GRUB_CONF)" ]; then
+        add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_prerun "mount -t nfs $server_IP:$ocsroot /home/partimag/"
+      fi
     fi
     if [ "$remove_some_boot_param_for_pxe_ocs_live" = "yes" ]; then
       # We prefer verbose messages
       for i in $boot_param_2_be_removed_in_pxe_ocs_live; do
         remove_opt_in_pxelinux_cfg_block Clonezilla-live $i
+        remove_opt_in_grub_efi_cfg_block "clonezilla-live-client" $i
       done
     fi
   fi
@@ -688,6 +698,7 @@ case "$drbl_ocs_type" in
     do_startdisk
     if [ "$diskless_client_os" = "clonezilla-live" ]; then
       hide_reveal_pxe_img Clonezilla-live reveal $PXE_CONF
+      hide_reveal_grub_efi_ent clonezilla-live-client reveal $GRUB_CONF
     else
       hide_reveal_pxe_img clonezilla reveal $PXE_CONF
       hide_reveal_grub_efi_ent clonezilla-se-client reveal $GRUB_CONF
@@ -701,6 +712,7 @@ case "$drbl_ocs_type" in
     do_startparts
     if [ "$diskless_client_os" = "clonezilla-live" ]; then
       hide_reveal_pxe_img Clonezilla-live reveal $PXE_CONF
+      hide_reveal_grub_efi_ent clonezilla-live-client reveal $GRUB_CONF
     else
       hide_reveal_pxe_img clonezilla reveal $PXE_CONF
       hide_reveal_grub_efi_ent clonezilla-se-client reveal $GRUB_CONF
@@ -712,6 +724,7 @@ case "$drbl_ocs_type" in
     do_select_in_client
     if [ "$diskless_client_os" = "clonezilla-live" ]; then
       hide_reveal_pxe_img Clonezilla-live reveal $PXE_CONF
+      hide_reveal_grub_efi_ent clonezilla-live-client reveal $GRUB_CONF
     else
       hide_reveal_pxe_img clonezilla reveal $PXE_CONF
       hide_reveal_grub_efi_ent clonezilla-se-client reveal $GRUB_CONF
@@ -752,6 +765,10 @@ case "$drbl_ocs_type" in
     if [ -n "$(LC_ALL=C grep -E '^label Clonezilla-live' $PXE_CONF)" ]; then
       remove_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run
       hide_reveal_pxe_img Clonezilla-live hide $PXE_CONF
+    fi
+    if [ -n "$(LC_ALL=C grep -E '^menuentry.*--id clonezilla-live-client' $GRUB_CONF)" ]; then
+      remove_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run
+      hide_reveal_grub_efi_ent clonezilla-live-client hide $GRUB_CONF
     fi
     # Since now we separate Clonezilla and DRBL label block in PXE menu, 
     # Clonezilla will always with runlevel 1. Skip this.
