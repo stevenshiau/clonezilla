@@ -6207,13 +6207,24 @@ stop_ocs_service() {
 
   # HOST_OPTION_MODIFY: modified since we specify hosts.
 
-  # when remove ocs_opt etc in pxelinux cfg, PXE_CONF is a global variable.
+  # When removing ocs_opt etc in pxelinux cfg, PXE_CONF is a global variable.
   if [ "$diskless_client_os" = "clonezilla-live" ]; then
     remove_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run
+    remove_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run
+    # Update the description to avoid confusion.
+    # (1) PXE
+    force_pxe_clients_boot_label Clonezilla-live "Clonezilla Live"
+    hide_reveal_pxe_img Clonezilla-live hide $PXE_CONF
+    # (2) uEFI (GRUB)
+    force_grub_efi_clients_boot_label clonezilla-live-client "Clonezilla-live"
+    hide_reveal_grub_efi_ent "clonezilla-live-client" hide $GRUB_CONF
   else
     remove_opt_in_pxelinux_cfg_block clonezilla ocs_opt
     remove_opt_in_grub_efi_cfg_block "clonezilla-se-client" ocs_opt
-    # Update the description to avoid confusion.
+    # Update the description to avoid confusion:
+    # (1) PXE
+    force_pxe_clients_boot_label local "$local_os_menu_label"
+    # (2) uEFI (GRUB)
     force_grub_efi_clients_boot_label clonezilla-se-client "Clonezilla"
     hide_reveal_grub_efi_ent "clonezilla-se-client" hide $GRUB_CONF
   fi
@@ -6445,6 +6456,7 @@ start_ocs_service() {
   # First, set the pxe menu to Clonezilla:..., since maybe it's in drbl mode. If -y0 is set, later we will switch the default menu to local.
   if [ "$diskless_client_os" = "clonezilla-live" ]; then
     force_pxe_clients_boot_label Clonezilla-live "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
+    force_grub_efi_clients_boot_label clonezilla-live-client "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
   else
     force_pxe_clients_boot_label clonezilla "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
     force_grub_efi_clients_boot_label clonezilla-se-client "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
@@ -6686,9 +6698,11 @@ prep_client_inittab_rc_srv() {
            # remove select_in_client in the option so the clonezilla can run.
             rc_task="$(echo $rc_task | sed -e "s/select_in_client//g")"
             add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "clonezilla -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+            add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "clonezilla -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
             ;;
           *)
             add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "ocs-sr -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+            add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "ocs-sr -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
             ;;
         esac
       else
@@ -8405,6 +8419,7 @@ do_select_in_client() {
   # First, set the pxe menu to Clonezilla:..., since maybe it's in drbl mode. If -y0 is set, later we will switch the default menu to local.
   if [ "$diskless_client_os" = "clonezilla-live" ]; then
     force_pxe_clients_boot_label Clonezilla-live "$clonezilla_client_menu_label_prefix: choose save or restore later"
+    force_grub_efi_clients_boot_label "clonezilla-live-client" "$clonezilla_client_menu_label_prefix: choose save or restore later"
   else
     force_pxe_clients_boot_label clonezilla "$clonezilla_client_menu_label_prefix: choose save or restore later"
     force_grub_efi_clients_boot_label "clonezilla-se-client" "$clonezilla_client_menu_label_prefix: choose save or restore later"
