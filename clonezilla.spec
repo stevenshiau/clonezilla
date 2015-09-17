@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.17.5
+Version:	3.17.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 17 2015 Steven Shiau <steven _at_ nchc org tw> 3.17.6-drbl1
+- Comments about ocs_lang_for_pxe_ocs_live in drbl-ocs.conf was added.
+- The keymap for live system should use the same keymap as that on the server first, and if not available, then use the one assigned in drbl-ocs.conf.
+
 * Thu Sep 17 2015 Steven Shiau <steven _at_ nchc org tw> 3.17.5-drbl1
 - Bug fixed: forgot to add boot param for uEFI netboot client when ocs_client_trig_type=proc-cmdline.
 
