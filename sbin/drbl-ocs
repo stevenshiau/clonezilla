@@ -107,15 +107,35 @@ prepare_pxecfg_for_pxe_ocs_live_if_required() {
       exit 1
     fi
     echo "Modifying keyboard-layouts, locales, ocs_daemonon, and ocs_prerun in $PXE_CONF if necessary..."
-    # Todo: keymap should be the same with server.
-    if [ -n "$ocs_live_keymap_for_pxe_ocs_live" ]; then
-      # If ocs_live_keymap_for_pxe_ocs_live is assigned in drbl-ocs.conf, force to update it.
-      add_opt_in_pxelinux_cfg_block Clonezilla-live keyboard-layouts "$ocs_live_keymap_for_pxe_ocs_live"
-      add_opt_in_grub_efi_cfg_block "clonezilla-live-client" keyboard-layouts "$ocs_live_keymap_for_pxe_ocs_live"
+    # Keymap should be the same with server. If not found use that assigned in drbl-ocs.conf.
+    if [ -e /etc/default/keyboard ]; then
+      # Debian based system. The content of vconsole.conf is like:
+      # ================
+      # XKBMODEL="pc105"
+      # XKBLAYOUT="us"
+      # XKBVARIANT=""
+      # XKBOPTIONS=""
+      # ================
+      . /etc/default/keyboard
+      client_kb_layout="$XKBLAYOUT"
+      client_kb_model="$XKBMODEL"
+      client_kb_variant="$XKBVARIANT"
+      client_kb_options="$XKBOPTIONS"
     fi
+    if [ -z "$client_kb_layout" ]; then
+      # If no keybouard layout is found, set it as that
+      # is assigned in drbl-ocs.conf, force to update it.
+      client_kb_layout="$ocs_live_keymap_for_pxe_ocs_live"
+      # For the rest (model, variant or options they might be nothing.
+    fi
+    if [ -n "$client_kb_layout" ]; then
+      add_opt_in_pxelinux_cfg_block -n Clonezilla-live keyboard-layouts "$client_kb_layout"
+      add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" keyboard-layouts "$client_kb_layout"
+    fi
+    # locales should be forced to use that assigned from drbl-ocs.conf. Normally it should be "en_US.UTF-8". Check drbl-ocs.conf for more details.
     if [ -n "$ocs_lang_for_pxe_ocs_live" ]; then
-      add_opt_in_pxelinux_cfg_block Clonezilla-live locales "$ocs_lang_for_pxe_ocs_live"
-      add_opt_in_grub_efi_cfg_block "clonezilla-live-client" locales "$ocs_lang_for_pxe_ocs_live"
+      add_opt_in_pxelinux_cfg_block -n Clonezilla-live locales "$ocs_lang_for_pxe_ocs_live"
+      add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" locales "$ocs_lang_for_pxe_ocs_live"
     fi
     if [ -n "$ocs_daemonon_for_pxe_ocs_live" ]; then
       add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_daemonon "$ocs_daemonon_for_pxe_ocs_live"
