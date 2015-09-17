@@ -6460,10 +6460,10 @@ start_ocs_service() {
   else
     force_pxe_clients_boot_label clonezilla "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
     force_grub_efi_clients_boot_label clonezilla-se-client "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
+    # set runlevel 1 to kernel parameter in pxelinux config
+    add_runlevel_1_in_pxelinux_cfg_block clonezilla
+    add_runlevel_1_in_grub_efi_cfg_block clonezilla-se-client
   fi
-  # set runlevel 1 to kernel parameter in pxelinux config
-  add_runlevel_1_in_pxelinux_cfg_block clonezilla
-  add_runlevel_1_in_grub_efi_cfg_block clonezilla-se-client
 
   # If the mode is in always_restore, and PXE default menu is assigned to local (-y0), we will set local boot as default. Since the always_restore mode is only useful with local OS exists. But if in some scenario, such as production clone flow, maybe pxe_menu_default_mode=clone is useful, since a lot of hardisks will be replaced one by one.
   if [ "$always_restore" = "yes" ]; then
@@ -6654,6 +6654,7 @@ prep_client_inittab_rc_srv() {
       # Remove the stalled one in pxelinux config file, just in case.
       if [ "$diskless_client_os" = "clonezilla-live" ]; then
         remove_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run
+        remove_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run
       else
         remove_opt_in_pxelinux_cfg_block clonezilla ocs_opt
         remove_opt_in_grub_efi_cfg_block "clonezilla-se-client" ocs_opt
@@ -6674,9 +6675,11 @@ prep_client_inittab_rc_srv() {
            # remove select_in_client in the option so the clonezilla can run.
             rc_task="$(echo $rc_task | sed -e "s/select_in_client//g")"
             add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "clonezilla -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+            add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "clonezilla -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
             ;;
           *)
             add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "ocs-sr -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+            add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "ocs-sr -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
             ;;
         esac
       else
