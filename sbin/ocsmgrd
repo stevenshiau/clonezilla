@@ -131,8 +131,16 @@ sub gen_grub_efi_cfg {
   close(GRUBCFG);
 
   # HOST_OPTION_MODIFY: modified since we specify hosts by MAC.
+  # (1) This for the embedded config file we implemented in DRBL (drbl-gen-grub-efi-nb)
+  # for GRUB EFI NB MAC config style, like grub.cfg-01:00:50:56:01:01:01
+  my $GRUBCFG_MACFN="grub.cfg-01:".$peermac;
+  my $GRUBCFG_MACFN_FULL=$config{tftpboot}."/grub-efi.cfg/".$GRUBCFG_MACFN;
+  unlink ($GRUBCFG_MACFN_FULL) if -f $GRUBCFG_MACFN_FULL;
+  system("LC_ALL=C cp -f $GRUBCFGFN_FULL $GRUBCFG_MACFN_FULL");
+  # (2) This is for the patched version in CentOS/Fedora
+  # Ref: https://bugzilla.redhat.com/show_bug.cgi?id=873406
   # for GRUB EFI NB MAC config style, like grub.cfg-01-00-50-56-01-01-01
-  my $GRUBCFG_MACFN=`echo $peermac | tr ":" "-"`;
+  $GRUBCFG_MACFN=`echo $peermac | tr ":" "-"`;
   $GRUBCFG_MACFN="grub.cfg-01-".$GRUBCFG_MACFN;
   my $GRUBCFG_MACFN_FULL=$config{tftpboot}."/grub-efi.cfg/".$GRUBCFG_MACFN;
   unlink ($GRUBCFG_MACFN_FULL) if -f $GRUBCFG_MACFN_FULL;
