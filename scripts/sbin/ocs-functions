@@ -8080,8 +8080,10 @@ task_restoreparts() {
         efi_info_tmp="$(mktemp /tmp/efi_info.XXXXXX)"
         echo "Running: update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat -f $efi_info_tmp /dev/$ihd" | tee --append $OCS_LOGFILE
         update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat -f $efi_info_tmp /dev/$ihd | tee --append $OCS_LOGFILE
-        # Get the new efi_os_label, efi_system_part_no and efi_sys_part_boot_file
+        # Get the new efi_os_label, efi_system_part_no and efi_sys_part_boot_file which ocs-socket will use later to notify the server.
         . $efi_info_tmp
+	# efi_os_label might be more than one word, like "Windows Boot Manager", we need to make it one word otherwise ocsmgrd will fail to parse.
+	efi_os_label="$(LC_ALL=C rep_whspc_w_udrsc "$efi_os_label")"
         rm -f $efi_info_tmp
         if [ "$efi_netboot_1st_in_nvram" = "yes" ]; then
           # "efi_netboot_1st_in_nvram" is from drbl-ocs.conf.
