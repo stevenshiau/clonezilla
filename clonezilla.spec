@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.17.10
+Version:	3.17.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.16.10 partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.83, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.16.12 partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.83, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Sep 21 2015 Steven Shiau <steven _at_ nchc org tw> 3.17.11-drbl1
+- Update Forcevideo for GParted live so that it will work on the latest Debian Sid.
+
 * Mon Sep 21 2015 Steven Shiau <steven _at_ nchc org tw> 3.17.10-drbl1
 - Enable syntax on and dark background for vim in DRBL live.
 - In DRBL live, when only netboot config files (/tftpboot/nbi_img/pxelinux.cfg/default and /tftpboot/nbi_img/grub-efi.cfg/grub.cfg) are required to be updated once, make sure it only be updated once. No need to update for every clients. This would reduce runtime massively when client machines are many.
