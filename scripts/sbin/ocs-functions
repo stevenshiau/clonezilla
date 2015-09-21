@@ -6413,7 +6413,8 @@ start_ocs_service() {
 
   # HOST_OPTION_MODIFY: modified since we specify hosts.
   # Note! We can not use "for ihost in $drblroot/*; do" since we have to create every pxelinux config for client. If we use that, it will fail in DRBL SSI and Clonezilla box.
-  #for ihost in $drblroot/*; do
+  # nb_conf_trigger is the flag to see if the network boot config files (for both PXE and GRUB, i.e. /tftpboot/nbi_img/pxelinux.cfg/{default,01-$MAC,...} and /tftpboot/nbi_img/grub-efi.cfg/grub.cfg-*) need to be updated for every IP address or not.
+  nb_conf_trigger=""
   for node_ip in `get-client-ip-list`; do
     # if the LIST_HOST is on, skip those IP not listed in the $IP_LIST
     if [ "$LIST_HOST" = "on" ]; then
@@ -6597,6 +6598,7 @@ prep_client_inittab_rc_srv() {
   local rc_task=$2
   local rc_opt=$3
   local hw_det_opt
+  # //NOTE// nb_conf_trigger is global variable
 
   # change the mode to rc1.d
   case "$modify_client_etc_inittab" in
@@ -6669,23 +6671,30 @@ prep_client_inittab_rc_srv() {
     proc-cmdline)
       # remove the stalled ocs-run.param, just in case.
       rm -f $drblroot/$node_ip/etc/ocs/ocs-run.param
-      if [ "$diskless_client_os" = "clonezilla-live" ]; then
-        case "$rc_task" in
-          *select_in_client*)
-           # remove select_in_client in the option so the clonezilla can run.
-            rc_task="$(echo $rc_task | sed -e "s/select_in_client//g")"
-            add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "clonezilla -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
-            add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "clonezilla -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
-            ;;
-          *)
-            add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "ocs-sr -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
-            add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "ocs-sr -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
-            ;;
-        esac
-      else
-        # For nfsroot's client, we process select_in_client in /etc/rc1.d/s19ocs-run
-        add_opt_in_pxelinux_cfg_block clonezilla ocs_opt "-l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
-        add_opt_in_grub_efi_cfg_block "clonezilla-se-client" ocs_opt "-l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+      # In "proc-cmdline" mode, when PXE_CONF=/tftpboot/nbi_img/pxelinux.cfg/default and GRUB_CONF=/tftpboot/nbi_img/grub-efi.cfg//grub.cfg, we only need to change them one time, the very 1st time.
+      if [ "$nb_conf_trigger" != "done" ]; then
+        if [ "$diskless_client_os" = "clonezilla-live" ]; then
+          case "$rc_task" in
+            *select_in_client*)
+             # remove select_in_client in the option so the clonezilla can run.
+              rc_task="$(echo $rc_task | sed -e "s/select_in_client//g")"
+              add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "clonezilla -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+              add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "clonezilla -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+              ;;
+            *)
+              add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "ocs-sr -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+              add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "ocs-sr -l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+              ;;
+          esac
+        else
+          # For nfsroot's client, we process select_in_client in /etc/rc1.d/s19ocs-run
+          add_opt_in_pxelinux_cfg_block clonezilla ocs_opt "-l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+          add_opt_in_grub_efi_cfg_block "clonezilla-se-client" ocs_opt "-l en_US.UTF-8 $OCS_OPT $rc_task $rc_opt"
+        fi
+	if [ "$(realpath $PXE_CONF)" = "$(realpath $PXE_CONF_DEF)" -a \
+             "$(realpath $GRUB_CONF)" = "$(realpath $GRUB_EFINB_CONF_DEF)" ]; then
+           nb_conf_trigger="done"
+        fi
       fi
       ;;
     both)
