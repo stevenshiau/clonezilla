@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.17.9
+Version:	3.17.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Sep 21 2015 Steven Shiau <steven _at_ nchc org tw> 3.17.10-drbl1
+- Enable syntax on and dark background for vim in DRBL live.
+- In DRBL live, when only netboot config files (/tftpboot/nbi_img/pxelinux.cfg/default and /tftpboot/nbi_img/grub-efi.cfg/grub.cfg) are required to be updated once, make sure it only be updated once. No need to update for every clients. This would reduce runtime massively when client machines are many.
+
 * Sun Sep 20 2015 Steven Shiau <steven _at_ nchc org tw> 3.17.9-drbl1
 - Bug fixed: commenting clonezilla job in ocs-live-run-menu for Clonezilla SE in DRBL live after it is done was not working.
 - The uEFI lable should be converted to one word otherwise ocsmgrd will fail to parse it.
