@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.18.1
+Version:	3.18.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.17.1 partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.83, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.17.3 partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.83, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Sep 29 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.2-drbl1
+- A better way to get the autologin account is used in S03prep-drbl-clonezilla for both ocs and drbl.
+
 * Tue Sep 22 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.1-drbl1
 - ocsmgrd now reveals local-disk for uEFI netboot by default, and no more using ":" in the file name of uEFI netboot. It's the same with that of patched grub2 on CentOS, i.e. something like: grub.cfg-01-00-0c-29-1d-9a-d1
 
