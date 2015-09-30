@@ -1893,11 +1893,49 @@ check_grub_partition() {
 } # end of check_grub_partition
 #
 mount_root_partition_for_separate_boot_part() {
-  local hd_img="$1"
+  local selected_parts
+  local hd_img
   local partition_list="" root_part="" lvm_list ilv fname mrc p_type rc
-  [ -z "$hd_img" ] && echo "You must assign mounting point in function mount_root_partition_for_separate_boot_part" && exit 1
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -p|--selected-parts)
+          shift
+          if [ -z "$(echo $1 |grep ^-.)" ]; then
+            # skip the -xx option, in case 
+            selected_parts="$1"
+            shift
+          fi
+          if [ -z "$selected_parts" ]; then
+            echo "-p is used, but no selected_parts assigned." | tee --append ${OCS_LOGFILE}
+            echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+            [ "$save_restore_error_log" = "yes" ] && copy_error_log
+            exit 1
+          fi
+          ;;
+      -*) echo "${0}: ${1}: invalid option" | tee --append ${OCS_LOGFILE} >&2
+          USAGE | tee --append ${OCS_LOGFILE} >& 2
+          echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+          [ "$save_restore_error_log" = "yes" ] && copy_error_log
+          exit 2 ;;
+      *)  break ;;
+    esac
+  done
+  hd_img="$1"
+  if [ -z "$hd_img" ]; then
+    echo "You must assign mounting point in function mount_root_partition_for_separate_boot_part"
+    exit 1
+  fi
   gen_proc_partitions_map_file
-  partition_list=$(get_part_list $partition_table)
+  # Filter the assigned partitions:
+  # partition_list might look like
+  # partition_list='sda1 sda2 sdb1 sdb2 sdb5 sdb6 sdc1 sdc2 sdc5 sdc6 '
+  # While the partitions restored might like: "sda1 sda2"
+  # We can only try to select in "sda1 sda2"
+  if [ -n "$selected_parts" ]; then
+    partition_list="$selected_parts"
+  else
+    partition_list=$(get_part_list $partition_table)
+  fi
   for ipartition in $partition_list; do
     root_partition="/dev/$ipartition"
     # process the boot loader
