@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.18.3
+Version:	3.18.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Oct 05 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.4-drbl1
+- Bug fixed: Update EFI NVRAM only when restoring disk.
+
 * Wed Sep 30 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.3-drbl1
 - Bug fixed: when multiple disks contain grub root partition, ocs-install-grub detected the root partition outside the restored ones.
 
