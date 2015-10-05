@@ -46,7 +46,7 @@ save_restore_error_log="no"
 # Flag to check target disk size before creating partition table
 chk_tgt_disk_size_bf_mk_pt="yes"
 # Flag to update EFI NVRAM after restoring a disk
-update_efi_nvram="yes"
+update_efi_nvram=""
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -1025,6 +1025,14 @@ if [ -n "$ocs_sr_save_extra_opt" -o -n "$ocs_sr_restore_extra_opt" ]; then
    *restore*) OCS_OPTS="$OCS_OPTS $ocs_sr_restore_extra_opt" ;;
   esac
   parse_ocs_sr_cmd_options_with_dash $OCS_OPTS
+fi
+
+# Decide the mode for update_efi_nvram if it's not assigned. The EFI NVRAM is only updated when the mode is restoredisk or multicast_restoredisk
+if [ -z "$update_efi_nvram" ]; then
+  case "$ocs_sr_type" in
+   *restoredisk) update_efi_nvram="yes";;
+   *) update_efi_nvram="no";;
+  esac
 fi
 
 # Process options. //NOTE// There might be twice of wrap_up_opt, one is for the command options assigned, the other one is the command options got from interactive mode.
