@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.18.5
+Version:	3.18.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Oct 12 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.6-drbl1
+- Enabled ttyS* for systemd in GParted live.
+
 * Tue Oct 06 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.5-drbl1
 - Reverted to use http://free.nchc.org.tw/debian for debian_mirror_url_def in drbl-ocs.conf. Too frequent "Hash Sum mismatch" for some Debian mirror sites.
 
