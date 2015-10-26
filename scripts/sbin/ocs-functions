@@ -1746,11 +1746,18 @@ get_swap_partition_parted_format() {
 	 return 1
        fi
        # swdisk is like sda
-       swdisk="$(LC_ALL=C grep -E "^Disk /dev/[sh]d[a-z]+" $partition_table | awk -F " " '{print $2}' | sed -r -e "s|^[[:space:]]*||g" -e "s|/dev/||g" -e "s|:||g")"
+       swdisk="$(LC_ALL=C grep -E "^Disk /dev/([sh]d[a-z]+|mmcblk[0-9])" $partition_table | awk -F " " '{print $2}' | sed -r -e "s|^[[:space:]]*||g" -e "s|/dev/||g" -e "s|:||g")"
 
        for i in $swparts; do
          # sda + 2 -> sda2
-         known_parts="$known_parts ${swdisk}${i}"
+         case "$swdisk" in
+           mmcblk*)
+             known_parts="$known_parts ${swdisk}p${i}"
+	     ;;
+	   *)
+             known_parts="$known_parts ${swdisk}${i}"
+	     ;;
+	   esac
        done
     fi
     # The return known_parts is like: sda1 sda2
