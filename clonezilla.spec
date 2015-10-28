@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.18.7
+Version:	3.18.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 29 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.8-drbl1
+- Since the bug about xserver-xorg-legacy was fixed. Removing xserver-xorg-legacy from the packages list in create-gparted-live. (https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=802544)
+
 * Wed Oct 28 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.7-drbl1
 - Adding f2fs in the support fs of partclone in drbl-ocs.conf.
 - Bug fixed: vi instead of vim existing on GParted live system.
