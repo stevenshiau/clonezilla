@@ -11215,6 +11215,12 @@ force_grub_efi_clients_boot_label() {
   local entry_id="$1" # e.g. drbl-client, clonezilla-se-client
   local menu_des="$2" # e.g. "Clonezilla: multicast restore precise-x86 to disk sda"
   [ -z "$entry_id" ] && echo "No entry_id in force_grub_efi_clients_boot_label!" && exit 1
+  if [ -n "$GRUB_CONF" -a ! -e "$GRUB_CONF" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "File $GRUB_CONF not found. No support for uEFI network boot."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 2
+  fi
   if [ -n "$menu_des" ]; then
     echo "Setting the GRUB EFI clients to DRBL mode with label \"$menu_des\"..."
     set-default-grub-efi-img -i "$entry_id" -c $GRUB_CONF -l "$menu_des"
@@ -11230,6 +11236,12 @@ add_runlevel_1_in_grub_efi_cfg_block() {
   local entry_id="$1"
   local sub_menu_entry_cmd
   [ -z "$entry_id" ] && echo "No entry_id in add_runlevel_1_in_grub_efi_cfg_block!" && exit 1
+  if [ -n "$GRUB_CONF" -a ! -e "$GRUB_CONF" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "File $GRUB_CONF not found. No support for uEFI network boot."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 2
+  fi
   lines=$(get_grub_efi_image_block "$entry_id" $GRUB_CONF)
   begin_line=$(echo $lines | awk -F" " '{print $1}')
   end_line=$(echo $lines | awk -F" " '{print $2}')
