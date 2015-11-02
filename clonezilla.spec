@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.18.9
+Version:	3.18.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.17.10, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.83, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.17.11, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.83, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 2 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.11-drbl1
+- Testing $GRUB_CFG if exists in drbl-ocs-live-prep.
+
+* Mon Nov 2 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.10-drbl1
+- Bug fixed: wait_for_udevd should be after main settings in ocs-run.
+- More tests about if $GRUB_CONF exists before going on in some functions of ocsmgrd and drbl-ocs about grub2 uEFI network boot.
+
 * Sat Oct 31 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.9-drbl1
 - Check if file $GRUB_CONF exists before going on in hide_reveal_grub_efi_ent and some functions of drbl-functions.
 
