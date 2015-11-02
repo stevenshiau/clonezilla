@@ -64,6 +64,9 @@ while ( $_ = shift ) {
     usage_details();
   }
 }
+#
+my $pxe_conf_default=$config{tftpboot}."/pxelinux.cfg/default";
+my $grub_conf_default=$config{tftpboot}."/grub-efi.cfg/grub.cfg";
 
 # check if root or not.
 # added by Steven Shiau 2005/02/19
@@ -92,7 +95,6 @@ sub gen_pxe_cfg {
   my $PXECFGFN=`drbl-gethostip $peeraddr`;
   chomp($PXECFGFN);
   my $PXECFGFN_FULL=$config{tftpboot}."/pxelinux.cfg/".$PXECFGFN;
-  my $pxe_conf_default=$config{tftpboot}."/pxelinux.cfg/default";
   system("cp -f $pxe_conf_default $PXECFGFN_FULL");
   system("set-default-pxe-img -i local -c $PXECFGFN_FULL >/dev/null 2>&1");
   system("hide_reveal_pxe_img clonezilla hide $PXECFGFN_FULL >/dev/null 2>&1");
@@ -120,7 +122,6 @@ sub gen_grub_efi_cfg {
   my $GRUBCFGFN="grub.cfg-".`drbl-gethostip $peeraddr`;
   chomp($GRUBCFGFN);
   my $GRUBCFGFN_FULL=$config{tftpboot}."/grub-efi.cfg/".$GRUBCFGFN;
-  my $grub_conf_default=$config{tftpboot}."/grub-efi.cfg/grub.cfg";
   system("cp -f $grub_conf_default $GRUBCFGFN_FULL");
   system("hide_reveal_grub_efi_ent local-disk reveal $GRUBCFGFN_FULL >/dev/null 2>&1");
   system("set-default-grub-efi-img -i local-disk -c $GRUBCFGFN_FULL >/dev/null 2>&1");
@@ -197,7 +198,11 @@ sub start_server(%) {
           &client_joblog("client $peeraddr ($peermac) finished cloning. Stats: $peermsg");
 	  if ( "$config{write_pxe_cfg}" eq "0" ) {
             gen_pxe_cfg("$peeraddr", "$peermac");
-            gen_grub_efi_cfg("$peeraddr", "$peermac", "$peerefioslable", "$peerefipart", "$peerefibootf");
+	    if ( -f "$grub_conf_default" ) {
+              # Older GNU/Linux does not support grub2 uEFI network boot. Only doing this
+	      # when $grub_conf_default exists.
+              gen_grub_efi_cfg("$peeraddr", "$peermac", "$peerefioslable", "$peerefipart", "$peerefibootf");
+            }
           }
           &log("connection closed: ".$fh->peerhost());
           $fh->close();
