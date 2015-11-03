@@ -79,32 +79,14 @@ case "$part_fs" in
               resize_reiserfs $resize_reiserfs_opt ${partition}
               ;;
    vfat|fat16|fat32)
-              if ! which parted &> /dev/null; then
+              if ! which fatresize&> /dev/null; then
                  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-                 echo "Program parted not found! Skip this partition ${partition}"
+                 echo "Program fatresize not found! Skip this partition ${partition}"
                  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 		 exit 1
 	      fi
-              if [ -z "$(LC_ALL=C parted --help | grep -Ew "resize")" ]; then
-                 [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-                 echo "This version of parted does not support resize. Skip resize partition ${partition}"
-                 [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-		 exit 1
-              fi
-	      [ "$batch_mode" = "yes" ] && parted_resize_opt="-s"
-	      target_hd="/dev/$(get_diskname $partition)"
-	      part_num="$(get_part_number $partition)"
-
-              if [ -z "$(LC_ALL=C parted --help | grep -Ew "resizepart")" ]; then
-                # For parted >= version 3.2. //NOTE// There is no any resize function in 3.1 which is the case for CentOS 7.0 and 7.1.
-                echo "Running: parted $parted_resize_opt $target_hd resizepart $part_num $part_end"
-                parted $parted_resize_opt $target_hd resizepart $part_num $part_end
-              else
-                # For parted < version 3
-                #  resize MINOR START END
-                echo "Running: parted $parted_resize_opt $target_hd resize $part_num $part_start $part_end"
-                parted $parted_resize_opt $target_hd resize $part_num $part_start $part_end
-              fi
+	      fat_fs_size="$(LC_ALL=C lsblk -b -n -d -o size ${partition})"
+	      fatresize -p --verbose -s $fat_fs_size ${partition}
               ;;
    ext2|ext3|ext4)
               if ! which e2fsck &> /dev/null || ! which resize2fs &> /dev/null ; then
