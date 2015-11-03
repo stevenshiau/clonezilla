@@ -389,7 +389,20 @@ if [ ! -d "/sys/firmware/efi/efivars/" ]; then
 fi
 esp_no="$(get_efi_system_part ${disk_})"
 if [ -n "$esp_no" ]; then
-  efi_system_part="${disk_}${esp_no}"
+  # Disk name -> partition device name e.g.
+  # /dev/sda -> /dev/sda1
+  # /dev/cciss/c0d0 -> /dev/cciss/c0d0p1
+  # /dev/mmcblk0 -> /dev/mmcblk0p1
+  # /dev/nvme0n1 -> /dev/nvme0n1p1
+  # /dev/md126 -> /dev/md126p1
+  case "${disk_}" in
+      *cciss*|*mmcblk*|*md*|*rd*|*ida*|*nvme*)
+          efi_system_part="${disk_}p${esp_no}"
+          ;;
+      *)
+          efi_system_part="${disk_}${esp_no}"
+          ;;
+  esac
   echo "EFI system partition: ${efi_system_part}"
 else
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
