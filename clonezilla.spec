@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.18.14
+Version:	3.18.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Nov 10 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.15-drbl1
+- Reverted to use http://archive.ubuntu.com/ubuntu instead of http://free.nchc.org.tw/ubuntu for ubuntu_mirror_url_def and ubuntu_mirror_security_url_def in drbl-ocs.conf. Otherwise the cache in /var/lib and /var/cache won't be removed. It makes the iso/zip ~30 MB larger.
+
 * Tue Nov 10 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.14-drbl1
 - Reverted to use http://free.nchc.org.tw/ubuntu for ubuntu_mirror_url_def and ubuntu_mirror_security_url_def in drbl-ocs.conf. Less network connection issue when creating Clonezilla live for Clonezilla team.
 
