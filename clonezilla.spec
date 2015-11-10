@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.18.12
+Version:	3.18.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,15 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Nov 10 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.14-drbl1
+- Reverted to use http://free.nchc.org.tw/ubuntu for ubuntu_mirror_url_def and ubuntu_mirror_security_url_def in drbl-ocs.conf. Less network connection issue when creating Clonezilla live for Clonezilla team.
+
+* Tue Nov 10 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.13-drbl1
+- Adding swapfile.sys in the files list to be removed in ocs-rm-win-swap-hib. Thanks to Bartosz Bątorek <bartosz.batorek _at_ gmail com> for suggesting this.
+- Avoiding TUI messages overriding the error messages in ocs-live-restore.
+Thanks to Stew Fisher <stewart.fisher _at_ oncology ox ac uk> for
+reporting this issue.
+
 * Tue Nov 3 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.12-drbl1
 - Bug fixed: Avoid using the preserved word of grub2 "prefix" in the grub.cfg. Thanks to Joey3000.  (https://github.com/stevenshiau/clonezilla/issues/13)
 - Bug fixed: Failed to deal with partition name with extra "p", like: *cciss*, *mmcblk*, *md*, *rd*, *ida*, *nvme*, Thanks to quozl for reporting this bug.  (https://github.com/stevenshiau/clonezilla/issues/14)
