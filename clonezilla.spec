@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.18.15
+Version:	3.18.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.18.1, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.85, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.18.1, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.86, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 16 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.16-drbl1
+- Adding nilfs2 in the file systems support list for partclone in drbl-ocs.conf.
+
 * Tue Nov 10 2015 Steven Shiau <steven _at_ nchc org tw> 3.18.15-drbl1
 - Reverted to use http://archive.ubuntu.com/ubuntu instead of http://free.nchc.org.tw/ubuntu for ubuntu_mirror_url_def and ubuntu_mirror_security_url_def in drbl-ocs.conf. Otherwise the cache in /var/lib and /var/cache won't be removed. It makes the iso/zip ~30 MB larger.
 
