@@ -40,7 +40,8 @@ gen_md5sum="no"
 gen_sha1sum="no"
 check_md5sum="no"
 check_sha1sum="no"
-chk_img_restoreable="yes"
+chk_img_restoreable_mod_save="yes"
+chk_img_restoreable_mod_restore="yes"
 # Flag to save restoring error log
 save_restore_error_log="no"
 # Flag to check target disk size before creating partition table
@@ -202,9 +203,13 @@ parse_ocs_sr_cmd_options_with_dash() {
     -c|--confirm)
             confirm_before_clone="yes"
 	    shift; n_shift=$((n_shift+1));;
-    -sc|--skip-check-restorable)
+    -sc|--skip-check-restorable|--skip-check-restorable-s)
             # Flag to check if the image is restorable
-	    chk_img_restoreable="no"
+	    chk_img_restoreable_mod_save="no"
+	    shift; n_shift=$((n_shift+1));;
+    -scr|--skip-check-restorable-r)
+            # Flag to check if the image is restorable
+	    chk_img_restoreable_mod_restore="no"
 	    shift; n_shift=$((n_shift+1));;
     -srel|--save-restore-error-log)
             # Flag to save restoring log
@@ -1120,6 +1125,7 @@ case "$ocs_sr_type" in
     prepare_ecryptfs_mount_point_if_necessary
 
     task_savedisk "$target_dir" "$target_hd"
+    rc_savedisk="$?"
 
     #
     if [ -d "$MULTIPATH_INFODIR" -a \
@@ -1127,8 +1133,13 @@ case "$ocs_sr_type" in
       rm -rf "$MULTIPATH_INFODIR"
     fi
 
-    if [ "$?" -eq 0 -a "$chk_img_restoreable" = "yes" ]; then
+    if [ "$rc_savedisk" -eq 0 -a "$chk_img_restoreable_mod_save" = "yes" ]; then
       check_image_if_restorable "$ocsroot"
+      rc_chkimg="$?"
+      if [ "$rc_chkimg" -ne 0 ]; then
+        echo "$msg_program_stop!"
+        my_ocs_exit 1
+      fi
     fi
     echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_hd" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
 
@@ -1173,6 +1184,15 @@ case "$ocs_sr_type" in
     # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
     # The original ones will be kept as ocsroot_orig and target_dir_orig.
     prepare_ecryptfs_mount_point_if_necessary
+
+    if [ -d "$ocsroot/$target_dir" -a "$chk_img_restoreable_mod_restore" = "yes" ]; then
+      check_image_if_restorable "$ocsroot"
+      rc_chkimg="$?"
+      if [ "$rc_chkimg" -ne 0 ]; then
+        echo "$msg_program_stop!"
+        my_ocs_exit 1
+      fi
+    fi
 
     task_restoredisk "$target_dir" "$target_hd"
 
@@ -1260,8 +1280,21 @@ case "$ocs_sr_type" in
     prepare_ecryptfs_mount_point_if_necessary
 
     task_saveparts "$target_dir" "$target_parts"
-    if [ "$?" -eq 0 -a "$chk_img_restoreable" = "yes" ]; then
+    rc_saveparts="$?"
+
+    #
+    if [ -d "$MULTIPATH_INFODIR" -a \
+	 -n "$(echo $MULTIPATH_INFODIR | grep -w "multipath_info")" ]; then
+      rm -rf "$MULTIPATH_INFODIR"
+    fi
+
+    if [ "$rc_saveparts" -eq 0 -a "$chk_img_restoreable_mod_save" = "yes" ]; then
       check_image_if_restorable "$ocsroot"
+      rc_chkimg="$?"
+      if [ "$rc_chkimg" -ne 0 ]; then
+        echo "$msg_program_stop!"
+        my_ocs_exit 1
+      fi
     fi
     echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_parts" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
 
@@ -1329,6 +1362,15 @@ case "$ocs_sr_type" in
     prepare_ecryptfs_mount_point_if_necessary
 
     task_processing_after_parameters_checked
+
+    if [ -d "$ocsroot/$target_dir" -a "$chk_img_restoreable_mod_restore" = "yes" ]; then
+      check_image_if_restorable "$ocsroot"
+      rc_chkimg="$?"
+      if [ "$rc_chkimg" -ne 0 ]; then
+        echo "$msg_program_stop!"
+        my_ocs_exit 1
+      fi
+    fi
 
     task_restoreparts "$target_dir" "$target_parts"
     task_postprocessing "$ocs_sr_type" "$target_dir"

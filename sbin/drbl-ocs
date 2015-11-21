@@ -66,6 +66,7 @@ USAGE() {
     echo " --time-to-wait TIME  Even when the necessary amount of clients do have connected, still wait until TIME seconds since first client connection have passed"
     echo " --clients-to-wait NUMBER  Automatically start as soon as a minimal number of clients NUMBER have connected"
     echo " -brdcst, --broadcast  Use Ethernet broadcast, rather than multicast in udpcast. Useful if you have Ethernet cards or switch which don't support multicast."
+    echo " -sc0, --skip-check-restorable-on-srv  Skip checking image if restorable or not on Clonezilla server before restoring. By default it will be checked before restoring."
     USAGE_reserved_word_for_restore
     echo
     echo " General options:"
@@ -190,6 +191,9 @@ gen_md5sum="no"
 gen_sha1sum="no"
 check_md5sum="no"
 check_sha1sum="no"
+chk_img_restoreable_mod_save="yes"
+chk_img_restoreable_mod_restore="yes"
+chk_img_restoreable_on_srv="yes"
 
 # Parse command-line options
 while [ $# -gt 0 ]; do
@@ -584,10 +588,21 @@ while [ $# -gt 0 ]; do
             [ -z "$ocs_user_mode" ] && USAGE && exit 1
 	    OCS_OPT="$OCS_OPT -um"
 	    ;;
-    -sc|--skip-check-restorable)
+    -sc0|--skip-check-restorable-on-srv)
+            # flag to check if the image is restorable on clonezilla server
+	    chk_img_restoreable_on_srv="no"
+	    shift
+            ;;
+    -sc|--skip-check-restorable|--skip-check-restorable-s)
             # flag to check if the image is restorable
-	    chk_img_restoreable="no"
+	    chk_img_restoreable_mod_save="no"
 	    OCS_OPT="$OCS_OPT -sc"
+	    shift
+            ;;
+    -scr|--skip-check-restorable-r)
+            # Flag to check if the image is restorable
+	    chk_img_restoreable_mod_restore="no"
+	    OCS_OPT="$OCS_OPT -scr"
 	    shift
             ;;
     -*)     echo "${0}: ${1}: invalid option" >&2
@@ -709,6 +724,12 @@ prepare_pxecfg_for_pxe_ocs_live_if_required
 
 # put default postrun if empty
 [ -z "$postrun" ] && postrun="$POSTRUN_DEF"
+
+# If the image is checked on the server, then we force to skip image checking on the clients when restoring.
+if [ "$chk_img_restoreable_on_srv" = "yes" ]; then
+  chk_img_restoreable_mod_restore="no"
+  OCS_OPT="$OCS_OPT -scr"
+fi
 
 #
 case "$drbl_ocs_type" in

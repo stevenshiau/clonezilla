@@ -8307,11 +8307,20 @@ do_startdisk() {
       exit 1 
     fi
 
-    # if it's restore, we have to conver the old format to newer
     case "$task" in
       "restore"|"multicast_restore")
         if [ "$target_image" != "ask_user" ]; then
+          # If it's restore, we have to conver the old format to newer
           convert_ocs_format_from_1.5_to_2.0_or_newer $imagedir/$target_image/
+        fi
+        if [ -d "$imagedir/$target_image" -a "$chk_img_restoreable_on_srv" = "yes" ]; then
+          echo $msg_delimiter_star_line
+          check_image_if_restorable -i "$target_image" "$imagedir"
+          rc_chkimg="$?"
+          if [ "$rc_chkimg" -ne 0 ]; then
+            echo "$msg_program_stop!"
+	    exit 1
+          fi
         fi
         ;;
     esac
@@ -8323,6 +8332,7 @@ do_startdisk() {
 
     #
     [ -n "$n_clients" ] && mcast_client_no_opt="-n $n_clients"
+
     echo start_ocs_service $mcast_client_no_opt -t $task"disk" -o "$target_image $target_hd"
     start_ocs_service $mcast_client_no_opt -t $task"disk" -o "$target_image $target_hd" 
 } # end of do_startdisk
@@ -8433,11 +8443,20 @@ do_startparts () {
       exit 1 
     fi
 
-    # if it's restore, we have to conver the old format to newer
     case "$task" in
       "restore"|"multicast_restore")
         if [ "$target_image" != "ask_user" ]; then
+          # If it's restore, we have to conver the old format to newer
           convert_ocs_format_from_1.5_to_2.0_or_newer $imagedir/$target_image/
+        fi
+        if [ -d "$imagedir/$target_image" -a "$chk_img_restoreable_on_srv" = "yes" ]; then
+          echo $msg_delimiter_star_line
+          check_image_if_restorable -i "$target_image" "$imagedir"
+          rc_chkimg="$?"
+          if [ "$rc_chkimg" -ne 0 ]; then
+            echo "$msg_program_stop!"
+	    exit 1
+          fi
         fi
         ;;
     esac
@@ -8662,6 +8681,7 @@ USAGE_common_restore(){
     echo "-iefi, --ignore-update-efi-nvram  Skip updating boot entries in EFI NVRAM after restoring."
     echo " -k1,                     Create partition table in the target disk proportionally."
     echo " -k2,                     Enter command line prompt to create partition table manually before restoring image."
+    echo " -scr, --skip-check-restorable-r   By default Clonezilla will check the image if restorable before restoring. This option allows you to skip that."
     echo " -t, --no-restore-mbr Do NOT restore the MBR (Mater Boot Record) when restoring image. If this option is set, you must make sure there is an existing MBR in the current restored harddisk. Default is Yes"
     echo " -u, --select-img-in-client  Input the image name in clients"
     echo " -e, --load-geometry  Force to use the saved CHS (cylinders, heads, sectors) when using sfdisk"
@@ -8705,7 +8725,7 @@ USAGE_common_save(){
     echo " -q1, --force-to-use-dd   Force to use dd to save partition(s) (inefficient method, very slow, but works for all the file system)."
     echo " -q2, --use-partclone     Use partclone to save partition(s) (i.e. partclone > partimage > dd)."
     echo " -rescue, --rescue  Turn on rescue mode, i.e. try to skip bad sectors."
-    echo " -sc, --skip-check-restorable  By default Clonezilla will check the image if restorable after it is created. This option allows you to skip that."
+    echo " -sc, --skip-check-restorable, --skip-check-restorable-s  By default Clonezilla will check the image if restorable after it is created. This option allows you to skip that."
     echo " -z0, --no-compress       Don't compress when saving: very fast but very big image file (NOT compatible with multicast restoring!!!)"
     echo " -z1, --gzip-compress     Compress using gzip when saving: fast and small image file (default)"
     echo " -z1p, --smp-gzip-compress  Compress using parallel gzip program (pigz) when saving: fast and small image file, good for multi-core or multi-CPU machine"
@@ -9784,10 +9804,38 @@ get_live_auto_login_id_home() {
 } # end of get_live_auto_login_id_home
 #
 check_image_if_restorable() {
-  local ocs_root_="$1"
-  local ans_continue ocs_root_opt
+  local ocs_root_ img_nm
+  local ans_continue ocs_root_opt rc_chk chk_img_r_
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -i|--image-name)
+          shift
+          if [ -z "$(echo $1 |grep ^-.)" ]; then
+            # skip the -xx option, in case 
+            img_nm="$1"
+            shift
+          fi
+          if [ -z "$img_nm" ]; then
+            echo "-i is used, but no img_nm assigned." | tee --append ${OCS_LOGFILE}
+            echo "$img_nm" | tee --append ${OCS_LOGFILE}
+            [ "$save_restore_error_log" = "yes" ] && copy_error_log
+            exit 1
+          fi
+          ;;
+      -*) echo "${0}: ${1}: invalid option" | tee --append ${OCS_LOGFILE} >&2
+          echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+          [ "$save_restore_error_log" = "yes" ] && copy_error_log
+          exit 2 ;;
+      *)  break ;;
+    esac
+  done
+  ocs_root_="$1"
+  # If no image name is assigned, use the global image name $target_dir
+  if [ -z "$img_nm" ]; then
+    img_nm="$target_dir"
+  fi
   # This function is used to test the intrgrity of clonzilla image
-  if [ -z "$chk_img_restoreable" ]; then
+  if [ -z "$chk_img_restoreable_mod_save" -o -z "$chk_img_restoreable_mod_restore" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_do_u_want_to_check_img_is_restorable?"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -9795,25 +9843,28 @@ check_image_if_restorable() {
     read ans_continue
   fi
   case "$ans_continue" in
-    n|N|[nN][oO]) chk_img_restoreable="no" ;;
-    *)            chk_img_restoreable="yes" ;;
+    n|N|[nN][oO]) chk_img_r_="no" ;;
+    *)            chk_img_r_="yes" ;;
   esac
   if [ -n "$ocs_root_" ]; then
     ocs_root_opt="--ocsroot ${ocs_root_}"
   fi
 
-  if [ "$chk_img_restoreable" = "yes" ]; then
+  if [ "$chk_img_r_" = "yes" ]; then
     sleep 1
-    echo "Start checking the saved image $target_dir if restorable..."
+    echo "Start checking the saved image $img_nm if restorable..."
     if [ -z "$(echo "$PARTCLONE_SAVE_OPT" | grep -Ew -- "(-N|--ncurses)")" ]; then
       OCS_CHKIMG_OPT="--nogui"
     else
       OCS_CHKIMG_OPT=""
     fi
-    ocs-chkimg $ocs_root_opt $OCS_CHKIMG_OPT $target_dir
+    ocs-chkimg $ocs_root_opt $OCS_CHKIMG_OPT $img_nm
+    rc_chk="$?"
   else
-    echo "Skip checking image $target_dir if restorable..."
+    echo "Skip checking image $img_nm if restorable..."
+    rc_chk="0"
   fi
+  return $rc_chk
 } # end of check_image_if_restorable
 #
 get_part_id_from_sf_format() {
