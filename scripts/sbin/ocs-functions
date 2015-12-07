@@ -183,6 +183,27 @@ is_gpt_partitition_table_disk() {
   return $rt_code
 } # end of is_gpt_partitition_table_disk
 #
+is_gpt_disk_with_bios_boot_part_in_legacy_bios() {
+  # Function to test if GPT disk with a special "bios_boot" partition
+  # exists in the machine using legacy BIOS, not uEFI.
+  # Ref: https://wiki.freeswitch.org/wiki/SSD_Tuning_for_Linux#Partition_Alignment
+  local input_disk_="$1"  # e.g. /dev/sda
+  local rt_code=""
+  if [ -z "$input_disk_" ]; then
+    echo "No input parameter \$input_disk_ in function is_gpt_disk_with_legacy_bios!"
+    return 3
+  fi
+  if `is_gpt_partitition_table_disk $input_disk_`; then
+    if [ -n "$(LC_ALL=C parted -s $input_disk_ print | grep -Ew "^[[:space:]]+1[[:space:]]+.*[[:space:]]+bios_grub")" ]; then
+      # This is the case "GPT disk" while legacy BIOS, and a special "bios_boot" partition exists.
+      rt_code=0
+    else
+      rt_code=1
+    fi
+    return $rt_code
+  fi
+} # end of is_gpt_disk_with_bios_boot_part_in_legacy_bios
+#
 is_mbr_partitition_table_disk() {
   local input_disk_="$1"  # e.g. /dev/sda
   local rt_code=""
@@ -8123,7 +8144,8 @@ task_restoreparts() {
   # Updating EFI NVRAM for the boot device
   if [ "$update_efi_nvram" = "yes" ]; then
     for ihd in $target_hd; do
-      if `is_gpt_partitition_table_disk /dev/$ihd`; then
+      if `is_gpt_partitition_table_disk /dev/$ihd` && \
+        ! `is_gpt_disk_with_bios_boot_part_in_legacy_bios /dev/$ihd`; then
         efi_info_tmp="$(mktemp /tmp/efi_info.XXXXXX)"
         echo "Running: update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat -f $efi_info_tmp /dev/$ihd" | tee --append $OCS_LOGFILE
         update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat -f $efi_info_tmp /dev/$ihd | tee --append $OCS_LOGFILE
