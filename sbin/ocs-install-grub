@@ -396,12 +396,22 @@ grub_hd="$(get_diskname $grub_partition)"
 # active this device
 fdisk -l /dev/$grub_hd &>/dev/null
 
-# This install_grub_hd function is only for BIOS/MBR boot loader, not for EFI. Therefore if $selected_hd is GPT disk, skip it.
+# This ocs-install-grub program is only for BIOS/MBR boot loader,
+# not for EFI unless it's a GPT disk with a special "bios_boot" partition
+# exists in the machine using legacy BIOS.
 if ! `is_mbr_partitition_table_disk /dev/$grub_hd`; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Disk /dev/$grub_hd is not MBR format. Skip the reinstallation of grub-pc (MBR) program."
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  exit 5
+  # In this case, it might be GPT or some other non MBR (msdos) case.
+  if `is_gpt_disk_with_bios_boot_part_in_legacy_bios /dev/$grub_hd`; then
+    # This is the case for a GPT disk with a special "bios_boot" partition
+    # exists in the machine using legacy BIOS. -> continue
+    # We also set check_before_install as "no" to let GRUB could be reinstalled.
+    check_before_install="no"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Disk /dev/$grub_hd is not MBR format or GPT disk with a special 'bios_boot' partition. Skip the reinstallation of grub-pc (MBR) program."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 5
+  fi
 fi
 
 # Even it's blank hard drive, because this program is run after partitions and MBR restored, so we can just detect the MBR on the disk.
