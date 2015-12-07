@@ -353,5 +353,27 @@ echo "Running: sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf"
 LC_ALL=C sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf
 echo "Partition table was created by: sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf"
 
+# Use parted to fill the last partitition to the end of disk because
+# there might be some resudial in the calculation.
+# Thanks to Conan for this suggestion.
+# Ref: https://sourceforge.net/p/clonezilla/discussion/
+#      Clonezilla_live/thread/c5e92d87/?limit=25#080c
+if [ -n "$(LC_ALL=C parted -h | grep -w resizepart)" ]; then
+  # Find the last partition number.
+  # Firstly we get the line number for "Number  Start   End     Size    
+  # File system  Name  Flags"
+  line_after="$(LC_ALL=C parted -s $target_disk print | \
+  grep -n -Ew "^Number[[:space:]]+Start[[:space:]]+End.*" | \
+  awk -F":" '{print $1}')"
+  line_after="$((line_after +1))"
+  last_part_no="$(LC_ALL=C parted -s $target_disk print | \
+  tail -n +${line_after} | awk -F" " '{print $1}' | sort -V | tail -n 1)"
+  if [ -n "$last_part_no" ]; then
+    echo "Trying to extend the last partition to the end of disk by:"
+    echo "parted -s $target_disk resizepart $last_part_no 100%"
+    LC_ALL=C parted -s $target_disk resizepart $last_part_no 100%
+  fi
+fi
+
 [ -e "$new_sf" ] && rm -f $new_sf
 [ -e "$new_sf_tmp" ] && rm -f $new_sf_tmp
