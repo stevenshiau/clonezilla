@@ -260,7 +260,6 @@ logical_part_gap="2"
 while read dev start start_no size size_no type uuid name attrs; do
   pt_no="$(LC_ALL=C get_part_number $dev | sed -r -e "s|^[^[:digit:]]*||g")"
   if `is_partition $dev` ; then
-   # primary/extended partitions
     [ -z "$start_no_keep" ] && start_no_keep=${start_no/,/}  # The 1st one
     [ -z "$size_no_keep" ] && size_no_keep=0
     if [ "${size_no/,/}" -eq 0 ]; then
@@ -320,7 +319,15 @@ while read dev start start_no size size_no type uuid name attrs; do
         size_no="${size_no/,/}"
 	# Since we do not expand this "system reserved partition" or "swap partition", 
 	# we append the space to the next partition.
-	append_to_next="$(LC_ALL=C printf "%.0f" "$(echo "${size_no}*$ratio - ${size_no}" | bc -l)")"
+	# It's possible that there are more than one partition which will be
+	# kept as original size, e.g.
+	# Number  Start   End    Size   File system  Name  Flags
+	# 1      1049kB  106MB  105MB   EFI system partition          boot, esp
+	# 2      106MB   240MB  134MB   Microsoft reserved partition  msftres
+	# 3      240MB   128GB  128GB   Basic data partition          msftdata
+	# In the above, partition 1 and 2 will not be expanded. Therefore we
+	# might need to add the previous $append_to_next
+	append_to_next="$(LC_ALL=C printf "%.0f" "$(echo "$append_to_next + ${size_no}*$ratio - ${size_no}" | bc -l)")"
       fi
     fi
     if [ "$size_no" -lt 0 ]; then
