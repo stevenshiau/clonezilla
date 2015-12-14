@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.19.3
+Version:	3.19.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.18.4, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.86, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.18.5, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.86, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 14 2015 Steven Shiau <steven _at_ nchc org tw> 3.19.4-drbl1
+- Bug fixed: The size with more than one partition not expanding should be added to the later partition in ocs-expand-gpt-pt.
+
 * Mon Dec 07 2015 Steven Shiau <steven _at_ nchc org tw> 3.19.3-drbl1
 - Allow ocs-install-grub to run when it's a GPT disk with a special "bios_boot" partition exists in the machine using legacy BIOS.
 - Use parted to fill the last partitition to the end of disk because there might be some resudial in the calculation of ocs-expand-gpt-pt.  Thanks to Conan for this suggestion. Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/c5e92d87/?limit=25#080c
