@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.19.8
+Version:	3.19.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jan 10 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.9-drbl1
+- Bug fixed: Fix missing background image with Grub2 config file created by ocs-live-boot-menu. Thanks to Joey3000.  (https://github.com/stevenshiau/clonezilla/pull/19).
+
 * Tue Jan 05 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.8-drbl1
 - Since ttf-kochi-gothic is not available in Debian Sid, change to use fonts-hanazono for DRBL live.
 
