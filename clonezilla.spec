@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.19.10
+Version:	3.19.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jan 13 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.11-drbl1
+- Packages libpam-systemd and hence dbus are required for GParted live, otherwise keyboard and mouse won't work in X after Sid >= Jan 2016.  Package policykit-1 is also added similar to that for lightdm.  Thanks to Curtis for Gedak. (https://lists.debian.org/debian-user/2015/10/msg01529.html)
+
 * Tue Jan 12 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.10-drbl1
 - Since ttf-kochi-gothic is not available in Debian Sid, change to use fonts-hanazono for GParted live.
 
