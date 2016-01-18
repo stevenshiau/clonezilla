@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.19.12
+Version:	3.19.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.13-drbl1
+- Disk to disk clonging for NVME device failed to check the destination disk size.
+- Expand NVME support to disk device name like /dev/nvme0n2, and /dev/nvme0n3 instead of /dev/nvme0n1 only.
+
 * Sat Jan 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.12-drbl1
 - Bug fixed: failed to set local boot for uEFI network boot clients when using "-y0" option of drbl-ocs.
 
