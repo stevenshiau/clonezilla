@@ -1766,12 +1766,18 @@ get_swap_partition_parted_format() {
        if [ -n "$(LC_ALL=C echo $swparts | grep -Eiv "[[:digit:]]")" ]; then
 	 return 1
        fi
-       # swdisk is like sda
-       swdisk="$(LC_ALL=C grep -E "^Disk /dev/[sh]d[a-z]+" $partition_table | awk -F " " '{print $2}' | sed -r -e "s|^[[:space:]]*||g" -e "s|/dev/||g" -e "s|:||g")"
+       # swdisk is like sda or nvme0n1
+       swdisk="$(LC_ALL=C grep -E "^Disk /dev/" $partition_table | awk -F " " '{print $2}' | sed -r -e "s|^[[:space:]]*||g" -e "s|/dev/||g" -e "s|:||g")"
 
        for i in $swparts; do
-         # sda + 2 -> sda2
-         known_parts="$known_parts ${swdisk}${i}"
+         case "${swdisk}" in
+         cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+	     # e.g. nvme0n1 -> nvme0n1p1
+             known_parts="$known_parts ${swdisk}p${i}" ;;
+         *)
+             # e.g. sda + 2 -> sda2
+             known_parts="$known_parts ${swdisk}${i}" ;;
+         esac
        done
     fi
     # The return known_parts is like: sda1 sda2
@@ -1955,7 +1961,7 @@ mount_root_partition_for_separate_boot_part() {
   if [ -n "$selected_parts" ]; then
     partition_list="$selected_parts"
   else
-    partition_list=$(get_part_list $partition_table)
+    partition_list="$(get_part_list $partition_table)"
   fi
   for ipartition in $partition_list; do
     root_partition="/dev/$ipartition"
@@ -4692,6 +4698,7 @@ clean_filesystem_header_in_partition() {
   local part_="$1"
   if [ -n "$part_" -a -e "$part_" ]; then
     echo "Clean filesystem header in device $part_..."
+    wipefs -a $part_
     dd if=/dev/zero of="$part_" bs=1M count=1 &>/dev/null
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
