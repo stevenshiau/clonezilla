@@ -1687,7 +1687,7 @@ get_known_partition_sf_format() {
 	   else
              file_2_parse="$workdir/blkdev.list"
 	   fi
-	   if [ -n "$(LC_ALL=C awk -F" " "/^$(to_sysblock_name ${dsk_})[[:space:]]+/ {print \$5}" \
+	   if [ -n "$(LC_ALL=C awk -F" " "/^$(to_sysblock_name $(get_diskname ${dsk_}))[[:space:]]+/ {print \$5}" \
 	            $file_2_parse | grep -i swap)" ]; then
              known_parts="$known_parts $dsk_"
 	   fi
@@ -1735,7 +1735,7 @@ get_swap_partition_sf_format() {
 	   else
              file_2_parse="$workdir/blkdev.list"
 	   fi
-	   if [ -n "$(LC_ALL=C awk -F" " "/^$(to_sysblock_name ${dsk_})[[:space:]]+/ {print \$5}" \
+	   if [ -n "$(LC_ALL=C awk -F" " "/^$(to_sysblock_name $(get_diskname  ${dsk_}))[[:space:]]+/ {print \$5}" \
 	            $file_2_parse | grep -i swap)" ]; then
              known_parts="$known_parts $dsk_"
 	   fi
@@ -3836,7 +3836,7 @@ get_disk_or_part_hardware_info() {
     if [ "$(cat /proc/ide/${dsk_}/media 2>/dev/null)" = "disk" ] ; then
       DEV_MODEL_EXT="$(tr ' ' _ </proc/ide/${dsk_}/model)"
     else
-      x="$(cat /sys/block/$(to_sysblock_name ${dsk_})/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr ' ' _ 2>/dev/null)"
+      x="$(cat /sys/block/$(to_sysblock_name $(get_diskname ${dsk_}))/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr ' ' _ 2>/dev/null)"
       # the result is like "WDC WD1600JS-60M"
       # Note! The above method only works in kernel 2.6. For kernel 2.4, it not supported, and it's shown as "No_description" later.
       x=${x#*\"}
@@ -3846,7 +3846,7 @@ get_disk_or_part_hardware_info() {
     [ -n "$DEV_MODEL_EXT" ] && DEV_MODEL="${DEV_MODEL}(In_${DEV_MODEL_EXT})"
     # Put serial #
     if is_ide_disk "$dsk_"; then
-      serialno="$(cat /sys/block/$(to_sysblock_name $dsk_)/device/serial 2>/dev/null | sed -e "s/ //g")"
+      serialno="$(cat /sys/block/$(to_sysblock_name $(get_diskname $dsk_))/device/serial 2>/dev/null | sed -e "s/ //g")"
     else
       #serialno="$(LC_ALL=C cat $lshw_disk_info | grep -A3 -Ewi "logical name: /dev/$dsk_" | grep -i "serial: " | awk -F":" '{print $2}' | sed -e "s/ //g")"
       get_disk_serial_no $dsk_
@@ -3869,7 +3869,7 @@ get_disk_or_part_hardware_info() {
         dsize="$(LC_ALL=C parted -s /dev/$p print 2>/dev/null | grep -E "^[[:space:]]*Disk[[:space:]]+/dev/$p:" | awk -F":" '{print $2}' | sed -e "s/ //g")"
         if [ -z "$dsize" ]; then
          # Try the other way since parted will fail if the disk is not partitioned.
-         dsize="$(LC_ALL=C echo "scale=1; $(cat /sys/block/$(to_sysblock_name $p)/size 2>/dev/null)*512/1000.0^3" | bc -l 2>/dev/null)GB"
+	 dsize="$(LC_ALL=C echo "scale=1; $(cat /sys/block/$(to_sysblock_name $(get_diskname $p))/size 2>/dev/null)*512/1000.0^3" | bc -l 2>/dev/null)GB"
         fi
         if [ -n "$dsize" ]; then
            dsize="${dsize}_"
@@ -9545,7 +9545,7 @@ edd_id_map_by_capacity() {
   local disk_="$(basename $1)"  # e.g. hda
   local capacity edd_mapdev
   [ ! -e "$1" ] && return 1
-  capacity="$(< /sys/block/$(to_sysblock_name $disk_)/size)"
+  capacity="$(< /sys/block/$(to_sysblock_name $(get_diskname $disk_))/size)"
   if [ -n "$capacity" ]; then
     for i in /sys/firmware/edd/int13_*; do
       if grep -q "$capacity" $i/sectors 2>/dev/null; then
@@ -10056,7 +10056,7 @@ is_supported_dev() {
   local RE5='md[0-9]+p*[0-9]*'
   local RE6='rd/c[0-9]d[0-9](p[0-9]+)?'
   local RE7='ida/c[0-9]d[0-9](p[0-9]+)?'
-  local RE8='nvme[0-9]+n1p*[0-9]*'
+  local RE8='nvme[0-9]+n[0-9]+p*[0-9]*'
   local rc=1
 
   if [ -n "$dev_" ]; then
@@ -10085,7 +10085,7 @@ is_partition() {
   local RE5='md[0-9]+p+[0-9]+'
   local RE6='rd/c[0-9]d[0-9]p[0-9]+'
   local RE7='ida/c[0-9]d[0-9]p[0-9]+'
-  local RE8='nvme[0-9]+n1p+[0-9]+'
+  local RE8='nvme[0-9]+n[0-9]+p+[0-9]+'
   local rc=1
 
   if [ -n "$dev_" ]; then
@@ -10134,7 +10134,7 @@ get_part_number() {
     rd*)    num="$(echo "$dev_" | sed -r -e 's|rd/c[0-9]+d[0-9]+||g')" ;;
     ida*)   num="$(echo "$dev_" | sed -r -e 's|ida/c[0-9]+d[0-9]+||g')" ;;
     mmcblk*)num="$(echo "$dev_" | sed -r -e 's|mmcblk[0-9]+||g')" ;;
-    nvme*)  num="$(echo "$dev_" | sed -r -e 's|nvme[0-9]+n1||g')" ;;
+    nvme*)  num="$(echo "$dev_" | sed -r -e 's|nvme[0-9]+n[0-9]+||g')" ;;
     md*)    num="$(echo "$dev_" | sed -r -e 's|md[0-9]+||g')" ;;
     *)      num="$(echo "$dev_" | sed -r -e 's/^[^0-9]*-?([0-9]*)$/\1/g')" ;;
   esac
@@ -10167,7 +10167,7 @@ get_diskname() {
     rd*)     echo "$dev_" | sed -r -e 's/^(.*[0-9]{1,})p[0-9]{1,}$/\1/g' ;;
     ida*)    echo "$dev_" | sed -r -e 's/^(.*[0-9]{1,})p[0-9]{1,}$/\1/g' ;;
     mmcblk*) echo "$dev_" | sed -r -e 's/^([^0-9]*k[0-9]+)p[0-9]*$/\1/g' ;;
-    nvme*)   echo "$dev_" | sed -r -e 's/^([^0-9]*e[0-9]+n1)p[0-9]*$/\1/g' ;;
+    nvme*)   echo "$dev_" | sed -r -e 's/^([^0-9]*e[0-9]+n[0-9]+)p[0-9]*$/\1/g' ;;
     md*)     echo "$dev_" | sed -r -e 's/^([^0-9]*[0-9]+)p[0-9]*$/\1/g' ;;
     *)       echo "$dev_" | sed -r -e 's/^([^0-9]*)[0-9]*$/\1/g' ;;
   esac
@@ -10531,7 +10531,7 @@ get_dsk_size_from_img_and_tgt_dsk_size_from_machine() {
   #tgt_disk_size_sec="$(LC_ALL=C parted -s /dev/$target_hd unit s print | grep -E "^Disk /dev/" | awk -F":" '{print $2}' | sed -e "s/s$//g" -e "s/^[[:space:]]*//g")"
   src_disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $path_to/$(to_filename ${src_dsk_n})-pt.parted | awk -F":" '{print $2}' | sed -r -e "s/s$//g" -e "s/^[[:space:]]*//g")"
   src_disk_size_GB="$(LC_ALL=C echo "scale=1; $src_disk_size_sec*512/1000.0^3" | bc -l)"
-  tgt_disk_size_sec="$(LC_ALL=C cat /sys/block/$(to_sysblock_name ${tgt_dsk_f})/size)"
+  tgt_disk_size_sec="$(LC_ALL=C cat /sys/block/$(to_sysblock_name $(get_diskname ${tgt_dsk_f}))/size)"
   tgt_disk_size_GB="$(LC_ALL=C echo "scale=1; $tgt_disk_size_sec*512/1000.0^3" | bc -l)"
   # Checking if the number got or not.
   if [ -z "$src_disk_size_sec" ]; then
