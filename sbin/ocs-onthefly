@@ -682,7 +682,7 @@ prepare_local_clone_dev_info() {
     check_if_windows_boot_reserve_part /dev/$part
     rc_boot_reserve="$?"
     if [ "$rc_boot_reserve" -eq 0 ]; then
-      target_part_info="$(echo ${part}.info | sed -r -e "s|$source_hd|$target_hd|g")"
+      target_part_info="$(echo ${part}.info | replace_disk_name_stdin $source_hd $target_hd)"
       echo "PARTITION_TYPE=Win_boot_reserved" > $local_tmp/$target_part_info
     fi
   done
@@ -691,7 +691,7 @@ prepare_local_clone_dev_info() {
   for partition in $swap_in_hd; do
     echo "Outputing swap UUID/LABEL of $partition..." | tee --append ${OCS_LOGFILE}
     # change the target swap partition, like hda2 -> hdb2
-    target_swap_part_info="$(echo swappt-${partition}.info | sed -r -e "s|$source_hd|$target_hd|g")"
+    target_swap_part_info="$(echo swappt-${partition}.info | replace_disk_name_stdin $source_hd $target_hd)"
     output_swap_partition_uuid_label /dev/$partition $local_tmp/$target_swap_part_info
   done
   # No need for local EFI/GPT disk cloning
@@ -712,10 +712,10 @@ prepare_local_clone_dev_info() {
   [ -f "$src_hidden_img" ] && cp -f $src_hidden_img $tgt_hidden_img
   [ -f "$src_dsk_mbr" ] && cp -f $src_dsk_mbr $tgt_dsk_mbr
   [ -f "$src_dsk_chs" ] && cp -f $src_dsk_chs $tgt_dsk_chs
-  [ -e "$tgt_pt_tmp" ] && LC_ALL=C perl -pi -e "s|/dev/$source_hd|/dev/$target_hd|g" $tgt_pt_tmp
-  [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/$source_hd|/dev/$target_hd|g" $tgt_parted_info
-  [ -e "$tgt_blkdev_info" ] && LC_ALL=C perl -pi -e "s|$source_hd|$target_hd|g" $tgt_blkdev_info
-  [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/$source_hd|/dev/$target_hd|g" $tgt_pt_info
+  [ -e "$tgt_pt_tmp" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_pt_tmp
+  [ -e "$tgt_parted_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_parted_info
+  [ -e "$tgt_blkdev_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_blkdev_info
+  [ -e "$tgt_pt_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_pt_info
   # [ -f "$src_efi_nvram_data" ] && cp -f $src_efi_nvram_data $tgt_efi_nvram_data # no need for local EFI/GPT disk cloning
 
   # Decide use_HD_CHS_from_EDD
@@ -1048,7 +1048,7 @@ ADVAN_PARAM_END
       # $hd_tgt_tmp/swappt-${partition}.info
       s_swpname="${iswap#/dev/*}"
       if [ "$target_hd" != "$source_hd" ]; then
-        t_swpname="$(echo $s_swpname | sed -r -e "s|-$source_hd|-$target_hd|g")"
+        t_swpname="$(echo $s_swpname | replace_disk_name_stdin "-$source_hd" "-$target_hd")"
         cp -f $hd_tgt_tmp/$s_swpname $hd_tgt_tmp/$t_swpname
       fi
     done
@@ -1064,10 +1064,10 @@ ADVAN_PARAM_END
     [ -f "$src_hidden_img" ] && cp -f $src_hidden_img $tgt_hidden_img
     [ -f "$src_dsk_mbr" ] && cp -f $src_dsk_mbr $tgt_dsk_mbr
     [ -f "$src_dsk_chs" ] && cp -f $src_dsk_chs $tgt_dsk_chs
-    [ -e "$tgt_pt_tmp" ] && LC_ALL=C perl -pi -e "s|/dev/$source_hd|/dev/$target_hd|g" $tgt_pt_tmp
-    [ -e "$tgt_pt_info" ] && LC_ALL=C perl -pi -e "s|/dev/$source_hd|/dev/$target_hd|g" $tgt_pt_info
-    [ -e "$tgt_parted_info" ] && LC_ALL=C perl -pi -e "s|/dev/$source_hd|/dev/$target_hd|g" $tgt_parted_info
-    [ -e "$tgt_blkdev_info" ] && LC_ALL=C perl -pi -e "s|$source_hd|$target_hd|g" $tgt_blkdev_info
+    [ -e "$tgt_pt_tmp" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_pt_tmp
+    [ -e "$tgt_pt_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_pt_info
+    [ -e "$tgt_parted_info" ] replace_disk_name_in_file $source_hd $target_hd $tgt_parted_info
+    [ -e "$tgt_blkdev_info" ] replace_disk_name_in_file $source_hd $target_hd $tgt_blkdev_info
     [ -f "$src_efi_nvram_data" ] && cp -f $src_efi_nvram_data $tgt_efi_nvram_data
 
     # Decide use_HD_CHS_from_EDD
@@ -1232,13 +1232,13 @@ local_dev_clone() {
        echo "Searching for data partition(s) in source disk: $source_hd ..." | tee --append $OCS_LOGFILE
        get_known_partition_proc_format $source_hd data
        echo $msg_delimiter_star_line
-       target_part_list="$(echo $BACKUP_DEVS | sed -e "s/$source_hd/$target_hd/g")"
+       target_part_list="$(echo $BACKUP_DEVS | replace_disk_name_stdin $source_hd $target_hd)"
        for target_part in $target_part_list; do
          # we need to know the source partition, so replace it, ex. hdc1 -> hda1
          # Ex: target_part: hdc1, hddev: hdc, part_no: 1, src_part: hda1
          hddev="$(get_diskname $target_part)"
          part_no="$(get_part_number $target_part)"
-         src_part=$(LC_ALL=C echo $target_part | sed -r -e "s/$hddev/$source_hd/g" )
+         src_part="$(LC_ALL=C echo $target_part | replace_disk_name_stdin $hddev $source_hd)"
          part_fs="$(LC_ALL=C grep -Ew "/dev/$target_part" $tgt_pt_info | awk -F" " '{print $2}')"
          if [ -z "$part_fs" ]; then
             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -2355,14 +2355,14 @@ do_fsck_in_source_dev_if_assigned() {
          echo "Searching for data partition(s) in source disk: $source_hd ..." | tee --append $OCS_LOGFILE
          get_known_partition_proc_format $source_hd data
          echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
-         target_part_list="$(echo $BACKUP_DEVS | sed -e "s/$source_hd/$target_hd/g")"
+         target_part_list="$(echo $BACKUP_DEVS | replace_disk_name_stdin $source_hd $target_hd)"
          #for target_part in `get_known_partition_sf_format $pt_tmp`; do
          for target_part in $target_part_list; do
            # we need to know the source partition, so replace it, ex. hdc1 -> hda1
            # Ex: target_part: hdc1, hddev: hdc, part_no: 1, src_part: hda1
            hddev="$(get_diskname $target_part)"
            part_no="$(get_part_number $target_part)"
-           src_part=$( echo $target_part | sed -e "s/$hddev/$source_hd/g" )
+           src_part="$(echo $target_part | replace_disk_name_stdin $hddev $source_hd)"
            part_fs="$(grep -Ew "/dev/$target_part" $tgt_pt_info | awk -F" " '{print $2}')"
            if [ -z "$part_fs" ]; then
               [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
