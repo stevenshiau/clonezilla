@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.19.14
+Version:	3.19.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jan 19 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.15-drbl1
+- Make ocs-onthefly work for different types of disk cloning, e.g.  nvme0n1 -> sda.
+- Add functions replace_disk_name_in_file and replace_disk_name_stdin in ocs-functions so that the disk name replacing can use. This is special for different types of disk name, e.g. nvme0n1 -> sda.
+
 * Mon Jan 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.14-drbl1
 - Make ocs-onthefly work for nvme device cloning, e.g. nvme0n1 -> nvme1n1.
 - Use wipefs also to clean the file system when cleaning file system header.
