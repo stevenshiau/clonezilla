@@ -11389,3 +11389,247 @@ get_sfdisk_cyl_opt_flag() {
     sfdisk_cyl_opt_flag="no"
   fi
 } # get_sfdisk_cyl_opt_flag
+#
+replace_disk_name_in_file(){
+  # Function to replace disk name in a file, 
+  # e.g. to replace sda with nvme0n1 in sda-pt.sf
+  local src_d="$1" # e.g sda
+  local tgt_d="$2" # e.g nvme0n1
+  local dest_f="$3"
+  # Check inputs
+  if ! is_whole_disk /dev/$src_d; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "src_d ($src_d) is not a disk in function replace_disk_name_in_file!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    # Saving mode, always copy error log to image dir.
+    copy_error_log
+    exit 1
+  fi
+  if ! is_whole_disk /dev/$tgt_d; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "tgt_d ($tgt_d) is not a disk in function replace_disk_name_in_file!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    # Saving mode, always copy error log to image dir.
+    copy_error_log
+    exit 1
+  fi
+  if [ ! -e "$dest_f" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "dest_f ($dest_f) not found!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    # Saving mode, always copy error log to image dir.
+    copy_error_log
+    exit 1
+  fi
+
+  # When cloning nvme01 to sda, the partition table, e.g.
+  # ~# sfdisk -d /dev/nvme0n1
+  # label: gpt
+  # label-id: 8D91AEC3-EA8E-4312-BAF9-C2AE97025C48
+  # device: /dev/nvme0n1
+  # unit: sectors
+  # first-lba: 34
+  # last-lba: 2344225934
+  #
+  # /dev/nvme0n1p1 : start=        2048, size=      997376, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=942B0228-B4C3-49D8-8D21-D2DBD6A50AC0
+  # /dev/nvme0n1p2 : start=      999424, size=     7999488, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F, uuid=D47B030E-FCA6-485F-B6CF-5CC4BD708256
+  # /dev/nvme0n1p3 : start=     8998912, size=  2335225856, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=D9ED4B04-1077-4390-B177-B558445A7F38
+  # 
+  # nvme0n1p3 has extra "p", we can not just s/nvme0n1/sda/, otherwise resutls:
+  # will have "sdap1", the wrong partition name.
+  # label: gpt
+  # label-id: 8D91AEC3-EA8E-4312-BAF9-C2AE97025C48
+  # device: /dev/sda
+  # unit: sectors
+  # first-lba: 34
+  # last-lba: 2344225934
+  #
+  # /dev/sdap1 : start=        2048, size=      997376, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=942B0228-B4C3-49D8-8D21-D2DBD6A50AC0
+  # /dev/sdap2 : start=      999424, size=     7999488, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F, uuid=D47B030E-FCA6-485F-B6CF-5CC4BD708256
+  # /dev/sdap3 : start=     8998912, size=  2335225856, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=D9ED4B04-1077-4390-B177-B558445A7F38
+
+  # On the other hand,
+  # When cloning sda to nvme01, the partition table, e.g.
+  # ~# sfdisk -d /dev/sda
+  # label: gpt
+  # label-id: 8AC8D3B2-7A1B-4298-B4FD-78DCC4DB210F
+  # device: /dev/sda
+  # unit: sectors
+  # first-lba: 34
+  # last-lba: 250069646
+  # 
+  # /dev/sda1 : start=        2048, size=     1048576, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=B2A6B3F9-ECD3-49A0-A158-58A5F0196446
+  # /dev/sda2 : start=     1050624, size=   215730176, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=B70F9778-4FAE-4E81-872D-F3ED1C7E812D
+  # /dev/sda3 : start=   216780800, size=    33288192, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F, uuid=930033EA-5B82-48AA-91B9-E12A9EBE3B36
+
+  #
+  # label: gpt
+  # label-id: 8AC8D3B2-7A1B-4298-B4FD-78DCC4DB210F
+  # device: /dev/nvme0n1
+  # unit: sectors
+  # first-lba: 34
+  # last-lba: 250069646
+  # 
+  # /dev/nvme0n11 : start=        2048, size=     1048576, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=B2A6B3F9-ECD3-49A0-A158-58A5F0196446
+  # /dev/nvme0n12 : start=     1050624, size=   215730176, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=B70F9778-4FAE-4E81-872D-F3ED1C7E812D
+  # /dev/nvme0n13 : start=   216780800, size=    33288192, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F, uuid=930033EA-5B82-48AA-91B9-E12A9EBE3B36
+  #
+  # /dev/nvme0n11 lacks "p", the correct one should be: /dev/nvme0n1p1.
+
+  # Totally 4 cases:
+  # (1) partition name with p -> partition name with p
+  # (2) partition name without p -> partition name without p
+  # (3) partition name with p -> partition name without p
+  # (4) partition name without p -> partition name with p
+  case "${src_d}" in
+  cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+    # source partition name with p
+    case "${tgt_d}" in
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+      # case (1) partition name with p -> partition name with p
+      LC_ALL=C perl -pi -e "s|${src_d}|${tgt_d}|g" $dest_f
+      ;;
+    *)
+      # case (3) partition name with p -> partition name without p
+      # e.g. nvme0n1 -> sda1
+      # Process /dev/nvme0n1p1 -> /dev/sda1 first
+      LC_ALL=C perl -pi -e "s|${src_d}p|${tgt_d}|g" $dest_f
+      # Then the line, e.g.
+      # device: /dev/nvme0n1 -> /dev/sda
+      LC_ALL=C perl -pi -e "s|${src_d}|${tgt_d}|g" $dest_f
+      ;;
+    esac
+      ;;
+  *)
+    # source partition name without p
+    case "${tgt_d}" in
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+      # case (4) partition name without p -> partition name with p
+      # e.g. sda1 -> nvme0n1
+      # Process /dev/sda1 -> /dev/nvme0n1p1 first
+      LC_ALL=C perl -pi -e "s|${src_d}([0-9]+)|${tgt_d}p\$1|g" $dest_f
+      # Then the line, e.g.
+      # device: /dev/sda -> /dev/nvme0n1
+      LC_ALL=C perl -pi -e "s|${src_d}|${tgt_d}|g" $dest_f
+      ;;
+    *)
+      # case (2) partition name without p -> partition name without p
+      LC_ALL=C perl -pi -e "s|${src_d}|${tgt_d}|g" $dest_f
+      ;;
+    esac
+      ;;
+  esac
+} # end of replace_disk_name_in_file
+#
+replace_disk_name_stdin(){
+  # Function to replace disk name from stdin, 
+  # e.g. to replace sda with nvme0n1
+  local src_d="$1" # e.g sda
+  local tgt_d="$2" # e.g nvme0n1
+  # Check inputs
+  if ! is_whole_disk /dev/$src_d; then
+    exit 1
+  fi
+  if ! is_whole_disk /dev/$tgt_d; then
+    exit 1
+  fi
+
+  # When cloning nvme01 to sda, the partition table, e.g.
+  # ~# sfdisk -d /dev/nvme0n1
+  # label: gpt
+  # label-id: 8D91AEC3-EA8E-4312-BAF9-C2AE97025C48
+  # device: /dev/nvme0n1
+  # unit: sectors
+  # first-lba: 34
+  # last-lba: 2344225934
+  #
+  # /dev/nvme0n1p1 : start=        2048, size=      997376, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=942B0228-B4C3-49D8-8D21-D2DBD6A50AC0
+  # /dev/nvme0n1p2 : start=      999424, size=     7999488, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F, uuid=D47B030E-FCA6-485F-B6CF-5CC4BD708256
+  # /dev/nvme0n1p3 : start=     8998912, size=  2335225856, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=D9ED4B04-1077-4390-B177-B558445A7F38
+  # 
+  # nvme0n1p3 has extra "p", we can not just s/nvme0n1/sda/, otherwise resutls:
+  # will have "sdap1", the wrong partition name.
+  # label: gpt
+  # label-id: 8D91AEC3-EA8E-4312-BAF9-C2AE97025C48
+  # device: /dev/sda
+  # unit: sectors
+  # first-lba: 34
+  # last-lba: 2344225934
+  #
+  # /dev/sdap1 : start=        2048, size=      997376, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=942B0228-B4C3-49D8-8D21-D2DBD6A50AC0
+  # /dev/sdap2 : start=      999424, size=     7999488, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F, uuid=D47B030E-FCA6-485F-B6CF-5CC4BD708256
+  # /dev/sdap3 : start=     8998912, size=  2335225856, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=D9ED4B04-1077-4390-B177-B558445A7F38
+
+  # On the other hand,
+  # When cloning sda to nvme01, the partition table, e.g.
+  # ~# sfdisk -d /dev/sda
+  # label: gpt
+  # label-id: 8AC8D3B2-7A1B-4298-B4FD-78DCC4DB210F
+  # device: /dev/sda
+  # unit: sectors
+  # first-lba: 34
+  # last-lba: 250069646
+  # 
+  # /dev/sda1 : start=        2048, size=     1048576, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=B2A6B3F9-ECD3-49A0-A158-58A5F0196446
+  # /dev/sda2 : start=     1050624, size=   215730176, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=B70F9778-4FAE-4E81-872D-F3ED1C7E812D
+  # /dev/sda3 : start=   216780800, size=    33288192, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F, uuid=930033EA-5B82-48AA-91B9-E12A9EBE3B36
+
+  #
+  # label: gpt
+  # label-id: 8AC8D3B2-7A1B-4298-B4FD-78DCC4DB210F
+  # device: /dev/nvme0n1
+  # unit: sectors
+  # first-lba: 34
+  # last-lba: 250069646
+  # 
+  # /dev/nvme0n11 : start=        2048, size=     1048576, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=B2A6B3F9-ECD3-49A0-A158-58A5F0196446
+  # /dev/nvme0n12 : start=     1050624, size=   215730176, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=B70F9778-4FAE-4E81-872D-F3ED1C7E812D
+  # /dev/nvme0n13 : start=   216780800, size=    33288192, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F, uuid=930033EA-5B82-48AA-91B9-E12A9EBE3B36
+  #
+  # /dev/nvme0n11 lacks "p", the correct one should be: /dev/nvme0n1p1.
+
+  # Totally 4 cases:
+  # (1) partition name with p -> partition name with p
+  # (2) partition name without p -> partition name without p
+  # (3) partition name with p -> partition name without p
+  # (4) partition name without p -> partition name with p
+  case "${src_d}" in
+  cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+    # source partition name with p
+    case "${tgt_d}" in
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+      # case (1) partition name with p -> partition name with p
+      ( cat - | LC_ALL=C sed -r -e "s|${src_d}|${tgt_d}|g" )
+      ;;
+    *)
+      # case (3) partition name with p -> partition name without p
+      # e.g. nvme0n1 -> sda1
+      # Process /dev/nvme0n1p1 -> /dev/sda1 first
+      # Then the line, e.g.
+      # device: /dev/nvme0n1 -> /dev/sda
+      ( cat - | LC_ALL=C sed -r -e "s|${src_d}p|${tgt_d}|g" -e "s|${src_d}|${tgt_d}|g" )
+      ;;
+    esac
+      ;;
+  *)
+    # source partition name without p
+    case "${tgt_d}" in
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+      # case (4) partition name without p -> partition name with p
+      # e.g. sda1 -> nvme0n1
+      # Process /dev/sda1 -> /dev/nvme0n1p1 first
+      # Then the line, e.g.
+      # device: /dev/sda -> /dev/nvme0n1
+      ( cat - | LC_ALL=C sed -r -e "s|${src_d}([0-9]+)|${tgt_d}p\1|g" -e "s|${src_d}|${tgt_d}|g" )
+      ;;
+    *)
+      # case (2) partition name without p -> partition name without p
+      ( cat - | LC_ALL=C perl -pi -e "s|${src_d}|${tgt_d}|g" )
+      ;;
+    esac
+      ;;
+  esac
+} # end of replace_disk_name_stdin
