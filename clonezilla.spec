@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.19.13
+Version:	3.19.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.14-drbl1
+- Make ocs-onthefly work for nvme device cloning, e.g. nvme0n1 -> nvme1n1.
+- Use wipefs also to clean the file system when cleaning file system header.
+- Bug fixed: get_swap_partition_parted_format of ocs-functions failed to return correct partition name for devices cciss*|mmcblk*|md*|rd*|ida*|nvme*.
+
 * Mon Jan 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.13-drbl1
 - Disk to disk clonging for NVME device failed to check the destination disk size.
 - Expand NVME support to disk device name like /dev/nvme0n2, and /dev/nvme0n3 instead of /dev/nvme0n1 only.
