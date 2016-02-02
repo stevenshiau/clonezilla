@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.19.15
+Version:	3.19.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 2 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.16-drbl1
+[Ceasar Sun]
+- Add /EFI/Microsoft/Boot/bootmgfw.efi for MS Windows, and move
+  /EFI/Boot/bootx64.efi to the last one in known_efi_boot_file_chklist.
+- Add option "-iefi|--ignore-update-efi-nvram" for drbl-ocs.
+
 * Tue Jan 19 2016 Steven Shiau <steven _at_ nchc org tw> 3.19.15-drbl1
 - Make ocs-onthefly work for different types of disk cloning, e.g.  nvme0n1 -> sda.
 - Add functions replace_disk_name_in_file and replace_disk_name_stdin in ocs-functions so that the disk name replacing can use. This is special for different types of disk name, e.g. nvme0n1 -> sda.
