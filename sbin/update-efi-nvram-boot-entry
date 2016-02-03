@@ -62,6 +62,16 @@ check_if_apple_mac() {
     echo "This machine was made by Apple."
     return 0
   fi
+  # Final check, sometimes dmidecode won't give anything. Like it gives errors:
+  # mmap: Can't map beyond end of file /sys/firmware/dmi/tables/DMI
+  # Table is unreachable, sorry.
+  if [ -z "$product_nm" -a -z "$system_manufac" ]; then
+    if [ -n "$(LC_ALL=C strings /sys/firmware/dmi/tables/DMI 2>/dev/null | \
+	    grep -i "Apple Inc.")" ]; then
+      echo "This machine was made by Apple."
+      return 0
+    fi
+  fi
   return 1
 } # end of check_if_apple_mac
 #
