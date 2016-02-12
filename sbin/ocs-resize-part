@@ -179,6 +179,28 @@ case "$part_fs" in
 		exit 1
               fi
               ;;
+        nilfs2)
+              if ! type nilfs-resize &> /dev/null; then
+                 echo "nilfs-resize: command not found! Skip growing this partition ${partition}"
+		 exit 1
+	      fi
+	      NILFS_TMP="$(mktemp -d /tmp/nilfsmnt.XXXXXX)"
+	      mount -t nilfs2 ${partition} $NILFS_TMP
+	      rc=$?
+	      if [ "$rc" -eq 0 ]; then
+		echo "Running \"nilfs-resize -y ${partition}\"..."
+		nilfs-resize -y ${partition}
+		umount ${partition}
+		rcm=$?
+	        if [ "$rcm" -eq 0 ]; then
+		  [ -d "$NILFS_TMP" ] && rmdir $NILFS_TMP
+	        fi
+	      else
+	        echo "Failed to mount nilfs2 partition ${partition}! Without mounting nilfs2 partition, we can not increase the filesystem size to fit partition size!"
+		echo "Program terminated!"
+		exit 1
+              fi
+              ;;
         *)
 	      echo "\"$part_fs\" is an unknown or unsupported filesystem... Skip resizing that."
 	      exit 1
