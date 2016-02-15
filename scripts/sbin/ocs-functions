@@ -28,7 +28,7 @@ unmount_wait_and_try() {
   done
 } # end of unmount_wait_and_try
 #
-gen_md5_sha1_sums_if_assigned() {
+gen_md5_sha1_sums_for_img_if_assigned() {
   local img_dir="$1"  # absolute path
   # Generate MD5SUMS, SHA1SUMS
   if [ "$gen_md5sum" = "yes" ]; then
@@ -39,9 +39,9 @@ gen_md5_sha1_sums_if_assigned() {
     echo "Generating SHA1SUMS for image $target_dir. This might take a while..."
     (cd $img_dir; time sha1sum * > SHA1SUMS)
   fi
-} # end of gen_md5_sha1_sums_if_assigned
+} # end of gen_md5_sha1_sums_for_img_if_assigned
 #
-check_md5_sha1_sums() {
+check_md5_sha1_sums_for_img() {
   local img_dir="$1"  # absolute path
   local rc ans_continue
   # Check MD5SUMS, SHA1SUMS
@@ -83,7 +83,7 @@ check_md5_sha1_sums() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
   fi
-} # end of check_md5_sha1_sums
+} # end of check_md5_sha1_sums_for_img
 #
 get_disk_from_part() {
   # Function to get disk name from partition name, e.g. /dev/sda1 -> /dev/sda
@@ -1440,7 +1440,7 @@ image_save() {
   local part_fs part_fs_shown
   local compress_prog_prompt
   local dd_report_sig_pid part_size
-  # #target_dir is dir path like "/home/partimag/sarge-base/"
+  # $tgt_dir is dir path like "/home/partimag/sarge-base/"
   # $tgt_file here is the file name like "hda1"
   # if the report_msg is empty, put the initial one: image_name_
   image_name_="$(dirname $tgt_dir)"
@@ -1514,6 +1514,14 @@ image_save() {
      # Saving mode, always copy error log to image dir.
      copy_error_log
   fi
+
+  #
+  if [ "$gen_chksum_for_files_in_dev" = "yes" ]; then
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    gen_chksum_for_files_in_dev "$source_dev" "$tgt_dir"
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  fi
+
   # We put the complete log in clonezilla-img file, not here.
   #copy_log ${tgt_dir} ${source_dev}
   return $rc
@@ -4894,8 +4902,8 @@ unicast_restore_by_partclone() {
   local -a retcodes='()'
   # First, we find the filesystem 
   file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
-  file_basename="$(basename ${file_})"
   if [ -n "${file_}" ]; then
+    file_basename="$(basename ${file_})"
     if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
       # new format, image file is like: sda1.ext4-ptcl-img.gz, sda1.ext4-ptcl-img.gz.aa
       fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-ptcl-img.*//g")"
@@ -5098,8 +5106,8 @@ unicast_restore_by_dd() {
     # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
 cat <<_EOT_ >> ${OCS_LOGFILE}
     ( for img in $target_d/$img_file_prefix; do
-        # Exclude the image info file like "sda1.dd-img.info"
-        [ -n "$(echo "$img" | grep -E "dd-img.info$")" ] && continue
+        # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
+	[ -n "$(echo "$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
         cat $img
       done
     ) \
@@ -5107,8 +5115,8 @@ cat <<_EOT_ >> ${OCS_LOGFILE}
     | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -o $part
 _EOT_
     ( for img in $target_d/$img_file_prefix; do
-        # Exclude the image info file like "sda1.dd-img.info"
-        [ -n "$(echo $img | grep -E "dd-img.info$")" ] && continue
+        # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
+	[ -n "$(echo "$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
         cat $img
       done
     ) \
@@ -5373,7 +5381,7 @@ do_unicast_stdin_restore() {
   image_name_="$(basename $target_d)"
   [ -z "$report_msg" ] && report_msg="Unicast restored $image_name_,"
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-  check_if_target_dev_busy_before_restoring $part
+  check_if_dev_busy $part
   echo $msg_delimiter_star_line
   # time_elapsed, time_elapsed_in_min and speed are global variables
   # get the cat program: cat, zcat or bzcat
@@ -5618,8 +5626,8 @@ multicast_feed_img_for_dd() {
   # we use the original format (do not uncompress) to save the bandwidth
   # dd does not put any header, so just cat them
   ( for img in $imagedir/$target_d/$img_file_prefix; do
-      # Exclude the image info file like "sda1.dd-img.info"
-      [ -n "$(echo "$img" | grep -E "dd-img.info$")" ] && continue
+      # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
+      [ -n "$(echo "$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
       cat $img
     done
   ) | \
@@ -7270,7 +7278,7 @@ task_savedisk() {
   if [ "$rc" -gt 0 ]; then
     show_warning_about_write_failed $ocsroot/$target_dir
   else
-    gen_md5_sha1_sums_if_assigned $ocsroot/$target_dir
+    gen_md5_sha1_sums_for_img_if_assigned $ocsroot/$target_dir
   fi
   rc_task_savedisk="$(($rc_task_savedisk + $?))"
 
@@ -7632,7 +7640,7 @@ task_saveparts() {
   if [ "$rc" -gt 0 ]; then
     show_warning_about_write_failed $target_dir_fullpath
   else
-    gen_md5_sha1_sums_if_assigned $target_dir_fullpath
+    gen_md5_sha1_sums_for_img_if_assigned $target_dir_fullpath
   fi
 
   # TODO: show error message if failing; check image?
@@ -7686,7 +7694,7 @@ task_restoredisk() {
   esac
   
   # Check MD5SUMS, SHA1SUMS before the image is converted in case
-  check_md5_sha1_sums "$ocsroot/$target_dir"
+  check_md5_sha1_sums_for_img "$ocsroot/$target_dir"
 
   #
   create_temp_image_for_different_target_dev_name_if_necessary
@@ -7836,7 +7844,7 @@ task_restoreparts() {
   src_dsk_no="$(echo $dsksname_from_img | wc -w)"
 
   # Check MD5SUMS, SHA1SUMS
-  check_md5_sha1_sums "$ocsroot/$target_dir"
+  check_md5_sha1_sums_for_img "$ocsroot/$target_dir"
 
   #
   create_temp_image_for_different_target_dev_name_if_necessary
@@ -8057,6 +8065,16 @@ task_restoreparts() {
     # However, we do not put the disk name to $target_parts otherwise it might cause confusion.
     restore_logv "$target_parts" $net_mode $port
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  fi
+
+  # Do files checksum check. This must be before any further commands (like grub reinstalling) are done.
+  if [ "$chk_chksum_for_files_in_dev" = "yes" ]; then
+    for ipartition in $target_parts; do
+      is_whole_disk $ipartition && continue
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+      inspect_chksum_for_files_in_dev /dev/$ipartition "$target_dir_fullpath"
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    done
   fi
 
   # Reinstall executable code area (first 446 bytes in MBR)
@@ -8359,7 +8377,7 @@ do_startdisk() {
     get_multicast_restore_mode_if_mcast
 
     # Check MD5SUMS, SHA1SUMS
-    check_md5_sha1_sums "$imagedir/$target_image"
+    check_md5_sha1_sums_for_img "$imagedir/$target_image"
 
     #
     [ -n "$n_clients" ] && mcast_client_no_opt="-n $n_clients"
@@ -8495,7 +8513,7 @@ do_startparts () {
     get_multicast_restore_mode_if_mcast
 
     # Check MD5SUMS, SHA1SUMS
-    check_md5_sha1_sums "$imagedir/$target_image"
+    check_md5_sha1_sums_for_img "$imagedir/$target_image"
 
     #
     [ -n "$n_clients" ] && mcast_client_no_opt="-n $n_clients"
@@ -8733,6 +8751,7 @@ USAGE_common_restore(){
     echo " --max-time-to-wait TIME   When not enough clients have connected (but at least one), start anyways when TIME seconds since first client connection have pased. This option is used with --clients-to-wait"
     echo " -cm, --check-md5sum   Check the MD5 checksum for the image. To use this option, you must enable -gm|--gen-md5sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
     echo " -cs, --check-sha1sum  Check the SHA1 checksum for the image. To use this option, you must enable -gs|--gen-sha1sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
+    echo " -cmf, --chk-chksum-for-files-in-dev   Check the checksum for the files in the device. To use this option, you must enable -gmf|--gen-chksum-for-files-in-dev when the image is saved. Note! (1) The file system must be supported by Linux kernel so that it can be mounted as read-only to check the files. (2) It might take a lot of time to check if there are many files in the source device."
     echo " -srel, --save-restore-error-log  Save the error log file in the image dir. By default the log file won't be saved when error occurs."
 
 } # end of USAGE_common_restore
@@ -8749,6 +8768,7 @@ USAGE_common_save(){
     echo " -fsck-src-part-y, --fsck-src-part-y  Run fsck automatically on the source file system before saving it. This option will always attempt to fix any detected filesystem corruption automatically. //NOTE// Use this option in caution."
     echo " -gm, --gen-md5sum   Generate the MD5 checksum for the image. Later you can use -cm|--check-md5sum option to check the image when restoring the image. Note! It might take a lot of time to generate if the image size is large."
     echo " -gs, --gen-sha1sum  Generate the SHA1 checksum for the image. Later you can use -cs|--check-sha1sum option to check the image when restoring the image. Note! It might take a lot of time to generate if the image size is large."
+    echo " -gmf, --gen-chksum-for-files-in-dev   Generate the checksum for files in the source device. Later you can use -cmf|--chk-chksum-for-files-in-dev to check the files in the destination device after they are restored. Note! It might take a lot of time to inspect the checksum if there are many files in the destination device."
     echo " -i, --image-size SIZE  Set the size in MB to split the partition image file into multiple volumes files. For the FAT32 image repository, the SIZE should not be larger than 4096."
     echo " -j2, --clone-hidden-data  Use dd to clone the image of the data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool."
     echo " -ntfs-ok, --ntfs-ok      Assume the NTFS integrity is OK, do NOT check again (for ntfsclone only)"
@@ -8832,18 +8852,18 @@ check_if_source_dev_busy_before_saving() {
   fi
 } # end of check_if_source_dev_busy_before_saving
 #
-check_if_target_dev_busy_before_restoring() {
-  local tgt_dev=$1
+check_if_dev_busy() {
+  local tgt_dev="$1"
   [ -z "$tgt_dev" ] && return 1
   if [ -n "$(mount | grep -Ew "^$tgt_dev")" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$tgt_dev is mounted. You have to unmount the $tgt_dev." | tee --append ${OCS_LOGFILE}
+    echo "$msg_this_dev_is_busy_you_have_to_unmount: $tgt_dev" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
     [ "$save_restore_error_log" = "yes" ] && copy_error_log
     exit 1
   fi
-} # end of check_if_target_dev_busy_before_restoring
+} # end of check_if_dev_busy
 #
 check_if_disk_busy_before_create_partition() {
   # Check disk is busy or not. E.g. 
@@ -11627,9 +11647,125 @@ replace_disk_name_stdin(){
       ;;
     *)
       # case (2) partition name without p -> partition name without p
-      ( cat - | LC_ALL=C perl -pi -e "s|${src_d}|${tgt_d}|g" )
+      ( cat - | LC_ALL=C perl -p -e "s|${src_d}|${tgt_d}|g" )
       ;;
     esac
       ;;
   esac
 } # end of replace_disk_name_stdin
+#
+gen_chksum_for_files_in_dev() {
+  local sum_part="${1#/dev/*}"  # partition or LV name, e.g. sda1
+  local tgt_dir="$2"   # target dir, full path, like /home/partimag/my-img
+  local sum_part_tmpd rc gz_stdin_cmd gunz_cmd rc_chk
+  sum_part_tmpd="$(LC_ALL=C mktemp -d /tmp/chksum_tmpd.XXXXXX)"
+  # Generate checksum
+  mount -o ro /dev/$sum_part $sum_part_tmpd
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    if type pigz &>/dev/null; then
+      gz_stdin_cmd="pigz -c"
+      gunz_cmd="pigz -d"
+    else
+      gz_stdin_cmd="gzip -c"
+      gunz_cmd="gzip -d"
+    fi
+    # chksum_cmd_for_files_in_dev is from drbl-ocs.conf.
+    echo "Generating checksum with $chksum_cmd_for_files_in_dev for files in device /dev/$sum_part..."
+    echo "$msg_this_might_take_some_time"
+    # Here we do not put the output file directly, instead we compress it to reduce the I/O.
+    # In case if the image repository is network file system, like NFS. It will be very slow.
+    LC_ALL=C find $sum_part_tmpd -type f -exec \
+    $chksum_cmd_for_files_in_dev "{}" \; | pv -tb | $gz_stdin_cmd > \
+    $tgt_dir/${sum_part}.files-${chksum_cmd_for_files_in_dev}.info.gz
+    rc_chk="${PIPESTATUS[0]}"
+
+    chmod 600 $tgt_dir/${sum_part}.files-${chksum_cmd_for_files_in_dev}.info.gz
+    umount /dev/$sum_part
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_fail_to_mount_maybe_linux_not_support: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
+    echo "$msg_unsble_to_create_checksum_file" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    if [ "$ocs_batch_mode" != "on" ]; then
+      echo -n "$msg_press_enter_to_continue..."
+      read
+    fi
+  fi
+  if [ -d "$sum_part_tmpd" ]; then
+    rmdir $sum_part_tmpd
+  fi
+  return $rc_chk
+} # end of gen_chksum_for_files_in_dev
+#
+inspect_chksum_for_files_in_dev() {
+  local sum_part="${1#/dev/*}"  # partition or LV name, e.g. sda1
+  local tgt_dir="$2"   # target dir, full path, like /home/partimag/my-img
+  local chksum_file csumf_basename chksum_cmd sum_part_tmpd rc rc_chk
+  local chksum_file_size_in_byte chksum_file_size_in_kB
+
+  chksum_file="$(unalias ls &>/dev/null; ls $tgt_dir/${sum_part}.files-*sum.info.gz 2>/dev/null)"
+  if [ -n "${chksum_file}" ]; then
+    csumf_basename="$(basename ${chksum_file})"
+    if [ -n "$(echo $csumf_basename | grep -Eo -- ".files-.*sum.info.gz")" ]; then
+      # checksum file is like: sda1.files-md5sum.info.gz, sda1.files-sha512sum.info.gz
+      # We want to extract the "md5sum" or "sha512sum" as command to do the checksum.
+      chksum_cmd="$(echo $csumf_basename | sed -r -e "s/^${sum_part}\.//g" -e "s/files-//g" -e "s/.info.gz//g")"
+    fi
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "No any checksum file for files in dev $sum_part was found in image dir $tgt_dir."
+    echo "Skip checking."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 2
+  fi
+
+  # Get the mountpoint from checksum file
+  # The path in the checksum file is like:
+  # ===================================
+  # f9389e7942c0b0ef918477cd0b24fdb3  /tmp/chksum_tmpd.yRFkST/root/.bash_history
+  # d41d8cd98f00b204e9800998ecf8427e  /tmp/chksum_tmpd.yRFkST/root/.cache/motd.legal-displayed
+  # cf277664b1771217d7006acdea006db1  /tmp/chksum_tmpd.yRFkST/root/.bashrc
+  # ===================================
+  sum_part_tmpd="$(LC_ALL=C zcat $chksum_file | head -n 1 | awk -F" " '{print $2}' | grep -E -o "/tmp/chksum_tmpd.[[:alnum:]]{6}")"
+
+  # Check the checksum
+  if [ -n "$sum_part_tmpd" ]; then
+    mkdir -p $sum_part_tmpd
+    mount -o ro /dev/$sum_part $sum_part_tmpd
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+      echo "Inspecting checksum with $chksum_cmd for files in device /dev/$sum_part..."
+      echo "$msg_this_might_take_some_time"
+      chksum_file_size_in_byte="$(LC_ALL=C gunzip -l $chksum_file | tail -n 1 | awk -F" " '{print $2}')"
+      chksum_file_size_in_kB="$(LC_ALL=C printf "%.0f" "$(echo "($chksum_file_size_in_byte/1024)" | bc -l)")k"
+      LC_ALL=C zcat $chksum_file | pv -paet -s $chksum_file_size_in_kB | $chksum_cmd -c --quiet
+      rc_chk="${PIPESTATUS[2]}"
+      if [ "$rc_chk" -ne 0 ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "$msg_chksum_for_files_not_match" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        if [ "$ocs_batch_mode" != "on" ]; then
+          echo -n "$msg_press_enter_to_continue..."
+          read
+        fi
+      else
+       echo "$msg_chksum_inspection_for_files_passed: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
+      fi
+      umount /dev/$sum_part
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "$msg_fail_to_mount_maybe_linux_not_support: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
+      echo "$msg_unsble_to_inspect_checksum" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      if [ "$ocs_batch_mode" != "on" ]; then
+        echo -n "$msg_press_enter_to_continue..."
+        read
+      fi
+    fi
+    if [ -d "$sum_part_tmpd" ]; then
+      rmdir $sum_part_tmpd
+    fi
+  fi
+  return $rc_chk
+} # end of inspect_chksum_for_files_in_dev
