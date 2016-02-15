@@ -23,6 +23,8 @@ DEFAULT_STDIN_PARTIMAGE_RESTORE_OPT="-M -f3 -b"
 NC_PORT_DEFAULT="9000"
 # Default to do 2nd confirm. If it's "no", by default we will run without 2nd confirmation.
 onthefly_2nd_confirm="yes"
+# Default not to create and inspect the checksum for files in the dev.
+chksum_for_files_in_dev="no"
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -408,9 +410,8 @@ kill_clone_prog_nc_process() {
   done
 } # end of kill_clone_prog_nc_process
 #
-clone_boot_loader_in_target() {
-  # ocs_onthefly_clone_mbr is global variable.
-  echo "$msg_delimiter_star_line"
+ask_if_clone_mbr(){
+  # ocs_onthefly_clone_mbr is global variable in ocs-onthefly.
   if [ "$CLONE_BOOT_LOADER" = "yes" ] && [ "$source_type" = "disk" ] && [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then
     if [ -z "$ocs_onthefly_clone_mbr" ]; then
       if [ "$batch_mode" = "on" ]; then
@@ -423,6 +424,13 @@ clone_boot_loader_in_target() {
         read ocs_onthefly_clone_mbr
       fi
     fi
+  fi
+} # end of ask_if_clone_mbr
+#
+clone_boot_loader_in_target() {
+  # ocs_onthefly_clone_mbr is global variable in ocs-onthefly.
+  echo "$msg_delimiter_star_line"
+  if [ "$CLONE_BOOT_LOADER" = "yes" ] && [ "$source_type" = "disk" ] && [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then
     case "$ocs_onthefly_clone_mbr" in
       n|N|[nN][oO])
          echo "OK, $msg_skip_clone_boot_loader." | tee --append ${OCS_LOGFILE}
@@ -606,6 +614,12 @@ prepare_local_clone_dev_info() {
   LC_ALL=C parted -s /dev/$source_hd unit s print > $src_parted_info
   output_blkdev_info $src_blkdev_info /dev/$source_hd
 
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  if `is_mbr_partitition_table_file $src_parted_info`; then
+    # MBR disk, ask if clone boot loader
+    ask_if_clone_mbr
+  fi
+
   # From the output file of parted, we can decide if the partition is gpt or mbr
   if `is_gpt_partitition_table_file $src_parted_info`; then
     pt_type="gpt"
@@ -685,6 +699,12 @@ prepare_local_clone_dev_info() {
       target_part_info="$(echo ${part}.info | replace_disk_name_stdin $source_hd $target_hd)"
       echo "PARTITION_TYPE=Win_boot_reserved" > $local_tmp/$target_part_info
     fi
+    #
+    if [ "$chksum_for_files_in_dev" = "yes" ]; then
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+      gen_chksum_for_files_in_dev "/dev/$part" "$hd_src_tmp"
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    fi
   done
   # SWAP partition info, maybe more than 1
   swap_in_hd="$(awk -F" " '/swap/ {print $1}' $src_pt_info | sed -r -e 's|/dev/||g')"
@@ -717,6 +737,32 @@ prepare_local_clone_dev_info() {
   [ -e "$tgt_blkdev_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_blkdev_info
   [ -e "$tgt_pt_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_pt_info
   # [ -f "$src_efi_nvram_data" ] && cp -f $src_efi_nvram_data $tgt_efi_nvram_data # no need for local EFI/GPT disk cloning
+
+  # Convert to target device for checksum files
+  if [ "$chksum_for_files_in_dev" = "yes" ]; then
+    for im in $hd_tgt_tmp/*.files-*sum.info.gz; do
+    [ ! -e "$im" ] && continue
+    imname="$(LC_ALL=C basename $im)"
+    # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
+    # cciss/c0d0p1 -> sda1
+    case $tgt_dev in
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+      newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
+      ;;
+    *)
+      newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})/g")"
+      ;;
+    esac
+    if [ -z "$newname" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Name converted failed in $ocs!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "Program terminated!"
+      exit 1
+    fi
+    mv -vf $hd_tgt_tmp/$imname $hd_tgt_tmp/$newname
+    done
+  fi
 
   # Decide use_HD_CHS_from_EDD
   # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
@@ -753,6 +799,7 @@ prepare_local_clone_dev_info() {
       echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append ${OCS_LOGFILE}
     fi
   fi
+
   [ -f "$partition_table" ] && rm -f $partition_table
 } # end of prepare_local_clone_dev_info
 #
@@ -1222,8 +1269,14 @@ local_dev_clone() {
 	  echo "No file system was found in /dev/$src_dev!" | tee --append $OCS_LOGFILE
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
           local_partition_to_partiton_clone unknown /dev/$src_dev /dev/$tgt_dev
+	  # Unknown file system, no way to mount to inspect the checksum. Skip it here.
        else
           local_partition_to_partiton_clone $part_fs /dev/$src_dev /dev/$tgt_dev
+          if [ "$chksum_for_files_in_dev" = "yes" ]; then
+            echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+            inspect_chksum_for_files_in_dev /dev/$tgt_dev "$hd_tgt_tmp"
+            echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+	  fi
        fi
        ;;
     disk)
@@ -1245,8 +1298,14 @@ local_dev_clone() {
             echo "No file system was found in /dev/$src_part!" | tee --append $OCS_LOGFILE
             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
             local_partition_to_partiton_clone unknown /dev/$src_part /dev/$target_part
+	    # Unknown file system, no way to mount to inspect the checksum. Skip it here.
          else
             local_partition_to_partiton_clone $part_fs /dev/$src_part /dev/$target_part
+            if [ "$chksum_for_files_in_dev" = "yes" ]; then
+              echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+              inspect_chksum_for_files_in_dev /dev/$target_part "$hd_tgt_tmp"
+              echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+	    fi
          fi
        done
        ;;
@@ -1859,6 +1918,7 @@ USAGE() {
     echo "$ocs [OPTION]"
     echo "Option"
     echo "-b, -batch, --batch, --batch-mode   (DANGEROUS!) Run program in batch mode, i.e. without any prompt or wait for pressing enter key. //NOTE// You have to use '-batch' instead of '-b' when you want to use it in the boot parameters. Otherwise the program init on system will honor '-b', too."
+    echo "-cmf, --chk-chksum-for-files-in-dev    Do the files checksum inspection for cloned files in destination devices."
     echo "-e, --load-geometry  Force to use the saved CHS (cylinders, heads, sectors) when using sfdisk"
     echo "-e1, --change-geometry NTFS-BOOT-PARTITION  Force to change the CHS (cylinders, heads, sectors) value of NTFS boot partitoin after image is restored. NTFS-BOOT-PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the NTFS boot partition automatically)"
     echo "-e2, --load-geometry-from-edd  Force to use the CHS (cylinders, heads, sectors) from EDD (Enhanced Disk Device) when creating partition table by sfdisk"
@@ -1927,6 +1987,7 @@ ask_disk_to_local_disk() {
    [ -z "$tgt_dev" ] && exit 1
    check_input_hd $tgt_dev
 } # end of ask_disk_to_local_disk
+#
 ask_disk_to_remote_disk() {
    local ANS_TMP
    # tgt_dev is like hda, sda...
@@ -2072,6 +2133,7 @@ set_ocs_onthefly_extra_param() {
     "-iefi "    "$msg_ocs_onthefly_param_iefi" off \
     "-o "       "$msg_ocs_onthefly_param_o" off \
     "-batch "   "$msg_ocs_onthefly_param_b" off \
+    "-cmf "     "$msg_ocs_onthefly_param_cmf" off \
     "-v "       "$msg_ocs_onthefly_param_v" off \
     2> $OCS_PARAM_TMP
   else
@@ -2311,6 +2373,7 @@ parse_ocs_onthefly_cmd_options() {
       -iefi|--ignore-update-efi-nvram) shift; update_efi_nvramt="no";;
       -fsck-src-part|--fsck-src-part) shift; fsck_src_part_intr="yes";;
       -fsck-src-part-y|--fsck-src-part-y) shift; fsck_src_part_auto="yes";;
+      -cmf|--chk-chksum-for-files-in-dev) shift; chksum_for_files_in_dev="yes" ;;
       -v|--verbose) shift; verbose="on" ;;
       -*)     echo "${0}: ${1}: invalid option" >&2
               USAGE >& 2
@@ -2537,7 +2600,7 @@ case "$mode" in
 esac
 
 
-# convert partition to disk (Ex. hda1 -> hda), even if it's partition, the sed action is still OK, i.e. won't affect if it's partition already.
+# Convert partition to disk (Ex. hda1 -> hda) if it's necessary
 if [ -n "$src_dev" ]; then
   source_hd="$(get_diskname $src_dev)"
 fi
@@ -2551,6 +2614,8 @@ screen_not_blank
 [ -n "$target_hd" ] && turn_on_hd_dma /dev/$target_hd
 
 echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
+# confirm first
+confirm_do_it_in_target_dev
 
 # prepare the partition table and MBR (if necessary)
 case "$mode" in
@@ -2582,8 +2647,12 @@ if [ "$verbose" = "on" ]; then
   echo "PORT for netcat: $NC_PORT" | tee --append ${OCS_LOGFILE}
 fi
 
-# confirm first
-confirm_do_it_in_target_dev
+# Check if any source partition is busy or not.
+# $src_pt_info format:
+# "/dev/$part $filesystem $pt_size" 
+while read ipart part_fs size; do
+  check_if_dev_busy $ipart
+done < $src_pt_info
 
 # Run fsck on the source partition
 do_fsck_in_source_dev_if_assigned
