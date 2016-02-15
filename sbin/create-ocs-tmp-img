@@ -30,7 +30,7 @@ cvt_dev="yes"
 # lvm_vg_dev.list           -> copied
 # parts                     -> copied
 # swappt-etch-swap_1.info   -> copied
-#
+# sda1.files-md5sum.info.gz -> copied
 # How ? First parse parts and lvm_logv.list, find the partition/LV image, link them. For the rest, copy them.
 
 #
@@ -170,7 +170,9 @@ for i in $PARTIMG_LIST_TMP; do
     echo "$ocsroot/$imgname/$i* was not found! Skip this!"
     continue
   else
-    pt_found="$(unalias ls 2>/dev/null; ls $ocsroot/$imgname/*$(to_filename $i)* 2>/dev/null | while read x; do basename $x; done | sort)"
+    # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
+    pt_found="$(unalias ls 2>/dev/null; ls $ocsroot/$imgname/*$(to_filename $i)* \
+    2>/dev/null | grep -E -v "(dd-img.info$|\.info.gz$)" | while read x; do basename $x; done | sort)"
   fi
   PARTIMG_LIST="$PARTIMG_LIST $pt_found"
 done
@@ -220,6 +222,25 @@ done
   fi
   done
 )
+
+# Modify the content of checksum info, e.g. "sda1.files-md5sum.info.gz"
+for i in $new_imghome/$new_imgname/*.files-*sum.info.gz; do
+  [ ! -e "$i" ] && continue
+  # Find the mountpoint from checksum file, then change to new one
+  # The path in the checksum is like:
+  # ===================================
+  # f9389e7942c0b0ef918477cd0b24fdb3  /tmp/chksum_tmpd.yRFkST/root/.bash_history
+  # d41d8cd98f00b204e9800998ecf8427e  /tmp/chksum_tmpd.yRFkST/root/.cache/motd.legal-displayed
+  # cf277664b1771217d7006acdea006db1  /tmp/chksum_tmpd.yRFkST/root/.bashrc
+  # ===================================
+  # Unzip it, modify, then gzip it again.
+  gunzip $i
+  unzip_f="$(echo $i | sed -r -e "s/.info.gz$/.info/g")"
+  sum_part_tmpd="$(LC_ALL=C head -n 1 $unzip_f | awk -F" " '{print $2}' | grep -E -o "/tmp/chksum_tmpd.[[:alnum:]]{6}")"
+  new_sum_part_tmpd="$(LC_ALL=C mktemp -u -d /tmp/chksum_tmpd.XXXXXX)"
+  perl -pi -e "s|$sum_part_tmpd|$new_sum_part_tmpd|g" $unzip_f
+  gzip $unzip_f
+done
 
 #
 if [ "$cvt_dev" = "yes" ]; then
