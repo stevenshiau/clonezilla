@@ -233,9 +233,13 @@ fi
 # For clonezilla 2.x format, hda-mbr, hda-pt.sf, hda-pt.parted, hda-chs.sf also will be processed here: hda-mbr -> sda-mbr...
 # filenames_2_be_mod_about_disk="$(to_filename ${src_dev})-pt.sf $(to_filename ${src_dev})-chs.sf $(to_filename ${src_dev})-hidden-data-after-mbr $(to_filename ${src_dev})-mbr $(to_filename ${src_dev})-pt.parted $(to_filename ${src_dev})-pt.parted.compact $(to_filename ${src_dev})-gpt-1st $(to_filename ${src_dev})-gpt-2nd $(to_filename ${src_dev})-gpt.gdisk $(to_filename ${src_dev})-gpt.sgdisk"
 # Better way to list all of them:
-filenames_2_be_mod_about_disk="$(LC_ALL=C find $ocsroot/$image_name/ -name "$(to_filename ${src_dev})-*" -print | sort)"
-filenames_2_be_mod_about_parts="$(LC_ALL=C find $ocsroot/$image_name/ -name "$(to_filename ${src_dev})*.*-img*" -print | sort)"
-filenames_2_be_mod_about_swap="$(LC_ALL=C find $ocsroot/$image_name/ -name "swappt-$(to_filename ${src_dev})*.info" -print | sort)"
+filenames_2_be_mod_about_disk="$(LC_ALL=C find $ocsroot/$image_name/ -name \
+"$(to_filename ${src_dev})-*" -print | sort)"
+filenames_2_be_mod_about_parts="$(LC_ALL=C find $ocsroot/$image_name/ \( -name \
+"$(to_filename ${src_dev})*.*-img*" -o -name "$(to_filename ${src_dev})*.files-*sum.info.gz" \) \
+-print | sort)"
+filenames_2_be_mod_about_swap="$(LC_ALL=C find $ocsroot/$image_name/ -name \
+"swappt-$(to_filename ${src_dev})*.info" -print | sort)"
 
 # Process the disk-related file names
 for im in $filenames_2_be_mod_about_disk; do
@@ -259,10 +263,10 @@ for im in $filenames_2_be_mod_about_parts; do
   # cciss/c0d0p1 -> sda1
   case $tgt_dev in
   cciss*|mmcblk*|md*|rd*|ida*|nvme*)
-    newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
+    newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
     ;;
   *)
-    newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})/g")"
+    newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})/g")"
     ;;
   esac
   if [ -z "$newname" ]; then
