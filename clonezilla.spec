@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.1
+Version:	3.20.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.2-drbl1
+- To avoid the truncation difference, just use byte in pv instead of kB for checksum inspection mechanism.
+- Bug fixed: forgot to put variable chksum_cmd_for_files_in_dev for checksum mechanism in drbl-ocs.conf.
+
 * Mon Feb 15 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.1-drbl1
 - ocs-cvtimg-comp displays the total elapsed time when converting compression.
 - For better compability, the mktemp in ocs-iso and ocs-live-dev uses 6 consecutive 'X's, not 5 ones.
