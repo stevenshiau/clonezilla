@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.3
+Version:	3.20.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.4-drbl1
+- Send the otuput of checksum to log file, too.
+
 * Tue Feb 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.3-drbl1
 - Add option "-f" for pv when generating and inspecting the checksum of files in device. This allows ocs-restore-mdisks to show the status when running in virtual terminal (tee).
 
