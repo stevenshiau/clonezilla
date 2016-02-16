@@ -11702,7 +11702,7 @@ inspect_chksum_for_files_in_dev() {
   local sum_part="${1#/dev/*}"  # partition or LV name, e.g. sda1
   local tgt_dir="$2"   # target dir, full path, like /home/partimag/my-img
   local chksum_file csumf_basename chksum_cmd sum_part_tmpd rc rc_chk
-  local chksum_file_size_in_byte chksum_file_size_in_kB
+  local chksum_file_size
 
   chksum_file="$(unalias ls &>/dev/null; ls $tgt_dir/${sum_part}.files-*sum.info.gz 2>/dev/null)"
   if [ -n "${chksum_file}" ]; then
@@ -11737,9 +11737,9 @@ inspect_chksum_for_files_in_dev() {
     if [ "$rc" -eq 0 ]; then
       echo "Inspecting checksum with $chksum_cmd for files in device /dev/$sum_part..."
       echo "$msg_this_might_take_some_time"
-      chksum_file_size_in_byte="$(LC_ALL=C gunzip -l $chksum_file | tail -n 1 | awk -F" " '{print $2}')"
-      chksum_file_size_in_kB="$(LC_ALL=C printf "%.0f" "$(echo "($chksum_file_size_in_byte/1024)" | bc -l)")k"
-      LC_ALL=C zcat $chksum_file | pv -paet -s $chksum_file_size_in_kB | $chksum_cmd -c --quiet
+      # unit for chksum_file_size is byte.
+      chksum_file_size="$(LC_ALL=C gunzip -l $chksum_file | tail -n 1 | awk -F" " '{print $2}')"
+      LC_ALL=C zcat $chksum_file | pv -paet -s $chksum_file_size | $chksum_cmd -c --quiet
       rc_chk="${PIPESTATUS[2]}"
       if [ "$rc_chk" -ne 0 ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
