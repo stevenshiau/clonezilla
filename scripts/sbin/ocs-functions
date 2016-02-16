@@ -11671,8 +11671,8 @@ gen_chksum_for_files_in_dev() {
       gunz_cmd="gzip -d"
     fi
     # chksum_cmd_for_files_in_dev is from drbl-ocs.conf.
-    echo "Generating checksum with $chksum_cmd_for_files_in_dev for files in device /dev/$sum_part..."
-    echo "$msg_this_might_take_some_time"
+    echo "Generating checksum with $chksum_cmd_for_files_in_dev for files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
+    echo "$msg_this_might_take_some_time" | tee --append ${OCS_LOGFILE}
     # Here we do not put the output file directly, instead we compress it to reduce the I/O.
     # In case if the image repository is network file system, like NFS. It will be very slow.
     LC_ALL=C find $sum_part_tmpd -type f -exec \
@@ -11715,8 +11715,8 @@ inspect_chksum_for_files_in_dev() {
     fi
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "No any checksum file for files in dev $sum_part was found in image dir $tgt_dir."
-    echo "Skip checking."
+    echo "No any checksum file for files in dev $sum_part was found in image dir $tgt_dir." | tee --append ${OCS_LOGFILE}
+    echo "Skip checking." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     return 2
   fi
@@ -11736,8 +11736,8 @@ inspect_chksum_for_files_in_dev() {
     mount -o ro /dev/$sum_part $sum_part_tmpd
     rc=$?
     if [ "$rc" -eq 0 ]; then
-      echo "Inspecting checksum with $chksum_cmd for files in device /dev/$sum_part..."
-      echo "$msg_this_might_take_some_time"
+      echo "Inspecting checksum with $chksum_cmd for files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
+      echo "$msg_this_might_take_some_time" | tee --append ${OCS_LOGFILE}
       # unit for chksum_file_size is byte.
       chksum_file_size="$(LC_ALL=C gunzip -l $chksum_file | tail -n 1 | awk -F" " '{print $2}')"
       LC_ALL=C zcat $chksum_file | pv -paetf -s $chksum_file_size \
@@ -11745,7 +11745,7 @@ inspect_chksum_for_files_in_dev() {
       rc_chk="${PIPESTATUS[2]}"
       if [ "$rc_chk" -ne 0 ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "$msg_chksum_for_files_not_match" | tee --append ${OCS_LOGFILE}
+        echo "$msg_chksum_for_files_not_match: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         if [ "$ocs_batch_mode" != "on" ]; then
           echo -n "$msg_press_enter_to_continue..."
