@@ -700,11 +700,6 @@ prepare_local_clone_dev_info() {
       echo "PARTITION_TYPE=Win_boot_reserved" > $local_tmp/$target_part_info
     fi
     #
-    if [ "$chksum_for_files_in_dev" = "yes" ]; then
-      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-      gen_chksum_for_files_in_dev "/dev/$part" "$hd_src_tmp"
-      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-    fi
   done
   # SWAP partition info, maybe more than 1
   swap_in_hd="$(awk -F" " '/swap/ {print $1}' $src_pt_info | sed -r -e 's|/dev/||g')"
@@ -737,32 +732,6 @@ prepare_local_clone_dev_info() {
   [ -e "$tgt_blkdev_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_blkdev_info
   [ -e "$tgt_pt_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_pt_info
   # [ -f "$src_efi_nvram_data" ] && cp -f $src_efi_nvram_data $tgt_efi_nvram_data # no need for local EFI/GPT disk cloning
-
-  # Convert to target device for checksum files
-  if [ "$chksum_for_files_in_dev" = "yes" ]; then
-    for im in $hd_tgt_tmp/*.files-*sum.info.gz; do
-    [ ! -e "$im" ] && continue
-    imname="$(LC_ALL=C basename $im)"
-    # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
-    # cciss/c0d0p1 -> sda1
-    case $tgt_dev in
-    cciss*|mmcblk*|md*|rd*|ida*|nvme*)
-      newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
-      ;;
-    *)
-      newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})/g")"
-      ;;
-    esac
-    if [ -z "$newname" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Name converted failed in $ocs!"
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "Program terminated!"
-      exit 1
-    fi
-    mv -vf $hd_tgt_tmp/$imname $hd_tgt_tmp/$newname
-    done
-  fi
 
   # Decide use_HD_CHS_from_EDD
   # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
@@ -2460,6 +2429,42 @@ part_to_remote_part_dia_des() {
   part_to_remote_part_msg_1="part_to_remote_part"
   part_to_remote_part_msg_2="$(rep_whspc_w_udrsc "$msg_part_to_remote_part")"
 } # end of part_to_remote_part_dia_des
+#
+prepare_chksum_for_source_part(){
+  # source partition is lised in file $src_pt_info, and its format:
+  # "/dev/$part $filesystem $pt_size" 
+  while read ipart part_fs size; do
+    # Skip swap, no way to create checksum for the files inside swap partition.
+    [ "$part_fs" = "swap" ] && continue
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    gen_chksum_for_files_in_dev "$ipart" "$hd_src_tmp"
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  done < $src_pt_info
+  # Convert to target device for checksum files
+  echo "Converting the checksum for destination disk..."
+  for im in $hd_src_tmp/*.files-*sum.info.gz; do
+    [ ! -e "$im" ] && continue
+    imname="$(LC_ALL=C basename $im)"
+    # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
+    # cciss/c0d0p1 -> sda1
+    case $tgt_dev in
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+      newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
+      ;;
+    *)
+      newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})/g")"
+      ;;
+    esac
+    if [ -z "$newname" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Name converted failed in $ocs!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "Program terminated!"
+      exit 1
+    fi
+    mv -vf $hd_tgt_tmp/$imname $hd_tgt_tmp/$newname
+  done
+} # end of prepare_chksum_for_source_part
 
 ########################
 ##### MAIN PROGRAM #####
@@ -2656,6 +2661,11 @@ done < $src_pt_info
 
 # Run fsck on the source partition
 do_fsck_in_source_dev_if_assigned
+
+#
+if [ "$chksum_for_files_in_dev" = "yes" ]; then
+  prepare_chksum_for_source_part
+fi
 
 # partition table
 create_partition_table_in_target
