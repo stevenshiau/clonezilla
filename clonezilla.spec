@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.5
+Version:	3.20.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.6-drbl1
+- Better way to deal with checksum generation part in ocs-onthefly.
+
 * Tue Feb 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.5-drbl1
 - The log file is renamed as ${image_name}_mdisks_{disk_name}.log, and put in /var/log instead of /tmp.
 - Show device info when checksum does not match.
