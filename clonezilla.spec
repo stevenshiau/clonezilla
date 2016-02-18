@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.6
+Version:	3.20.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Feb 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.7-drbl1
+- Replace qalculate-gtk with calcoo for GParted live. It's lighter.
+- Add calculator in menu for GParted live.
+
 * Tue Feb 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.6-drbl1
 - Better way to deal with checksum generation part in ocs-onthefly.
 
