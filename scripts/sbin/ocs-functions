@@ -11741,8 +11741,10 @@ inspect_chksum_for_files_in_dev() {
       # unit for chksum_file_size is byte.
       chksum_file_size="$(LC_ALL=C gunzip -l $chksum_file | tail -n 1 | awk -F" " '{print $2}')"
       LC_ALL=C zcat $chksum_file | pv -petf -s $chksum_file_size \
-      | $chksum_cmd -c --quiet | tee --append ${OCS_LOGFILE}
+      | $chksum_cmd -c | tee --append ${OCS_LOGFILE} | cat - > /var/log/${sum_part}-${chksum_cmd}-results.log
       rc_chk="${PIPESTATUS[2]}"
+      # Strip the mount point path before going on
+      perl -pi -e "s|$sum_part_tmpd||g" /var/log/${sum_part}-${chksum_cmd}-results.log
       if [ "$rc_chk" -ne 0 ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "$msg_chksum_for_files_not_match: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
@@ -11753,6 +11755,7 @@ inspect_chksum_for_files_in_dev() {
         fi
       else
        echo "$msg_chksum_inspection_for_files_passed: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
+       echo "$msg_chksum_results_saved_in_this_file: /var/log/${sum_part}-${chksum_cmd}-results.log" | tee --append ${OCS_LOGFILE} 
       fi
       umount /dev/$sum_part
     else
