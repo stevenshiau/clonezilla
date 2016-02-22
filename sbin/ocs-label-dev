@@ -1,0 +1,90 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ stevenshiau org>
+# Description: Program to label a file system partition
+# Support file systems: ext2/3/4, xfs, jfs, reiserfs, fat, ntfs,
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+
+#
+USAGE() {
+    echo "$ocs - To label a file system partition"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs DEVICE LABEL"
+    echo "Options:"
+    echo "DEVICE is the device name, e.g. /dev/sda1, /dev/sda2..."
+    echo "LABEL is the label name, e.g. Clonezilla-USB"
+    echo "Ex:"
+    echo "To label a file system partition /dev/sdc1 as \"Clonezilla-USB\", run"
+    echo "   $ocs /dev/sdc1 Clonezilla-USB"
+    echo
+} # end of USAGE
+#
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+ocs_dev="$1"
+ocs_label="$2"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+#
+if [ -z "$ocs_dev" ]; then
+  USAGE
+  exit 1
+fi
+if [ -z "$ocs_label" ]; then
+  USAGE
+  exit 1
+fi
+
+if [ ! -b "$ocs_dev" ]; then
+  echo "This block device was not found: $ocs_dev"
+  exit 1
+fi
+
+#
+fs="$(ocs-get-part-info $ocs_dev filesystem)"
+case  "$fs" in
+  ext[234])  e2label $ocs_dev $ocs_label;;
+  vfat|fat*) fatlabel $ocs_dev $ocs_label;;
+  ntfs)      ntfslabel $ocs_dev $ocs_label;;
+  reiserfs)  reiserfstune --label $ocs_label $ocs_dev;;
+  xfs)       xfs_admin -L $ocs_label $ocs_dev;;
+  jfs)       jfs_tune -L $ocs_label $ocs_dev;;
+  *)         echo "File system of $ocs_dev is: $fs"
+	     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+             echo "Unknown or not supported file system!"
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+             echo "$msg_program_stop!"
+             my_ocs_exit 1
+esac
+rc=$?
+
+my_ocs_exit $rc
