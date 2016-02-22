@@ -1,0 +1,239 @@
+#!/bin/bash
+# License: GPL
+# Author: Steven Shiau <steven _at_ stevenshiau org>
+# Program to save or restore disk with checksum mechanism enabled.
+# Features:
+# Saving:
+# Another copy of the checksum file will be put in /home/partimag/ after saving, with file name $imaeg_name-$time.md5, like: myimg-22Feb16-032304.md5
+# Restoring:
+# (1) Label a sequential names for all the partitions on the restored destination disks, like my-image_01p1, my-image_01p2 for disk /dev/sda1, and /dev/sda2, respectively."
+# (2) The inspection results for all the regular files in a partition will be put in /home/partimag/, and another copy in the restored partition. Its file name format: ${image_name}-${label}-${checksum}-results.txt, like myimg-Tiger_01p1-md5sum-results.txt
+# Requirement: Clonezilla live >= 2.4.5-28 | 20160222-*
+
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+# Functions
+USAGE() {
+  echo "$ocs - To save or restore disk with checksum mechanism enabled"
+  echo "Usage:"
+  echo "To run $ocs:"
+  echo "$ocs [OPTION] MODE IMAGE_NAME DEVICE"
+  echo "Options:"
+  echo "-b, --batch-mode   Run image checking in batch mode"
+  echo "-p, --label-prefix PREFIX  Set the label prefix for the destination partitions when restoring. This is only for mode 'restore', and it will be used to create a sequential label names for all the partitions on destination disks, like my-image_01p1, my-image_01p2 for disk /dev/sda1, and /dev/sda2, respectively."
+  echo "MODE is for saving or restoring. Available: save, restore."
+  echo "IMAGE_NAME is the image dir name, not absolute path"
+  echo "DEVICE is the device name, e.g. sda, sda... When MODE is 'save', only one disk is allowed. While when MODE is 'restore', more than one disks are accetable."
+  echo "Ex:"
+  echo "To save disk /dev/sda as the image \"my-image\" with checksum for all files generated, run"
+  echo "   $ocs save my-image sda"
+  echo "To restore the image \"my-image\" to disks /dev/sda, /dev/sdb and inspect the checksum for all files. Also label the destination partition with prefix 'Tiger', run"
+  echo "   $ocs -p Tiger_ restore my-image sda sdb"
+  echo
+} # end of USAGE
+#
+do_save_mode_check() {
+  echo "Checking input parameters for saving mode..."
+  if [ -z "$disk" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No source disk is assigned."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    USAGE
+    exit 1
+  elif [ "$(LC_ALL=C echo "$disk" | wc -w)" -ne 1 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Only one source disk is supported!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    USAGE
+    exit 1
+  elif [ -z "$(LC_ALL=C grep -Ew "$disk" /proc/partitions)" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No destination disk $disk found on this system!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Available disks and partitions on this system:"
+    echo $msg_delimiter_star_line
+    cat /proc/partitions
+    echo $msg_delimiter_star_line
+    echo "$msg_program_stop!"
+    exit 1
+  else
+    if ! is_whole_disk $disk; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Source disk $disk is not a disk."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      exit 1
+    fi
+  fi 
+  if [ -z "$img_name" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No image name is assigned."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+} # end of do_save_mode_check
+#
+do_restore_mode_check() {
+  # Check if image exists
+  # Check if destination disk exists
+  # Show warning if no part_label_prefix
+  if [ -z "$part_label_prefix" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "No label prefix for destination disk(s)."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    if [ "$ocs_batch_mode" != "on" ]; then
+      echo -n "$msg_press_enter_to_continue..."
+      read
+    fi
+  fi
+  if [ ! -d "$ocsroot/$img_name" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No image $img_name found in $ocsroot!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+  for idsk in $disk; do
+    if [ -z "$(LC_ALL=C grep -Ew "$idsk" /proc/partitions)" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "No destination disk \"$idsk\" found on this system!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "Available disks and partitions on this system:"
+      echo $msg_delimiter_star_line
+      cat /proc/partitions
+      echo $msg_delimiter_star_line
+      echo "$msg_program_stop!"
+      exit 1
+    fi
+  done
+} # end of do_restore_mode_check
+#
+cvrt_char_to_dig() {
+  # Convert a -> 1, b ->2
+  # It can be used for "sda" -> "disk01"
+  # TODO: What about /dev/sdaa?
+  local lcha="${1#/dev/*}"
+  local label_="$2"
+  local dig_
+  [ -z "$lcha" ] && return 1
+  lcha=${lcha#sd}  # sda -> a
+  # Convert to ASCII number by -60
+  dig_="$(LC_ALL=C printf "%d" "'$lcha")"
+  dig_="$(($dig_ - 96))"
+  dig_="$(LC_ALL=C printf "%.2u" $dig_)"  # e.g. 2 -> 02
+  echo "${label_}${dig_}"
+}
+#
+do_mdisk_restore_task() {
+  local img="$1"
+  local dest_dsk="$2"
+  rm -f /var/log/*sum-results.log
+  ocs-restore-mdisks -b -p "-g auto -e1 auto -e2 -nogui -c -r -j2 -cmf -scr -p true" $img $dest_dsk
+  # (1) Put checksum file. Format: $image_name-$time (e.g. HOWL_09Oct15-171023.md5)
+  # In image dir, it's like: sda1.files-md5sum.info.gz
+  
+  # (2) Label the partition, and put the inspection results of checksum to $ocsroot and / in every restored disk.
+  for idsk in $dest_dsk; do 
+    echo "Searching for data partition(s)..." | tee --append $OCS_LOGFILE
+    BACKUP_DEVS=""
+    get_known_partition_proc_format $idsk data
+    target_parts="$BACKUP_DEVS"
+    # Strip the single white space which should be nothing. Thanks to Borksoft.
+    target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
+    tmpd_dest="$(mktemp -d /tmp/tmpd_dest.XXXXXX)"
+    for iprt in $target_parts; do
+      dsk_label="$(cvrt_char_to_dig $idsk $part_label_prefix)"
+      pt="$(get_part_number "$iprt")"
+      part_label=${dsk_label}p${pt}
+      echo "Labeling /dev/${idsk}${pt} as $part_label"
+      ocs-label-dev /dev/${idsk}${pt} $part_label
+  
+      cp -v /var/log/${iprt}-md5sum-results.log $ocsroot/${img}-${part_label}-md5sum-results.txt
+      mount /dev/$iprt $tmpd_dest
+      cp -v /var/log/${iprt}-md5sum-results.log $tmpd_dest/${img}-${part_label}-md5sum-results.txt
+      umount /dev/$iprt
+    done
+  done
+} # end of do_mdisk_restore_task
+#
+do_mdisk_save_task() {
+  local img="$1"
+  local src_dsk="$2"
+  # (1) Save the disk as image
+  ocs-sr -q2 -c -j2 -gmf -z1p -i 4096 -p true savedisk $img $src_dsk
+  # Put checksum file. Format: $image_name-$time (e.g. HOWL_09Oct15-171023.md5)
+  # In image dir, it's like: sda1.files-md5sum.info.gz
+  # Merge them to one file if more than one checksum files exist.
+  time_now="$(LC_ALL=C date +%d%b%y-%H%M%S)"
+  rm -f $ocsroot/${img}-${time_now}.md5
+  echo "Preparing checksum file $ocsroot/${img}-${time_now}.md5..."
+  for ifile in $ocsroot/$img/*sum.info.gz; do
+    [ ! -e "$ifile" ] && continue
+    # checksum file
+    # Clean the temp mount point in checksum file.
+    sum_part_tmpd="$(LC_ALL=C zcat $ifile | head -n 1 | awk -F" " '{print $2}' | grep -E -o "/tmp/chksum_tmpd.[[:alnum:]]{6}")"
+    zcat $ifile | perl -p -e "s|$sum_part_tmpd|CHKSUM_TMPD|g" >> $ocsroot/${img}-${time_now}.md5
+  done
+  echo " done!"
+} # end of do_mdisk_save_task
+
+################
+##### Main #####
+################
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -b|--batch) ocs_batch_mode="on"; shift;;
+   -p|--label-prefix)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             part_label_prefix="$1"
+             shift;
+           fi
+           [ -z "$part_label_prefix" ] && USAGE && exit 1
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+task_mode="$1"
+shift
+img_name="$1"
+shift
+disk="$*"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+# Check the input
+case "$task_mode" in
+  save)    do_save_mode_check 
+           do_mdisk_save_task "$img_name" "$disk"
+	   ;;
+  restore) do_restore_mode_check
+           do_mdisk_restore_task "$img_name" "$disk"
+	   ;;
+  *)       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+           echo "Unknown mode \"$task_mode\". Only 'save' or 'restore' is supported."
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+           echo "$msg_program_stop!"
+	   USAGE
+	   exit 1
+	   ;;
+esac
