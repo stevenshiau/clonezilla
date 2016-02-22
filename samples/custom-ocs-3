@@ -18,6 +18,11 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
 # Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+# Settings
+ocs_batch_mode="off"
+# For saving mode, default to turn on TUI.
+nogui="off"   
+
 # Functions
 USAGE() {
   echo "$ocs - To save or restore disk with checksum mechanism enabled"
@@ -26,6 +31,7 @@ USAGE() {
   echo "$ocs [OPTION] MODE IMAGE_NAME DEVICE"
   echo "Options:"
   echo "-b, --batch-mode   Run image checking in batch mode"
+  echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone or Partimage, use text only. In this program, only works for saving mode, not restoring mode because for multiple disks deployment, TUI is always off."
   echo "-p, --label-prefix PREFIX  Set the label prefix for the destination partitions when restoring. This is only for mode 'restore', and it will be used to create a sequential label names for all the partitions on destination disks, like my-image_01p1, my-image_01p2 for disk /dev/sda1, and /dev/sda2, respectively."
   echo "MODE is for saving or restoring. Available: save, restore."
   echo "IMAGE_NAME is the image dir name, not absolute path"
@@ -137,7 +143,7 @@ do_mdisk_restore_task() {
   local img="$1"
   local dest_dsk="$2"
   rm -f /var/log/*sum-results.log
-  ocs-restore-mdisks -b -p "-g auto -e1 auto -e2 -nogui -c -r -j2 -cmf -scr -p true" $img $dest_dsk
+  ocs-restore-mdisks $batch_opt -p "-g auto -e1 auto -e2 -nogui -r -j2 -cmf -scr -p true" $img $dest_dsk
   # (1) Put checksum file. Format: $image_name-$time (e.g. HOWL_09Oct15-171023.md5)
   # In image dir, it's like: sda1.files-md5sum.info.gz
   
@@ -157,9 +163,9 @@ do_mdisk_restore_task() {
       echo "Labeling /dev/${idsk}${pt} as $part_label"
       ocs-label-dev /dev/${idsk}${pt} $part_label
   
-      cp -v /var/log/${iprt}-md5sum-results.log $ocsroot/${img}-${part_label}-md5sum-results.txt
+      cp -v /var/log/${iprt}-md5sum-results.log $ocsroot/${img}_${part_label}_md5sum_results.txt
       mount /dev/$iprt $tmpd_dest
-      cp -v /var/log/${iprt}-md5sum-results.log $tmpd_dest/${img}-${part_label}-md5sum-results.txt
+      cp -v /var/log/${iprt}-md5sum-results.log $tmpd_dest/${img}_${part_label}_md5sum_results.txt
       umount /dev/$iprt
     done
   done
@@ -169,19 +175,19 @@ do_mdisk_save_task() {
   local img="$1"
   local src_dsk="$2"
   # (1) Save the disk as image
-  ocs-sr -q2 -c -j2 -gmf -z1p -i 4096 -p true savedisk $img $src_dsk
+  ocs-sr -q2 $batch_opt $nogui_opt -j2 -gmf -z1p -i 4096 -p true savedisk $img $src_dsk
   # Put checksum file. Format: $image_name-$time (e.g. HOWL_09Oct15-171023.md5)
   # In image dir, it's like: sda1.files-md5sum.info.gz
   # Merge them to one file if more than one checksum files exist.
   time_now="$(LC_ALL=C date +%d%b%y-%H%M%S)"
   rm -f $ocsroot/${img}-${time_now}.md5
-  echo "Preparing checksum file $ocsroot/${img}-${time_now}.md5... "
+  echo "Preparing checksum file $ocsroot/${img}_${time_now}.md5... "
   for ifile in $ocsroot/$img/*sum.info.gz; do
     [ ! -e "$ifile" ] && continue
     # checksum file
     # Clean the temp mount point in checksum file.
     sum_part_tmpd="$(LC_ALL=C zcat $ifile | head -n 1 | awk -F" " '{print $2}' | grep -E -o "/tmp/chksum_tmpd.[[:alnum:]]{6}")"
-    zcat $ifile | perl -p -e "s|$sum_part_tmpd|CHKSUM_TMPD|g" >> $ocsroot/${img}-${time_now}.md5
+    zcat $ifile | perl -p -e "s|$sum_part_tmpd|CHKSUM_TMPD|g" >> $ocsroot/${img}_${time_now}.md5
   done
   echo "done!"
 } # end of do_mdisk_save_task
@@ -195,6 +201,11 @@ ocs=`basename $ocs_file`
 while [ $# -gt 0 ]; do
  case "$1" in
    -b|--batch) ocs_batch_mode="on"; shift;;
+   -nogui|--nogui)
+           shift; 
+           # -nogui is for backward compatable, better to use --nogui
+           nogui="on"
+           ;;
    -p|--label-prefix)
            # overwrite the ocsroot in drbl.conf
            shift; 
@@ -221,6 +232,16 @@ disk="$*"
 #
 check_if_root
 ask_and_load_lang_set
+
+#
+case "$ocs_batch_mode" in
+  on)  batch_opt="-b";;
+  off) batch_opt="";;
+esac
+case "$nogui" in
+  on)  nogui_opt="-nogui";;
+  off) nogui_opt="";;
+esac
 
 # Check the input
 case "$task_mode" in
