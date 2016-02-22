@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.8
+Version:	3.20.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Feb 22 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.9-drbl1
+- The new example file custom-ocs-3 was added. It is used to save or restore disk with checksum mechanism enabled. Especially for deploying multiple disks.
+- Add new utility file "ocs-label-dev". It can be used to label a file
+
 * Thu Feb 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.8-drbl1
 - When inspecting checksum, do not use "-a" for pv to avoid confusion.
 - Add checksum results log file, e.g. /var/log/sda-md5sum-results.log.
