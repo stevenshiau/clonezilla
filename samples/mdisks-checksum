@@ -22,6 +22,8 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 ocs_batch_mode="off"
 # For saving mode, default to turn on TUI.
 nogui="off"   
+# Initial number for labeling the disk, default is from 1, e.g. disk01, disk02
+initial_no_def="1"
 
 # Functions
 USAGE() {
@@ -129,12 +131,13 @@ cvrt_char_to_dig() {
   # TODO: What about /dev/sdaa?
   local lcha="${1#/dev/*}"
   local label_="$2"
+  local init_no_="$3"
   local dig_
   [ -z "$lcha" ] && return 1
   lcha=${lcha#sd}  # sda -> a
   # Convert to ASCII number by -60
   dig_="$(LC_ALL=C printf "%d" "'$lcha")"
-  dig_="$(($dig_ - 96))"
+  dig_="$(($dig_ - 96 + "$init_no_" - 1))"
   dig_="$(LC_ALL=C printf "%.2u" $dig_)"  # e.g. 2 -> 02
   echo "${label_}${dig_}"
 }
@@ -143,7 +146,7 @@ do_mdisk_restore_task() {
   local img="$1"
   local dest_dsk="$2"
   rm -f /var/log/*sum-results.log
-  ocs-restore-mdisks $batch_opt -p "-g auto -e1 auto -e2 -nogui -r -j2 -cmf -scr -p true" $img $dest_dsk
+  ocs-restore-mdisks $batch_opt -p "-g auto -k1 -icds -e1 auto -e2 -nogui -r -j2 -cmf -scr -p true" $img $dest_dsk
   # (1) Put checksum file. Format: $image_name-$time (e.g. HOWL_09Oct15-171023.md5)
   # In image dir, it's like: sda1.files-md5sum.info.gz
   
@@ -157,7 +160,7 @@ do_mdisk_restore_task() {
     target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
     tmpd_dest="$(mktemp -d /tmp/tmpd_dest.XXXXXX)"
     for iprt in $target_parts; do
-      dsk_label="$(cvrt_char_to_dig $idsk $part_label_prefix)"
+      dsk_label="$(cvrt_char_to_dig $idsk $part_label_prefix $initial_no)"
       pt="$(get_part_number "$iprt")"
       part_label=${dsk_label}p${pt}
       echo "Labeling /dev/${idsk}${pt} as $part_label"
@@ -191,6 +194,15 @@ do_mdisk_save_task() {
   done
   echo "done!"
 } # end of do_mdisk_save_task
+#
+show_unknown_mode_then_exit() {
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Unknown mode \"$task_mode\". Only 'save' or 'restore' is supported."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  USAGE
+  exit 1
+} # end of show_unknown_mode_then_exit
 
 ################
 ##### Main #####
@@ -201,6 +213,16 @@ ocs=`basename $ocs_file`
 while [ $# -gt 0 ]; do
  case "$1" in
    -b|--batch) ocs_batch_mode="on"; shift;;
+   -i|--initial-no)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             initial_no="$1"
+             shift;
+           fi
+           [ -z "$initial_no" ] && USAGE && exit 1
+           ;;
    -nogui|--nogui)
            shift; 
            # -nogui is for backward compatable, better to use --nogui
@@ -242,6 +264,38 @@ case "$nogui" in
   on)  nogui_opt="-nogui";;
   off) nogui_opt="";;
 esac
+[ -z "$initial_no" ] && initial_no=$initial_no_def
+
+if [ -z "$task_mode" ]; then
+  show_unknown_mode_then_exit
+fi
+
+# imagedir is a variable which ask_user related function need
+imagedir="$ocsroot"
+[ -z "$img_name" ] && img_name="ask_user"
+[ -z "$disk" ] && disk="ask_user"
+if [ "$img_name" = "ask_user" ]; then
+  get_target_dir_name_when_checking_img_restorable # output: target_dir
+  img_name="$target_dir"
+fi
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "$msg_the_image_to_be_cheked: $img_name"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+if [ "$disk" = "ask_user" ]; then
+  # To get $target_hd
+  get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
+  disk="$(select_VG "$target_hd")"
+elif [ "$disk" = "all" ]; then
+  get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
+  disk="$dev_list"
+fi
+# check if the device exists
+ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
+trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+check_if_input_device_exist $ANS_TMP $disk 
+disk="$(cat $ANS_TMP | tr -d \")"
+[ -f "$ANS_TMP" ] && rm -f $ANS_TMP
 
 # Check the input
 case "$task_mode" in
@@ -251,11 +305,6 @@ case "$task_mode" in
   restore) do_restore_mode_check
            do_mdisk_restore_task "$img_name" "$disk"
 	   ;;
-  *)       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-           echo "Unknown mode \"$task_mode\". Only 'save' or 'restore' is supported."
-           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-           echo "$msg_program_stop!"
-	   USAGE
-	   exit 1
+  *)       show_unknown_mode_then_exit
 	   ;;
 esac
