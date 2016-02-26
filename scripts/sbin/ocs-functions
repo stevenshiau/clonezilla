@@ -8067,16 +8067,6 @@ task_restoreparts() {
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
-  # Do files checksum check. This must be before any further commands (like grub reinstalling) are done.
-  if [ "$chk_chksum_for_files_in_dev" = "yes" ]; then
-    for ipartition in $target_parts; do
-      is_whole_disk $ipartition && continue
-      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-      inspect_chksum_for_files_in_dev /dev/$ipartition "$target_dir_fullpath"
-      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-    done
-  fi
-
   # Reinstall executable code area (first 446 bytes in MBR)
   if [ "$restore_mbr" = "yes" ]; then
     if [ "$restore_prebuild_mbr" = "yes" ]; then
@@ -8101,6 +8091,16 @@ task_restoreparts() {
       echo "Running: ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition" | tee --append $OCS_LOGFILE
       ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition | tee --append $OCS_LOGFILE
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    done
+  fi
+
+  # Do files checksum check. This must be before any further commands (like grub reinstalling) are done.
+  if [ "$chk_chksum_for_files_in_dev" = "yes" ]; then
+    for ipartition in $target_parts; do
+      is_whole_disk $ipartition && continue
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+      inspect_chksum_for_files_in_dev /dev/$ipartition "$target_dir_fullpath"
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     done
   fi
 
