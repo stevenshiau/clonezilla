@@ -134,7 +134,7 @@ cvrt_char_to_dig() {
   local init_no_="$3"
   local dig_
   [ -z "$lcha" ] && return 1
-  lcha=${lcha#sd}  # sda -> a
+  lcha="${lcha#sd}"  # sda -> a
   # Convert to ASCII number by -60
   dig_="$(LC_ALL=C printf "%d" "'$lcha")"
   dig_="$(($dig_ - 96 + ${init_no_} - 1))"
@@ -265,6 +265,16 @@ case "$nogui" in
   off) nogui_opt="";;
 esac
 [ -z "$initial_no" ] && initial_no=$initial_no_def
+
+# Check if initial_no a positive integer
+if [ "${initial_no//[0-9]}" != "" ]; then
+  # Natural number, i.e. positive integer
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Input initial number \"${initial_no}\" is not a positive integer!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+  exit 1
+fi
 
 if [ -z "$task_mode" ]; then
   show_unknown_mode_then_exit
