@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.12
+Version:	3.20.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Feb 23 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.13-drbl1
+- Add option "-i" for mdisks-checksum. 
+- Add interactive mode for image and disks selection in mdisks-checksum.
+
 * Mon Feb 22 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.12-drbl1
 - Update output file names for mdisks-checksum.
 
