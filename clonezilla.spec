@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.15
+Version:	3.20.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Feb 29 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.16-drbl1
+- Tune label and remove temp dir in mdisks-checksum.
+- Show precise message when exiting in ocs-label-dev.
+- Add new program ocs-match-chksum to match checksum in the image and files in the block device.
+
 * Sat Feb 27 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.15-drbl1
 - Check input mode earlier in mdisks-checksum.
 
