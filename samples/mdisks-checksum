@@ -141,7 +141,7 @@ cvrt_char_to_dig() {
   dig_="$(($dig_ - 96 + ${init_no_} - 1))"
   dig_="$(LC_ALL=C printf "%.2u" $dig_)"  # e.g. 2 -> 02
   echo "${label_}${dig_}"
-}
+} # end of cvrt_char_to_dig
 #
 do_mdisk_restore_task() {
   local img="$1"
@@ -161,9 +161,10 @@ do_mdisk_restore_task() {
     target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
     tmpd_dest="$(mktemp -d /tmp/tmpd_dest.XXXXXX)"
     for iprt in $target_parts; do
-      dsk_label="$(cvrt_char_to_dig $idsk $part_label_prefix $initial_no)"
+      #dsk_label="$(cvrt_char_to_dig $idsk $part_label_prefix $initial_no)"
       pt="$(get_part_number "$iprt")"
-      part_label=${dsk_label}p${pt}
+      initial_no="$(LC_ALL=C printf "%.2u" $initial_no)"  # e.g. 2 -> 02
+      part_label=${part_label_prefix}${initial_no}p${pt}
       echo "Labeling /dev/${idsk}${pt} as $part_label"
       ocs-label-dev /dev/${idsk}${pt} $part_label
   
@@ -171,7 +172,11 @@ do_mdisk_restore_task() {
       mount /dev/$iprt $tmpd_dest
       cp -v /var/log/${iprt}-md5sum-results.log $tmpd_dest/${img}_${part_label}_md5_results.txt
       umount /dev/$iprt
+      initial_no="$(echo "scale=0; $initial_no + 1" | bc)"
     done
+    if [ -d "$tmpd_dest" -a "$(echo "$tmpd_dest" | grep -E /tmp/tmpd_dest\.)" ]; then
+      rm -rf $tmpd_dest
+    fi
   done
 } # end of do_mdisk_restore_task
 #
