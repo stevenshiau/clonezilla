@@ -46,6 +46,38 @@ USAGE() {
   echo "   $ocs -p Tiger_ restore my-image sda sdb"
   echo
 } # end of USAGE
+do_save_ask_interactive_image_dev_if_assigned() {
+  # output: img_name, disk
+  if [ "$img_name" = "ask_user" ]; then
+    get_target_dir_name_when_saving  # get $target_dir
+    img_name="$target_dir"
+  fi
+  if [ "$disk" = "ask_user" ]; then
+    # To get $target_hd
+    get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
+    disk="$(select_VG "$target_hd")"
+  fi
+} # end of do_save_ask_interactive_image_dev_if_assigned
+#
+do_restore_ask_interactive_image_dev_if_assigned() {
+  # output: img_name, disk
+  if [ "$img_name" = "ask_user" ]; then
+    get_target_dir_name_when_checking_img_restorable # output: target_dir
+    img_name="$target_dir"
+  fi
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_the_image_to_be_cheked: $img_name"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  
+  if [ "$disk" = "ask_user" ]; then
+    # To get $target_hd
+    get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
+    disk="$(select_VG "$target_hd")"
+  elif [ "$disk" = "all" ]; then
+    get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
+    disk="$dev_list"
+  fi
+} # end of do_restore_ask_interactive_image_dev_if_assigned
 #
 do_save_mode_check() {
   echo "Checking input parameters for saving mode..."
@@ -296,22 +328,12 @@ fi
 imagedir="$ocsroot"
 [ -z "$img_name" ] && img_name="ask_user"
 [ -z "$disk" ] && disk="ask_user"
-if [ "$img_name" = "ask_user" ]; then
-  get_target_dir_name_when_checking_img_restorable # output: target_dir
-  img_name="$target_dir"
-fi
-[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-echo "$msg_the_image_to_be_cheked: $img_name"
-[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
-if [ "$disk" = "ask_user" ]; then
-  # To get $target_hd
-  get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
-  disk="$(select_VG "$target_hd")"
-elif [ "$disk" = "all" ]; then
-  get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
-  disk="$dev_list"
-fi
+case "$task_mode" in
+  save)    do_save_ask_interactive_image_dev_if_assigned;;
+  restore) do_restore_ask_interactive_image_dev_if_assigned;;
+esac
+
 # check if the device exists
 ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
 trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
