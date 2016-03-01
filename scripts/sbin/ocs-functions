@@ -11703,7 +11703,7 @@ inspect_chksum_for_files_in_dev() {
   local sum_part="${1#/dev/*}"  # partition or LV name, e.g. sda1
   local tgt_dir="$2"   # target dir, full path, like /home/partimag/my-img
   local chksum_file csumf_basename chksum_cmd sum_part_tmpd rc rc_chk
-  local chksum_file_size
+  local chksum_file_lines
 
   chksum_file="$(unalias ls &>/dev/null; ls $tgt_dir/${sum_part}.files-*sum.info.gz 2>/dev/null)"
   if [ -n "${chksum_file}" ]; then
@@ -11738,10 +11738,10 @@ inspect_chksum_for_files_in_dev() {
     if [ "$rc" -eq 0 ]; then
       echo "Inspecting checksum with $chksum_cmd for files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
       echo "$msg_this_might_take_some_time" | tee --append ${OCS_LOGFILE}
-      # unit for chksum_file_size is byte.
-      chksum_file_size="$(LC_ALL=C gunzip -l $chksum_file | tail -n 1 | awk -F" " '{print $2}')"
-      LC_ALL=C zcat $chksum_file | pv -petf -s $chksum_file_size \
-      | $chksum_cmd -c | tee --append ${OCS_LOGFILE} | cat - > /var/log/${sum_part}-${chksum_cmd}-results.log
+      # unit for chksum_file_lines is line number.
+      chksum_file_lines="$(LC_ALL=C zcat $chksum_file | wc -l)"
+      LC_ALL=C zcat $chksum_file | $chksum_cmd -c | pv -peltf -s $chksum_file_lines \
+      | tee --append ${OCS_LOGFILE} | cat - > /var/log/${sum_part}-${chksum_cmd}-results.log
       rc_chk="${PIPESTATUS[2]}"
       # Strip the mount point path before going on
       perl -pi -e "s|$sum_part_tmpd||g" /var/log/${sum_part}-${chksum_cmd}-results.log
