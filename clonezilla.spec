@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.16
+Version:	3.20.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Feb 29 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.17-drbl1
+- Rename ocs-match-chksum as ocs-match-checksum. 
+- Bug fixed for mdisks-checksum: the interactive mode should be different for save and restore modes.
+- Use --line-mode for pv in the function inspect_chksum_for_files_in_dev of ocs-functions, and move pv command after checksum so that when only a few files to be checked, it won't just show 100%.
+
 * Mon Feb 29 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.16-drbl1
 - Tune label and remove temp dir in mdisks-checksum.
 - Show precise message when exiting in ocs-label-dev.
