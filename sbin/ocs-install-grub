@@ -1,6 +1,6 @@
 #!/bin/bash
 # License: GPL 
-# Author: Steven Shiau <steven _at_ nchc org tw>
+# Author: Steven Shiau <steven _at_ nchc org tw>, Ceasar Sun <ceasar _at_ clonezilla org>
 # Description: Program to reinstall grub on a MBR hard drive. This program is aimed to use the grub in the restored OS first, and if it fails, try to use the grub from the running OS (live CD, for example).
 
 #
@@ -486,6 +486,7 @@ if [ "$check_before_install" = "yes" ]; then
     echo "Found boot loader grub in the MBR of disk /dev/$grub_hd."
   fi
 fi
+
 # process the boot loader
 hd_img="$(mktemp -d /tmp/hd_img.XXXXXX)"
 mount $grub_partition $hd_img
@@ -536,6 +537,10 @@ if [ ! -d "$hd_img/boot/" ]; then
      elif [ -n "$(find $hd_img/boot/grub2/ -iname "*.mod" -print 2>/dev/null)" ]; then
        grub_ver_in_restored_os="2"
        grub2_boot_dir="/boot/grub2/"
+     elif [ -d "$hd_img/boot/grub2" -a -n "$(chroot $hd_img/ which grub2-install 2>/dev/null)" ]; then
+	# For OpenSUSE 42.1 , use grub2 vy " grub2-install" without *.mod 
+       grub_ver_in_restored_os="2"
+       grub2_boot_dir="/boot/grub2/"
      else
        grub_ver_in_restored_os="1"
      fi
@@ -567,6 +572,7 @@ if [ ! -d "$hd_img/boot/" ]; then
      else
        do_run_grub2_from_running_os
      fi
+
    else
      # grub version 1
      echo "Found grub 1 installed in the restored OS."
@@ -606,9 +612,14 @@ else
    elif [ -n "$(find $hd_img/boot/grub2/ -iname "*.mod" -print 2>/dev/null)" ]; then
      grub_ver_in_restored_os="2"
      grub2_boot_dir="/boot/grub2/"
+     elif [ -d "$hd_img/boot/grub2" -a -n "$(chroot $hd_img/ which grub2-install 2>/dev/null)" ]; then
+	# For OpenSUSE 42.1 , use grub2 vy " grub2-install" without *.mod 
+       grub_ver_in_restored_os="2"
+       grub2_boot_dir="/boot/grub2/"
    else
      grub_ver_in_restored_os="1"
    fi
+
    if [ "$grub_ver_in_restored_os" = "2" ]; then
      echo "Found grub 2 installed in the restored OS."
      if [ -z "$run_grub2_from_restored_os_mode" ]; then
