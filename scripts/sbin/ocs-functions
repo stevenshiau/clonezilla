@@ -4387,6 +4387,7 @@ get_existing_parts_image() {
      "nonenc")  list_des="$msg_choose_the_unenc_image_to_enc" ;;
      "enc")     list_des="$msg_choose_the_enc_image_to_decrypt" ;;
      "rest-unenc") list_des="$msg_choose_the_image_to_restore $msg_only_nonenc_is_shown" ;;
+     "checksum") list_des="$msg_choose_the_image_to_be_checked_for_checksum" ;;
      *)         list_des="$msg_choose_the_image_to_restore" ;;
    esac
 
@@ -4401,10 +4402,11 @@ get_existing_parts_image() {
      # only directory ..., not file
      [ ! -d "$imagedir/$file" ] && continue
      [ ! -f "$imagedir/$file/parts" -a ! -f "$imagedir/$file/disk" ] && continue
-     # When mode is nonenc or enc, we should skip some dirs.
+     # When mode is nonenc, enc or checksum, we should skip some dirs.
      case "$list_mode" in
        "nonenc"|"rest-unenc") [ -e "$imagedir/$file/ecryptfs.info" ] && continue ;;
        "enc")    [ ! -e "$imagedir/$file/ecryptfs.info" ] && continue ;;
+       "checksum")  [ -z "$(ls $imagedir/$file/*-*sum.info* 2>/dev/null)" ] && continue ;;
      esac
      if is_ecryptfs_img $imagedir/$file; then
        # Encrypted image
@@ -4428,8 +4430,8 @@ get_existing_parts_image() {
    done
    echo
 
-   if [ $numfiles -gt 0 ]; then
-     if [ $numfiles -lt $MAX_DIALOG_HEIGHT ]; then
+   if [ "$numfiles" -gt 0 ]; then
+     if [ "$numfiles" -lt "$MAX_DIALOG_HEIGHT" ]; then
        height="$numfiles"
      else
        height="$MAX_DIALOG_HEIGHT"
@@ -7018,6 +7020,21 @@ get_target_dir_name_when_converting_img() {
   target_image="$target_dir"
   [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
 } # end of get_target_dir_name_when_converting_img
+#
+get_target_dir_name_when_checking_img_checksum() {
+  # target_dir and ocsroot are gloable variables
+  local ANS_TMP
+  ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+  trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+  # get_existing_parts_image will search $imagedir
+  get_existing_parts_image $ANS_TMP checksum
+  # the return name will be only one image name.
+  # Note! We won't add leading $ocsroot in $target_dir, because when task_restoreparts do the real job later, it will add that.
+  target_dir="$(cat $ANS_TMP)"
+  # target_image is an important global variable, it's related to the PXE menu tag, and some other important thing.
+  target_image="$target_dir"
+  [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
+} # end of get_target_dir_name_when_checking_img_checksum
 #
 rm_tmp_cnvt_img() {
   # img_cnvt_flag is a global variable
