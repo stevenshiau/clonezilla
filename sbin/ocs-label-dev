@@ -82,7 +82,17 @@ fi
 fs="$(ocs-get-part-info $ocs_dev filesystem)"
 case  "$fs" in
   ext[234])  e2label $ocs_dev $ocs_label;;
-  vfat|fat*) fatlabel $ocs_dev $ocs_label;;
+  vfat|fat*) # FAT only allows 11 characters.
+	     if [ "$(echo -n "$ocs_label" | wc -c)" -gt 11 ]; then
+               # Truncate it to 11, must keep the last 4 characters, 
+	       # e.g. GGTrailer_DCP_01p1 -> GGTrail01p1
+	       ocs_label="${ocs_label:0:7}${ocs_label: -4}"
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	       echo "Warning! Too long for FAT! Truncate label as: $ocs_label"
+	       sleep 1
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	     fi
+	     fatlabel $ocs_dev $ocs_label;;
   ntfs)      ntfslabel $ocs_dev $ocs_label;;
   reiserfs)  reiserfstune --label $ocs_label $ocs_dev;;
   xfs)       xfs_admin -L $ocs_label $ocs_dev;;
