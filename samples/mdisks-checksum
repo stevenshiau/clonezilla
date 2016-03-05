@@ -179,13 +179,13 @@ do_mdisk_restore_task() {
   local img="$1"
   local dest_dsk="$2"
   rm -f /var/log/*sum-results.log
-  ocs-restore-mdisks $batch_opt -p "-g auto -k1 -icds -e1 auto -e2 -nogui -r -j2 -cmf -scr -p true" $img $dest_dsk
+  ocs-restore-mdisks $batch_opt -p "-g auto -k1 -icds -e1 auto -e2 -nogui -r -j2 -cmf -scr -p true" $img $dest_dsk | tee -a /var/log/${ocs}-${idsk}.log
   # (1) Put checksum file. Format: $image_name-$time (e.g. HOWL_09Oct15-171023.md5)
   # In image dir, it's like: sda1.files-md5sum.info.gz
   
   # (2) Label the partition, and put the inspection results of checksum to $ocsroot and / in every restored disk.
   for idsk in $dest_dsk; do 
-    echo "Searching for data partition(s)..." | tee --append $OCS_LOGFILE
+    echo "Searching for data partition(s)..." | tee -a /var/log/${ocs}-${idsk}.log
     BACKUP_DEVS=""
     get_known_partition_proc_format $idsk data
     target_parts="$BACKUP_DEVS"
@@ -197,13 +197,13 @@ do_mdisk_restore_task() {
       pt="$(get_part_number "$iprt")"
       initial_no="$(LC_ALL=C printf "%.2u" $initial_no)"  # e.g. 2 -> 02
       part_label=${part_label_prefix}${initial_no}p${pt}
-      echo "Labeling /dev/${idsk}${pt} as $part_label"
-      ocs-label-dev /dev/${idsk}${pt} $part_label
+      echo "Labeling /dev/${idsk}${pt} as $part_label" | tee -a /var/log/${ocs}-${idsk}.log
+      ocs-label-dev /dev/${idsk}${pt} $part_label | tee -a /var/log/${ocs}-${idsk}.log
   
-      cp -v /var/log/${iprt}-md5sum-results.log $ocsroot/${img}_${part_label}_md5_results.txt
-      mount /dev/$iprt $tmpd_dest
-      cp -v /var/log/${iprt}-md5sum-results.log $tmpd_dest/${img}_${part_label}_md5_results.txt
-      umount /dev/$iprt
+      cp -v /var/log/${iprt}-md5sum-results.log $ocsroot/${img}_${part_label}_md5_results.txt | tee -a /var/log/${ocs}-${idsk}.log
+      mount /dev/$iprt $tmpd_dest | tee -a /var/log/${ocs}-${idsk}.log
+      cp -v /var/log/${iprt}-md5sum-results.log $tmpd_dest/${img}_${part_label}_md5_results.txt | tee -a /var/log/${ocs}-${idsk}.log
+      umount /dev/$iprt | tee -a /var/log/${ocs}-${idsk}.log
       initial_no="$(echo "scale=0; $initial_no + 1" | bc)"
     done
     if [ -d "$tmpd_dest" -a "$(echo "$tmpd_dest" | grep -E /tmp/tmpd_dest\.)" ]; then
