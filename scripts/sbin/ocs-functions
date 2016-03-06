@@ -220,8 +220,36 @@ is_mbr_partitition_table_disk() {
   return $rt_code
 } # end of is_mbr_partitition_table_disk
 #
+wait_for_part_table_take_effect() {
+  local dsk_=${1#/dev/*} # Input is like /dev/sda1, so dev_ becomes sda1
+  for i in `seq 1 50`; do
+    echo -n "."
+    sleep 0.2
+    if [ -n "$(grep -Ew "${dsk_}[[:digit:]]+" /proc/partitions)" ]; then
+      # e.g. found sda1
+      break
+      echo
+    fi
+  done
+} # end of wait_for_part_table_take_effect
+#
 inform_kernel_partition_table_changed() {
   # Function to inform kernel the partition table has changed
+  local wait_for_part="yes"  # Default to wait for partition to be shown before timeout.
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -n|--no-wait-for-part)
+          shift
+          wait_for_part="no"
+          ;;
+      -*) echo "${0}: ${1}: invalid option" | tee --append ${OCS_LOGFILE} >&2
+          USAGE | tee --append ${OCS_LOGFILE} >& 2
+          echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+          [ "$save_restore_error_log" = "yes" ] && copy_error_log
+          exit 2 ;;
+      *)  break ;;
+    esac
+  done
   local ptype=$1  # e.g. mbr, gpt, or both. Actually mbr covers the gpt one,
   		  # but with "both" it's clearer.
   local tdisk=$2  # e.g. /dev/sda
@@ -237,26 +265,26 @@ inform_kernel_partition_table_changed() {
   echo -n "Informing the OS of partition table changes..."
   case "$ptype" in
   mbr|both)
-    # //NOTE// Put "blockdev --rereadpt $tdisk" as the last action, since for BSD partitions, partprobe does not know, and if it is the last one, kernel info (/proc/partitions) won't show any partitions. "sleep 1" is also required, otherwise we might see the error message: "BLKRRPART: Device or resource busy"
+    # //NOTE// Put "blockdev --rereadpt $tdisk" as the last action, since for BSD partitions, partprobe does not know, and if it is the last one, kernel info (/proc/partitions) won't show any partitions. "sleep 2" is also required, otherwise we might see the error message: "BLKRRPART: Device or resource busy"
     # //NOTE// util-linux >= 2.26 removes support for "sfdisk -R". Therefore we switched to "blockdev --rereadpt". Thanks to Ismael (razzziel _at_ users sf net) for reporting this.
     LC_ALL=C partprobe $tdisk
-    echo -n "."
-    sleep 1
     LC_ALL=C kpartx $tdisk &>/dev/null
-    echo -n "."
-    sleep 1
     LC_ALL=C blockdev --rereadpt $tdisk
-    echo -n "."
-    sleep 1
+    sleep 2
+    if [ "$wait_for_part" = "yes" ]; then
+      wait_for_part_table_take_effect $tdisk
+    fi
     ;;
   gpt)
-    # Since sfdisk does not work for gpt, skip it.
+    # ToDo: Merge the codes fo gpt and mbr when we drop the support for util-linux <=2.25 someday
+    # by enable blockdev --rereadpt here.
     LC_ALL=C partprobe $tdisk
-    echo -n "."
-    sleep 1
     LC_ALL=C kpartx $tdisk &>/dev/null
-    echo -n "."
-    sleep 1
+    #LC_ALL=C blockdev --rereadpt $tdisk
+    sleep 2
+    if [ "$wait_for_part" = "yes" ]; then
+      wait_for_part_table_take_effect $tdisk
+    fi
     ;;
     *)
     echo -n " Not MBR or GPT type of device. Skipping informing kernel."
@@ -2821,7 +2849,7 @@ clean_mbr_gpt_part_table() {
     echo "Trying to clean the MBR and GPT partition table on the destination disk first: $dsk_dev" | tee --append ${OCS_LOGFILE}
     LC_ALL=C sgdisk --zap-all $dsk_dev &>/dev/null
     sleep 1
-    inform_kernel_partition_table_changed both $dsk_dev | tee --append ${OCS_LOGFILE}
+    inform_kernel_partition_table_changed -n both $dsk_dev | tee --append ${OCS_LOGFILE}
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "Missing program \"sgdisk\"! Without it, no way to clean the MBR and GPT partition table on disk \"$dsk_dev\"" | tee --append ${OCS_LOGFILE}
@@ -11674,8 +11702,9 @@ replace_disk_name_stdin(){
 gen_chksum_for_files_in_dev() {
   local sum_part="${1#/dev/*}"  # partition or LV name, e.g. sda1
   local tgt_dir="$2"   # target dir, full path, like /home/partimag/my-img
-  local sum_part_tmpd rc gz_stdin_cmd gunz_cmd rc_chk
+  local sum_part_tmpd rc gz_stdin_cmd gunz_cmd rc_chk part_reg_f_list reg_file_lines
   sum_part_tmpd="$(LC_ALL=C mktemp -d /tmp/chksum_tmpd.XXXXXX)"
+  part_reg_f_list="$(LC_ALL=C mktemp /tmp/part_f_temp.XXXXXX)"
   # Generate checksum
   mount -o ro /dev/$sum_part $sum_part_tmpd
   rc=$?
@@ -11692,8 +11721,10 @@ gen_chksum_for_files_in_dev() {
     echo "$msg_this_might_take_some_time" | tee --append ${OCS_LOGFILE}
     # Here we do not put the output file directly, instead we compress it to reduce the I/O.
     # In case if the image repository is network file system, like NFS. It will be very slow.
-    LC_ALL=C find $sum_part_tmpd -type f -exec \
-    $chksum_cmd_for_files_in_dev "{}" \; | pv -tbf | $gz_stdin_cmd \
+    LC_ALL=C find $sum_part_tmpd -type f -print > $part_reg_f_list
+    reg_file_lines="$(LC_ALL=C cat $part_reg_f_list | wc -l)"
+    cat $part_reg_f_list | xargs $chksum_cmd_for_files_in_dev \
+    | pv -peltf -s $reg_file_lines | $gz_stdin_cmd \
     > $tgt_dir/${sum_part}.files-${chksum_cmd_for_files_in_dev}.info.gz \
     | tee --append ${OCS_LOGFILE}
     rc_chk="${PIPESTATUS[0]}"
@@ -11712,6 +11743,9 @@ gen_chksum_for_files_in_dev() {
   fi
   if [ -d "$sum_part_tmpd" ]; then
     rmdir $sum_part_tmpd
+  fi
+  if [ -e "$part_reg_f_list" ]; then
+    rm -f $part_reg_f_list
   fi
   return $rc_chk
 } # end of gen_chksum_for_files_in_dev
