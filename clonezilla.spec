@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.19
+Version:	3.20.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 06 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.20-drbl1
+- Improve efficiency for generating checksum and show better progress output.
+- Add a better mechanism to wait for kernel showing partition after paritition table is created.
+
 * Sat Mar 05 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.19-drbl1
 - ocs-match-checksum: Show only image with checksum, log more outputs, and run checksum inspection for multiple disks in parallel.
 - Allow max 11 characters for vfat in ocs-label-dev.
