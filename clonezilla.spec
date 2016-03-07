@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.20
+Version:	3.20.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.19.8, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.87, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.19.9, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.87, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Mar 07 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.21-drbl1
+- Update related programs to fit that the Clonezilla live arch in stable release now only supports i686, no more i586.
+
 * Sun Mar 06 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.20-drbl1
 - Improve efficiency for generating checksum and show better progress output.
 - Add a better mechanism to wait for kernel showing partition after paritition table is created.
