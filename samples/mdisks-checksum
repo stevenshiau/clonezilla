@@ -27,7 +27,7 @@ initial_no_def="1"
 
 # Functions
 USAGE() {
-  echo "$ocs - To save or restore disk with checksum mechanism enabled"
+  echo "$ocs - To save, restore or check disk with checksum mechanism enabled"
   echo "Usage:"
   echo "To run $ocs:"
   echo "$ocs [OPTION] MODE IMAGE_NAME DEVICE"
@@ -36,17 +36,20 @@ USAGE() {
   echo "-i, --initial-no NO  Set the initial number for the label, and it is appended to the prefix assigned by option -p or --label-prefix. By default the initial number is set as $initial_no_def. e.g. my-image_01, my-image_02..."
   echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone or Partimage, use text only. In this program, only works for saving mode, not restoring mode because for multiple disks deployment, TUI is always off."
   echo "-p, --label-prefix PREFIX  Set the label prefix for the destination partitions when restoring. This is only for mode 'restore', and it will be used to create a sequential label names for all the partitions on destination disks, like my-image_01p1, my-image_01p2 for disk /dev/sda1, and /dev/sda2, respectively."
-  echo "MODE is for saving or restoring. Available: save, restore."
+  echo "MODE is for saving, restoring or checking. Available: save, restore, check."
   echo "IMAGE_NAME is the image dir name, not absolute path"
   echo "DEVICE is the device name, e.g. sda, sda... When MODE is 'save', only one disk is allowed. While when MODE is 'restore', more than one disks are accetable."
+  echo "If IMAGE_NAME and DEVICE are not assigned. An dialog menu will be shown to allow inputing or choosing."
   echo "Ex:"
   echo "To save disk /dev/sda as the image \"my-image\" with checksum for all files generated, run"
   echo "   $ocs save my-image sda"
   echo "To restore the image \"my-image\" to disks /dev/sda, /dev/sdb and inspect the checksum for all files. Also label the destination partition with prefix 'Tiger', run"
   echo "   $ocs -p Tiger_ restore my-image sda sdb"
+  echo "To inspect the checksum file in the image \"my-image\" to the files in disks /dev/sda, /dev/sdb, run"
+  echo "   $ocs check my-image sda sdb"
   echo
 } # end of USAGE
-do_save_ask_interactive_image_dev_if_assigned() {
+do_save_mode_ask_image_dev_if_required() {
   # output: img_name, disk
   if [ "$img_name" = "ask_user" ]; then
     get_target_dir_name_when_saving  # get $target_dir
@@ -57,9 +60,9 @@ do_save_ask_interactive_image_dev_if_assigned() {
     get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
     disk="$(select_VG "$target_hd")"
   fi
-} # end of do_save_ask_interactive_image_dev_if_assigned
+} # end of do_save_mode_ask_image_dev_if_required
 #
-do_restore_ask_interactive_image_dev_if_assigned() {
+do_restore_or_check_mode_ask_image_dev_if_required() {
   # output: img_name, disk
   if [ "$img_name" = "ask_user" ]; then
     get_target_dir_name_when_checking_img_restorable # output: target_dir
@@ -77,7 +80,7 @@ do_restore_ask_interactive_image_dev_if_assigned() {
     get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
     disk="$dev_list"
   fi
-} # end of do_restore_ask_interactive_image_dev_if_assigned
+} # end of do_restore_or_check_mode_ask_image_dev_if_required
 #
 do_save_mode_check() {
   echo "Checking input parameters for saving mode..."
@@ -123,17 +126,19 @@ do_save_mode_check() {
   fi
 } # end of do_save_mode_check
 #
-do_restore_mode_check() {
+do_restore_or_check_mode_check() {
   # Check if image exists
   # Check if destination disk exists
-  # Show warning if no part_label_prefix
-  if [ -z "$part_label_prefix" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "No label prefix for destination disk(s)."
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    if [ "$ocs_batch_mode" != "on" ]; then
-      echo -n "$msg_press_enter_to_continue..."
-      read
+  # Show warning if no part_label_prefix when mode is restore, but skip it when mode is check.
+  if [ "$task_mode" = "restore" ]; then
+    if [ -z "$part_label_prefix" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "No label prefix for destination disk(s)."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      if [ "$ocs_batch_mode" != "on" ]; then
+        echo -n "$msg_press_enter_to_continue..."
+        read
+      fi
     fi
   fi
   if [ ! -d "$ocsroot/$img_name" ]; then
@@ -156,30 +161,14 @@ do_restore_mode_check() {
       exit 1
     fi
   done
-} # end of do_restore_mode_check
-#
-cvrt_char_to_dig() {
-  # Convert a -> 1, b ->2
-  # It can be used for "sda" -> "disk01"
-  # TODO: What about /dev/sdaa?
-  local lcha="${1#/dev/*}"
-  local label_="$2"
-  local init_no_="$3"
-  local dig_
-  [ -z "$lcha" ] && return 1
-  lcha="${lcha#sd}"  # sda -> a
-  # Convert to ASCII number by -60
-  dig_="$(LC_ALL=C printf "%d" "'$lcha")"
-  dig_="$(($dig_ - 96 + ${init_no_} - 1))"
-  dig_="$(LC_ALL=C printf "%.2u" $dig_)"  # e.g. 2 -> 02
-  echo "${label_}${dig_}"
-} # end of cvrt_char_to_dig
+} # end of do_restore_or_check_mode_check
 #
 do_mdisk_restore_task() {
   local img="$1"
   local dest_dsk="$2"
+  local tmpd_dest
   rm -f /var/log/*sum-results.log
-  ocs-restore-mdisks $batch_opt -p "-g auto -k1 -icds -e1 auto -e2 -nogui -r -j2 -cmf -scr -p true" $img $dest_dsk | tee -a /var/log/${ocs}-${idsk}.log
+  ocs-restore-mdisks $batch_opt -p "-g auto -k1 -icds -e1 auto -e2 -nogui -r -j2 -cmf -scr -p true" $img $dest_dsk | tee -a /var/log/${ocs}.log
   # (1) Put checksum file. Format: $image_name-$time (e.g. HOWL_09Oct15-171023.md5)
   # In image dir, it's like: sda1.files-md5sum.info.gz
   
@@ -192,8 +181,8 @@ do_mdisk_restore_task() {
     # Strip the single white space which should be nothing. Thanks to Borksoft.
     target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
     tmpd_dest="$(mktemp -d /tmp/tmpd_dest.XXXXXX)"
+    trap "[ -d "$tmpd_dest" ] && umount $tmpd_dest &>/dev/null" HUP INT QUIT TERM EXIT
     for iprt in $target_parts; do
-      #dsk_label="$(cvrt_char_to_dig $idsk $part_label_prefix $initial_no)"
       pt="$(get_part_number "$iprt")"
       initial_no="$(LC_ALL=C printf "%.2u" $initial_no)"  # e.g. 2 -> 02
       part_label=${part_label_prefix}${initial_no}p${pt}
@@ -211,6 +200,42 @@ do_mdisk_restore_task() {
     fi
   done
 } # end of do_mdisk_restore_task
+#
+do_mdisk_checksum_match_task() {
+  local img="$1"
+  local dest_dsk="$2"
+  local tmpd_dest LABEL
+  rm -f /var/log/*sum-results.log
+  ocs-match-checksum $img $dest_dsk | tee -a /var/log/${ocs}.log
+  # (1) Put checksum file. Format: $image_name-$time (e.g. HOWL_09Oct15-171023.md5)
+  # In image dir, it's like: sda1.files-md5sum.info.gz
+  
+  # (2) Label the partition, and put the inspection results of checksum to $ocsroot and / in every restored disk.
+  for idsk in $dest_dsk; do 
+    echo "Searching for data partition(s)..." | tee -a /var/log/${ocs}-${idsk}.log
+    BACKUP_DEVS=""
+    get_known_partition_proc_format $idsk data
+    target_parts="$BACKUP_DEVS"
+    # Strip the single white space which should be nothing. Thanks to Borksoft.
+    target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
+    tmpd_dest="$(mktemp -d /tmp/tmpd_dest.XXXXXX)"
+    trap "[ -d "$tmpd_dest" ] && umount $tmpd_dest &>/dev/null" HUP INT QUIT TERM EXIT
+    for iprt in $target_parts; do
+      # Obtain the label
+      LC_ALL=C blkid -o export /dev/$iprt > $tmpd_dest/blkid_output
+      LABEL=""
+      . $tmpd_dest/blkid_output  # Obtain "$LABEL"
+  
+      cp -v /var/log/${iprt}-md5sum-results.log $ocsroot/${img}_${LABEL}_md5_results.txt | tee -a /var/log/${ocs}-${idsk}.log
+      mount /dev/$iprt $tmpd_dest | tee -a /var/log/${ocs}-${idsk}.log
+      cp -v /var/log/${iprt}-md5sum-results.log $tmpd_dest/${img}_${LABEL}_md5_results.txt | tee -a /var/log/${ocs}-${idsk}.log
+      umount /dev/$iprt | tee -a /var/log/${ocs}-${idsk}.log
+    done
+    if [ -d "$tmpd_dest" -a "$(echo "$tmpd_dest" | grep -E /tmp/tmpd_dest\.)" ]; then
+      rm -rf $tmpd_dest
+    fi
+  done
+} # end of do_mdisk_checksum_match_task
 #
 do_mdisk_save_task() {
   local img="$1"
@@ -319,7 +344,7 @@ if [ -z "$task_mode" ]; then
 else
   # Check the input
   case "$task_mode" in
-    "save"|"restore") true;;
+    "save"|"restore"|"check") true;;
     *)  show_unknown_mode_then_exit;;
   esac
 fi
@@ -330,8 +355,9 @@ imagedir="$ocsroot"
 [ -z "$disk" ] && disk="ask_user"
 
 case "$task_mode" in
-  save)    do_save_ask_interactive_image_dev_if_assigned;;
-  restore) do_restore_ask_interactive_image_dev_if_assigned;;
+  save)    do_save_mode_ask_image_dev_if_required;;
+  restore) do_restore_or_check_mode_ask_image_dev_if_required;;
+  check)   do_restore_or_check_mode_ask_image_dev_if_required;;
 esac
 
 # check if the device exists
@@ -346,8 +372,11 @@ case "$task_mode" in
   save)    do_save_mode_check 
            do_mdisk_save_task "$img_name" "$disk"
 	   ;;
-  restore) do_restore_mode_check
+  restore) do_restore_or_check_mode_check
            do_mdisk_restore_task "$img_name" "$disk"
+	   ;;
+  check)   do_restore_or_check_mode_check
+           do_mdisk_checksum_match_task "$img_name" "$disk"
 	   ;;
   *)       show_unknown_mode_then_exit
 	   ;;
