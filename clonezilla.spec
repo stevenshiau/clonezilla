@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.22
+Version:	3.20.23
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Mar 08 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.23-drbl1
+- Bug fixed: failed to handle file name with white space in function gen_chksum_for_files_in_dev of ocs-functions.
+- The file path in *.md5 should only be replaced with CHKSUM_TMPD when it's not empty by mdisks-checksum.
+
 * Mon Mar 07 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.22-drbl1
 - Trap the mount point for checksum mechanism to unmount it when exiting checksum mechanism.
 - Add another mode "check" to the sample file mdisks-checksum.
