@@ -11698,6 +11698,26 @@ replace_disk_name_stdin(){
   esac
 } # end of replace_disk_name_stdin
 #
+get_chksum_info_from_img() {
+  # Function to get the checksum (md5sum, sha1sum, sha256sum...) from image dir.
+  local img_f_path_="$1" # target dir, full path, like /home/partimag/my-img
+  local prt_="$2"
+  local csumf_basename_ 
+  # chksum_file and chksum_cmd are global variables to be returned.
+  # Reset chksum_file and chksum_cmd
+  chksum_file=""
+  chksum_cmd=""
+  chksum_file="$(LC_ALL=C find $img_f_path_ -name "${prt_}.files-*sum.info.gz" -print)"
+  if [ -n "${chksum_file}" ]; then
+    csumf_basename_="$(basename ${chksum_file})"
+    if [ -n "$(echo $csumf_basename_ | grep -Eo -- ".files-.*sum.info.gz")" ]; then
+      # checksum file is like: sda1.files-md5sum.info.gz, sda1.files-sha512sum.info.gz
+      # We want to extract the "md5sum" or "sha512sum" as command to do the checksum.
+      chksum_cmd="$(echo $csumf_basename_ | sed -r -e "s/^${prt_}\.//g" -e "s/files-//g" -e "s/.info.gz//g")"
+    fi
+  fi
+} # end of get_chksum_info_from_img
+#
 gen_chksum_for_files_in_dev() {
   local sum_part="${1#/dev/*}"  # partition or LV name, e.g. sda1
   local tgt_dir="$2"   # target dir, full path, like /home/partimag/my-img
@@ -11717,12 +11737,13 @@ gen_chksum_for_files_in_dev() {
       gunz_cmd="gzip -d"
     fi
     # chksum_cmd_for_files_in_dev is from drbl-ocs.conf.
-    echo "Generating checksum with $chksum_cmd_for_files_in_dev for files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
+    echo "Generating $chksum_cmd_for_files_in_dev checksums for files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
     echo "$msg_this_might_take_some_time" | tee --append ${OCS_LOGFILE}
     # Here we do not put the output file directly, instead we compress it to reduce the I/O.
     # In case if the image repository is network file system, like NFS. It will be very slow.
-    LC_ALL=C find $sum_part_tmpd -type f -print > $part_reg_f_list
+    LC_ALL=C find $sum_part_tmpd -type f -print | pv -p -t -N "Searching files in /dev/$sum_part" > $part_reg_f_list
     reg_file_lines="$(LC_ALL=C cat $part_reg_f_list | wc -l)"
+    echo "Creating checksums for totally $reg_file_lines files in /dev/$sum_part..."
     cat $part_reg_f_list | xargs -d '\n' $chksum_cmd_for_files_in_dev \
     | pv -peltf -s $reg_file_lines | $gz_stdin_cmd \
     > $tgt_dir/${sum_part}.files-${chksum_cmd_for_files_in_dev}.info.gz \
@@ -11756,17 +11777,10 @@ inspect_chksum_for_files_in_dev() {
   local chksum_file csumf_basename chksum_cmd sum_part_tmpd rc rc_chk
   local chksum_file_lines
 
-  chksum_file="$(unalias ls &>/dev/null; ls $tgt_dir/${sum_part}.files-*sum.info.gz 2>/dev/null)"
-  if [ -n "${chksum_file}" ]; then
-    csumf_basename="$(basename ${chksum_file})"
-    if [ -n "$(echo $csumf_basename | grep -Eo -- ".files-.*sum.info.gz")" ]; then
-      # checksum file is like: sda1.files-md5sum.info.gz, sda1.files-sha512sum.info.gz
-      # We want to extract the "md5sum" or "sha512sum" as command to do the checksum.
-      chksum_cmd="$(echo $csumf_basename | sed -r -e "s/^${sum_part}\.//g" -e "s/files-//g" -e "s/.info.gz//g")"
-    fi
-  else
+  get_chksum_info_from_img $tgt_dir $sum_part  # output: chksum_cmd, chksum_file
+  if [ -z "${chksum_cmd}" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "No any checksum file for files in dev $sum_part was found in image dir $tgt_dir." | tee --append ${OCS_LOGFILE}
+    echo "No any checksum file for files in /dev/$sum_part was found in image dir $tgt_dir." | tee --append ${OCS_LOGFILE}
     echo "Skip checking." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     return 2
