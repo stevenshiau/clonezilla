@@ -11701,19 +11701,20 @@ replace_disk_name_stdin(){
 get_chksum_info_from_img() {
   # Function to get the checksum (md5sum, sha1sum, sha256sum...) from image dir.
   local img_f_path_="$1" # target dir, full path, like /home/partimag/my-img
-  local prt_="$2"
+  local prt_="$2" # partition, e.g. sda1. Or "*" means any of them.
   local csumf_basename_ 
   # chksum_file and chksum_cmd are global variables to be returned.
   # Reset chksum_file and chksum_cmd
   chksum_file=""
   chksum_cmd=""
-  chksum_file="$(LC_ALL=C find $img_f_path_ -name "${prt_}.files-*sum.info.gz" -print)"
+  # If "*" used for partition name, when multiple files exist, choose the 1st ne.
+  chksum_file="$(LC_ALL=C find $img_f_path_ -name "${prt_}.files-*sum.info.gz" -print | head -n 1)"
   if [ -n "${chksum_file}" ]; then
     csumf_basename_="$(basename ${chksum_file})"
     if [ -n "$(echo $csumf_basename_ | grep -Eo -- ".files-.*sum.info.gz")" ]; then
       # checksum file is like: sda1.files-md5sum.info.gz, sda1.files-sha512sum.info.gz
       # We want to extract the "md5sum" or "sha512sum" as command to do the checksum.
-      chksum_cmd="$(echo $csumf_basename_ | sed -r -e "s/^${prt_}\.//g" -e "s/files-//g" -e "s/.info.gz//g")"
+      chksum_cmd="$(echo $csumf_basename_ | grep -E -o "files-.*sum" | sed -r -e "s/files-//g")"
     fi
   fi
 } # end of get_chksum_info_from_img
