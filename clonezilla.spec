@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.25
+Version:	3.20.27
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Mar 09 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.27-drbl1
+- Add option -n to mdisks-checksum.
+- Update prompt about checksum in ocs-functions.
+
+* Wed Mar 09 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.26-drbl1
+- Program mdisks-checksum failed to copy checksum log files due to function get_chksum_info_from_img did not work in some cases.
+
 * Wed Mar 09 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.25-drbl1
 - Add option "-i" for fatresize in ocs-resize-part. This seems to avoid an issue about resized file system can not be read on MS Windows, while it is OK on GNU/Linux.
 - By default no parallel jobs for ocs-match-checksum. An option "-p" can be used to enable that.
