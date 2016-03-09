@@ -13,6 +13,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
 # Settings
+ocs_parallel_mode="no"
 
 #
 USAGE() {
@@ -21,6 +22,7 @@ USAGE() {
     echo "To run $ocs:"
     echo "$ocs IMAGE DEVICE"
     echo "Options:"
+    echo "-p, --parallel  Run the checksum inspection in parallel. The inspection for all partitions in a disk will be run in parallel. Maybe it's not a good idea if too many partitions and it might casue too many I/Os then less effiency."
     echo "IMAGE is the image name, e.g. Debian-Jessie. It must be saved by the option -gmf"
     echo "Device is the block device name. It can be a disk name or partition name, e.g. sda, sdc1"
     echo "Ex:"
@@ -39,6 +41,7 @@ ocs=`basename $ocs_file`
 #
 while [ $# -gt 0 ]; do
  case "$1" in
+   -p|--parallel) ocs_parallel_mode="yes"; shift;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
            exit 2 ;;
@@ -116,6 +119,13 @@ for idev in $ocs_chk_dev; do
 done
 
 #
+case "$ocs_parallel_mode" in
+  yes) go_bg="&";;
+  *)   go_bg="";;
+esac
+  
+
+#
 src_disk="$(cat $ocsroot/$ocs_chk_img_name/disk)"
 
 #
@@ -138,7 +148,8 @@ for idev in $ocs_chk_dev; do
     fi
     for ipartition in $target_parts; do
       echo $msg_delimiter_star_line | tee -a /var/log/${ocs}-${idev}.log
-      inspect_chksum_for_files_in_dev /dev/$ipartition "$target_dir_fullpath" |  tee -a /var/log/${ocs}-${idev}.log &
+      inspect_cmd="inspect_chksum_for_files_in_dev /dev/$ipartition "$target_dir_fullpath" |  tee -a /var/log/${ocs}-${idev}.log $go_bg"
+      eval $inspect_cmd
       echo $msg_delimiter_star_line | tee -a /var/log/${ocs}-${idev}.log
     done
   else
