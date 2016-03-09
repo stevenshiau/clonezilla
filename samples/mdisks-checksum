@@ -24,6 +24,7 @@ ocs_batch_mode="off"
 nogui="off"   
 # Initial number for labeling the disk, default is from 1, e.g. disk01, disk02
 initial_no_def="1"
+ocs_parallel_mode="no"
 
 # Functions
 USAGE() {
@@ -35,6 +36,7 @@ USAGE() {
   echo "-b, --batch-mode   Run image checking in batch mode"
   echo "-i, --initial-no NO  Set the initial number for the label, and it is appended to the prefix assigned by option -p or --label-prefix. By default the initial number is set as $initial_no_def. e.g. my-image_01, my-image_02..."
   echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone or Partimage, use text only. In this program, only works for saving mode, not restoring mode because for multiple disks deployment, TUI is always off."
+  echo "-r, --parallel  Run the checksum inspection in parallel. The inspection for all partitions in a disk will be run in parallel. Maybe it's not a good idea if too many partitions and it might casue too many I/Os then less effiency."
   echo "-p, --label-prefix PREFIX  Set the label prefix for the destination partitions when restoring. This is only for mode 'restore', and it will be used to create a sequential label names for all the partitions on destination disks, like my-image_01p1, my-image_01p2 for disk /dev/sda1, and /dev/sda2, respectively."
   echo "MODE is for saving, restoring or checking. Available: save, restore, check."
   echo "IMAGE_NAME is the image dir name, not absolute path"
@@ -65,7 +67,7 @@ do_save_mode_ask_image_dev_if_required() {
 do_restore_or_check_mode_ask_image_dev_if_required() {
   # output: img_name, disk
   if [ "$img_name" = "ask_user" ]; then
-    get_target_dir_name_when_checking_img_restorable # output: target_dir
+    get_target_dir_name_when_checking_img_checksum # output: target_dir
     img_name="$target_dir"
   fi
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -192,7 +194,7 @@ do_mdisk_restore_task() {
       # Find the checksum 
       # Output for get_chksum_info_from_img: chksum_cmd, chksum_file
       get_chksum_info_from_img "$ocsroot/$img" "$iprt" 
-      if [ -z "$checksum_cmd" ]; then
+      if [ -z "$chksum_cmd" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "No any checksum file for files in /dev/$iprt was found in image dir $ocsroot/$img." | tee --append ${OCS_LOGFILE}
         echo "No way to copy checksum to $ocsroot and /dev/$iprt." | tee --append ${OCS_LOGFILE}
@@ -200,15 +202,15 @@ do_mdisk_restore_task() {
         continue
       fi
   
-      if [ -e "/var/log/${iprt}-${checksum_cmd}-results.log" ]; then
-        cp /var/log/${iprt}-${checksum_cmd}-results.log $ocsroot/${img}_${part_label}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
+      if [ -e "/var/log/${iprt}-${chksum_cmd}-results.log" ]; then
+        cp /var/log/${iprt}-${chksum_cmd}-results.log $ocsroot/${img}_${part_label}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
         mount /dev/$iprt $tmpd_dest | tee -a /var/log/${ocs}-${idsk}.log
-        cp /var/log/${iprt}-${checksum_cmd}-results.log $tmpd_dest/${img}_${part_label}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
+        cp /var/log/${iprt}-${chksum_cmd}-results.log $tmpd_dest/${img}_${part_label}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
         umount /dev/$iprt | tee -a /var/log/${ocs}-${idsk}.log
       else
         fs="$(LC_ALL=C ocs-get-part-info /dev/${iprt} fs)"
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "File /var/log/${iprt}-${checksum_cmd}-results.log not found." | tee -a /var/log/${ocs}-${idsk}.log
+        echo "File /var/log/${iprt}-${chksum_cmd}-results.log not found." | tee -a /var/log/${ocs}-${idsk}.log
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 	echo "Maybe the file system \"$fs\" in ${iprt} is not supported by Linux kernel?" | tee -a /var/log/${ocs}-${idsk}.log
       fi
@@ -225,7 +227,7 @@ do_mdisk_checksum_match_task() {
   local dest_dsk="$2"
   local tmpd_dest LABEL
   rm -f /var/log/*sum-results.log
-  ocs-match-checksum $img $dest_dsk | tee -a /var/log/${ocs}.log
+  ocs-match-checksum $parallel_opt $img $dest_dsk | tee -a /var/log/${ocs}.log
   # (1) Put checksum file. Format: $image_name-$time (e.g. HOWL_09Oct15-171023.md5)
   # In image dir, it's like: sda1.files-md5sum.info.gz
   
@@ -248,22 +250,22 @@ do_mdisk_checksum_match_task() {
       # Find the checksum
       # Output for get_chksum_info_from_img: chksum_cmd, chksum_file
       get_chksum_info_from_img "$ocsroot/$img" "$iprt" 
-      if [ -z "$checksum_cmd" ]; then
+      if [ -z "$chksum_cmd" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "No any checksum file for files in /dev/$iprt was found in image dir $ocsroot/$img." | tee --append ${OCS_LOGFILE}
         echo "No way to copy checksum to $ocsroot and /dev/$iprt." | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         continue
       fi
-      if [ -e "/var/log/${iprt}-${checksum_cmd}-results.log" ]; then
-        cp /var/log/${iprt}-${checksum_cmd}-results.log $ocsroot/${img}_${LABEL}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
+      if [ -e "/var/log/${iprt}-${chksum_cmd}-results.log" ]; then
+        cp /var/log/${iprt}-${chksum_cmd}-results.log $ocsroot/${img}_${LABEL}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
         mount /dev/$iprt $tmpd_dest | tee -a /var/log/${ocs}-${idsk}.log
-        cp /var/log/${iprt}-${checksum_cmd}-results.log $tmpd_dest/${img}_${LABEL}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
+        cp /var/log/${iprt}-${chksum_cmd}-results.log $tmpd_dest/${img}_${LABEL}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
         umount /dev/$iprt | tee -a /var/log/${ocs}-${idsk}.log
       else
         fs="$(LC_ALL=C ocs-get-part-info /dev/${iprt} fs)"
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "File /var/log/${iprt}-${checksum_cmd}-results.log not found." | tee -a /var/log/${ocs}-${idsk}.log
+        echo "File /var/log/${iprt}-${chksum_cmd}-results.log not found." | tee -a /var/log/${ocs}-${idsk}.log
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 	echo "Maybe the file system \"$fs\" in /dev/${iprt} is not supported by Linux kernel? Or there are no any regular files in /dev/${iprt}?" | tee -a /var/log/${ocs}-${idsk}.log
       fi
@@ -330,6 +332,7 @@ while [ $# -gt 0 ]; do
            # -nogui is for backward compatable, better to use --nogui
            nogui="on"
            ;;
+   -r|--parallel) ocs_parallel_mode="yes"; shift;;
    -p|--label-prefix)
            # overwrite the ocsroot in drbl.conf
            shift; 
@@ -365,6 +368,11 @@ esac
 case "$nogui" in
   on)  nogui_opt="-nogui";;
   off) nogui_opt="";;
+esac
+#
+case "$ocs_parallel_mode" in
+  yes) parallel_opt="-p";;
+  *)   parallel_opt="";;
 esac
 [ -z "$initial_no" ] && initial_no=$initial_no_def
 
