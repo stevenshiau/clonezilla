@@ -188,11 +188,30 @@ do_mdisk_restore_task() {
       part_label=${part_label_prefix}${initial_no}p${pt}
       echo "Labeling /dev/${idsk}${pt} as $part_label" | tee -a /var/log/${ocs}-${idsk}.log
       ocs-label-dev /dev/${idsk}${pt} $part_label | tee -a /var/log/${ocs}-${idsk}.log
+
+      # Find the checksum 
+      # Output for get_chksum_info_from_img: chksum_cmd, chksum_file
+      get_chksum_info_from_img "$ocsroot/$img" "$iprt" 
+      if [ -z "$checksum_cmd" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "No any checksum file for files in /dev/$iprt was found in image dir $ocsroot/$img." | tee --append ${OCS_LOGFILE}
+        echo "No way to copy checksum to $ocsroot and /dev/$iprt." | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        continue
+      fi
   
-      cp -v /var/log/${iprt}-md5sum-results.log $ocsroot/${img}_${part_label}_md5_results.txt | tee -a /var/log/${ocs}-${idsk}.log
-      mount /dev/$iprt $tmpd_dest | tee -a /var/log/${ocs}-${idsk}.log
-      cp -v /var/log/${iprt}-md5sum-results.log $tmpd_dest/${img}_${part_label}_md5_results.txt | tee -a /var/log/${ocs}-${idsk}.log
-      umount /dev/$iprt | tee -a /var/log/${ocs}-${idsk}.log
+      if [ -e "/var/log/${iprt}-${checksum_cmd}-results.log" ]; then
+        cp /var/log/${iprt}-${checksum_cmd}-results.log $ocsroot/${img}_${part_label}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
+        mount /dev/$iprt $tmpd_dest | tee -a /var/log/${ocs}-${idsk}.log
+        cp /var/log/${iprt}-${checksum_cmd}-results.log $tmpd_dest/${img}_${part_label}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
+        umount /dev/$iprt | tee -a /var/log/${ocs}-${idsk}.log
+      else
+        fs="$(LC_ALL=C ocs-get-part-info /dev/${iprt} fs)"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "File /var/log/${iprt}-${checksum_cmd}-results.log not found." | tee -a /var/log/${ocs}-${idsk}.log
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	echo "Maybe the file system \"$fs\" in ${iprt} is not supported by Linux kernel?" | tee -a /var/log/${ocs}-${idsk}.log
+      fi
       initial_no="$(echo "scale=0; $initial_no + 1" | bc)"
     done
     if [ -d "$tmpd_dest" -a "$(echo "$tmpd_dest" | grep -E /tmp/tmpd_dest\.)" ]; then
@@ -226,10 +245,28 @@ do_mdisk_checksum_match_task() {
       LABEL=""
       . $tmpd_dest/blkid_output  # Obtain "$LABEL"
   
-      cp -v /var/log/${iprt}-md5sum-results.log $ocsroot/${img}_${LABEL}_md5_results.txt | tee -a /var/log/${ocs}-${idsk}.log
-      mount /dev/$iprt $tmpd_dest | tee -a /var/log/${ocs}-${idsk}.log
-      cp -v /var/log/${iprt}-md5sum-results.log $tmpd_dest/${img}_${LABEL}_md5_results.txt | tee -a /var/log/${ocs}-${idsk}.log
-      umount /dev/$iprt | tee -a /var/log/${ocs}-${idsk}.log
+      # Find the checksum
+      # Output for get_chksum_info_from_img: chksum_cmd, chksum_file
+      get_chksum_info_from_img "$ocsroot/$img" "$iprt" 
+      if [ -z "$checksum_cmd" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "No any checksum file for files in /dev/$iprt was found in image dir $ocsroot/$img." | tee --append ${OCS_LOGFILE}
+        echo "No way to copy checksum to $ocsroot and /dev/$iprt." | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        continue
+      fi
+      if [ -e "/var/log/${iprt}-${checksum_cmd}-results.log" ]; then
+        cp /var/log/${iprt}-${checksum_cmd}-results.log $ocsroot/${img}_${LABEL}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
+        mount /dev/$iprt $tmpd_dest | tee -a /var/log/${ocs}-${idsk}.log
+        cp /var/log/${iprt}-${checksum_cmd}-results.log $tmpd_dest/${img}_${LABEL}_md5_results.txt 2>&1 | tee -a /var/log/${ocs}-${idsk}.log
+        umount /dev/$iprt | tee -a /var/log/${ocs}-${idsk}.log
+      else
+        fs="$(LC_ALL=C ocs-get-part-info /dev/${iprt} fs)"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "File /var/log/${iprt}-${checksum_cmd}-results.log not found." | tee -a /var/log/${ocs}-${idsk}.log
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	echo "Maybe the file system \"$fs\" in /dev/${iprt} is not supported by Linux kernel? Or there are no any regular files in /dev/${iprt}?" | tee -a /var/log/${ocs}-${idsk}.log
+      fi
     done
     if [ -d "$tmpd_dest" -a "$(echo "$tmpd_dest" | grep -E /tmp/tmpd_dest\.)" ]; then
       rm -rf $tmpd_dest
