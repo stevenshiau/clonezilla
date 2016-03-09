@@ -25,6 +25,7 @@ nogui="off"
 # Initial number for labeling the disk, default is from 1, e.g. disk01, disk02
 initial_no_def="1"
 ocs_parallel_mode="no"
+resize="yes"
 
 # Functions
 USAGE() {
@@ -170,7 +171,7 @@ do_mdisk_restore_task() {
   local dest_dsk="$2"
   local tmpd_dest
   rm -f /var/log/*sum-results.log
-  ocs-restore-mdisks $batch_opt -p "-g auto -k1 -icds -e1 auto -e2 -nogui -r -j2 -cmf -scr -p true" $img $dest_dsk | tee -a /var/log/${ocs}.log
+  ocs-restore-mdisks $batch_opt -p "-g auto $resize_opt -e1 auto -e2 -nogui -j2 -cmf -scr -p true" $img $dest_dsk | tee -a /var/log/${ocs}.log
   # (1) Put checksum file. Format: $image_name-$time (e.g. HOWL_09Oct15-171023.md5)
   # In image dir, it's like: sda1.files-md5sum.info.gz
   
@@ -327,12 +328,9 @@ while [ $# -gt 0 ]; do
            fi
            [ -z "$initial_no" ] && USAGE && exit 1
            ;;
-   -nogui|--nogui)
-           shift; 
-           # -nogui is for backward compatable, better to use --nogui
-           nogui="on"
-           ;;
-   -r|--parallel) ocs_parallel_mode="yes"; shift;;
+   -nogui|--nogui) nogui="on"; shift; ;;
+   -r|--parallel)  ocs_parallel_mode="yes"; shift;;
+   -n|--no-resize) resize="no"; shift;;
    -p|--label-prefix)
            # overwrite the ocsroot in drbl.conf
            shift; 
@@ -369,7 +367,10 @@ case "$nogui" in
   on)  nogui_opt="-nogui";;
   off) nogui_opt="";;
 esac
-#
+case "$resize" in
+  yes) resize_opt="-k1 -r -icds";;
+  *)   resize_opt="";;
+esac
 case "$ocs_parallel_mode" in
   yes) parallel_opt="-p";;
   *)   parallel_opt="";;
