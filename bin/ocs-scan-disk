@@ -1,0 +1,36 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to show the kernel messages about removable disks
+# //NOTE// This program is used to work with screen.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+
+#
+echo "Available disk(s) on this machine:"
+echo "==================================="
+get_not_busy_disks_or_parts harddisk
+for idsk in $dev_list; do
+  x="$(cat /sys/block/$(to_sysblock_name $(get_diskname ${idsk}))/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr ' ' _ 2>/dev/null)"
+  x=${x#*\"}
+  x=${x%\"*}
+  get_disk_serial_no $idsk
+  if [ -z "$serialno" ]; then
+    serialno="No_disk_serial_no"
+  fi
+  dsize="$(LC_ALL=C parted -s /dev/${idsk} print 2>/dev/null | grep -E "^[[:space:]]*Disk[[:space:]]+/dev/" | awk -F":" '{print $2}' | sed -e "s/ //g")"
+  echo "/dev/${idsk}: $x $serialno $dsize"
+done
+echo "==================================="
+echo -en '\033[1;33m'
+echo Update periodically. Press Ctrl-C to exit this window.
+echo -en '\033[0;39m'
