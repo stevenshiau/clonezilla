@@ -7707,7 +7707,6 @@ task_restoredisk() {
   local dsksname_from_img src_dsk_no dia_sel_opt tgt_dsk_no partition_table
   local pv_on_dsk
   # img_cnvt_flag is a global variable
-  get_sort_V_opt
 
   if [ "$target_dir" = "ask_user" ]; then
     get_target_dir_name_when_restoring_disk
@@ -9522,7 +9521,6 @@ check_ntfs_boot_partition() {
   found_ntfs_boot_partition=""
   # found_ntfs_boot_partition is a global variable
   gen_proc_partitions_map_file
-  get_sort_V_opt
   if [ -n "$select_parts" ]; then
     partition_list="$select_parts"
   else
@@ -10271,10 +10269,9 @@ to_sysblock_name() {
 get_part_list() {
   local part_table=$1
   local part_list devs dev
-  get_sort_V_opt
 
   devs="$(LC_ALL=C egrep '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
-         | awk '{ print $4 }' | sort $sort_V_opt)"
+         | awk '{ print $4 }' | sort -V)"
   for dev in $devs; do
     dev="$(to_dev_name $dev)"
     if is_supported_dev "$dev" && is_partition "$dev"; then
@@ -10282,16 +10279,15 @@ get_part_list() {
     fi
   done
 
-  echo $part_list | tr ' ' '\n' | ocs-devsort | tr '\n' ' '
+  echo $part_list | tr ' ' '\n' | sort -V | tr '\n' ' '
 } # end of get_part_list
 #
 get_disk_list() {
   local part_table=$1
   local disk_list devs dev
-  get_sort_V_opt
 
   devs="$(LC_ALL=C egrep '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
-         | awk '{ print $4 }' | sort $sort_V_opt)"
+         | awk '{ print $4 }' | sort -V)"
   for dev in $devs; do
     dev="$(to_dev_name $dev)"
     if is_supported_dev "$dev" && ! is_partition "$dev"; then
@@ -10299,7 +10295,7 @@ get_disk_list() {
     fi
   done
 
-  echo $disk_list | tr ' ' '\n' | ocs-devsort | tr '\n' ' '
+  echo $disk_list | tr ' ' '\n' | sort -V | tr '\n' ' '
 } # end of get_disk_list
 #
 copy_log() {
@@ -10633,7 +10629,6 @@ get_partition_list(){
   # Reset global variable
   partition_list=""
   gen_proc_partitions_map_file
-  get_sort_V_opt
   # First we search the whole system
   partition_list_all="$(get_part_list $partition_table)"
   if [ -n "$select_disk" ]; then
@@ -10641,7 +10636,7 @@ get_partition_list(){
     for i in $select_disk; do
 	# we have target disk, parsing it. //NOTE// multipath (i.e. with "/"), like cciss/c0d0p1 should be considered here. The output should like:
         # cciss/c0d0p1 cciss/c0d0p2 cciss/c0d0p5 cciss/c0d0p6 sda1
-        partition_list="$partition_list $(LC_ALL=C echo $partition_list_all | grep -Eo "([^[:space:]]+/$i[^[:space:]]+|$i[^[:space:]]+)" | sort $sort_V_opt )"
+        partition_list="$partition_list $(LC_ALL=C echo $partition_list_all | grep -Eo "([^[:space:]]+/$i[^[:space:]]+|$i[^[:space:]]+)" | sort -V )"
         partition_list="$(echo $partition_list)"  # Make it in 1 line
       if [ "$LVM_FLAG" = "true" ]; then
 	# (2) For LVM, the output of "pvs -o+lv_name" is like:
@@ -10663,7 +10658,7 @@ get_partition_list(){
     if [ "$LVM_FLAG" = "true" ]; then
       # Search whole system, not only hda, sda, vda, but also dm-0, dm-1 (LVM).
       # For LVM here we use something like /dev/dm-0 (not /dev/squeeze/root) since it's directly from /proc/partitions. This is easier.
-      partition_list="$partition_list $(LC_ALL=C awk '/dm-[0-9]/ { print $4; }' $partition_table | sort $sort_V_opt)"
+      partition_list="$partition_list $(LC_ALL=C awk '/dm-[0-9]/ { print $4; }' $partition_table | sort -V)"
     fi
   fi
 } # end of get_partition_list
@@ -10692,8 +10687,7 @@ output_blkdev_info() {
 #
 output_blkid_info() {
   local output_f="$1"
-  get_sort_V_opt
-  LC_ALL=C blkid | sort $sort_V_opt > $output_f
+  LC_ALL=C blkid | sort -V > $output_f
 } # end of output_blkid_info
 #
 get_latest_kernel_ver_in_repository() {
