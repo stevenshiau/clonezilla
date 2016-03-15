@@ -4088,6 +4088,7 @@ get_input_dev_name() {
 	[ -z "$msg_choose_dev_to_what" ] && msg_choose_dev_to_what="$msg_choose_disks_to_save $msg_linux_disk_naming $msg_press_space_to_mark_selection"
 	msg_not_mounted_dev_found="$msg_no_umounted_disks_found"
         NUMDEV="$(LC_ALL=C echo $dev_list | wc -w)"
+	echo "Disk number: $NUMDEV"
         ;;
       partition)
         # file -Ls /dev/hdax output example:
@@ -4096,10 +4097,10 @@ get_input_dev_name() {
         # when input partitions, not only one selection
 	[ -z "$msg_choose_dev_to_what" ] && msg_choose_dev_to_what="$msg_choose_parts_to_save $msg_linux_parts_MS_mapping $msg_press_space_to_mark_selection"
 	msg_not_mounted_dev_found="$msg_no_umounted_parts_found"
+	echo -n "Detecting the partition numbers"
         for p in $dev_list; do
+          echo -n "."
           # skip swap and extended partition
-          #FILE="$(LC_ALL=C file -Ls "/dev/$p" | cut -d: -f2 | tr ' ' _ | sed -e "s/^_//g")"
-          #FILE="$(LC_ALL=C file -Ls "/dev/$p")"
           FILE="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null)"
           rc=$?
           [ "$rc" = "0" ] && case "$FILE" in *[Ss][Ww][Aa][Pp]*|*extended*) continue ;; esac
@@ -4108,6 +4109,8 @@ get_input_dev_name() {
 	  fi
           NUMDEV=$[NUMDEV+1]
         done
+        echo ""
+	echo "Partition number: $NUMDEV"
         ;;
     esac
 
