@@ -64,16 +64,14 @@ check_col_idx() {
   # 6      161GB   172GB  10.7GB  logical   linux-swap(v1)
   # 7      172GB   440GB  269GB   logical   xfs
   #
-  # Different version of parted has different output format, that's why it's so complicated here.
+  # Different versions of parted have different output formats, that's why it's so complicated here.
   local DEV=$1
   local wanted=$2
   local part_info_tmp
   part_info_tmp="$(mktemp /tmp/part_tmp.XXXXXX)"
-  LC_ALL=C parted -s $DEV print > $part_info_tmp 2>/dev/null
-  # force to change the output temp file, no space in "File system"
-  LC_ALL=C perl -pi -e "s/File system/Filesystem/g" $part_info_tmp
-  # The seq is put in the order of possibility in clonezilla, i.e. filesystem is most used one, then size.
-  for i in 6 4 5 3 2 1 7; do
+  LC_ALL=C parted -s $DEV print | sed -r -e "s/File system/Filesystem/g" > $part_info_tmp 2>/dev/null
+  # The seq is put in the order of possibility in clonezilla. Because filesystem is get by blkid, we put size then type.
+  for i in 4 5 6 3 2 1 7; do
     col="$(grep -i flags $part_info_tmp | awk -F" " "{print \$$i}")"
     if [ -n "$(echo $col | grep -i $wanted)" ]; then
       col_idx=$i
@@ -158,7 +156,7 @@ get_from_parted() {
 #
 get_fs_from_blkid() {
   local part_="$1"  # e.g. sda1, cciss/c0d0p1, dm-1
-  local blkinfo TYPE hdtmp ptno pt_id ptype pt_info
+  local blkinfo TYPE hdtmp ptno pt_id p_type pt_info
   if type blkid &>/dev/null; then
     blkinfo="$(mktemp /tmp/blkinfo.XXXXXX)"
     # blikd output example:
@@ -354,8 +352,8 @@ get_fs_from_blkid() {
       # /dev/sda5 -> /dev/sda 5
       hdtmp="/dev/$(get_diskname ${part_})"
       ptno="$(get_part_number ${part_})"
-      ptype="$(get_partition_table_type_from_disk $hdtmp)"
-      case "$ptype" in
+      p_type="$(get_partition_table_type_from_disk $hdtmp)"
+      case "$p_type" in
       mbr)
         # sfdisk >= 2.26 "--print-id" is deprecated in favour of "--part-type"
 	if [ -n "$(LC_ALL=C sfdisk --help 2>&1 | grep -- "--part-type")" ]; then
@@ -427,12 +425,37 @@ get_fs_from_partclone_fstype() {
 } # end of get_fs_from_partclone_fstype
 #
 get_size_from_lsblk() {
-  local part_="$1"  # e.g. sda1, cciss/c0d0p1, dm-1
+  local part_="$1"  # e.g. /dev/sda1, /dev/cciss/c0d0p1
   if type lsblk &>/dev/null; then
     part_size="$(LC_ALL=C lsblk -n -d -o size ${part_} | sed -r -e "s/^[[:space:]]*//g")"
     echo "$part_size"
   fi
 } # end of get_size_from_lsblk
+#
+get_type_from_lsblk() {
+  # This function is intended to get if a parition is swap or extended. 
+  # Because the mechanism got from parted is too slow, we use lsblk to simulate it.
+  local part_="$1"  # e.g. /dev/sda1, /dev/cciss/c0d0p1
+  if type lsblk &>/dev/null; then
+    # For swap, e.g.
+    # lsblk -n -o FSTYPE /dev/sda6
+    part_type="$(LC_ALL=C lsblk -n -d -o FSTYPE ${part_} | sed -r -e "s/^[[:space:]]*//g")"
+    if [ "$part_type" != "swap" ]; then
+      # We only care if it's swap or extended. For other file system, just ignore it.
+      part_type=""
+    fi
+    if [ -z "$part_type" ]; then
+      # For extended, e.g.
+      # lsblk -n -o PARTTYPE /dev/sda2
+      part_type="$(LC_ALL=C lsblk -n -d -o PARTTYPE ${part_} | sed -r -e "s/^[[:space:]]*//g")"
+      if [ "$part_type" = "0x5" ]; then
+        # Convert to human readable
+        part_type="extended"
+      fi
+    fi
+    echo "$part_type"
+  fi
+} # end of get_type_from_lsblk
 
 # Some notes:
 # First priority is to use blkid to get filesystem, 2 reasons:
@@ -502,6 +525,14 @@ for wanted in $request; do
          get_from_parted
        else
          echo "$psize"
+       fi
+       ;;
+    type)
+       ptype="$(get_type_from_lsblk $part)"
+       if [ -z "$ptype" ]; then
+         get_from_parted
+       else
+         echo "$ptype"
        fi
        ;;
     *)
