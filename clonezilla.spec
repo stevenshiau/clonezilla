@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.30
+Version:	3.20.31
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Mar 15 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.31-drbl1
+- Use lsblk in ocs-get-part-info to get partition type which is faster than from parted.
+- Show progress as finding partitions number in ocs-functions.
+
 * Mon Mar 14 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.30-drbl1
 - Remove ocs-devsort since now "sort -V" is used.
 - Add watch ocs-scan-disk for local block device in prep-ocsroot.
