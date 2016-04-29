@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.20.35
+Version:	3.20.36
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Apr 29 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.36-drbl1
+- ALT+F5 invokes dangerous & irreversible program xkill, should not be on a kb shortcut in GParted live. Ref: https://bugzilla.gnome.org/show_bug.cgi?id=703400
+
 * Thu Apr 21 2016 Steven Shiau <steven _at_ nchc org tw> 3.20.35-drbl1
 - Update the requirements in this spec file.
 
