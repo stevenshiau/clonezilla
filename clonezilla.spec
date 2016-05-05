@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.1
+Version:	3.21.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu May 05 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.2-drbl1
+- Add batch mode in ocs_success_mountpoint of ocs-functions.
+- Add gen-rec-iso in the sample files.
+- Add option "-scr" in gen-rec-usb.
+
 * Mon May 02 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.1-drbl1
 - Add initial support for creating Ubuntu-based Clonezilla live with Yakkety.
 
