@@ -1,0 +1,126 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ stevenshiau org>
+# Description: Program to create a recovery ISO directly from the machine by Clonezilla live.
+# To use it:
+# Prepare:
+# (1) A bootable Clonezilla live, either on CD or USB flash drive.
+# (2) A storage space for saving the iso. Due to the temp image space, it should be double space which the image have. It's recommended to have equal space for the used blocks on the source disk.
+# Then
+# (1) Boot Clonezilla live. Do not choose "TO RAM" mode. Use normal mode.
+# (3) Run this program. Without any option it will enter interactive mode. You can also use some options. Run with option "-h" for more info.
+# Then it will take the hard drive (say /dev/sda) as an image, put the image on storage device (e.g. /dev/sdb1). Then convert that to a recovery ISO. You will have a recovery ISO for later deployment or recovery. All is done in this program.
+
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+# ocs_batch_mode could be: on, off
+ocs_batch_mode="off"
+tui="true"   # Default to turn on TUI
+chk_ocsroot_mountpont="yes"
+
+#
+USAGE() {
+    echo "$ocs - To create a deployment iso"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] SRC_HARD_DRIVE ISO_FILE_NAME"
+    echo "Options:"
+    echo "-b, --batch   Run image checking in batch mode"
+    echo "-s, --skip-ocsroot-mountpoint-chk   Skip checking if Clonezilla image $ocsroot is a mountpoint."
+    echo "-d, --working-dir  DIR   Assign the working dir as DIR. If not assigned, $ocsroot will be used."
+    echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone or Partimage, use text only"
+    echo "SRC_HARD_DRIVE is the hard drive to be taken as an image, e.g. sda, sdb..."
+    echo "ISO_FILE_NAME is the name you want to give for the created file."
+    echo "If no SRC_HARD_DRIVE/ISO_FILE_NAME is specified, a dialog menu will be shown."
+    echo "Ex:"
+    echo "To take the /dev/sda as a deployment iso, run in batch mode:"
+    echo "   $ocs -b sda pragma-node.iso"
+    echo
+} # end of USAGE
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -b|--batch) ocs_batch_mode="on"; shift;;
+   -s|--skip-ocsroot-mountpoint-chk) chk_ocsroot_mountpont="no"; shift;;
+   -d|--working-dir) 
+            # overwrite the ocsroot in drbl.conf
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ocsroot="$1"
+	      shift
+            fi
+            [ -z "$ocsroot" ] && USAGE && exit 1
+	    ;;
+   -nogui|--nogui)
+           shift; 
+           # -nogui is for backward compatable, better to use --nogui
+           tui="false"
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+target_hd="$1"
+dest_fname="$2"
+
+#
+ask_and_load_lang_set
+
+#
+if [ -z "$target_hd" ]; then
+  get_target_hd_name_from_local_machine "Choose the source disk to be imaged for the recovery" "menu"
+else
+  # Strip the leading /dev/ if it's assigned. Make it like sda, sdb, not /dev/sda, /dev/sdb.
+  target_hd="${target_hd#/dev/*}"  # partition or LV name, e.g. sda1
+fi
+
+if [ -z "$dest_fname" ]; then
+  # Todo: add prompt
+  get_target_dir_name_when_saving  # get $target_dir
+  dest_fname="$target_dir"
+else
+  # Strip the ".iso" in the end, because ocs-iso will add that
+  dest_fname="$(echo "$dest_fname" | sed -r -e "s/.iso$//g")"
+fi
+
+#
+if [ "$ocs_batch_mode" = "on" ]; then
+  ocs_sr_batch_opt="--batch"
+else
+  ocs_sr_batch_opt="-c"
+fi
+if [ "$tui" = "false" ]; then
+  ocs_sr_nogui_opt="--nogui"
+fi
+
+# Give warning if $ocsroot is not a mount point.
+[ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+
+
+# Save the disk as an image
+ocs-sr $ocs_sr_batch_opt $ocs_sr_nogui_opt -q2 -j2 -z1p -i 2000 -sc -p true savedisk $dest_fname $target_hd
+rc_sr="$?"
+if [ "$rc_sr" -eq 0 ]; then
+  # Todo: Modify isolinux to add title?
+  echo $msg_delimiter_star_line
+  (
+  cd $ocsroot
+  ocs-iso -g en_US.UTF-8 -t -k NONE -e "-g auto -e1 auto -e2 -c -r -j2 -scr -p choose restoredisk $dest_fname ask_user" $dest_fname
+  )
+  echo "done!"
+fi
