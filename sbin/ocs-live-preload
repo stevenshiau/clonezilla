@@ -1,0 +1,97 @@
+#!/bin/bash
+# License: GPL 
+# Author: Aaron Burling <aaron_burling _at_ lkstevens wednet edu> and Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to preload a file for live system from boot parameter 
+# "ocs_preload"
+# ocs_preload=[http|https|tftp|file]://HOST_NAME_or_IP_ADD/path/to/your_tarball
+# E.g. ocs_preload=tftp://192.168.100.254/my-custom.tgz
+#      ocs_preload=file:///lib/live/mount/medium/my-custom.tar.xz
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+dest=/opt
+rm_tarball=""
+
+#################
+##### MAIN ######
+#################
+check_if_root
+ask_and_load_lang_set
+#
+parse_cmdline_option ocs_preload  # Obtain $ocs_preload
+
+if [ -z "$ocs_preload" ]; then
+	[ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+	echo "Boot parameter \"ocs_preload\" not found!"
+	[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	echo "$msg_program_stop!"
+	my_ocs_exit 1
+fi
+
+url="${ocs_preload}"
+
+# Fetch the file
+# Prepare $dest in case it does not exist
+# Part of the codes in the following are borrowed from live-boot package.
+mkdir -p ${dest}
+download_file="$(basename ${url})"	
+case "$url" in
+	file://*)
+    		local_f="$(echo $url | sed -e "s|file://||g")"
+		download_file_absp="${local_f}"
+		rm_tarball="no" # keep it since it's local file
+		;;
+	tftp*)
+		ip="$(dirname $url | sed -e 's|tftp://||g' -e 's|/.*$||g')"
+		rfile="$(echo $url | sed -e "s|tftp://$ip||g")"
+		lfile="$(basename $url)"
+		echo "Trying busybox tftp -g -b 65464 -r $rfile -l ${dest}/$lfile $ip"
+		busybox tftp -g -b 65464 -r $rfile -l ${dest}/$lfile $ip
+		download_file_absp="${dest}/${lfile}"
+		rm_tarball="yes" # remove it since it's downloaded file
+		;;
+	*)
+		echo "Trying wget ${url} -O ${dest}/$(basename ${url})"
+		wget "${url}" -O "${dest}/${download_file})"
+		download_file_absp="${dest}/${download_file}"
+		rm_tarball="yes" # remove it since it's downloaded file
+		;;
+esac
+
+echo $msg_delimiter_star_line
+if [ -e "$download_file_absp" ]; then
+	echo "Extracting $download_file_absp... to ${dest}/"
+	case "$download_file" in
+		*tar)           tar -xvf $download_file_absp -C ${dest}/;;
+		*tar.gz|*tgz)   tar -xvzf $download_file_absp -C ${dest}/;;
+		*tar.bz2|*tbz2) tar -xvjf $download_file_absp -C ${dest}/;;
+		*tar.xz|*txz)   tar -xvJf $download_file_absp -C ${dest}/;;
+		*.zip)          unzip $download_file_abs -d ${dest}/;; 
+		*)
+			[ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+			echo "Unknown format for download file \"$download_file_absp\"".
+			[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+			echo "$msg_program_stop!"
+			my_ocs_exit 1
+	esac
+	# Clean the tarball
+	if [ "$rm_tarball" = "yes" ]; then
+		echo "Remove the downloaded file..."
+		rm -vf $download_file_absp
+	fi
+else
+	[ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+	echo "Preload file not found! Perhaps ocs_preload failed?"
+	[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	echo "$msg_program_stop!"
+	my_ocs_exit 1
+fi
+
+echo "Preload file \"$download_file_absp\" extracted!"
+echo ""
+exit 0
