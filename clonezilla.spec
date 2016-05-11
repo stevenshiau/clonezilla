@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.3
+Version:	3.21.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,9 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed May 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.4-drbl1
+- Remove the typo, extra character ")" in wget options of ocs-live-preload.
+
 * Wed May 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.3-drbl1
 - Add support for boot parameter ocs_preload* which can be used to fetch and extract tarball/zip file in /opt/.
-- Program ocs-live-pre-run was renamed as ocs-live-prerun and ocs-live-post-run was renamed as ocs-live-postrun. It will be closer to those used in boot parameters (ocs_live_prerun and ocs_live_postrun).
+- Program ocs-live-pre-run was renamed as ocs-live-prerun and ocs-live-post-run was renamed as ocs-live-postrun. It will be closer to those used in boot parameters (ocs_prerun and ocs_postrun).
 - Change DRBL_GPG_KEY_URL to that on drbl.org in drbl-ocs.conf.
 
 * Thu May 05 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.2-drbl1
