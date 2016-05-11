@@ -1,7 +1,7 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.4
-Release:	drbl2
+Version:	3.21.5
+Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.bz2
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed May 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.5-drbl1
+- Update description of ocs-live-preload.
+
 * Wed May 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.4-drbl2
 - Update changelog.
 
