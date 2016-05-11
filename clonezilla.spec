@@ -1,7 +1,7 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
 Version:	3.21.4
-Release:	drbl1
+Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.bz2
@@ -37,11 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed May 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.4-drbl2
+- Update changelog.
+
 * Wed May 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.4-drbl1
 - Remove the typo, extra character ")" in wget options of ocs-live-preload.
 
 * Wed May 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.3-drbl1
-- Add support for boot parameter ocs_preload* which can be used to fetch and extract tarball/zip file in /opt/.
+- Add support for boot parameter ocs_preload*. It can be used to fetch tar/zip files from http(s), ftp, tftp, and local URL then extract to /opt/.  Thanks to Aaron Burling (aaron_burling _at_ lkstevens wednet edu) for this idea and providing sample codes.
 - Program ocs-live-pre-run was renamed as ocs-live-prerun and ocs-live-post-run was renamed as ocs-live-postrun. It will be closer to those used in boot parameters (ocs_prerun and ocs_postrun).
 - Change DRBL_GPG_KEY_URL to that on drbl.org in drbl-ocs.conf.
 
