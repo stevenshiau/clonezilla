@@ -1,0 +1,39 @@
+#!/bin/bash
+
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+#
+cmdl_file="/proc/cmdline"
+
+ocs_prerun_list="$(grep -Ewo "ocs_prerun[[:digit:]]*" $cmdl_file | uniq | sort -V)"
+ocs_prerun_list="$(echo $ocs_prerun_list)"  # in one line
+
+if [ -z "$ocs_prerun_list" ]; then
+  exit 0
+else
+  echo "Found ocs_prerun* parameter in boot parameters..."
+  echo "The order to run: $ocs_prerun_list"
+fi
+
+parse_cmdline_option -c $cmdl_file "echo_ocs_prerun"
+
+for i in $ocs_prerun_list; do
+  parse_cmdline_option -c $cmdl_file "$i"
+  eval irun=\$$i
+  if [ -n "$irun" ]; then
+    echo "**************************"
+    # run it
+    if [ "$echo_ocs_prerun" != "no" ]; then
+      echo "Now run \"$i\": $irun..."
+    fi
+    # Since "$irun" might not be exe mode, so we test it if it's script, use . $irun, else, run it directly.
+    if [ "$(LANG=C file -Ls "$irun" 2>/dev/null | grep -iE "shell script")" ]; then
+      $irun
+    else
+      eval $irun
+    fi
+  fi
+done
