@@ -14,8 +14,84 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
 # Settings
+cmdl_file="/proc/cmdline"
 dest=/opt
 rm_tarball=""
+
+# Functions
+extract_tarball() {
+  # rm_tarball is global variable
+  local url download_file local_f download_file_absp
+  local ip rfile lfile
+  url="$1"
+
+  if [ -z "$url" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No \"url\" assigned in function extract_tarball!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    return 1
+  fi
+  
+  # Fetch the file
+  # Part of the codes in the following are borrowed from live-boot package.
+  download_file="$(basename ${url})"	
+  case "$url" in
+  	file://*)
+      		local_f="$(echo $url | sed -e "s|file://||g")"
+  		download_file_absp="${local_f}"
+  		rm_tarball="no" # keep it since it's local file
+  		;;
+  	tftp*)
+  		ip="$(dirname $url | sed -e 's|tftp://||g' -e 's|/.*$||g')"
+  		rfile="$(echo $url | sed -e "s|tftp://$ip||g")"
+  		lfile="$(basename $url)"
+  		echo "Trying busybox tftp -g -b 65464 -r $rfile -l ${dest}/$lfile $ip"
+  		busybox tftp -g -b 65464 -r $rfile -l ${dest}/$lfile $ip
+  		download_file_absp="${dest}/${lfile}"
+  		rm_tarball="yes" # remove it since it's downloaded file
+  		;;
+  	*)
+  		echo "Trying wget ${url} -O ${dest}/$(basename ${url})"
+  		wget "${url}" -O "${dest}/${download_file})"
+  		download_file_absp="${dest}/${download_file}"
+  		rm_tarball="yes" # remove it since it's downloaded file
+  		;;
+  esac
+  
+  echo $msg_delimiter_star_line
+  if [ -e "$download_file_absp" ]; then
+  	echo "Extracting $download_file_absp... to ${dest}/"
+  	case "$download_file" in
+  		*tar)           tar -xvf $download_file_absp -C ${dest}/;;
+  		*tar.gz|*tgz)   tar -xvzf $download_file_absp -C ${dest}/;;
+  		*tar.bz2|*tbz2) tar -xvjf $download_file_absp -C ${dest}/;;
+  		*tar.xz|*txz)   tar -xvJf $download_file_absp -C ${dest}/;;
+  		*.zip)          unzip -o $download_file_absp -d ${dest}/;; 
+  		*)
+  			[ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  			echo "Unknown format for download file \"$download_file_absp\"".
+  			[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  			echo "$msg_program_stop!"
+  			return 1
+  	esac
+  	# Clean the tarball
+  	if [ "$rm_tarball" = "yes" ]; then
+  		echo "Remove the downloaded file..."
+  		rm -vf $download_file_absp
+  	fi
+  else
+  	[ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  	echo "Preload file not found! Perhaps ocs_preload failed?"
+  	[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  	echo "$msg_program_stop!"
+  	return 1
+  fi
+  
+  echo "Preload file \"$download_file_absp\" extracted in ${dest}!"
+  echo ""
+  return 0
+} # end of extract_tarball
 
 #################
 ##### MAIN ######
@@ -23,9 +99,17 @@ rm_tarball=""
 check_if_root
 ask_and_load_lang_set
 #
-parse_cmdline_option ocs_preload  # Obtain $ocs_preload
+ocs_preload_list="$(grep -Ewo "ocs_preload[[:digit:]]*" $cmdl_file | uniq | sort -V)"
+ocs_preload_list="$(echo $ocs_preload_list)"  # in one line
 
-if [ -z "$ocs_preload" ]; then
+if [ -z "$ocs_preload_list" ]; then
+  exit 0
+else
+  echo "Found ocs_preload* parameter in boot parameters..."
+  echo "The order to run: $ocs_preload_list"
+fi
+
+if [ -z "$ocs_preload_list" ]; then
 	[ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
 	echo "Boot parameter \"ocs_preload\" not found!"
 	[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -33,65 +117,20 @@ if [ -z "$ocs_preload" ]; then
 	my_ocs_exit 1
 fi
 
-url="${ocs_preload}"
-
-# Fetch the file
 # Prepare $dest in case it does not exist
-# Part of the codes in the following are borrowed from live-boot package.
 mkdir -p ${dest}
-download_file="$(basename ${url})"	
-case "$url" in
-	file://*)
-    		local_f="$(echo $url | sed -e "s|file://||g")"
-		download_file_absp="${local_f}"
-		rm_tarball="no" # keep it since it's local file
-		;;
-	tftp*)
-		ip="$(dirname $url | sed -e 's|tftp://||g' -e 's|/.*$||g')"
-		rfile="$(echo $url | sed -e "s|tftp://$ip||g")"
-		lfile="$(basename $url)"
-		echo "Trying busybox tftp -g -b 65464 -r $rfile -l ${dest}/$lfile $ip"
-		busybox tftp -g -b 65464 -r $rfile -l ${dest}/$lfile $ip
-		download_file_absp="${dest}/${lfile}"
-		rm_tarball="yes" # remove it since it's downloaded file
-		;;
-	*)
-		echo "Trying wget ${url} -O ${dest}/$(basename ${url})"
-		wget "${url}" -O "${dest}/${download_file})"
-		download_file_absp="${dest}/${download_file}"
-		rm_tarball="yes" # remove it since it's downloaded file
-		;;
-esac
 
-echo $msg_delimiter_star_line
-if [ -e "$download_file_absp" ]; then
-	echo "Extracting $download_file_absp... to ${dest}/"
-	case "$download_file" in
-		*tar)           tar -xvf $download_file_absp -C ${dest}/;;
-		*tar.gz|*tgz)   tar -xvzf $download_file_absp -C ${dest}/;;
-		*tar.bz2|*tbz2) tar -xvjf $download_file_absp -C ${dest}/;;
-		*tar.xz|*txz)   tar -xvJf $download_file_absp -C ${dest}/;;
-		*.zip)          unzip $download_file_absp -d ${dest}/;; 
-		*)
-			[ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-			echo "Unknown format for download file \"$download_file_absp\"".
-			[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-			echo "$msg_program_stop!"
-			my_ocs_exit 1
-	esac
-	# Clean the tarball
-	if [ "$rm_tarball" = "yes" ]; then
-		echo "Remove the downloaded file..."
-		rm -vf $download_file_absp
-	fi
-else
-	[ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-	echo "Preload file not found! Perhaps ocs_preload failed?"
-	[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	echo "$msg_program_stop!"
-	my_ocs_exit 1
-fi
+parse_cmdline_option -c $cmdl_file "echo_ocs_preload"
 
-echo "Preload file \"$download_file_absp\" extracted!"
-echo ""
-exit 0
+for i in $ocs_preload_list; do
+  parse_cmdline_option -c $cmdl_file "$i"
+  eval iload=\$$i
+  if [ -n "$iload" ]; then
+    echo "**************************"
+    # Process it
+    if [ "$echo_ocs_preload" != "no" ]; then
+      echo "Now process \"$i\": $iload"
+    fi
+    extract_tarball $iload
+  fi
+done
