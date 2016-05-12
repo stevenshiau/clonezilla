@@ -1,6 +1,6 @@
 #!/bin/bash
 # License: GPL 
-# Author: Aaron Burling <aaron_burling _at_ lkstevens wednet edu> and Steven Shiau <steven _at_ clonezilla org>
+# Author: Aaron Burling <aaron_burling _at_ lkstevens wednet edu; burlingaaron _at_ gmail com> and Steven Shiau <steven _at_ clonezilla org>
 # Description: Program to preload a tarball/zip file for live system from boot parameter "ocs_preload":
 # ocs_preload=[http|https|ftp|tftp|file]://[HOST_NAME_or_IP_ADD]/path/to/your_tarball
 # E.g. Put the following in the boot parameter:
@@ -17,7 +17,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
 # Settings
 cmdl_file="/proc/cmdline"
-dest=/opt
+dest="/opt"
 rm_tarball=""
 
 # Functions
@@ -69,7 +69,9 @@ extract_tarball() {
   		*tar.gz|*tgz)   tar -xvzf $download_file_absp -C ${dest}/;;
   		*tar.bz2|*tbz2) tar -xvjf $download_file_absp -C ${dest}/;;
   		*tar.xz|*txz)   tar -xvJf $download_file_absp -C ${dest}/;;
-  		*.zip)          unzip -o $download_file_absp -d ${dest}/;; 
+  		*.zip)          unzip -o $download_file_absp -d ${dest}/ 
+				convert_dos_format_script $download_file_absp
+				;;
   		*)
   			[ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   			echo "Unknown format for download file \"$download_file_absp\"".
@@ -94,6 +96,39 @@ extract_tarball() {
   echo ""
   return 0
 } # end of extract_tarball
+#
+convert_dos_format_script() {
+  local zip_file="$1"
+  local zip_flist i_exist
+  zip_flist_tmp="$(mktemp /tmp/zflist.XXXXXX)"
+  extract_flist_tmp="$(mktemp /tmp/extract_flist.XXXXXX)"
+  if [ -z "$zip_file" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No \"zip_file\" assigned in function convert_dos_format_script!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    return 1
+  fi
+  # Sometimes zip will convert file name to lowercase, so we have to find it without case sensitive
+  echo "Searching the shell script in ${dest} extracted from $zip_file for setting mode..."
+  unzip -l $zip_file | tail -n +4 | head -n -2 | awk -F" " '{print $4}' > $zip_flist_tmp
+  find ${dest} -print > $extract_flist_tmp
+  while read i; do
+    i_exist="$(grep -Eio "$i" $extract_flist_tmp)"
+    if [ -n "$i_exist" ]; then
+      if [ -n "$(LC_ALL=C file "${dest}/$i_exist" | grep -i "shell script")" ]; then
+	 echo "Setting mode for \"${dest}/$i_exist\" to 755..."
+	 chmod 755 ${dest}/$i_exist
+	 # If its format is "POSIX shell script, ASCII text executable, with CRLF line terminators"
+	 # it will fail to run like:
+	 # bash: ./my-script.sh: /bin/sh^M: bad interpreter: No such file or directory
+	 # Therefore force to convert it to Unix text format
+         dos2unix -q ${dest}/$i_exist
+      fi
+    fi
+  done < $zip_flist_tmp
+  rm -f $zip_flist_tmp $extract_flist_tmp
+} # end of convert_dos_format_script
 
 #################
 ##### MAIN ######
