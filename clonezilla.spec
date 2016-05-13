@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.6
+Version:	3.21.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri May 13 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.7-drbl1
+- Besides a tarball/zip, add support downloading a script only for ocs-live-preload.
+
 * Fri May 13 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.6-drbl1
 - Set the script extracted from zip to mode 755 in ocs-live-preload.
 
