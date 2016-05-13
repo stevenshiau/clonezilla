@@ -2,12 +2,15 @@
 # License: GPL 
 # Author: Aaron Burling <aaron_burling _at_ lkstevens wednet edu; burlingaaron _at_ gmail com> and Steven Shiau <steven _at_ clonezilla org>
 # Description: Program to preload a tarball/zip file for live system from boot parameter "ocs_preload":
-# ocs_preload=[http|https|ftp|tftp|file]://[HOST_NAME_or_IP_ADD]/path/to/your_tarball
-# E.g. Put the following in the boot parameter:
+# ocs_preload=[http|https|ftp|tftp|file]://[HOST_NAME_or_IP_ADD]/path/to/your_tarball_or_script
+# Support file format: tar.gz, tgz, tar.bz2, tbz2, tar.xz, txz, zip, .sh
+# E.g. You can put the following in the boot parameter:
 #      ocs_preload=tftp://192.168.100.254/my-custom.tgz
 #      ocs_preload=http://192.168.200.254/my-custom.tar.xz
 #      ocs_preload=ftp://192.168.250.254/my-custom.zip
 #      ocs_preload=file:///lib/live/mount/medium/my-custom.tar.bz2
+#      ocs_preload=tftp://192.168.100.254/my-custom.sh
+# Then in Clonezilla live ocs-live-preload will be run automatically and the file assigned by ocs_preload will be downloaded and extracted to /opt. Its mode will be set automatically, too. i.e. set as mode 755 and Unix format script.
 
 #
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -63,15 +66,17 @@ extract_tarball() {
   
   echo $msg_delimiter_star_line
   if [ -e "$download_file_absp" ]; then
-  	echo "Extracting $download_file_absp... to ${dest}/"
+  	echo "Putting $download_file_absp... to ${dest}/"
   	case "$download_file" in
   		*tar)           tar -xvf $download_file_absp -C ${dest}/;;
   		*tar.gz|*tgz)   tar -xvzf $download_file_absp -C ${dest}/;;
   		*tar.bz2|*tbz2) tar -xvjf $download_file_absp -C ${dest}/;;
   		*tar.xz|*txz)   tar -xvJf $download_file_absp -C ${dest}/;;
   		*.zip)          unzip -o $download_file_absp -d ${dest}/ 
-				convert_dos_format_script $download_file_absp
-				;;
+				convert_dos_format_script $download_file_absp;;
+  		*.sh)           set_mode_755_and_unix_format $download_file_absp
+				# keep it since it's will be used directly.
+  				rm_tarball="no" ;;
   		*)
   			[ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   			echo "Unknown format for download file \"$download_file_absp\"".
@@ -92,7 +97,7 @@ extract_tarball() {
   	return 1
   fi
   
-  echo "Preload file \"$download_file_absp\" extracted in ${dest}."
+  echo "File(s) put in directory: ${dest}."
   echo ""
   return 0
 } # end of extract_tarball
@@ -118,12 +123,7 @@ convert_dos_format_script() {
     if [ -n "$i_exist" ]; then
       if [ -n "$(LC_ALL=C file "${dest}/$i_exist" | grep -i "shell script")" ]; then
 	 echo "Setting mode for \"${dest}/$i_exist\" to 755..."
-	 chmod 755 ${dest}/$i_exist
-	 # If its format is "POSIX shell script, ASCII text executable, with CRLF line terminators"
-	 # it will fail to run like:
-	 # bash: ./my-script.sh: /bin/sh^M: bad interpreter: No such file or directory
-	 # Therefore force to convert it to Unix text format
-         dos2unix -q ${dest}/$i_exist
+	 set_mode_755_and_unix_format ${dest}/$i_exist
       fi
     fi
   done < $zip_flist_tmp
