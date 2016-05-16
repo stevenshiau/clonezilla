@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.8
+Version:	3.21.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon May 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.9-drbl1
+- Add option "-c" to ocs-srv-live so that it can be used to assign the client number as NO for each network card connected to clients.
+
 * Sun May 15 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.8-drbl1
 - Use opton "-o" for drbl-sl in drbl-ocs-live-prep.
 
