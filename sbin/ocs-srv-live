@@ -20,7 +20,10 @@ private_IP_alias_eth_def="100"
 USAGE() {
     echo "To start, restart or stop Clonezilla server edition service in DRBL Live environment."
     echo "Usage:"
-    echo "$0 {start|stop|restart} [MODE]"
+    echo "$0 [OPTION] {start|stop|restart} [MODE]"
+    echo "OPTION:"
+    echo "-b, -batch, --batch          Run program in batch mode, i.e. without any prompt or wait for pressing enter key.  //NOTE// You have to use '-batch' instead of '-b' when you want to use it in the boot parameters. Otherwise the program init on system will honor '-b', too."
+    echo "-c, -client-no NO             Assign the client number as NO for each network card connected to clients. //NOTE// This option will only work when drbl environment is not configured yet, i.e. before 'drbl-live' is run after booting."
     echo "start   Start Clonezilla server edition service now"
     echo "stop    Stop Clonezilla server edition service service now"
     echo "restart Restart Clonezilla server edition service service now"
@@ -44,7 +47,7 @@ start_ocs_srv() {
   nfsd_pid="$(LC_ALL=C pidof nfsd)"
   if [ -z "$dhcpd_pid" -o -z "$tftpd_pid" ] || [ -z "$unfsd_pid" -a -z "$nfsd_pid" ]; then
     # Not configured yet or DRBL service is not started, either
-    if [ "$ocs_batch_mode" = "on" ]; then
+    if [ "$ocs_batch_mode" != "on" ]; then
       echo "$msg_delimiter_star_line"
       echo "$msg_drbl_env_is_not_ready_now_config"
       echo $msg_this_might_take_several_minutes
@@ -52,6 +55,17 @@ start_ocs_srv() {
       read
       echo "$msg_delimiter_star_line"
     fi
+    # ocs_client_no_per_NIC is read from /etc/ocs/ocs-live.conf, which might be from boot parameter, or is assigned by this program with option "-c"
+    if [ -n "$ocs_client_no_per_NIC" ]; then
+      if [ -n "$(grep -Ew "^client_no_per_NIC=.*" /etc/ocs/ocs-live.conf)" ]; then
+        LC_ALL=C perl -pi -e "s/^client_no_per_NIC=.*/client_no_per_NIC=$ocs_client_no_per_NIC/g" /etc/ocs/ocs-live.conf
+      else
+        echo "client_no_per_NIC=$ocs_client_no_per_NIC" >> /etc/ocs/ocs-live.conf
+      fi
+    fi
+    # Now load $client_no_per_NIC for later use
+    . /etc/ocs/ocs-live.conf
+
     # Check if $ocsroot is a mountpoint or not, if not, we have to mount it.
     prepare_ocsroot_opt=""
     if ! mountpoint $ocsroot &>/dev/null; then
@@ -100,6 +114,26 @@ stop_ocs_srv() {
 #################
 ##### MAIN ######
 #################
+#
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -b|-batch|--batch)
+            ocs_batch_mode="on"
+	    shift;;
+    -c|-client-no)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ocs_client_no_per_NIC="$1"
+              shift
+            fi
+            ;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
 check_if_root
 
 #
