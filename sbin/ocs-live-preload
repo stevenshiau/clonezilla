@@ -116,14 +116,25 @@ convert_dos_format_script() {
   fi
   # Sometimes zip will convert file name to lowercase, so we have to find it without case sensitive
   echo "Searching the shell script in ${dest} extracted from $zip_file for setting mode..."
-  unzip -l $zip_file | tail -n +4 | head -n -2 | awk -F" " '{print $4}' > $zip_flist_tmp
+  # File names in zip file might contain whitespace, like:
+  # $ unzip -l Example.zip
+  # Archive:  Example.zip
+  #   Length      Date    Time    Name
+  # ---------  ---------- -----   ----
+  #        84  2016-05-17 08:57   a b c.sh
+  #        97  2016-05-17 08:58   a-b-c.sh
+  #        84  2016-05-17 08:47   Subfolder/a b c.sh
+  #        97  2016-05-17 08:48   Subfolder/a-b-c.sh
+  # ---------                     -------
+  #       362                     4 files
+  unzip -l $zip_file | tail -n +4 | head -n -2 | awk -F" " '{$1=$2=$3=""; print $0}' > $zip_flist_tmp
   find ${dest} -print > $extract_flist_tmp
   while read i; do
-    i_exist="$(grep -Eio "$i" $extract_flist_tmp)"
+    i_exist="$(grep -Ei "^${dest}/${i}" $extract_flist_tmp)"
     if [ -n "$i_exist" ]; then
-      if [ -n "$(LC_ALL=C file "${dest}/$i_exist" | grep -i "shell script")" ]; then
-	 echo "Setting mode for \"${dest}/$i_exist\" to 755..."
-	 set_mode_755_and_unix_format ${dest}/$i_exist
+      if [ -n "$(LC_ALL=C file "$i_exist" | grep -i "shell script")" ]; then
+         echo "Setting mode for \"$i_exist\" to 755..."
+         set_mode_755_and_unix_format "$i_exist"
       fi
     fi
   done < $zip_flist_tmp
