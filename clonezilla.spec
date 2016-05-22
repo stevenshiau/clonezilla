@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.10
+Version:	3.21.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.20.10, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.88, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.20.11, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.88, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun May 22 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.12-drbl1
+- Bug fixed: renaming live image extension to .tar when using tar.  Thanks to minh hieu trinh for reporting this.  https://sourceforge.net/p/clonezilla/bugs/251/
+
+* Sun May 22 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.11-drbl1
+- Remove /etc/network/if-up.d/ntpdate in DRBL/Clonezilla live. We should not touch the system/bios time when network is up unless user manually runs ntpdate.
+- If image is not checked on sever, client should not check unless it's select_in_client mode. Fixed in drbl-ocs.
+
 * Thu May 19 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.10-drbl1
 - Program ocs-live-preload should deal with whitespace file name from zip
   file. Thanks to Aaron Burling for this bug report.
