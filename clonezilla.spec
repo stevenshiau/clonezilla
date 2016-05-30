@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.12
+Version:	3.21.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun May 29 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.13-drbl1
+- Add option "--allow-downgrades" for apt in case we need to downgrade the version. Changes for files: create-debian-live, create-drbl-live, create-gparted-live, create-ubuntu-live.
+- Use iproute2 to get MAC address and IP address info in ocs-chnthn-functions. Thanks to Richard Stanway for the patch.  https://github.com/stevenshiau/clonezilla/pull/22
+
 * Sun May 22 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.12-drbl1
 - Bug fixed: renaming live image extension to .tar when using tar.  Thanks to minh hieu trinh for reporting this.  https://sourceforge.net/p/clonezilla/bugs/251/
 
