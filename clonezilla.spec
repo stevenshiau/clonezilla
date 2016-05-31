@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.13
+Version:	3.21.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jun 01 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.14-drbl1
+- Add option "-p" to gen-rec-usb and gen-rec-iso so that the device to be restored can be preset.
+
 * Sun May 29 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.13-drbl1
 - Add option "--allow-downgrades" for apt in case we need to downgrade the version. Changes for files: create-debian-live, create-drbl-live, create-gparted-live, create-ubuntu-live.
 - Use iproute2 to get MAC address and IP address info in ocs-chnthn-functions. Thanks to Richard Stanway for the patch.  https://github.com/stevenshiau/clonezilla/pull/22
