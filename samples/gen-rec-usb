@@ -25,6 +25,8 @@ img_name="recovery-img"
 ocs_batch_mode="false"
 tui="true"   # Default to turn on TUI
 boot_menu_prompt="Run USB Recovery - Powered By Clonezilla Live"
+# The destination disk when restoring. By default we will ask user.
+preset_dest_dev="ask_user"
 
 #
 USAGE() {
@@ -34,8 +36,9 @@ USAGE() {
     echo "$ocs [OPTION] SRC_HARD_DRIVE DEST_USB_FLASH_DRIVE"
     echo "Options:"
     echo "-b, --batch   Run image checking in batch mode"
-    echo "-s, --semi-batch   Run image checking in semi-batch mode, i.e. just comfirm once"
     echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone or Partimage, use text only"
+    echo "-p, --preset-dest-dev  DEV   Preset the destination device when restoring. If not assigned, $preset_dest_dev will be used."
+    echo "-s, --semi-batch   Run image checking in semi-batch mode, i.e. just comfirm once"
     echo "SRC_HARD_DRIVE is the hard drive to be taken as an image, e.g. sda, sdb..."
     echo "DEST_USB_FLASH_DRIVE is the USB flash drive partition name, e.g. sdf1, sdg1..."
     echo "If no SRC_HARD_DRIVE/DEST_USB_FLASH_DRIVE is specified, a dialog menu will be shown."
@@ -56,6 +59,16 @@ while [ $# -gt 0 ]; do
  case "$1" in
    -b|--batch) ocs_batch_mode="true"; shift;;
    -s|--semi-batch) ocs_batch_mode="semi"; shift;;
+   -p|--preset-dest-dev) 
+            # Preset the device when restoring
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              preset_dest_dev="$1"
+	      shift
+            fi
+            [ -z "$preset_dest_dev" ] && USAGE && exit 1
+	    ;;
    -nogui|--nogui)
            shift; 
            # -nogui is for backward compatable, better to use --nogui
@@ -108,7 +121,7 @@ if [ "$rc" -eq 0 ]; then
   umount $TMPMNT
   if [ "$rc_sr" -eq 0 ]; then
     echo $msg_delimiter_star_line
-    ocs-live-dev $ocs_live_dev_batch_opt -q -g en_US.UTF-8 -t -k NONE -d /dev/$target_parts -e "-g auto -e1 auto -e2 -c -r -j2 -scr -p choose restoredisk $img_name ask_user" $img_name
+    ocs-live-dev $ocs_live_dev_batch_opt -q -g en_US.UTF-8 -t -k NONE -d /dev/$target_parts -e "-g auto -e1 auto -e2 -c -r -j2 -scr -p choose restoredisk $img_name $preset_dest_dev" $img_name
     # Process the label
     # Only show the first boot menu
     echo "Polishing the boot menu..."
