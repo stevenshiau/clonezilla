@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.14
+Version:	3.21.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jun 04 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.15-drbl1
+- Program ocs-live-preload now support for preloading files from netfs, including cifs and nfs.
+
 * Wed Jun 01 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.14-drbl1
 - Add option "-p" to gen-rec-usb and gen-rec-iso so that the device to be restored can be preset.
 
