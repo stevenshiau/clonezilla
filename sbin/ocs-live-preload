@@ -24,6 +24,67 @@ dest="/opt"
 rm_tarball=""
 
 # Functions
+parse_cifs_mount_command() {
+  # Function to parse cifs mount command to get the remote source and mount point, like:
+  # ocs_preload="mount -t cifs //tech.drbl.org/clonezilla-samba-preload /ocs_preload_tmp -o username=jack,password=abcdefg"
+  # or
+  # ocs_preload="mount -o username=jack,password=abcdefg -t cifs //tech.drbl.org/clonezilla-samba-preload /ocs_preload_tmp"
+  # We want to extract //tech.drbl.org/clonezilla-samba-preload and /ocs_preload_tmp
+  # The return global variables are: $cifs_rmt_src and $cifs_mnt_pnt
+  while [ $# -gt 0 ]; do
+   case "$1" in
+      mount|mount.cifs) shift;;
+      -t) shift; shift;;  # -t cifs
+      -o) shift; shift;;  # -o username=...,password=...
+      -*) echo "${0}: ${1}: invalid option for parse_cifs_mount_command"
+          echo "$msg_program_stop"
+          [ "$save_restore_error_log" = "yes" ] && copy_error_log
+          exit 2 ;;
+      *)  break ;;
+    esac
+  done
+  cifs_rmt_src="$1"
+  cifs_mnt_pnt="$2"
+} # end of parse_cifs_mount_command
+#
+parse_nfs_mount_command() {
+  # Function to parse nfs mount command to get the remote source and mount point, like:
+  # ocs_preload="mount -t nfs 192.168.120.254:/clonezilla-samba-preload /ocs_preload_tmp -o ro,nolock,nocto,actimeo=3600"
+  # or
+  # ocs_preload="mount -t nfs -o ro,nolock,nocto,actimeo=3600 192.168.120.254:/clonezilla-samba-preload /ocs_preload_tmp"
+  # We want to extract 192.168.120.254/clonezilla-samba-preload and /ocs_preload_tmp
+  # The return global variables are: $nfs_rmt_src and $nfs_mnt_pnt
+
+  # mount.nfs or mount.nfs4:
+  # mount.nfs/mount.nfs4 remotetarget dir [-rvVwfnsih] [-o nfsoptions]
+  # options:
+  # -r              Mount file system readonly
+  # -v              Verbose
+  # -V              Print version
+  # -w              Mount file system read-write
+  # -f              Fake mount, do not actually mount
+  # -n              Do not update /etc/mtab
+  # -s              Tolerate sloppy mount options rather than fail
+  # -h              Print this help
+  # nfsoptions      Refer to mount.nfs(8) or nfs(5)
+
+  while [ $# -gt 0 ]; do
+   case "$1" in
+      mount|mount.nfs|mount.nfs4) shift;;
+      -t) shift; shift;;
+      -o) shift; shift;;
+      -r|-v|-w|-n|-s) shift;;
+      -*) echo "${0}: ${1}: invalid option for parse_nfs_mount_command"
+          echo "$msg_program_stop"
+          [ "$save_restore_error_log" = "yes" ] && copy_error_log
+          exit 2 ;;
+      *)  break ;;
+    esac
+  done
+  nfs_rmt_src="$1"
+  nfs_mnt_pnt="$2"
+} # end of parse_nfs_mount_command
+#
 extract_tarball() {
   # rm_tarball is global variable
   local url download_file local_f download_file_absp
@@ -73,7 +134,7 @@ extract_tarball() {
   		*tar.bz2|*tbz2) tar -xvjf $download_file_absp -C ${dest}/;;
   		*tar.xz|*txz)   tar -xvJf $download_file_absp -C ${dest}/;;
   		*.zip)          unzip -o $download_file_absp -d ${dest}/ 
-				convert_dos_format_script $download_file_absp;;
+				convert_dos_format_script_from_zip_file $download_file_absp;;
   		*.sh)           set_mode_755_and_unix_format $download_file_absp
 				# keep it since it's will be used directly.
   				rm_tarball="no" ;;
@@ -102,14 +163,67 @@ extract_tarball() {
   return 0
 } # end of extract_tarball
 #
-convert_dos_format_script() {
+replicate_files_from_netfs() {
+  local netfs_mnt_cmd cifs_cp_flist_tmp
+  netfs_mnt_cmd="$*"
+  case "$netfs_mnt_cmd" in
+  	mount*-t*cifs*|mount.cifs*)
+                cifs_cp_flist_tmp="$(mktemp /tmp/cifs_cp_flist.XXXXXX)"
+		cifs_rmt_src=""
+		cifs_mnt_pnt=""
+		parse_cifs_mount_command $netfs_mnt_cmd # Obtain cifs_rmt_src and cifs_mnt_pnt
+		if [ -z "$cifs_rmt_src" -o -z "$cifs_mnt_pnt" ]; then
+    		  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+                  echo "Failed to parse $url to obtain Samba server or mounting point!"
+    		  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+                  echo "$msg_program_stop!"
+                  return 1
+		fi
+		echo "Creating Samba (CIFS) mounting point $cifs_mnt_pnt..."
+		mkdir -p $cifs_mnt_pnt
+		echo "Mounting Samba (CIFS) preload share $cifs_rmt_src: $netfs_mnt_cmd"
+                eval $netfs_mnt_cmd
+                echo "Copy Contents of Samba preload share to /opt ..."
+                cp -rv $cifs_mnt_pnt/* /opt | tee $cifs_cp_flist_tmp
+                echo "Unmount Samba preload share..."
+		umount $cifs_mnt_pnt
+		convert_dos_format_script_from_cp_rv_list $cifs_cp_flist_tmp
+		rm -f $cifs_cp_flist_tmp
+  		;;
+  	mount*-t*nfs*|mount.nfs|mount.nfs4)
+                nfs_cp_flist_tmp="$(mktemp /tmp/nfs_cp_flist.XXXXXX)"
+		nfs_rmt_src=""
+		nfs_mnt_pnt=""
+		parse_nfs_mount_command $netfs_mnt_cmd # Obtain nfs_rmt_src and nfs_mnt_pnt
+		if [ -z "$nfs_rmt_src" -o -z "$nfs_mnt_pnt" ]; then
+    		  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+                  echo "Failed to parse $url to obtain NFS server or mounting point!"
+    		  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+                  echo "$msg_program_stop!"
+                  return 1
+		fi
+		echo "Creating NFS mounting point $nfs_mnt_pnt..."
+		mkdir -p $nfs_mnt_pnt
+		echo "Mounting NFS preload share $nfs_rmt_src: $netfs_mnt_cmd"
+                eval $netfs_mnt_cmd
+                echo "Copy Contents of NFS preload share to /opt ..."
+                cp -rv $nfs_mnt_pnt/* /opt | tee $nfs_cp_flist_tmp
+                echo "Unmount NFS preload share..."
+		umount $nfs_mnt_pnt
+		convert_dos_format_script_from_cp_rv_list $nfs_cp_flist_tmp
+		rm -f $nfs_cp_flist_tmp
+  		;;
+  esac
+} # end of replicate_files_from_netfs
+#
+convert_dos_format_script_from_zip_file() {
   local zip_file="$1"
   local zip_flist i_exist
   zip_flist_tmp="$(mktemp /tmp/zflist.XXXXXX)"
   extract_flist_tmp="$(mktemp /tmp/extract_flist.XXXXXX)"
   if [ -z "$zip_file" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "No \"zip_file\" assigned in function convert_dos_format_script!"
+    echo "No \"zip_file\" assigned in function convert_dos_format_script_from_zip_file!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!"
     return 1
@@ -139,7 +253,29 @@ convert_dos_format_script() {
     fi
   done < $zip_flist_tmp
   rm -f $zip_flist_tmp $extract_flist_tmp
-} # end of convert_dos_format_script
+} # end of convert_dos_format_script_from_zip_file
+#
+convert_dos_format_script_from_cp_rv_list() {
+  # chmod and conver to unix format for the copied files list
+  # i.e. the files list got from: cp -rv source dest
+  # The list is like (it might contain whitespace in file name):
+  # '/tmp/cifs/my-script.sh.txt' -> '/opt/my-script.sh.txt'
+  # '/tmp/cifs/your script.sh.txt' -> '/opt/your script.sh.txt'
+  local cp_rv_flist="$1"
+  local cp_flist_tmp kfl
+  cp_flist_tmp="$(mktemp /tmp/cp_flist.XXXXXX)"
+  LC_ALL=C awk -F"->" '{print $2}' $cp_rv_flist > $cp_flist_tmp
+  while read kfl; do
+    kfl="$(eval echo "$kfl")"
+    if [ -n "$kfl" ]; then
+      if [ -n "$(LC_ALL=C file "$kfl" | grep -i "shell script")" ]; then
+         echo "Setting mode for \"$kfl\" to 755..."
+         set_mode_755_and_unix_format "$kfl"
+      fi
+    fi
+  done < $cp_flist_tmp
+  rm -f $cp_flist_tmp
+} # end of convert_dos_format_script_from_cp_rv_list
 
 #################
 ##### MAIN ######
@@ -169,8 +305,11 @@ fi
 # Prepare $dest in case it does not exist
 mkdir -p ${dest}
 
+# First we get the parameter "echo_ocs_preload" to see if
+# the ocs_preload has to be echoed or not.
 parse_cmdline_option -c $cmdl_file "echo_ocs_preload"
 
+# Now start parsing the paramaters listed in $ocs_preload_list
 for i in $ocs_preload_list; do
   parse_cmdline_option -c $cmdl_file "$i"
   eval iload=\$$i
@@ -180,6 +319,9 @@ for i in $ocs_preload_list; do
     if [ "$echo_ocs_preload" != "no" ]; then
       echo "Now process \"$i\": $iload"
     fi
-    extract_tarball $iload
+    case "$iload" in
+      mount*)  replicate_files_from_netfs $iload ;;
+           *)  extract_tarball $iload ;;
+    esac
   fi
 done
