@@ -1,15 +1,24 @@
 #!/bin/bash
 # License: GPL 
 # Author: Aaron Burling <aaron_burling _at_ lkstevens wednet edu; burlingaaron _at_ gmail com> and Steven Shiau <steven _at_ clonezilla org>
-# Description: Program to preload a tarball/zip file for live system from boot parameter "ocs_preload":
+# Description: Program to preload a tarball/zip file or copy files from cifs/nfs for live system from boot parameter "ocs_preload":
+# Type 1, i.e. tarball/zip file:
 # ocs_preload=[http|https|ftp|tftp|file]://[HOST_NAME_or_IP_ADD]/path/to/your_tarball_or_script
+# Type 2, i.e. files on a cifs/nfs directory using mount command:
+# ocs_preload="mount -t cifs //YOUR_CIFS_SERVER/path/to/ /path/to/mounting_point"
+# ocs_preload="mount -t nfs YOUR_CIFS_SERVER:/path/to/ /path/to/mounting_point"
 # Support file format: tar.gz, tgz, tar.bz2, tbz2, tar.xz, txz, zip, .sh
+# Support network file system: cifs (samba) and nfs2/3/4
 # E.g. You can put the following in the boot parameter:
 #      ocs_preload=tftp://192.168.100.254/my-custom.tgz
 #      ocs_preload=http://192.168.200.254/my-custom.tar.xz
 #      ocs_preload=ftp://192.168.250.254/my-custom.zip
 #      ocs_preload=file:///lib/live/mount/medium/my-custom.tar.bz2
 #      ocs_preload=tftp://192.168.100.254/my-custom.sh
+#      ocs_preload="mount -t cifs //192.168.120.2/images/ /tmp/cifs -o user=administrator,password=yourpasswd" 
+#      ocs_preload4="mount -t nfs 192.168.120.254:/home/partimag/script/ /tmp/nfs -o ro" 
+# Multiple ocs_preload* are avaiable, just append a number after that. E.g.
+# ocs_prealod=... ocs_preload1=... ocs_preload2=...
 # Then in Clonezilla live ocs-live-preload will be run automatically and the file assigned by ocs_preload will be downloaded and extracted to /opt. Its mode will be set automatically, too. i.e. set as mode 755 and Unix format script.
 
 #
@@ -21,7 +30,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Settings
 cmdl_file="/proc/cmdline"
 dest="/opt"
-rm_tarball=""
+rm_tarball_flag=""
 
 # Functions
 parse_cifs_mount_command() {
@@ -86,7 +95,7 @@ parse_nfs_mount_command() {
 } # end of parse_nfs_mount_command
 #
 extract_tarball() {
-  # rm_tarball is global variable
+  # rm_tarball_flag is global variable
   local url download_file local_f download_file_absp
   local ip rfile lfile
   url="$1"
@@ -106,7 +115,7 @@ extract_tarball() {
   	file://*)
       		local_f="$(echo $url | sed -e "s|file://||g")"
   		download_file_absp="${local_f}"
-  		rm_tarball="no" # keep it since it's local file
+  		rm_tarball_flag="no" # keep it since it's local file
   		;;
   	tftp*)
   		ip="$(dirname $url | sed -e 's|tftp://||g' -e 's|/.*$||g')"
@@ -115,13 +124,13 @@ extract_tarball() {
   		echo "Trying busybox tftp -g -b 65464 -r $rfile -l ${dest}/$lfile $ip"
   		busybox tftp -g -b 65464 -r $rfile -l ${dest}/$lfile $ip
   		download_file_absp="${dest}/${lfile}"
-  		rm_tarball="yes" # remove it since it's downloaded file
+  		rm_tarball_flag="yes" # remove it since it's a downloaded file
   		;;
   	*)
   		echo "Trying wget ${url} -O ${dest}/$(basename ${url})"
   		wget "${url}" -O "${dest}/${download_file}"
   		download_file_absp="${dest}/${download_file}"
-  		rm_tarball="yes" # remove it since it's downloaded file
+  		rm_tarball_flag="yes" # remove it since it's a downloaded file
   		;;
   esac
   
@@ -137,7 +146,7 @@ extract_tarball() {
 				convert_dos_format_script_from_zip_file $download_file_absp;;
   		*.sh)           set_mode_755_and_unix_format $download_file_absp
 				# keep it since it's will be used directly.
-  				rm_tarball="no" ;;
+  				rm_tarball_flag="no" ;;
   		*)
   			[ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   			echo "Unknown format for download file \"$download_file_absp\"".
@@ -146,7 +155,7 @@ extract_tarball() {
   			return 1
   	esac
   	# Clean the tarball
-  	if [ "$rm_tarball" = "yes" ]; then
+  	if [ "$rm_tarball_flag" = "yes" ]; then
   		echo "Remove the downloaded file..."
   		rm -vf $download_file_absp
   	fi
