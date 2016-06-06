@@ -12,7 +12,7 @@ VER=`grep ^Version $SPEC_FILE |sed -e "s/\t/ /g" -e "s/ \+/ /g" |cut  -d":" -f2 
 RELEASE=`grep ^Release $SPEC_FILE |sed -e "s/\t/ /g" -e "s/ \+/ /g" |cut  -d":" -f2 |tr -d " "`
 echo "VER, RELEASE: $VER, $RELEASE"
 
-TARBALL="$PKG-$VER.tar.bz2"
+TARBALL="$PKG-$VER.tar.xz"
 #check if necessary files exist...
 [ -f $SPEC_FILE ] || exit 0
 [ -f $TARBALL ] || exit 0

@@ -41,5 +41,5 @@ mkdir -p $td
 cp -ar $FILES_DIRS $td/
 
 echo $VER > $td/doc/VERSION
-tar cjf $td.tar.bz2 --owner=root --group=root $td
+tar cJf $td.tar.xz --owner=root --group=root $td
 rm -rf $td
