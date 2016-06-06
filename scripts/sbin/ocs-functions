@@ -6161,9 +6161,8 @@ restore_logv() {
           [ -n "$UUID" ] && uuid_opt="-U $UUID"
           [ -n "$LABEL" ] && label_opt="-L $LABEL"
         fi
-        get_mkswap_uuid_cmd
-        echo "${MKSWAP_UUID} $label_opt $uuid_opt $lv"
-        ${MKSWAP_UUID} $label_opt $uuid_opt $lv
+        echo "mkswap $label_opt $uuid_opt $lv"
+        mkswap $label_opt $uuid_opt $lv
         echo $msg_delimiter_star_line
 	# then skip the rest.
         continue;; 
@@ -8047,9 +8046,8 @@ task_restoreparts() {
             [ -n "$UUID" ] && uuid_opt="-U $UUID"
             [ -n "$LABEL" ] && label_opt="-L $LABEL"
           fi
-          get_mkswap_uuid_cmd
-          echo "${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition" | tee --append $OCS_LOGFILE
-          ${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition | tee --append $OCS_LOGFILE
+          echo "mkswap $label_opt $uuid_opt /dev/$partition" | tee --append $OCS_LOGFILE
+          mkswap $label_opt $uuid_opt /dev/$partition | tee --append $OCS_LOGFILE
           echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
         done
         ;;
@@ -8069,9 +8067,8 @@ task_restoreparts() {
             [ -n "$UUID" ] && uuid_opt="-U $UUID"
             [ -n "$LABEL" ] && label_opt="-L $LABEL"
           fi
-          get_mkswap_uuid_cmd
-          echo "${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition" | tee --append $OCS_LOGFILE
-          ${MKSWAP_UUID} $label_opt $uuid_opt /dev/$partition | tee --append $OCS_LOGFILE
+          echo "mkswap $label_opt $uuid_opt /dev/$partition" | tee --append $OCS_LOGFILE
+          mkswap $label_opt $uuid_opt /dev/$partition | tee --append $OCS_LOGFILE
           echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
         done
         ;;
@@ -9798,34 +9795,6 @@ run_ntfsreloc_part() {
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
 } # end of run_ntfsreloc_part
-#
-get_mkswap_uuid_cmd() {
-  # Function to decide using mkswap or mkswap-uuid
-  # MKSWAP_UUID is global variable
-  # For mkswap from util-linux < 2.20, e.g. 2.17
-  # mkswap --help
-  # Usage: mkswap [-c] [-pPAGESZ] [-L label] [-U UUID] /dev/name [blocks]
-  # For mkswap from util-linux >= 2.20
-  # mkswap --help
-  # Usage:
-  # mkswap [options] device [size]
-  # Options:
-  # -c, --check               check bad blocks before creating the swap area
-  # -f, --force               allow swap size area be larger than device
-  # -p, --pagesize SIZE       specify page size in bytes
-  # -L, --label LABEL         specify label
-  # -v, --swapversion NUM     specify swap-space version number
-  # -U, --uuid UUID           specify the uuid to use
-  # -V, --version             output version information and exit
-  # -h, --help                display this help and exit
-  if [ -n "$(LC_ALL=C mkswap --help 2>&1 | grep -oEw -- "UUID")" ]; then
-   # Newer mkswap (e.g. from util-linux-ng 2.13.1.1) supports "-U UUID"
-   MKSWAP_UUID="mkswap"
-  else
-   # If not, we have to use the patched one
-   MKSWAP_UUID="mkswap-uuid"
-  fi
-} # end of get_mkswap_uuid_cmd
 #
 fsck_partition() {
   local partfs_ dev_ fsck_exopt_ # dev_ is like /dev/sda1
