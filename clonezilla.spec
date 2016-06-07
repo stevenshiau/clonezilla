@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.16
+Version:	3.21.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jun 07 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.17-drbl1
+- Modern mkswap support option to assign UUID. No more using mkswap-uuid.
+- Due to the change in Debian Sid that "init" is not essential any more.  It has to be added as a required package for gparted live. Ref: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=756023
+
 * Mon Jun 06 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.16-drbl1
 - Use xz format for drbl tarball for Debian.
 
