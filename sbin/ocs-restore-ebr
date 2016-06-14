@@ -1,0 +1,119 @@
+#!/bin/bash
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Reinstall executable code area (first 446 bytes in EBR)
+# Ref: https://en.wikipedia.org/wiki/Extended_boot_record
+# Extended boot record (EBR) is the 512-byte boot sector:
+# 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (EBR signature; # 0xAA55) = 512 bytes.
+# EBRs have essentially the same structure as the MBR.
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+#
+USAGE() {
+    echo "$ocs - To restore the EBR (Extended boot record) from an image to device"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] IMAGE_NAME DEVICE"
+    echo "Options:"
+    echo "-or, --ocsroot DIR  Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
+    echo "IMAGE_NAME is the image dir name, not absolute path"
+    echo "DEVICE is the device name, e.g. sda1, sda2..."
+    echo "Ex:"
+    echo "To restore the the EBR saved in the image \"my-image\" to device sda4, run:"
+    echo "   $ocs my-image sda4"
+    echo
+} # end of USAGE
+
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -or|--ocsroot)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             ocsroot="$1"
+             shift;
+           fi
+           [ -z "$ocsroot" ] && USAGE && exit 1
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+target_dir="$1"
+shift
+target_part="$*"
+
+# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
+# otherwise setterm will complain.
+[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
+echo "Setting the TERM as $TERM"
+export TERM="$TERM"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+if [ -z "$target_dir" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No image was assigned!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  echo "$msg_program_stop!"
+  exit 1
+fi
+if [ -z "$target_part" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No destination partition was assigned!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+#
+target_dir_fullpath="$ocsroot/$target_dir"
+
+for ipart in $target_part; do
+  # 1st, check if this partition on a MBR disk, not GPT one.
+  dsk_pt="$target_dir_fullpath/$(to_filename $(get_diskname ${ipart}))-pt.parted"
+  if ! `is_mbr_partitition_table_file $dsk_pt`; then
+    echo "Partition $ipart is not on MBR disk. Maybe it's on GPT one. No need to restore the EBR data."
+    continue
+  fi
+  # 2nd, check if $ipart is extended partition 
+  # For cciss partition, e.g. /dev/cciss/c0d0p2 will be "p2" which is got from $(get_part_number /dev/cciss/c0d0p2)", here the part_index we want is only number, hence we need to trip the leading characters.
+  index="$(LC_ALL=C get_part_number $ipart | sed -r -e "s|^[^[:digit:]]*||g")"  # index is like 2
+  part_type="$(LC_ALL=C grep -Ew "^[[:space:]]*$index" ${dsk_pt} | grep -iw "extended")"
+  if [ -z "$part_type" ]; then
+    # Not extended partition
+    echo "Partition $ipart is not extended partition. No need to restore the EBR data."
+    continue
+  fi 
+
+  #
+  echo -n "Restoring the first 446 bytes of EBR data for extended partition $ipart... "
+  dd if=$target_dir_fullpath/$(to_filename ${ipart})-ebr of=/dev/$ipart bs=446 count=1 &>/dev/null
+  echo "done."
+  echo $msg_delimiter_star_line
+done
