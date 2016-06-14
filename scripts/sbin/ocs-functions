@@ -87,6 +87,8 @@ check_md5_sha1_sums_for_img() {
 #
 get_disk_from_part() {
   # Function to get disk name from partition name, e.g. /dev/sda1 -> /dev/sda
+  # The return name is with the heading "/dev/",
+  # i.e. return /dev/sda, /dev/c0d0, for example.
   local ipart=$1  # ipart is like /dev/sda1
   local hdtmp
   hdtmp="/dev/$(get_diskname $ipart)"
@@ -1778,6 +1780,8 @@ get_swap_partition_sf_format() {
          fi
        done
     fi
+    # Strip the leading spaces
+    known_parts="$(echo $known_parts | sed -r -e "s/^[[:space:]]*//g")"
     echo "$known_parts"
 } # end of get_swap_partition_sf_format
 #
@@ -1817,8 +1821,52 @@ get_swap_partition_parted_format() {
        done
     fi
     # The return known_parts is like: sda1 sda2
+    # Strip the leading spaces
+    known_parts="$(echo $known_parts | sed -r -e "s/^[[:space:]]*//g")"
     echo "$known_parts"
 } # end of get_swap_partition_parted_format
+#
+get_extended_partition_parted_format() {
+    local partition_table="$1"
+    local known_parts="" etparts etdisk
+    [ -z "$partition_table" ] && return 1
+    # The gpt partition table is like:
+    # Model: VMware, VMware Virtual S (scsi)
+    # Disk /dev/sda: 41943040s
+    # Sector size (logical/physical): 512B/512B
+    # Partition Table: msdos
+    # Disk Flags: 
+    # 
+    # Number  Start      End        Size      Type      File system     Flags
+    #  1      2048s      9764863s   9762816s  primary   ext4            boot
+    #  2      9766910s   16775167s  7008258s  extended
+    #  5      9766912s   15624191s  5857280s  logical   ext4
+    #  6      15626240s  16775167s  1148928s  logical   linux-swap(v1)
+    if LC_ALL=C grep -qiEw "extended" $partition_table 2>/dev/null; then
+       # etparts is like 1
+       etparts="$(LC_ALL=C grep -iEw "extended" $partition_table | awk -F" " '{print $1}')"
+       if [ -n "$(LC_ALL=C echo $etparts | grep -Eiv "[[:digit:]]")" ]; then
+	 return 1
+       fi
+       # etdisk is like sda or nvme0n1
+       etdisk="$(LC_ALL=C grep -E "^Disk /dev/" $partition_table | awk -F " " '{print $2}' | sed -r -e "s|^[[:space:]]*||g" -e "s|/dev/||g" -e "s|:||g")"
+
+       for i in $etparts; do
+         case "${etdisk}" in
+         cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+	     # e.g. nvme0n1 -> nvme0n1p1
+             known_parts="$known_parts ${etdisk}p${i}" ;;
+         *)
+             # e.g. sda + 2 -> sda2
+             known_parts="$known_parts ${etdisk}${i}" ;;
+         esac
+       done
+    fi
+    # The return known_parts is like: sda1 sda2
+    # Strip the leading spaces
+    known_parts="$(echo $known_parts | sed -r -e "s/^[[:space:]]*//g")"
+    echo "$known_parts"
+} # end of get_extended_partition_parted_format
 #
 conv_uuid_mount_to_tradpart() {
   local mounted_table=$1
@@ -1888,7 +1936,7 @@ get_known_partition_proc_format() {
        case "$chosen_mode" in
        data)
          # We want data partition to be saved, so skip extended or swap. While LVM will be processed especially.
-         case "$part_type" in *[Ss][Ww][Aa][Pp]*|*extended*) continue ;; esac
+         case "$part_type" in *[Ss][Ww][Aa][Pp]*|*extended*|*0xf*) continue ;; esac
          if [ "$skip_lvm" = "yes" ]; then
            case "$part_type" in *[Ll][Vv][Mm]*) continue ;; esac
          fi
@@ -1896,6 +1944,10 @@ get_known_partition_proc_format() {
        swap)
          # We want swap partition only, so only include swap.
          [ -z "$(echo "$part_type" | grep -i swap)" ] && continue
+         ;;
+       extended)
+         # We want extended partition only, so only include extended.
+	 [ -z "$(echo "$part_type" | grep -Ei "(extended|0xf)")" ] && continue
          ;;
        esac
        BACKUP_DEVS="$BACKUP_DEVS $p"
@@ -1928,7 +1980,7 @@ check_grub_partition() {
     p_type="$(LC_ALL=C ocs-get-part-info "$grub_p" type filesystem 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 ] && continue 
-    case "$p_type" in *[Ss][Ww][Aa][Pp]*|*extended*) continue ;; esac
+    case "$p_type" in *[Ss][Ww][Aa][Pp]*|*extended*|*0xf*) continue ;; esac
     #
     hd_img="$(mktemp -d /tmp/hd_img.XXXXXX)"
     mount -o ro $grub_p $hd_img >/dev/null 2>&1
@@ -2006,7 +2058,7 @@ mount_root_partition_for_separate_boot_part() {
     p_type="$(LC_ALL=C ocs-get-part-info "$root_partition" type filesystem 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 ] && continue 
-    case "$p_type" in *[Ss][Ww][Aa][Pp]*|*extended*) continue ;; esac
+    case "$p_type" in *[Ss][Ww][Aa][Pp]*|*extended*|*0xf*) continue ;; esac
     #
     mount $root_partition $hd_img >/dev/null 2>&1
     mrc=$?
@@ -2454,7 +2506,17 @@ run_grub2_from_restored_os() {
   mount --bind /proc $mnt_pnt/proc
   mount --bind /sys $mnt_pnt/sys
 
+  # Decide if grub2 has to be run with option "-s, --skip-fs-probe"
+  # When it's installed on EBR, use it. Otherwise grub2 will complain and exit:
+  # /usr/sbin/grub2-bios-setup: error: unable to identify a filesystem in hostdisk//dev/sda; safety check can't be performed.
+
+  opt_skip_fs_probe=""
+  if `is_partition ${grub2_hd_p}`; then
+    opt_skip_fs_probe="-s"
+  fi
+
   grub2_run_sh="$(mktemp $mnt_pnt/grub2-sh-XXXXXX)"
+  echo "The options for grub2-install in the chroot: --force --recheck --no-floppy $opt_skip_fs_probe ${grub2_hd_p}"
   cat <<-SH_END > $grub2_run_sh
 #!/bin/bash
 export LC_ALL=C
@@ -2474,7 +2536,7 @@ else
   grub_install_cmd="grub-install"
 fi
 rm -f /boot/grub/device.map
-\$grub_install_cmd --force --recheck --no-floppy ${grub2_hd_p}
+\$grub_install_cmd --force --recheck --no-floppy $opt_skip_fs_probe ${grub2_hd_p}
 SH_END
   chmod 755 $grub2_run_sh
   # If grub partition is not in the same partition as root partition, we have to mount grub partition in the root partition.
@@ -3858,7 +3920,7 @@ get_disk_or_part_hardware_info() {
     part_type="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 ] && continue 
-    case "$part_type" in *[Ss][Ww][Aa][Pp]*|*extended*) continue ;; esac
+    case "$part_type" in *[Ss][Ww][Aa][Pp]*|*extended*|*0xf*) continue ;; esac
     if [ "$skip_lvm" = "yes" ]; then
       case "$part_type" in *[Ll][Vv][Mm]*) continue ;; esac
     fi
@@ -4103,7 +4165,7 @@ get_input_dev_name() {
           # skip swap and extended partition
           FILE="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null)"
           rc=$?
-          [ "$rc" = "0" ] && case "$FILE" in *[Ss][Ww][Aa][Pp]*|*extended*) continue ;; esac
+          [ "$rc" = "0" ] && case "$FILE" in *[Ss][Ww][Aa][Pp]*|*extended*|*0xf*) continue ;; esac
 	  if [ "$skip_lvm" = "yes" ]; then
             [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
 	  fi
@@ -4162,7 +4224,7 @@ get_input_dev_name() {
        #FILE="$(LC_ALL=C file -Ls "/dev/$p")"
        FILE="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null)"
        rc=$?
-       [ "$rc" = "0" ] && case "$FILE" in *[Ss][Ww][Aa][Pp]*|*extended*) continue ;; esac
+       [ "$rc" = "0" ] && case "$FILE" in *[Ss][Ww][Aa][Pp]*|*extended*|*0xf*) continue ;; esac
        if [ "$skip_lvm" = "yes" ]; then
          [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
        fi
@@ -7230,8 +7292,7 @@ check_if_windows_boot_reserve_part() {
 task_savedisk() {
   local target_dir=$1
   local target_hd=$2
-  local target_parts
-  local target_swap_parts
+  local target_parts target_swap_parts target_extended_parts
   local gen_md5sum_status gen_sha1sum_status rc_task_savedisk
   local pv_on_dsk
 
@@ -7258,6 +7319,7 @@ task_savedisk() {
   # We need the partition table to conver the selected HD to partitions.
   target_parts=""
   target_swap_parts=""
+  target_extended_parts=""
   for idisk in $target_hd; do
     # Since sfdisk does not work with EFI/GPT, we no more use sfdisk to get the partition list. Instead, we use /proc/partitions from kenrel to list them. Thanks to Justin Fitzhugh from mozilla.com.
     # pt_tmp="$(mktemp /tmp/pt_tmp.XXXXXX)"
@@ -7283,6 +7345,11 @@ task_savedisk() {
     echo "Searching for swap partition(s)..." | tee --append $OCS_LOGFILE
     get_known_partition_proc_format $idisk swap
     target_swap_parts="$target_swap_parts $BACKUP_DEVS"
+
+    BACKUP_DEVS=""
+    echo "Searching for extended partition(s)..." | tee --append $OCS_LOGFILE
+    get_known_partition_proc_format $idisk extended
+    target_extended_parts="$target_extended_parts $BACKUP_DEVS"
   done
 
   # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
@@ -7301,8 +7368,15 @@ task_savedisk() {
   # Strip the single white space which should be nothing. Thanks to Borksoft.
   target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
   target_swap_parts="$(echo $target_swap_parts | sed -e "s/^  *$//")"
-  [ -z "$target_parts" ] || echo "The data partition to be saved: $target_parts" | tee --append $OCS_LOGFILE
-  [ -z "$target_swap_parts" ] || echo "The swap partition to be saved: $target_swap_parts" | tee --append $OCS_LOGFILE
+  if [ -n "$target_parts" ]; then
+    echo "The data partition to be saved: $target_parts" | tee --append $OCS_LOGFILE
+  fi
+  if [ -n "$target_swap_parts" ]; then
+    echo "The swap partition to be saved: $target_swap_parts" | tee --append $OCS_LOGFILE
+  fi
+  if [ -z "$target_extended_parts" ]; then
+    echo "The extended partition to be saved: $target_extended_parts" | tee --append $OCS_LOGFILE
+  fi
   # Let task_saveparts do the real job. However, we do not generate md5sums, sha1sums in task_saveparts, since there are some files will be created later. We will generate them in the end of this function.
   gen_md5sum_status="$gen_md5sum"; gen_sha1sum_status="$gen_sha1sum" # save values
   gen_md5sum="no"; gen_sha1sum="no"
@@ -7316,6 +7390,15 @@ task_savedisk() {
   for isp in $target_swap_parts; do
     echo "Saving swap partition $isp info in $ocsroot/$target_dir/swappt-$(to_filename ${isp}).info if it exists..." | tee --append $OCS_LOGFILE
     output_swap_partition_uuid_label /dev/$isp $ocsroot/$target_dir/swappt-$(to_filename ${isp}).info
+  done
+
+  # Save extended boot record (EBR) from extended partition.
+  # Although we save the whole 512 bytes, but actually when it's restored,
+  # only the first 446 bytes will be used.
+  echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+  for iep in $target_extended_parts; do
+    echo "Saving extended partition $iep info in $ocsroot/$target_dir/$(to_filename ${iep})-ebr if it exists..." | tee --append $OCS_LOGFILE
+    dd if=/dev/$iep of=$ocsroot/$target_dir/$(to_filename ${iep})-ebr bs=512 count=1 2>&1 | tee --append ${OCS_LOGFILE}
   done
 
   # The target_dir is local variable, so we put leading $ocsroot to save the disk
@@ -7626,7 +7709,7 @@ task_saveparts() {
     # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
     # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
     echo "Saving the MBR data for $ihd..." | tee --append $OCS_LOGFILE
-    dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-mbr count=1 bs=512 2>&1 | tee --append ${OCS_LOGFILE}
+    dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-mbr bs=512 count=1 2>&1 | tee --append ${OCS_LOGFILE}
   done
 
   do_LVM_save="no"
@@ -7821,6 +7904,7 @@ task_restoreparts() {
   local pv_on_dsk
   local p_fs ipartition
   local efi_info_tmp
+  local processed_extended_parts grub_cand_parts
 
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -7911,7 +7995,7 @@ task_restoreparts() {
   # in create_partition, it won't run sfdisk in fact.
   
   # strip the leading spaces
-  target_parts="$(echo $target_parts | sed -e "s/^[[:space:]]*//g")"
+  target_parts="$(echo $target_parts | sed -r -e "s/^[[:space:]]*//g")"
   # countdown or wait for confirm
   dev_to_be_overwrite=""
   if [ -n "$(echo "$ocs_sr_type" | grep -E "parts")" -a "$create_part" = "no" ]; then
@@ -7979,10 +8063,10 @@ task_restoreparts() {
   PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
   do_LVM_restore="no"
   for partition in $target_parts; do
-    # hda1 -> hda
+    # sda1 -> sda
     hd_tmp="$(get_diskname $partition)"
     part_is_lvm="no"
-    # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
+    # If the partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
     if [ -e $PV_PARSE_CONF ]; then
       for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
         if [ "$partition" = "$(get_master_dev_of_multipath $i)" ]; then
@@ -8083,6 +8167,33 @@ task_restoreparts() {
     done
   fi
 
+  # Extended boot record (EBR) in extended partition
+  processed_extended_parts=""
+  if [ "$restore_ebr" = "yes" ]; then
+    for ihd in $target_hd; do
+      # Get the partition type from parted output
+      # Decide if the partition is gpt or mbr
+      ptype="$(get_partition_table_type_from_img "$target_dir_fullpath" "${ihd}")"
+      # Extended partition only exists in MBR disk type, not in GPT.
+      case "$ptype" in
+       mbr)
+          echo "Finding extended partition(s) in parted table $target_dir_fullpath/$(to_filename ${ihd})-pt.parted..." | tee --append $OCS_LOGFILE
+          for partition in `get_extended_partition_parted_format $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; do
+            echo "Restoring extended boot record (EBR) in extended partition /dev/$partition..." | tee --append $OCS_LOGFILE
+            check_specify_part_exists $partition
+            echo "Found the EBR data for /dev/$partition in the image dir, restore it by:" | tee --append $OCS_LOGFILE
+            # Reinstall executable code area (first 446 bytes in EBR)
+            echo "Running: ocs-restore-ebr --ocsroot $ocsroot $target_dir $partition" | tee --append ${OCS_LOGFILE}
+            ocs-restore-ebr --ocsroot $ocsroot $target_dir $partition | tee --append ${OCS_LOGFILE}
+	    # Save the extended part so that later ocs-install-grub can use.
+	    processed_extended_parts="$processed_extended_parts $partition"
+            echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+          done
+        ;;
+      esac
+    done
+  fi
+
   # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
   # instead it's on a disk (e.g. /dev/sdb).
   pv_on_dsk="$(get_pv_on_disk_from_PV_conf_list "$PV_PARSE_CONF")"
@@ -8178,8 +8289,10 @@ task_restoreparts() {
 
   # re-install grub here
   if [ "$install_grub" = "on" ]; then
-    echo "Running: ocs-install-grub -p \"$target_parts\" $grub_partition" | tee --append $OCS_LOGFILE
-    ocs-install-grub -p "$target_parts" $grub_partition | tee --append $OCS_LOGFILE
+    # Because grub boot loader might be on extended partition, here we add that for ocs-install-grub to search.
+    grub_cand_parts="$target_parts $processed_extended_parts"
+    echo "Running: ocs-install-grub -p \"$grub_cand_parts\" $grub_partition" | tee --append $OCS_LOGFILE
+    ocs-install-grub -p "$grub_cand_parts" $grub_partition | tee --append $OCS_LOGFILE
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
@@ -10187,6 +10300,8 @@ get_part_number() {
 } # end of get_part_number
 #
 get_diskname() {
+  # The return name is without the heading "/dev/",
+  # i.e. only return sda, c0d0, for example.
   # Disk name type: 
   local dev_=${1#/dev/*}
   # /dev/sda1 -> /dev/sda
