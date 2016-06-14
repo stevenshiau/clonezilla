@@ -416,20 +416,34 @@ fi
 
 # Even it's blank hard drive, because this program is run after partitions and MBR restored, so we can just detect the MBR on the disk.
 if [ "$check_before_install" = "yes" ]; then
-  # Check if grub exists on the MBR. If not, skip this function.
+  # Check if grub exists on the MBR.
   if [ -z "$(LANG=C dd if=/dev/$grub_hd bs=512 count=1 2>/dev/null | strings | grep "GRUB")" ]; then
+    # In this case, grub does _NOT_ exist on MBR.
     # Maybe the boot loader is not on MBR, and it's on root partition.
     # E.g.
-    # (1) For MBR, its content is like the mbr.bin from syslinux:
+    # (1) For MBR, its content is (like the mbr.bin from syslinux):
     # root@debian:/tmp# dd if=/dev/sda bs=512 count=1 2>/dev/null |strings
+    # ======================
     # RPf1
-    # Missing operating system.
+    # Missing operating system. <----- common one
     # f`f1
     # |fRfP
     # Ht[y9Y[
     # Multiple active partitions.
     # |XFSBu  f
     # Operating system load error.
+    # ======================
+    # Or it might looks like (like the one from OpenSuSE leap 42.1):
+    # root@debian:/tmp# dd if=/dev/sda bs=512 count=1 2>/dev/null |strings
+    # ======================
+    # t&fh
+    # TCPAu2
+    # r,fh
+    # fSfSfUfh
+    # Invalid partition table
+    # Error loading operating system
+    # Missing operating system <----- commone one
+    # ======================
     # (2) Instead, the grub boot loader is on root partition (/dev/sda2) for OpenSuSE 13.2 default installation
     # root@debian:/tmp# dd if=/dev/sda2 bs=512 count=1 2>/dev/null |strings
     # ZRr=
@@ -457,12 +471,12 @@ if [ "$check_before_install" = "yes" ]; then
     # (2) grub in partition
     rootp_installed_grub=""
     mbr_strings="$(LC_ALL=C dd if=/dev/$grub_hd bs=512 count=1 2>/dev/null | strings)"
-    if [ -n "$(echo "$mbr_strings" | grep -E "Missing operating system")" -a \
-         -n "$(echo "$mbr_strings" | grep -E "Multiple active partitions")" -a \
-         -n "$(echo "$mbr_strings" | grep -E "Operating system load error")" ]; then
+    if [ -n "$(echo "$mbr_strings" | grep -E "Missing operating system")" ]; then
+      # In this case, a normal "mbr.bin" is in /dev/$grub_hd, not grub.
       # Use all possible partitions if it's auto
       if [ -z "$selected_parts" ]; then
-        get_partition_list false
+	# $selected_hd might be nothing if it's not assigned
+        get_partition_list false "$selected_hd"
         # The variable "partition_list" is got from get_partition_list.
         avail_part="$partition_list"
       else
