@@ -429,6 +429,7 @@ ask_if_clone_mbr(){
 #
 clone_boot_loader_in_target() {
   # ocs_onthefly_clone_mbr is global variable in ocs-onthefly.
+  local ret ret_extpt
   echo "$msg_delimiter_star_line"
   if [ "$CLONE_BOOT_LOADER" = "yes" ] && [ "$source_type" = "disk" ] && [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then
     case "$ocs_onthefly_clone_mbr" in
@@ -447,9 +448,31 @@ clone_boot_loader_in_target() {
            dd if=$hd_tgt_tmp/src-mbr of=/dev/$target_hd bs=446 count=1 &> /dev/null
            ret=$?
          fi
-         if [ "$ret" -ge 1 ]; then
+
+	 # The following is for both local mode and network mode.
+         # Sometimes it's not easy to get the destination extended partition
+	 # device name, e.g. sda3 -> sdb3 (easy), or sda3 -> nvme1n1p3 (not easy). Here we parse the destination partition table file to get that.
+         # boot loader is the first 446 Bytes, the rest part is logical drive partition table.
+	 # This method works for both local mode and network mode.
+         if `is_mbr_partitition_table_file $tgt_parted_info`; then
+           extended_pt_in_tgt_hd="$(get_extended_partition_parted_format $tgt_parted_info)"
+	   if [ -n "$extended_pt_in_tgt_hd" ]; then
+	     echo "Cloning the extended boot loader (EBR) (executable code area) from \"$src_extpt_ebr\" to \"/dev/$extended_pt_in_tgt_hd\"..." | tee --append ${OCS_LOGFILE}
+             dd if=$tgt_extpt_ebr of=/dev/$extended_pt_in_tgt_hd bs=446 count=1 &> /dev/null
+             ret_extpt=$?
+           fi
+         fi
+
+         if [ -n "$ret" -a "$ret" -ge 1 ]; then
            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
            echo "$msg_failed_to_clone_the_boot_loader: \"$target_hd\"" | tee --append ${OCS_LOGFILE}
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+           echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+           exit 1
+         fi
+         if [ -n "$ret_extpt" -a "$ret_extpt" -ge 1 ]; then
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+           echo "$msg_failed_to_clone_the_boot_loader_on_EBR: \"/dev/$extended_pt_in_tgt_hd\"" | tee --append ${OCS_LOGFILE}
            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
            echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
            exit 1
@@ -570,6 +593,7 @@ prepare_local_clone_dev_info() {
   # For source disk
   src_pt_tmp="$hd_src_tmp/src_pt.sf"
   src_dsk_mbr="$hd_src_tmp/src-mbr"
+  src_extpt_ebr="$hd_src_tmp/src-exept-ebr"
   src_dsk_chs="$hd_src_tmp/src-chs.sf"
   src_pt_info="$hd_src_tmp/source_partition.info"
   src_parted_info="$hd_src_tmp/src-pt.parted"
@@ -583,6 +607,7 @@ prepare_local_clone_dev_info() {
   # For target disk
   tgt_pt_tmp="$hd_tgt_tmp/tgt-pt.sf"
   tgt_dsk_mbr="$hd_tgt_tmp/${target_hd}-mbr"
+  tgt_extpt_ebr="$hd_tgt_tmp/tgt-exept-ebr"
   tgt_dsk_chs="$hd_tgt_tmp/${target_hd}-chs.sf"
   tgt_pt_info="$hd_tgt_tmp/target_partition.info"
   tgt_parted_info="$hd_tgt_tmp/tgt-pt.parted"
@@ -594,7 +619,7 @@ prepare_local_clone_dev_info() {
   tgt_hidden_img="$hd_tgt_tmp/tgt-hidden-data.img"
   #tgt_efi_nvram_data="$hd_tgt_tmp/tgt-efi-nvram.dat" # no need for local EFI/GPT disk cloning 
 
-  local part_in_hd swap_in_hd
+  local part_in_hd swap_in_hd extended_pt_in_hd
 
   # Note! In Ubuntu 6.10, sfdisk output abnormal format for >= 10 partitions, like
   #...
@@ -635,7 +660,7 @@ prepare_local_clone_dev_info() {
 
   # No matter it's MBR or GPT, we use sfdisk to dump partition table since if dual boot (Mac OS, Linux) on Mac book, this partition table is required for Linux normally.
   # MBR
-  LC_ALL=C dd if=/dev/$source_hd of=$src_dsk_mbr count=1 bs=512 &> /dev/null
+  LC_ALL=C dd if=/dev/$source_hd of=$src_dsk_mbr bs=512 count=1 &> /dev/null
   LC_ALL=C sfdisk -d /dev/$source_hd > $src_pt_tmp 2>/dev/null
 
   # The output of CHS is ${source_hd}-chs.sf
@@ -709,6 +734,16 @@ prepare_local_clone_dev_info() {
     target_swap_part_info="$(echo swappt-${partition}.info | replace_disk_name_stdin $source_hd $target_hd)"
     output_swap_partition_uuid_label /dev/$partition $local_tmp/$target_swap_part_info
   done
+
+  # Output the extended boot record (EBR) in case it contains grub boot loader
+  if [ "$pt_type" = "mbr" ]; then
+    extended_pt_in_hd="$(get_extended_partition_parted_format $src_parted_info)"
+    # Extended partition should have one only in a disk.
+    if [ -n "$extended_pt_in_hd" ]; then
+      LC_ALL=C dd if=/dev/$extended_pt_in_hd of=$src_extpt_ebr bs=512 count=1 &> /dev/null
+    fi
+  fi
+
   # No need for local EFI/GPT disk cloning
   ## Save EFI NVRAM info. What we need is actually the label
   ## Only if dir /sys/firmware/efi/efivars exists, the data exist in EFI NVRAM 
@@ -726,6 +761,7 @@ prepare_local_clone_dev_info() {
   [ -f "$src_gpt_gdisk" ] && cp -f $src_gpt_gdisk $tgt_gpt_gdisk
   [ -f "$src_hidden_img" ] && cp -f $src_hidden_img $tgt_hidden_img
   [ -f "$src_dsk_mbr" ] && cp -f $src_dsk_mbr $tgt_dsk_mbr
+  [ -f "$src_extpt_ebr" ] && cp -f $src_extpt_ebr $tgt_extpt_ebr
   [ -f "$src_dsk_chs" ] && cp -f $src_dsk_chs $tgt_dsk_chs
   [ -e "$tgt_pt_tmp" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_pt_tmp
   [ -e "$tgt_parted_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_parted_info
@@ -775,7 +811,7 @@ prepare_local_clone_dev_info() {
 prepare_network_clone_dev_info() {
   # This function is for server and client both. It depends on $STATUS is clone_server or clone_client
   local DEV VG UUID LOGV
-  local part_in_hd swap_in_hd s_swpname t_swpname
+  local part_in_hd swap_in_hd extended_pt_in_hd s_swpname t_swpname
   #
   if [ "$STATUS" = "clone_server" ]; then
     hd_src_tmp="$(mktemp -d /tmp/ocs_onthefly_src.XXXXXX)"
@@ -822,6 +858,7 @@ prepare_network_clone_dev_info() {
   if [ "$STATUS" = "clone_server" ]; then
     src_pt_tmp="$hd_src_tmp/src_pt.sf"
     src_dsk_mbr="$hd_src_tmp/src-mbr"
+    src_extpt_ebr="$hd_src_tmp/src-exept-ebr"
     src_dsk_chs="$hd_src_tmp/src-chs.sf"
     src_pt_info="$hd_src_tmp/src_partition.info"
     src_parted_info="$hd_src_tmp/src-pt.parted"
@@ -858,7 +895,7 @@ prepare_network_clone_dev_info() {
 
     # No matter it's MBR or GPT, we use sfdisk to dump partition table since if dual boot (Mac OS, Linux) on Mac book, this partition table is required for Linux normally.
     # MBR
-    LC_ALL=C dd if=/dev/$source_hd of=$src_dsk_mbr count=1 bs=512 &> /dev/null
+    LC_ALL=C dd if=/dev/$source_hd of=$src_dsk_mbr bs=512 count=1 &> /dev/null
     LC_ALL=C sfdisk -d /dev/$source_hd > $src_pt_tmp 2>/dev/null
 
     # The output of CHS is ${source_hd}-chs.sf
@@ -921,6 +958,16 @@ prepare_network_clone_dev_info() {
       echo "Outputing swap UUID/LABEL..."
       output_swap_partition_uuid_label /dev/$partition $hd_src_tmp/swappt-${partition}.info
     done
+
+    # Output the extended boot record (EBR) in case it contains grub boot loader
+    if [ "$pt_type" = "mbr" ]; then
+      extended_pt_in_hd="$(get_extended_partition_parted_format $src_parted_info)"
+      # Extended partition should have one only in a disk.
+      if [ -n "$extended_pt_in_hd" ]; then
+        LC_ALL=C dd if=/dev/$extended_pt_in_hd of=$src_extpt_ebr bs=512 count=1 &> /dev/null
+      fi
+    fi
+
     # Save EFI NVRAM info. What we need is actually the label
     # Only if dir /sys/firmware/efi/efivars exists, the data exist in EFI NVRAM 
     if [ -d "/sys/firmware/efi/efivars" ]; then
@@ -1027,6 +1074,7 @@ ADVAN_PARAM_END
     src_gpt_gdisk="$hd_tgt_tmp/src-gpt.gdisk"
     src_hidden_img="$hd_tgt_tmp/src_hidden-data.img"
     src_dsk_mbr="$hd_tgt_tmp/src-mbr"
+    src_extpt_ebr="$hd_tgt_tmp/src-exept-ebr"
     src_dsk_chs="$hd_tgt_tmp/src-chs.sf"
     src_efi_nvram_data="$hd_tgt_tmp/src-efi-nvram.dat"  
     # For target dik
@@ -1039,6 +1087,7 @@ ADVAN_PARAM_END
     tgt_gpt_gdisk="$hd_tgt_tmp/tgt-gpt.gdisk"
     tgt_hidden_img="$hd_tgt_tmp/tgt_hidden-data.img"
     tgt_dsk_mbr="$hd_tgt_tmp/${target_hd}-mbr"
+    tgt_extpt_ebr="$hd_tgt_tmp/tgt-exept-ebr"
     tgt_dsk_chs="$hd_tgt_tmp/${target_hd}-chs.sf"
     tgt_efi_nvram_data="$hd_tgt_tmp/tgt-efi-nvram.dat"  
 
@@ -1079,6 +1128,7 @@ ADVAN_PARAM_END
     [ -f "$src_gpt_gdisk" ] && cp -f $src_gpt_gdisk $tgt_gpt_gdisk
     [ -f "$src_hidden_img" ] && cp -f $src_hidden_img $tgt_hidden_img
     [ -f "$src_dsk_mbr" ] && cp -f $src_dsk_mbr $tgt_dsk_mbr
+    [ -f "$src_extpt_ebr" ] && cp -f $src_extpt_ebr $tgt_extpt_ebr
     [ -f "$src_dsk_chs" ] && cp -f $src_dsk_chs $tgt_dsk_chs
     [ -e "$tgt_pt_tmp" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_pt_tmp
     [ -e "$tgt_pt_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_pt_info
@@ -1732,7 +1782,7 @@ post_process_in_target_dev() {
     if [ "$install_grub" = "on" ]; then
       # Since it's local clone, we must assign the target hardisk, otherwise it might find the source hardisk. For example, hda -> hdc local clone, if no "-s $target_hd" is assigned, it will find hda as grub target.
       tgt_disk_select_opt="-s $target_hd"
-      echo "Run grub install on disk $target_hd..." | tee --append $OCS_LOGFILE
+      echo "Running: ocs-install-grub $tgt_disk_select_opt $grub_partition" | tee --append $OCS_LOGFILE
       ocs-install-grub $tgt_disk_select_opt $grub_partition | tee --append $OCS_LOGFILE
     fi
     echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
