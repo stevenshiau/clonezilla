@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.18
+Version:	3.21.19
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jun 15 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.19-drbl1
+- Use the patched live-boot so that the option toram=live could be used in drbl live to copy the "live" directory only, not all the files from live media.
+
 * Tue Jun 14 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.18-drbl1
 - Add supporting for grub on EBR imaging and cloning. Thanks to Bill Wright (bill _at_ blug org) for reporting this issue.
 
