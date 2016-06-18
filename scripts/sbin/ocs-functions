@@ -11948,3 +11948,39 @@ set_mode_755_and_unix_format() {
   # Therefore force to convert it to Unix text format
   dos2unix -q "$file_dest"
 } # end of set_mode_755_and_unix_format
+#
+strip_heading_dev() {
+  # Strip the leading /dev/ if it's assigned. Make it like sda, sdb, not /dev/sda, /dev/sdb.
+  local dev_s="$*"
+  local stripped_dev
+  stripped_dev=""
+  for i in $dev_s; do
+    stripped_dev="$stripped_dev ${i#/dev/*}"
+  done
+  echo ${stripped_dev}
+} # end of strip_heading_dev
+#
+prepare_mnt_point_ocsroot() {
+  if mountpoint $ocsroot &>/dev/null; then
+    echo "Umounting the existing $ocsroot..."
+    umount $ocsroot
+  fi
+  echo "Preparing the mount point $ocsroot..."
+  [ -L "$ocsroot" ] && rm -f $ocsroot
+  [ ! -d "$ocsroot" ] && mkdir -p $ocsroot
+  if [ ! -d "$ocsroot" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$ocsroot is NOT a directory! Failed to create directory $ocsroot! No mount point for $ocsroot!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+} # end of prepare_mnt_point_ocsroot
+#
+load_ocsroot_mnt_cmd() {
+  # Function to be used for prep-ocsroot and ocs-live-respository
+  ocsroot_mnt_cmd_smb="LC_ALL=C mount -t cifs \"//${smb_srv}${smbfs_dir}\" $ocsroot -o user=\"${smb_account}${smb_password_opt}${smb_domain_opt}\"${smb_sec_opt}" 
+  ocsroot_mnt_cmd_nfs="LC_ALL=C mount -t $nfs_ver $nfs_srv:$nfs_dir $ocsroot -o $ocsroot_def_mnt_opt,nodiratime,$nfsvers_opt"
+  ocsroot_mnt_cmd_webdav="LC_ALL=C mount -t davfs -o noexec $davfs_url $ocsroot"
+  ocsroot_mnt_cmd_sshfs="LC_ALL=C sshfs \"$ssh_account\"@$ssh_srv:\"$sshfs_dir\" $ocsroot -p $ssh_port $sshfs_extra_opt"
+} # end of load_ocsroot_mnt_cmd
