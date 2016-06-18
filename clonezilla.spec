@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.21
+Version:	3.21.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.20.21, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.88, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.20.23, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.88, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jun 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.22-drbl1
+- Add a mechanism so that image repository can be auto mounted with boot parameter ocs_repository in URI format, e.g.  ocs_repository="dev:///dev/sdf1" or ocs_repository="smb://wa-domain;jack:mypass@192.168.7.25/images". Thanks to Aaron Burling (aaron_burling _at_ lkstevens wednet edu) for this idea.
+
 * Thu Jun 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.21-drbl1
 - Update toram mode as "live,syslinux" for ocs-live-boot-menu when it's assigned as "live" because for DRBL live the config file in syslinux dir is required.
 
