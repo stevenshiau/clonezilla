@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.22
+Version:	3.21.23
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jun 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.23-drbl1
+- If no ocs_repository is assigned in boot parameters, ocs-live-repository shoule just exit.  Nothing should be shown except the exit code.
+
 * Sat Jun 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.22-drbl1
 - Add a mechanism so that image repository can be auto mounted with boot parameter ocs_repository in URI format, e.g.  ocs_repository="dev:///dev/sdf1" or ocs_repository="smb://wa-domain;jack:mypass@192.168.7.25/images". Thanks to Aaron Burling (aaron_burling _at_ lkstevens wednet edu) for this idea.
 
