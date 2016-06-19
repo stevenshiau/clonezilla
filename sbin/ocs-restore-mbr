@@ -103,25 +103,29 @@ fi
 target_dir_fullpath="$ocsroot/$target_dir"
 
 for ihd in $target_hd; do
-  if `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
-    # Install MBR which displays a failure message on boot. This is for fault tolerance. If all the partitions are cloned successfully, the correcting MBR will be restored later. For more info, please check https://sourceforge.net/tracker/?func=detail&atid=671653&aid=2793248&group_id=115473
-    cat /usr/share/partclone/fail-mbr.bin > /dev/$ihd
-    if [ "$restore_prebuild_mbr" = "yes" ]; then
-      # For M$ Windows system, sometimes it will fail if we restore the mbr from the one we saved (Ex. hda-mbr). Another option is to use mbr.bin from syslinux
-      echo -n "Restoring the mbr.bin from syslinux to /dev/$ihd... "
-      cat $pxelinux_binsrc_dir/bios/mbr.bin > /dev/$ihd
-      echo "done."
-    else
-      echo -n "Restoring the first 446 bytes of MBR data, i.e. executable code area, for $ihd... "
-      dd if=$target_dir_fullpath/$(to_filename ${ihd})-mbr of=/dev/$ihd bs=446 count=1 &>/dev/null
-      echo "done."
-    fi
-    echo $msg_delimiter_star_line
+  # No matter it's msdos partition table or GPT one, here we restore the MBR.
+  # If it's GPT format, this could make GPT one as "valid GPT with protective MBR",
+  # and it's still GPT format. 
+  # Some OS (e.g. VMware ESXi 5.5.0) need protective MBR even it's GPT partition table.
+  # Ref: 
+  # https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/30662778/
+  # https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/ca825570/
+
+  # Install MBR which displays a failure message on boot. This is for fault tolerance. If all the partitions are cloned successfully, the correcting MBR will be restored later. For more info, please check https://sourceforge.net/tracker/?func=detail&atid=671653&aid=2793248&group_id=115473
+  cat /usr/share/partclone/fail-mbr.bin > /dev/$ihd
+  if [ "$restore_prebuild_mbr" = "yes" ]; then
+    # For M$ Windows system, sometimes it will fail if we restore the mbr from the one we saved (Ex. hda-mbr). Another option is to use mbr.bin from syslinux
+    cat_cmd="cat $pxelinux_binsrc_dir/bios/mbr.bin > /dev/$ihd"
+    echo "Restoring the mbr.bin from syslinux to /dev/$ihd by:"
+    echo "$cmd_cmd"
+    eval $cat_cmd
+    echo "done."
   else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Not a MBR disk: $ihd"
-    echo "No need to restore the first 446 bytes of MBR data."
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    exit 1
+    dd_cmd="dd if=$target_dir_fullpath/$(to_filename ${ihd})-mbr of=/dev/$ihd bs=446 count=1 &>/dev/null"
+    echo "Restoring the first 446 bytes of MBR data (executable code area) for $ihd by:"
+    echo "$dd_cmd"
+    eval $dd_cmd
+    echo "done."
   fi
+  echo $msg_delimiter_star_line
 done
