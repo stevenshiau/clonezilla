@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.24
+Version:	3.21.25
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 20 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.25-drbl1
+- Add support for device /dev/nbd. Thanks to Mircea Dan for this suggestion. Ref: https://sourceforge.net/p/clonezilla/discussion/Help/thread/d2d2a480/
+
 * Sun Jun 19 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.24-drbl1
 - Restore MBR data (executable code area) even it's GPT disk. Some OS, e.g. ESXi 5.5 need that.
   Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/30662778/
