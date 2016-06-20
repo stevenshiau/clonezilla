@@ -1811,7 +1811,7 @@ get_swap_partition_parted_format() {
 
        for i in $swparts; do
          case "${swdisk}" in
-         cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+         cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*)
 	     # e.g. nvme0n1 -> nvme0n1p1
              known_parts="$known_parts ${swdisk}p${i}" ;;
          *)
@@ -1853,7 +1853,7 @@ get_extended_partition_parted_format() {
 
        for i in $etparts; do
          case "${etdisk}" in
-         cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+         cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*)
 	     # e.g. nvme0n1 -> nvme0n1p1
              known_parts="$known_parts ${etdisk}p${i}" ;;
          *)
@@ -4050,7 +4050,7 @@ get_not_busy_disks_or_parts() {
       # LC_ALL=C perl -i -ne "print if m!^.*[[:space:]]+${chosen_disk}p?[0-9]*[[:space:]].*\$!" $partition_table
       # Ref: https://sourceforge.net/p/clonezilla/bugs/179/
       case "${chosen_disk}" in
-      cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+      cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*)
             LC_ALL=C perl -i -ne "print if m|^.*[[:space:]]+${chosen_disk}p?[0-9]*[[:space:]].*\$|" $partition_table
             ;;
       *)
@@ -9029,6 +9029,7 @@ check_if_disk_busy_before_create_partition() {
   # /dev/mmcblk0 is busy due to /dev/mmcblk0p1 is mounted.
   # /dev/nvme0n1 is busy due to /dev/nvme0n1p1 is mounted.
   # /dev/md126 is busy due to /dev/md126p1 is mounted.
+  # /dev/nbd0 is busy due to /dev/nbd0p1 is mounted.
   local src_dev=$1
   [ -z "$src_dev" ] && return 1
   mounted_parts="$(LC_ALL=C mount | grep -Ew -- "^${src_dev}([0-9]*|(p[0-9]+))")"
@@ -10199,6 +10200,7 @@ is_supported_dev() {
   # Xen virtual disk: /dev/xvda, /dev/xvdb, /dev/xdvc...
   # CCISS RAID disk: /dev/cciss/c0d0, /dev/cciss/c0d1...
   # SD card: /dev/mmcblk0, /dev/mmcblk0p1, /dev/mmcblk0p2, /dev/mmcblk0p3...
+  # NBD device: /dev/nbd0, /dev/nbd0p1, /dev/nbd0p2...
   # NVME device: /dev/nvme0n1p1, /dev/nvme0n1p2, /dev/nvme1n1p1, /dev/nvme1n1p2
   # FakeRAID: with nodmraid boot parameter, it's shown as /dev/md126, /dev/md126p1, /dev/md126p2...
   # USB device: /dev/usb...
@@ -10213,10 +10215,11 @@ is_supported_dev() {
   local RE6='rd/c[0-9]d[0-9](p[0-9]+)?'
   local RE7='ida/c[0-9]d[0-9](p[0-9]+)?'
   local RE8='nvme[0-9]+n[0-9]+p*[0-9]*'
+  local RE9='nbd[0-9]+p*[0-9]*'
   local rc=1
 
   if [ -n "$dev_" ]; then
-    echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8)$"
+    echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9)$"
     rc=$?
   fi
   return $rc
@@ -10229,6 +10232,7 @@ is_partition() {
   # Xen virtual disk partition: /dev/xvda1, /dev/xvdb1, /dev/xdvc1...
   # CCISS RAID disk partition: /dev/cciss/c0d0p1, /dev/cciss/c0d1p1...
   # SD card: /dev/mmcblk0p1, /dev/mmcblk0p2, /dev/mmcblk0p3...
+  # NBD device: /dev/nbd0p1, /dev/nbd0p2...
   # NVME device: /dev/nvme0n1p1, /dev/nvme0n1p2, /dev/nvme1n1p1, /dev/nvme1n1p2
   # FakeRAID: with nodmraid boot parameter, /dev/md126p1, /dev/md126p2...
   # Mylex ExtremeRAID-2000 SCSI RAID controller: /dev/rd/c0d0p1, /dev/rd/c0d1p1...
@@ -10242,10 +10246,11 @@ is_partition() {
   local RE6='rd/c[0-9]d[0-9]p[0-9]+'
   local RE7='ida/c[0-9]d[0-9]p[0-9]+'
   local RE8='nvme[0-9]+n[0-9]+p+[0-9]+'
+  local RE9='nbd[0-9]+p+[0-9]+'
   local rc=1
 
   if [ -n "$dev_" ]; then
-    echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8)$"
+    echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9)$"
     rc=$?
   fi
 
@@ -10277,6 +10282,7 @@ get_part_number() {
     # Mylex ExtremeRAID-2000 SCSI RAID controller: /dev/rd/c0d0p1 -> p1 (yes, with p)
     # Compaq Smart Array controller: /dev/ida/c0d0p1 -> p1 (yes, with p)
     # SD card: /dev/mmcblk0p3 -> p3 (yes, with p)
+    # NBD device: /dev/nbd0p3 -> p3 (yes, with p)
     # NVME device: /dev/nvme0n1p1 -> p1 (yes, with p)
     # FakeRAID: with nodmraid boot parameter, /dev/md126p1 -> p1 (yes, with p)
     # Just in case. User might use /dev/cciss/c0d0 to get the part number.
@@ -10292,6 +10298,7 @@ get_part_number() {
     mmcblk*)num="$(echo "$dev_" | sed -r -e 's|mmcblk[0-9]+||g')" ;;
     nvme*)  num="$(echo "$dev_" | sed -r -e 's|nvme[0-9]+n[0-9]+||g')" ;;
     md*)    num="$(echo "$dev_" | sed -r -e 's|md[0-9]+||g')" ;;
+    nbd*)   num="$(echo "$dev_" | sed -r -e 's|nbd[0-9]+||g')" ;;
     *)      num="$(echo "$dev_" | sed -r -e 's/^[^0-9]*-?([0-9]*)$/\1/g')" ;;
   esac
   fi
@@ -10307,6 +10314,7 @@ get_diskname() {
   # /dev/sda1 -> /dev/sda
   # /dev/cciss/c0d0p1 -> /dev/c0d0
   # /dev/mmcblk0p1 -> /dev/mmcblk0
+  # /dev/nbd0p1 -> /dev/nbd0
   # /dev/nvme0n1p1 -> /dev/nvme0n1
   # /dev/md126p1 -> /dev/md126
   # However, for device mapper...
@@ -10325,6 +10333,7 @@ get_diskname() {
     rd*)     echo "$dev_" | sed -r -e 's/^(.*[0-9]{1,})p[0-9]{1,}$/\1/g' ;;
     ida*)    echo "$dev_" | sed -r -e 's/^(.*[0-9]{1,})p[0-9]{1,}$/\1/g' ;;
     mmcblk*) echo "$dev_" | sed -r -e 's/^([^0-9]*k[0-9]+)p[0-9]*$/\1/g' ;;
+    nbd*)    echo "$dev_" | sed -r -e 's/^([^0-9]*[0-9]+)p[0-9]*$/\1/g' ;;
     nvme*)   echo "$dev_" | sed -r -e 's/^([^0-9]*e[0-9]+n[0-9]+)p[0-9]*$/\1/g' ;;
     md*)     echo "$dev_" | sed -r -e 's/^([^0-9]*[0-9]+)p[0-9]*$/\1/g' ;;
     *)       echo "$dev_" | sed -r -e 's/^([^0-9]*)[0-9]*$/\1/g' ;;
@@ -11632,10 +11641,10 @@ replace_disk_name_in_file(){
   # (3) partition name with p -> partition name without p
   # (4) partition name without p -> partition name with p
   case "${src_d}" in
-  cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+  cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*)
     # source partition name with p
     case "${tgt_d}" in
-    cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*)
       # case (1) partition name with p -> partition name with p
       LC_ALL=C perl -pi -e "s|${src_d}|${tgt_d}|g" $dest_f
       ;;
@@ -11653,7 +11662,7 @@ replace_disk_name_in_file(){
   *)
     # source partition name without p
     case "${tgt_d}" in
-    cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*)
       # case (4) partition name without p -> partition name with p
       # e.g. sda1 -> nvme0n1
       # Process /dev/sda1 -> /dev/nvme0n1p1 first
@@ -11744,10 +11753,10 @@ replace_disk_name_stdin(){
   # (3) partition name with p -> partition name without p
   # (4) partition name without p -> partition name with p
   case "${src_d}" in
-  cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+  cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*)
     # source partition name with p
     case "${tgt_d}" in
-    cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*)
       # case (1) partition name with p -> partition name with p
       ( cat - | LC_ALL=C sed -r -e "s|${src_d}|${tgt_d}|g" )
       ;;
@@ -11764,7 +11773,7 @@ replace_disk_name_stdin(){
   *)
     # source partition name without p
     case "${tgt_d}" in
-    cciss*|mmcblk*|md*|rd*|ida*|nvme*)
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*)
       # case (4) partition name without p -> partition name with p
       # e.g. sda1 -> nvme0n1
       # Process /dev/sda1 -> /dev/nvme0n1p1 first
