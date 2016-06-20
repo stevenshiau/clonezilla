@@ -584,7 +584,7 @@ get_dev_model_shown() {
     DEV_MODEL=""
     # If only the disk or partition exists, we show the warning about the disk/partition will be overwritten.
     if [ -n "$(grep -Ew "$i" $partition_table)" ]; then
-      get_disk_or_part_hardware_info "$i"
+      get_disk_or_part_hardware_info "$i" default
       dev_model_shown="$dev_model_shown$i ($DEV_MODEL)\n"
     fi
   done
@@ -1903,13 +1903,14 @@ get_known_partition_proc_format() {
     # BACKUP_DEVS is a global variable
     local chosen_disk="$1"   # chosen_disk is like: "sda", "hda"...
     local chosen_mode="$2"   # chosen_mode is like: data or swap
+    local out_part_info_f="$3"   # If assigned, show results in the file
     local dev_list=""
     local partition_table=""
     local mounted_table=""
     local target_dev=""
     local dev_chosen_def=""
     local part_list hdtmp msg_not_mounted_dev_found TMP FILE
-    local skip_lvm="no"
+    local swap_dev extended_dev data_dev
 
     if [ -z "$chosen_disk" ]; then
        echo "Variable chosen_disk is empty! Program terminated!!!"
@@ -1925,6 +1926,10 @@ get_known_partition_proc_format() {
 
     # exclude some partitions
     BACKUP_DEVS=""
+    # Clean the output file
+    if [ -n "$out_part_info_f" ]; then
+      > $out_part_info_f
+    fi
     echo -n "Collecting info."
     for p in $dev_list; do
        # Skip swap and extended partition
@@ -1933,25 +1938,34 @@ get_known_partition_proc_format() {
        part_type="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null | sort)"
        rc=$?
        [ "$rc" -gt 0 ] && continue 
-       case "$chosen_mode" in
-       data)
-         # We want data partition to be saved, so skip extended or swap. While LVM will be processed especially.
-         case "$part_type" in *[Ss][Ww][Aa][Pp]*|*extended*|*0xf*) continue ;; esac
-         if [ "$skip_lvm" = "yes" ]; then
-           case "$part_type" in *[Ll][Vv][Mm]*) continue ;; esac
-         fi
-         ;;
-       swap)
-         # We want swap partition only, so only include swap.
-         [ -z "$(echo "$part_type" | grep -i swap)" ] && continue
-         ;;
-       extended)
-         # We want extended partition only, so only include extended.
-	 [ -z "$(echo "$part_type" | grep -Ei "(extended|0xf)")" ] && continue
-         ;;
-       esac
-       BACKUP_DEVS="$BACKUP_DEVS $p"
+       # Make part_type in one line
+       part_type="$(echo $part_type)"
+       if [ "$(echo $part_type | grep -Ei "swap")" ]; then
+	 swap_dev="$swap_dev $p"
+       elif [ "$(echo $part_type | grep -Ei "(extended|0xf)")" ]; then
+	 extended_dev="$extended_dev $p"
+       else
+         # Not swap, not extended partition. It's data partition.
+	 data_dev="$data_dev $p"
+       fi
+
+       # Output to the file if it's assigned.
+       if [ -n "$out_part_info_f" ]; then
+         echo "$p $part_type" >> $out_part_info_f
+       fi
     done
+    # Return the results to variable $BACKUP_DEVS
+    case "$chosen_mode" in
+      data) BACKUP_DEVS="$data_dev";;
+      swap) BACKUP_DEVS="$swap_dev";;
+      extended) BACKUP_DEVS="$extended_dev";;
+      all) BACKUP_DEVS="$data_dev $swap_dev $extended_dev"
+    esac
+    if [ -n "$out_part_info_f" ]; then
+      echo "data_dev: $data_dev" >> $out_part_info_f
+      echo "swap_dev: $swap_dev" >> $out_part_info_f
+      echo "extended_dev: $extended_dev" >> $out_part_info_f
+    fi
     echo " done!"
     [ -f "$mounted_table" ] && rm -f $mounted_table
     [ -f "$partition_table" ] && rm -f $partition_table
@@ -1980,7 +1994,7 @@ check_grub_partition() {
     p_type="$(LC_ALL=C ocs-get-part-info "$grub_p" type filesystem 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 ] && continue 
-    case "$p_type" in *[Ss][Ww][Aa][Pp]*|*extended*|*0xf*) continue ;; esac
+    [ -n "$(echo $p_type | grep -Ei "(swap|extended|0xf)")" ] && continue
     #
     hd_img="$(mktemp -d /tmp/hd_img.XXXXXX)"
     mount -o ro $grub_p $hd_img >/dev/null 2>&1
@@ -2058,7 +2072,7 @@ mount_root_partition_for_separate_boot_part() {
     p_type="$(LC_ALL=C ocs-get-part-info "$root_partition" type filesystem 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 ] && continue 
-    case "$p_type" in *[Ss][Ww][Aa][Pp]*|*extended*|*0xf*) continue ;; esac
+    [ -n "$(echo $p_type | grep -Ei "(swap|extended|0xf)")" ] && continue
     #
     mount $root_partition $hd_img >/dev/null 2>&1
     mrc=$?
@@ -3902,6 +3916,7 @@ get_disk_or_part_hardware_info() {
   # ///NOTE/// TO use this function, the device must exist in this system. Otherwise the hardware info (for example, if /dev/hda1 is not created yet) won't be found.
   # DEV_MODEL is a global variable to output
   local p="$1"  # p is like hda, sda, or hda1, sda1
+  local flag_skip_lvm="$2"  # yes/no/default, default is no
   local dsize x dsk_ rc serialno part_fst
   dsize="" # device size
 
@@ -3920,9 +3935,9 @@ get_disk_or_part_hardware_info() {
     part_type="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 ] && continue 
-    case "$part_type" in *[Ss][Ww][Aa][Pp]*|*extended*|*0xf*) continue ;; esac
-    if [ "$skip_lvm" = "yes" ]; then
-      case "$part_type" in *[Ll][Vv][Mm]*) continue ;; esac
+    [ -n "$(echo $part_type | grep -Ei "(swap|extended|0xf)")" ] && continue
+    if [ "$flag_skip_lvm" = "yes" ]; then
+      [ -n "$(echo "$part_type" | grep -Ei "LVM")" ] && continue
     fi
     dsize="$(LC_ALL=C ocs-get-part-info /dev/$p size)"
     [ -n "$dsize" ] && DEV_MODEL="${dsize}"
@@ -4139,7 +4154,7 @@ get_input_dev_name() {
 
     [ -z "$dev_type" ] && echo "You must specify the type get be entered!!! $msg_program_stop!" && exit 1
     [ -z "$selection" -o "$selection" = "default" ] && selection="checklist"
-    [ -z "$skip_lvm" -o "$selection" = "default" ] && skip_lvm="no"
+    [ -z "$skip_lvm" -o "$skip_lvm" = "default" ] && skip_lvm="no"
 
     get_not_busy_disks_or_parts $dev_type "" "$dev_to_be_exclude"  # we will get dev_list
 
@@ -4228,7 +4243,7 @@ get_input_dev_name() {
        if [ "$skip_lvm" = "yes" ]; then
          [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
        fi
-       get_disk_or_part_hardware_info "$p"
+       get_disk_or_part_hardware_info "$p" default
        [ -z "$DEV_MODEL" ] && DEV_MODEL="No_description"
        # If only 1 device, make it on as default, else let user choose (off).
        #echo "selection=$selection"
@@ -7295,6 +7310,7 @@ task_savedisk() {
   local target_parts target_swap_parts target_extended_parts
   local gen_md5sum_status gen_sha1sum_status rc_task_savedisk
   local pv_on_dsk
+  local part_rec_f
 
   screen_not_blank
   active_proc_partitions
@@ -7320,6 +7336,7 @@ task_savedisk() {
   target_parts=""
   target_swap_parts=""
   target_extended_parts=""
+  part_rec_f="$(mktemp /tmp/part_rec_f.XXXXXX)"
   for idisk in $target_hd; do
     # Since sfdisk does not work with EFI/GPT, we no more use sfdisk to get the partition list. Instead, we use /proc/partitions from kenrel to list them. Thanks to Justin Fitzhugh from mozilla.com.
     # pt_tmp="$(mktemp /tmp/pt_tmp.XXXXXX)"
@@ -7336,21 +7353,15 @@ task_savedisk() {
     # Check if mbr and gpt partition table coexist
     check_mbr_gpt_partition_table $idisk
 
-    BACKUP_DEVS=""
-    echo "Searching for data partition(s)..." | tee --append $OCS_LOGFILE
-    get_known_partition_proc_format $idisk data
-    target_parts="$target_parts $BACKUP_DEVS"
-
-    BACKUP_DEVS=""
-    echo "Searching for swap partition(s)..." | tee --append $OCS_LOGFILE
-    get_known_partition_proc_format $idisk swap
-    target_swap_parts="$target_swap_parts $BACKUP_DEVS"
-
-    BACKUP_DEVS=""
-    echo "Searching for extended partition(s)..." | tee --append $OCS_LOGFILE
-    get_known_partition_proc_format $idisk extended
-    target_extended_parts="$target_extended_parts $BACKUP_DEVS"
+    echo "Searching for data/swap/extended partition(s)..." | tee --append $OCS_LOGFILE
+    get_known_partition_proc_format $idisk all $part_rec_f
+    target_parts="$(awk -F":" '/^data_dev:/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
+    target_swap_parts="$(awk -F":" '/^swap_dev:/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
+    target_extended_parts="$(awk -F":" '/^extended_dev:/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
   done
+  if [ -e "$part_rec_f" ]; then
+    rm -f $part_rec_f
+  fi
 
   # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
   # instead it's on a disk (e.g. /dev/sdb).
@@ -7368,13 +7379,14 @@ task_savedisk() {
   # Strip the single white space which should be nothing. Thanks to Borksoft.
   target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
   target_swap_parts="$(echo $target_swap_parts | sed -e "s/^  *$//")"
+  target_extended_parts="$(echo $target_extended_parts | sed -e "s/^  *$//")"
   if [ -n "$target_parts" ]; then
     echo "The data partition to be saved: $target_parts" | tee --append $OCS_LOGFILE
   fi
   if [ -n "$target_swap_parts" ]; then
     echo "The swap partition to be saved: $target_swap_parts" | tee --append $OCS_LOGFILE
   fi
-  if [ -z "$target_extended_parts" ]; then
+  if [ -n "$target_extended_parts" ]; then
     echo "The extended partition to be saved: $target_extended_parts" | tee --append $OCS_LOGFILE
   fi
   # Let task_saveparts do the real job. However, we do not generate md5sums, sha1sums in task_saveparts, since there are some files will be created later. We will generate them in the end of this function.
@@ -8193,6 +8205,8 @@ task_restoreparts() {
       esac
     done
   fi
+  # Strip the leading spaces
+  processed_extended_parts="$(echo $processed_extended_parts | sed -r -e "s|^[[:space:]]*||g")"
 
   # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
   # instead it's on a disk (e.g. /dev/sdb).
