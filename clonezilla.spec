@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.25
+Version:	3.21.26
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 20 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.26-drbl1
+- Reuse the parsed partition info when detecting the data/swap/extended partitions. Thanks to starnavi for this suggestion.
+  Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/ba256b4b
+
 * Mon Jun 20 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.25-drbl1
 - Add support for device /dev/nbd. Thanks to Mircea Dan for this suggestion. Ref: https://sourceforge.net/p/clonezilla/discussion/Help/thread/d2d2a480/
 
