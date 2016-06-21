@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.26
+Version:	3.21.27
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.20.24, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.88, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.20.27, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.88, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jun 21 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.27-drbl1
+- Use shorter name for fsck-related options, i.e.  "-fsck-src-part" is replaced by "-fsck", and "-fsck-src-part-y" is replaced by "-fsck-y".
+
 * Mon Jun 20 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.26-drbl1
 - Reuse the parsed partition info when detecting the data/swap/extended partitions. Thanks to starnavi for this suggestion.
   Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/ba256b4b
