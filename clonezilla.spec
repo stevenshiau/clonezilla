@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.27
+Version:	3.21.28
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jun 21 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.28-drbl1
+- Bug fixed: failed to get all partitions for multiple disks which was introduced in clonezilla 3.21.26.
+
 * Tue Jun 21 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.27-drbl1
 - Use shorter name for fsck-related options, i.e.  "-fsck-src-part" is replaced by "-fsck", and "-fsck-src-part-y" is replaced by "-fsck-y".
 
