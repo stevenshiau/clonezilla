@@ -90,6 +90,7 @@ do_uri_mount_samba_server(){
   # The URI for samba:
   # smb://[[domain;]username[:password]@]server[/share[/path]]
   # TODO: Security mode option (smb_sec_opt)? e.g. sec=ntlm, sec=ntlmv2 or auto
+  local rc ask_ run_again_ans
   smb_srv="$(drbl-uriparse "$ocs_repository" domain)"
   smbfs_dir="$(drbl-uriparse "$ocs_repository" path)"
   smb_username="$(drbl-uriparse "$ocs_repository" username)"
@@ -114,9 +115,27 @@ do_uri_mount_samba_server(){
   prepare_mnt_point_ocsroot
   load_ocsroot_mnt_cmd
   # mount -t cifs "//${smb_srv}${smbfs_dir}" $ocsroot -o user="${smb_account}${smb_password_opt}${smb_domain_opt}"${smb_sec_opt} 
-  echo "Mounting samba server by:"
-  echo "$ocsroot_mnt_cmd_smb"
-  eval $ocsroot_mnt_cmd_smb
+  ask_="true"
+  while [ "$ask_" = "true" ]; do
+    echo "Mounting Samba server by:"
+    echo "$ocsroot_mnt_cmd_smb"
+    eval $ocsroot_mnt_cmd_smb
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo $msg_delimiter_star_line
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "$msg_unable_to_mnt_ocsroot. $msg_do_u_want_to_do_it_again"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo -n "[Y/n] "
+      read run_again_ans
+      case "$run_again_ans" in
+        n|N|[nN][oO]) ask_="false" ;;
+                   *) ask_="true" ;;
+      esac
+    else
+      ask_="false"
+    fi
+  done
   [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
 } # end of do_uri_mount_samba_server
 #
@@ -181,9 +200,27 @@ do_uri_mount_ssh_server() {
   load_ocsroot_mnt_cmd
   ocs_batch_mode="off" # Here it's interactive mode, so no batching.
   # sshfs "$ssh_account"@$ssh_srv:"$sshfs_dir/" $ocsroot -p $ssh_port $sshfs_extra_opt
-  echo "Mounting SSH server by:"
-  echo "$ocsroot_mnt_cmd_sshfs"
-  eval $ocsroot_mnt_cmd_sshfs
+  ask_="true"
+  while [ "$ask_" = "true" ]; do
+    echo "Mounting SSH server by:"
+    echo "$ocsroot_mnt_cmd_sshfs"
+    eval $ocsroot_mnt_cmd_sshfs
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo $msg_delimiter_star_line
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "$msg_unable_to_mnt_ocsroot. $msg_do_u_want_to_do_it_again"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo -n "[Y/n] "
+      read run_again_ans
+      case "$run_again_ans" in
+        n|N|[nN][oO]) ask_="false" ;;
+                   *) ask_="true" ;;
+      esac
+    else
+      ask_="false"
+    fi
+  done
   [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
 } # end of do_uri_mount_ssh_server
 
