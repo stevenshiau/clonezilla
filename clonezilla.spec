@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.29
+Version:	3.21.30
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jun 25 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.30-drbl1
+- "ask_user" can be the username to let user input for SSH server in ocs-live-repository.
+- The failing mounting for sshfs (fuse) can not be detected by mountpoint.  Use another method to test and unmount it in prepare_mnt_point_ocsroot of ocs-functions.
+
 * Sat Jun 25 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.29-drbl1
 - Add fuse.cloudfuse in the messages of prep-ocsroot.
 - Provide an option to mount image repsitory again when failing in ocs-live-repositry. "ask_user" can be used as the Samba domain and account in the URI so that user can input their own names.  Thanks to Aaron Burling (aaron_burling _at_ lkstevens wednet edu) for these ideas.
