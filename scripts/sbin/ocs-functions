@@ -11992,6 +11992,15 @@ prepare_mnt_point_ocsroot() {
     echo "Umounting the existing $ocsroot..."
     umount $ocsroot
   fi
+  # Somehow the failing SSHFS can not be detected by mountpoint
+  # E.g. 
+  # ls -laFh /home/partimag
+  # ls: cannot access '/home/partimag': Transport endpoint is not connected
+  # So here try another method.
+  if [ -n "$(ls -la $ocsroot 2>&1 | grep -io "Transport endpoint is not connected")" ]; then
+    echo "Umounting the existing $ocsroot..."
+    umount $ocsroot
+  fi
   echo "Preparing the mount point $ocsroot..."
   [ -L "$ocsroot" ] && rm -f $ocsroot
   [ ! -d "$ocsroot" ] && mkdir -p $ocsroot
