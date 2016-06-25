@@ -329,7 +329,7 @@ do_mount_iscsi_server(){
 } # end of do_mount_iscsi_server
 #
 do_mount_ssh_server(){
-   local TMP srv_default ssh_srv ssh_account sshfs_dir ssh_port ssh_port_def sshfs_extra_opt ask_ ans_
+   local TMP srv_default ssh_srv ssh_account sshfs_dir ssh_port ssh_port_def sshfs_extra_opt ask_ ans_ run_again_ans
    # Default settings
    ssh_port_def="22"
    sshfs_extra_opt="-o nonempty,$ocsroot_def_mnt_opt"
@@ -459,14 +459,32 @@ do_mount_ssh_server(){
    --msgbox "$msg_now_you_have_to_enter_passwd: $ssh_account@$ssh_srv:$sshfs_dir ($msg_confirm_ssh_server_might_be_necessary)" 0 0 
    [ -f "$TMP" ] && rm -f $TMP
    load_ocsroot_mnt_cmd
-   echo "Mounting SSH server by:"
-   echo "$ocsroot_mnt_cmd_sshfs"
-   eval $ocsroot_mnt_cmd_sshfs
+   ask_="true"
+   while [ "$ask_" = "true" ]; do
+     echo "Mounting SSH server by:"
+     echo "$ocsroot_mnt_cmd_sshfs"
+     eval $ocsroot_mnt_cmd_sshfs
+     rc=$?
+     if [ "$rc" -ne 0 ]; then
+       echo $msg_delimiter_star_line
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+       echo "$msg_unable_to_mnt_ocsroot. $msg_do_u_want_to_do_it_again"
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       echo -n "[Y/n] "
+       read run_again_ans
+       case "$run_again_ans" in
+         n|N|[nN][oO]) ask_="false" ;;
+                    *) ask_="true" ;;
+       esac
+     else
+       ask_="false"
+     fi
+   done
    [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
 } # end of do_mount_ssh_server
 #
 do_mount_samba_server(){
-   local TMP srv_default smb_srv smb_account smb_sec_opt smb_sec_mode ask_ ans_
+   local TMP srv_default smb_srv smb_account smb_sec_opt smb_sec_mode ask_ ans_ run_again_ans
 
    network_config_if_necessary
    prepare_mnt_point_ocsroot
@@ -619,9 +637,27 @@ do_mount_samba_server(){
 
    load_ocsroot_mnt_cmd
    # mount -t cifs "//${smb_srv}${smbfs_dir}" $ocsroot -o user="${smb_account}${smb_password_opt}${smb_domain_opt}"${smb_sec_opt} 
-   echo "Mounting samba server by:"
-   echo "$ocsroot_mnt_cmd_smb"
-   eval $ocsroot_mnt_cmd_smb
+   ask_="true"
+   while [ "$ask_" = "true" ]; do
+     echo "Mounting Samba server by:"
+     echo "$ocsroot_mnt_cmd_smb"
+     eval $ocsroot_mnt_cmd_smb
+     rc=$?
+     if [ "$rc" -ne 0 ]; then
+       echo $msg_delimiter_star_line
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+       echo "$msg_unable_to_mnt_ocsroot. $msg_do_u_want_to_do_it_again"
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       echo -n "[Y/n] "
+       read run_again_ans
+       case "$run_again_ans" in
+         n|N|[nN][oO]) ask_="false" ;;
+                    *) ask_="true" ;;
+       esac
+     else
+       ask_="false"
+     fi
+   done
    [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
 } # end of do_mount_samba_server
 #
