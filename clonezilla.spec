@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.30
+Version:	3.21.31
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jun 26 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.31-drbl1
+- Set mounting smb part as non-interactive mode in ocs-live-repository.
+- If ocs-live-repository fails, show the ocs-live-final-action menu in ocs-live-run-menu.
+
 * Sat Jun 25 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.30-drbl1
 - "ask_user" can be the username to let user input for SSH server in ocs-live-repository.
 - The failing mounting for sshfs (fuse) can not be detected by mountpoint.  Use another method to test and unmount it in prepare_mnt_point_ocsroot of ocs-functions.
