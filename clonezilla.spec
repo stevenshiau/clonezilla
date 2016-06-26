@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.31
+Version:	3.21.32
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jun 26 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.32-drbl1
+- Slightly improve the speed to get file system info, and also add converting "0xf" as extended in ocs-get-part-info.
+
 * Sun Jun 26 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.31-drbl1
 - Set mounting smb part as non-interactive mode in ocs-live-repository.
 - If ocs-live-repository fails, show the ocs-live-final-action menu in ocs-live-run-menu.
