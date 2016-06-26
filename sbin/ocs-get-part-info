@@ -158,7 +158,6 @@ get_fs_from_blkid() {
   local part_="$1"  # e.g. sda1, cciss/c0d0p1, dm-1
   local blkinfo TYPE hdtmp ptno pt_id p_type pt_info
   if type blkid &>/dev/null; then
-    blkinfo="$(mktemp /tmp/blkinfo.XXXXXX)"
     # blikd output example:
     # /dev/sda1: LABEL="/boot" UUID="a9cb47b6-e3ff-4a26-80e2-3fa8d30702e8" SEC_TYPE="ext2" TYPE="ext3" 
     # /dev/VolGroup00/LogVol00: UUID="110bc035-6920-4732-b117-5124843b93b9" SEC_TYPE="ext2" TYPE="ext3" 
@@ -182,15 +181,20 @@ get_fs_from_blkid() {
     # 254        3  524288000 dm-3
     # ===============
     # The output of blkid:
-    # root@fakeraid:~#  blkid
+    # root@fakeraid:~# blkid
     # /dev/sdb: TYPE="isw_raid_member" 
     # /dev/mapper/isw_deaeieebih_Volume01: UUID="d2350cad-2c66-4ac5-accb-bec596522958" TYPE="xfs" 
     # /dev/mapper/isw_deaeieebih_Volume02: UUID="300ed329-7dff-4b55-bb50-a3fab87d24b3" TYPE="xfs" 
     # /dev/mapper/isw_deaeieebih_Volume03: UUID="ab6cf10a-c74d-43e4-91d5-18817ff3d03f" TYPE="xfs" 
     # /dev/loop0: TYPE="squashfs" 
-    LC_ALL=C blkid -c /dev/null $part_ | grep -o -E '\<TYPE="[^[:space:]]*"($|[[:space:]]+)' > $blkinfo
-    TYPE=""
-    . $blkinfo
+    # root@fakeraid:~# blkid -o export -c /dev/null /dev/sde30
+    # DEVNAME=/dev/sde30
+    # UUID_SUB=4e672e07-887dbdcf-4350-000c292c5b04
+    # UUID=4e672e07-7dbf61e7-08e6-000c292c5b04
+    # TYPE=VMFS_volume_member
+    # PARTUUID=0004b3fb-1e
+    # //NOTE// "TYPE" in the output of blkid is actually for file system.
+    TYPE="$(LC_ALL=C blkid -o export -c /dev/null $part_ | grep -E "^TYPE=.*" | sed -r -e "s|^TYPE=||")"
     # If the result is vfat, it's too fuzzy, since there are fat12/fat16/fat32, and partimage does not support fat12.
     if [ -n "$(echo $TYPE | grep -iE "vfat")" ]; then
       if [ "$(file -Ls $part_ | grep -iw "fat" | grep -iw "12 bit")" ]; then
@@ -403,7 +407,6 @@ get_fs_from_blkid() {
       fi
     fi
     echo "$TYPE"
-    [ -f "$blkinfo" ] && rm -f $blkinfo
   fi
 } # end of get_fs_from_blkid
 #
