@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.21.32
+Version:	3.21.34
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 27 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.34-drbl1
+- Wrong path for copying files in ocs-live-dev, create-drbl-live, and create-gparted-live.
+
+* Mon Jun 27 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.33-drbl1
+- Better way to deal with batch mode or not in ocs-live-repository.
+- If mounting fails, ocs-live-run-menu should exit, not continue.
+
 * Sun Jun 26 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.32-drbl1
 - Slightly improve the speed to get file system info, and also add converting "0xf" as extended in ocs-get-part-info.
 
