@@ -59,6 +59,23 @@ USAGE() {
     echo
 } # end of USAGE
 #
+set_ocs_batch_mode() {
+  # ocs_batch_mode will be passed to check_if_ocsroot_a_mountpoint 
+  # ocs_live_batch might be loaded from drbl-ocs.conf
+  local assign_m="$1"
+  if [ -n "$assign_m" ]; then
+    # Assigned, set it.
+    ocs_batch_mode="$assign_m"
+  else
+    # Not assigned, check ocs_live_batch.
+    case "$ocs_live_batch" in
+      yes) ocs_batch_mode="on";;
+       no) ocs_batch_mode="off";;
+        *) ocs_batch_mode="on";; # default to make it batch mode.
+    esac
+  fi
+} # end of set_ocs_batch_mode
+#
 get_ocsroot_src_from_ocs_repository_if_assigned() {
   parse_cmdline_option -c $cmdl_file "ocs_repository"
   case "$ocs_repository" in
@@ -103,17 +120,21 @@ do_uri_mount_samba_server(){
     smb_account="$smb_username"
   fi
   if [ "$smb_domain" = "ask_user" ]; then
+    set_ocs_batch_mode off # interactive mode, so no batching.
     echo $msg_delimiter_star_line
     echo "Please input the domain name to access Samba server ${smb_srv}${smbfs_dir}:"
     read smb_domain
   fi
   if [ "$smb_account" = "ask_user" ]; then
+    set_ocs_batch_mode off # interactive mode, so no batching.
     echo $msg_delimiter_star_line
     echo "Please input the account name to access Samba server ${smb_srv}${smbfs_dir}:"
     read smb_account
   fi
   if [ -n "$smb_password" ]; then
     smb_password_opt=",password=$smb_password"
+  else
+    set_ocs_batch_mode off # interactive mode, so no batching.
   fi
   if [ -n "$smb_domain" ]; then
     smb_domain_opt=",domain=$smb_domain"
@@ -123,7 +144,6 @@ do_uri_mount_samba_server(){
     modprobe cifs
   fi
   prepare_mnt_point_ocsroot
-  ocs_batch_mode="off" # Here it might be the interactive mode, so no batching.
   load_ocsroot_mnt_cmd
   # mount -t cifs "//${smb_srv}${smbfs_dir}" $ocsroot -o user="${smb_account}${smb_password_opt}${smb_domain_opt}"${smb_sec_opt} 
   ask_="true"
@@ -190,7 +210,7 @@ do_uri_mount_webdav_server() {
   ocs-tune-conf-for-webdav
   prepare_mnt_point_ocsroot
   load_ocsroot_mnt_cmd
-  ocs_batch_mode="off" # Here it's interactive mode, so no batching.
+  set_ocs_batch_mode off # interactive mode, so no batching.
   # mount -t davfs -o noexec $davfs_url $ocsroot
   echo "Mounting WebDAV server by:"
   echo "$ocsroot_mnt_cmd_webdav"
@@ -214,7 +234,7 @@ do_uri_mount_ssh_server() {
   fi
   prepare_mnt_point_ocsroot
   load_ocsroot_mnt_cmd
-  ocs_batch_mode="off" # Here it's interactive mode, so no batching.
+  set_ocs_batch_mode off # interactive mode, so no batching.
   # sshfs "$ssh_account"@$ssh_srv:"$sshfs_dir/" $ocsroot -p $ssh_port $sshfs_extra_opt
   ask_="true"
   while [ "$ask_" = "true" ]; do
