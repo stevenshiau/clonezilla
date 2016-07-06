@@ -1,0 +1,155 @@
+#!/bin/bash
+# License: GPL 
+# Author: Aaron Burling <aaron_burling _at_ lkstevens wednet edu; burlingaaron _at_ gmail com> and Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to browse and bind mount the image repository.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+ask_and_load_lang_set $specified_lang
+
+# Functions
+is_ocs_bind_mount() {
+  local dir_test="$1"
+  local rc=1
+  local mnt_src
+  # For local disk mount: (the key is "[" in the source)
+  # root@debian:~# findmnt -D
+  # SOURCE             FSTYPE     SIZE   USED  AVAIL USE% TARGET
+  # /dev/sdf1          reiserfs   500G  40.2G 459.8G   8% /tmp/ocsroot_bind_root
+  # /dev/sdf1[/level2] reiserfs   500G  40.2G 459.8G   8% /home/partimag
+
+  # For NFS mount: (there is no "[" in the source, and there is no any "bind" in the mount options)
+  # root@debian:~# findmnt -D
+  # SOURCE                                 FSTYPE     SIZE   USED  AVAIL USE% TARGET
+  # 192.168.120.254:/home/partimag/        nfs        1.7T 705.9G 974.5G  40% /tmp/ocsroot_bind_root
+  # 192.168.120.254:/home/partimag/level2  nfs        1.7T 705.9G 974.5G  40% /home/partimag
+  if [ -n "$(findmnt -nD --target $dir_test | \
+             awk -F" " '{print $1}' | grep -E "\[")" ]; then
+     rc=0
+  else
+     mnt_src_dir_test="$(findmnt -nD --target $dir_test | awk -F" " '{print $1}')"
+     mnt_src_pre="$(findmnt -nD --target $pre_ocsroot_path | awk -F" " '{print $1}')"
+     if [ "$(echo "$mnt_src_dir_test" | grep -E "$mnt_src_pre")" ]; then
+       # $mnt_src_dir_test is the subdir of $mnt_src_pre -> bind mounted.
+       rc=0
+     fi
+  fi
+  return $rc
+} # end of  is_ocs_bind_mount
+#
+ask_if_bind_mount_again() {
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+  --yesno "$msg_do_u_want_to_do_it_again" 0 0 
+  ans_="$?"
+  case "$ans_" in
+    0) # yes is chosen
+       ASK_DIRNAME=1;;
+    1) # no is chosen
+       # Revert the original mount point.
+       if [ "$unmount_flag" = "yes" ]; then
+         mount --bind $saved_bind_ocsroot_src $ocsroot
+       fi
+       if [ "$move_flag" = "yes" ]; then
+         mount --make-private "$(dirname $pre_ocsroot_path)"
+         mount --move $pre_ocsroot_path $ocsroot
+       fi
+       echo "$msg_program_stop!"
+       [ -f "$sel_dir" -a -n "$sel_dir" ] &&  rm -f $sel_dir
+       exit 1;;
+  esac
+} # end of ask_if_bind_mount_again
+
+####################
+### Main program ###
+####################
+
+check_if_root
+ask_and_load_lang_set
+
+# check DIA
+check_DIA_set_ESC $DIA
+
+move_flag="no"
+unmount_flag="no"
+saved_bind_ocsroot_src=""
+if ! mountpoint $ocsroot 2>&1 >/dev/null; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$msg_this_directory_is_not_mountpoint: $ocsroot"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_there_is_no_way_to_mount_subdirectory"
+  echo "$msg_program_stop"  | tee --append ${OCS_LOGFILE}
+  exit 1
+fi
+
+# If it's bind device, umount it first
+if is_ocs_bind_mount $ocsroot; then
+  # Bind mounted mode.
+  # Saved the bind mounted source
+
+  # For NFS mount:
+  # root@debian:~# findmnt -D
+  # SOURCE                                 FSTYPE     SIZE   USED  AVAIL USE% TARGET
+  # 192.168.120.254:/home/partimag/        nfs        1.7T 705.9G 974.5G  40% /tmp/ocsroot_bind_root
+  # 192.168.120.254:/home/partimag/level2  nfs        1.7T 705.9G 974.5G  40% /home/partimag
+  
+  # For local device mount:
+  # /dev/sdf1          reiserfs   500G  40.2G 459.8G   8% /tmp/ocsroot_bind_root
+  # /dev/sdf1[/level2] reiserfs   500G  40.2G 459.8G   8% /home/partimag
+
+  # //NOTE// For local device, "[" and "]" are only shown as identification for bind mount,
+  # but they are not part of path. Therefore we have to strip them for the saved path.
+
+  saved_bind_ocsroot_src="$(findmnt -nD -o SOURCE --target $ocsroot | sed -r -e "s|\[||g" -e "s|\]||g")"
+  saved_bind_pre_src="$(findmnt -nD -o SOURCE --target $pre_ocsroot_path | sed -r -e "s|\[||g" -e "s|\]||g")"
+  saved_bind_pre_tgt="$(findmnt -nD -o TARGET --target $pre_ocsroot_path)"
+  # The saved_bind_ocsroot_src should use the target path, not the source. Otherwise like NFS source, it will become
+  # mount --bind 192.168.120.254:/home/partimag/level2 /home/partimag
+  # mount: special device 192.168.120.254:/home/partimag/level2 does not exist
+  # We want to make it as:
+  # mount --bind /tmp/ocsroot_bind_root/level2 /home/partimag
+  # Therefore change "192.168.120.254:/home/partimag/level2" as "/tmp/ocsroot_bind_root/level2"
+  # For local device, e.g. /tmp/ocsroot_bind_root[/level2] (extra [ and ] are shown, however, it's not part of path)
+  saved_bind_ocsroot_src="$(echo $saved_bind_ocsroot_src | sed -r -e "s|$saved_bind_pre_src|$saved_bind_pre_tgt|g")"
+  echo "$ocsroot is a bind mounted device. Unmount it first."
+  umount $ocsroot
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    unmount_flag="yes"
+  fi
+else 
+  # Native mode, not bind mounted.
+  mkdir -p $pre_ocsroot_path
+  mount --make-private /
+  mount --move $ocsroot $pre_ocsroot_path
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    move_flag="yes"
+  fi
+fi
+sel_dir="$(mktemp /tmp/sel_dir.XXXXXX)"
+ASK_DIRNAME=1
+while [ "$ASK_DIRNAME" -ne 0 ]; do
+BrowseCurrentDirectory "$pre_ocsroot_path" $sel_dir
+real_ocsroot="$(cat $sel_dir)"
+if [ -n "$real_ocsroot" -a -d "$real_ocsroot" ]; then
+  if [ ! -e "$real_ocsroot/clonezilla-img" ]; then
+    cmd="mount --bind -o $ocsroot_def_mnt_opt,nodiratime $real_ocsroot $ocsroot"
+    echo "Running: $cmd"
+    eval $cmd
+    ASK_DIRNAME=0
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$msg_the_dir_you_choose_is_clonezilla_img_dir: $real_ocsroot"
+    echo "$msg_there_is_no_way_to_mount_subdirectory"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    read -p "$msg_press_enter_to_continue..."
+    ask_if_bind_mount_again
+  fi
+else
+  ask_if_bind_mount_again
+fi
+done
+[ -f "$sel_dir" -a -n "$sel_dir" ] &&  rm -f $sel_dir
