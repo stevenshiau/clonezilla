@@ -9470,7 +9470,7 @@ network_config_if_necessary() {
 } # end of network_config_if_necessary
 #
 unmount_mounted_fs_before_ocs_live_reboot() {
-  umount_dir="$ocsroot /tmp/local-dev"
+  umount_dir="$ocsroot $pre_ocsroot_path"
   for i in $umount_dir; do
     if mountpoint $i &>/dev/null; then
       echo -n "Trying to unmount $i... "
@@ -9608,10 +9608,17 @@ ocs_fail_mountpoint() {
 } # end of ocs_fail_mountpoint
 #
 ocs_success_mountpoint() {
-  echo "$msg_df_report" | tee --append ${OCS_MOUNT_LOG}
+  echo "$msg_df_report:" | tee --append ${OCS_MOUNT_LOG}
   echo $msg_delimiter_star_line | tee --append ${OCS_MOUNT_LOG}
+  # //NOTE// No more using df to show $ocsroot disk usage. Use findmnt now.
   # Option "df_extra_opt" is from prep-ocsroot.
-  df $df_extra_opt -h 2>&1 | tee --append ${OCS_MOUNT_LOG}
+  # df $df_extra_opt -h 2>&1 | tee --append ${OCS_MOUNT_LOG}
+  # Better way to show only /home/partimag:
+  # findmnt --df --target /home/partimag/
+  # E.g. 
+  # SOURCE                    FSTYPE    SIZE  USED  AVAIL USE% TARGET
+  # /dev/sdf1[/level2/level3] reiserfs  500G 40.1G 459.9G   8% /home/partimag
+  findmnt --df --target $ocsroot 2>&1 | tee --append ${OCS_MOUNT_LOG}
   echo $msg_delimiter_star_line  | tee --append ${OCS_MOUNT_LOG}
   if [ "$ocs_batch_mode" != "on" ]; then
     echo -n "$msg_press_enter_to_continue..."
@@ -12020,3 +12027,118 @@ load_ocsroot_mnt_cmd() {
   ocsroot_mnt_cmd_webdav="LC_ALL=C mount -t davfs -o noexec $davfs_url $ocsroot"
   ocsroot_mnt_cmd_sshfs="LC_ALL=C sshfs \"$ssh_account\"@$ssh_srv:\"$sshfs_dir\" $ocsroot -p $ssh_port $sshfs_extra_opt"
 } # end of load_ocsroot_mnt_cmd
+#
+BrowseCurrentDirectory() {
+  # The sample code of this function was provided by Aaron Burling (aaron_burling _at_ lkstevens wednet edu). 
+  # Show existing dir so that user can choose then return chosen to file ANS_TMP
+  local wk_dir="$1"
+  local ANS_TMP="$2"
+  local TMP=`mktemp /tmp/ocs.XXXXXX`
+  local basedir currentdir currentdir_fullpath cmd option rc
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+
+  if [ -z "$wk_dir" ]; then
+   basedir="/"
+  else
+   basedir="$wk_dir"
+  fi
+  
+  cd $basedir
+  while true ; do
+    if [ "$(pwd)" == "$basedir" ]; then
+     GetSubDirectories
+    else
+     GetDirectories
+    fi
+    
+    currentdir_fullpath="$(pwd)"
+    currentdir="$(basename `pwd`)"
+    
+    if [ -z "$currentdir" ]; then
+     currentdir="/"
+    elif [ "$currentdir" = "$(basename $wk_dir)" ]; then
+     # Make it relative to the root path in the storage medium.
+     currentdir="/"
+    fi
+    
+    # Make it's shown like /dev/sdd1[/images/], as shown by the command "findmnt". E.g.
+    # findmnt --df --target  /home/partimag/
+    # SOURCE                    FSTYPE    SIZE  USED  AVAIL USE% TARGET
+    # /dev/sdf1[/level2/level3] reiserfs  500G 40.1G 459.9G   8% /home/partimag
+    # //NOTE// First we have to append "/" in the end of the results of command "pwd" otherwise the 1st level in the media might be shown as like: "/dev/sdd1[]" -> We want "/dev/sdd1[/]"
+    mount_dev="$(LC_ALL=C findmnt -Unr -o source -T $pre_ocsroot_path)"
+    abs_path="$(LC_ALL=C pwd | sed -r -e "s|$|/|g" -e "s|${pre_ocsroot_path}(.*)|${mount_dev}[\1]|g")"
+    
+    if [ "$numfiles" -gt 0 ]; then
+      $DIA --backtitle "$msg_nchc_free_software_labs" \
+           --title "$msg_dir_browser_for_img" \
+           --menu "$msg_which_dir_as_clonezilla_img_home\n$msg_when_current_selected_dir_name_is_ok\n$msg_not_chosing_CZ_IMG_dir\n$msg_path_on_the_resource: $abs_path\n$msg_current_selected_dir_name: \"$currentdir\"" \
+           --ok-button "Browse" --cancel-button "Done" \
+           0 $RESTORE_DIA_WIDTH $height $DIA_ESC $filelist 2> $TMP
+      rc=$?
+      option="$(cat $TMP)"
+      
+      if [ "$rc" -eq 1 ]; then
+       break
+      else
+       cmd="cd "$option
+       eval $cmd
+      fi
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      if [ -e "$currentdir_fullpath/clonezilla-img" ]; then
+        # This is the image dir for Clonezilla image.
+        echo -e "\n$msg_the_dir_you_choose_is_clonezilla_img_dir: $currentdir_fullpath"
+	echo "$msg_there_is_no_way_to_mount_subdirectory"
+      else
+        echo -e "\n$msg_no_any_image_found: $currentdir_fullpath"
+      fi
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      read -p "$msg_press_enter_to_continue..."
+      [ -f "$TMP" ] && rm -f $TMP
+      return 1
+    fi
+  done
+  [ -f "$TMP" ] && rm -f $TMP
+  # return the valule
+  echo "$(pwd)" > $ANS_TMP
+} # end of BrowseCurrentDirectory
+#
+get_directories_list_common() {
+ # Output: filelist, fileinfo, numfiles, height
+ for file in ./*; do
+   echo -n "."
+   # Only directory ..., not file
+   [ ! -d "$file" ] && continue
+   # Exclude those special name dir, e.g. with space, or beginning with "-"
+   [ -n "$(echo $file | grep -E "[[:space:]]")" ] && continue
+   [ -n "$(echo "$(basename "$file")" | grep -E "^-+")" ] && continue
+   fileinfo="$(unalias ls 2>/dev/null; ls -ldh "$file" 2>/dev/null| awk '{ print $6"_"$7; }')"
+   # Mark Clonezilla image dir
+   if [ -e "$file/clonezilla-img" ]; then
+     fileinfo="${fileinfo}_CZ_IMG"
+   fi
+   filelist="$filelist $(basename "$file") $fileinfo"
+   numfiles=`expr $numfiles + 1`
+ done
+ if [ "$numfiles" -lt "$MAX_DIALOG_HEIGHT" ]; then
+   height="$numfiles"
+ else
+   height="$MAX_DIALOG_HEIGHT"
+ fi
+} # end of get_directories_list_common
+#
+GetDirectories() {
+  # First keep the parent dir.
+  filelist=".. $(rep_whspc_w_udrsc "$msg_parent_directory")"
+  numfiles=0
+  echo -n "Scanning dir $wk_dir."
+  get_directories_list_common
+} # end of GetDirectories
+#
+GetSubDirectories() {
+  filelist=""
+  numfiles=0
+  echo -n "Scanning dir $wk_dir."
+  get_directories_list_common
+} # end of GetSubDirectories
