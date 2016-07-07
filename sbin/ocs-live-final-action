@@ -13,6 +13,10 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Load the options from config file
 [ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
 
+# Settings
+# Default we will check if $ocsroot is a mountpoint after the mount action is done.
+chk_ocsroot_mountpont="yes"
+
 # Functions
 USAGE() {
     echo "$ocs - To choose the final action (poweroff, reboot, command line prompt...) and put the output in a file"
@@ -23,6 +27,46 @@ USAGE() {
     echo "To choose the final action and put the output to the file /tmp/my-selection.txt, run"
     echo "   $ocs /tmp/my-selection.txt"
 } # end of USAGE
+#
+do_ocs_live_run_final() {
+  # //NOTE// Do not put poweroff/reboot in this program since it's run in jfbterm/bterm. We separate the final action from ocs-live-final-action. Otherwise if the poweroff command run in jfbterm/bterm, the Debian live "Press Enter to continue" message after poweroff/shutdown command is issued might be coverd by jfbterm/bterm and user will not have any idea what's happening after choose poweroff/reboot. 
+  [ -n "$final_action" ] && echo "The next step: $final_action"
+  case "$final_action" in
+    poweroff) unmount_mounted_fs_before_ocs_live_reboot
+       echo -n 'Will poweroff... '
+       countdown 5
+       poweroff $HALT_REBOOT_OPT ;;
+    reboot) unmount_mounted_fs_before_ocs_live_reboot
+       echo -n 'Will reboot... '
+       countdown 5
+       reboot $HALT_REBOOT_OPT ;;
+    rerun*) # umount the clonezilla home dir
+       if [ "$final_action" = "rerun1" ]; then
+         echo "Completely start over, so umounting $ocsroot..."
+         unmount_mounted_fs_before_ocs_live_reboot
+       elif [ "$final_action" = "rerun3" ]; then
+         echo "$msg_remount_subdir"
+	 ocs-live-bind-mount
+         [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+       else
+         echo "Keep the mounted image repository $ocsroot..."
+       fi
+       echo -n 'Run Clonezilla live again... '
+       # since we are not in login shell, it's useless to use "exit" or "logout" to force logout bash. Use kill to terminate the login shell in tty1. The clonezilla live main menu will be run again.
+       if [ -n "$ocs_live_run_tty" ]; then
+         # ocs_live_run_tty is like: /dev/tty2, /dev/pts/2 (very unlikely)
+         ttys="$(LC_ALL=C echo $ocs_live_run_tty | sed -e "s|/dev/||g")"
+       else
+         ttys="tty1"
+       fi
+       for i in $ttys; do
+         tty_bash_id="$(LC_ALL=C ps -t $i | grep bash | awk -F" " '{print $1}')"
+         kill -9 $tty_bash_id
+       done
+       ;;
+    *) echo ;;
+  esac
+} # end of do_ocs_live_run_final
 
 ####################
 ### Main program ###
@@ -39,26 +83,14 @@ while [ $# -gt 0 ]; do
  esac
 done
 
-#
-output_f="$1"
-#
 ask_and_load_lang_set $ocs_lang
-
-#
-if [ -z "$output_f" ]; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "Output file was not assigned in $0!"
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  USAGE
-  echo "$msg_program_stop!"
-  exit 1
-fi	
 
 # check DIA
 check_DIA_set_ESC $DIA
 
 ##############
 #### main ####
+##############
 
 # ocs_postmode_prompt is loaded from ocs-live.conf.
 if [ "$ocs_postmode_prompt" = "cmd" ]; then
@@ -113,4 +145,5 @@ else
   done
   [ -f "$TMP" ] && rm -f $TMP
 fi
-echo "$final_action" > $output_f
+
+do_ocs_live_run_final $final_action
