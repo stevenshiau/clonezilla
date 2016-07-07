@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.2
+Version:	3.22.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jul 07 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.3-drbl1
+- Rewrite ocs-live-final-action and ocs-live-run-menu so that rerun3 can work with locales in non-en_US.
+
 * Thu Jul 07 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.2-drbl1
 - Use ocs-live-bind-mount to bind mount the subdir as image repository for local device mounting.
 - A menu about bind mount subdir was added in prep-ocsroot and ocs-live-final-action.
