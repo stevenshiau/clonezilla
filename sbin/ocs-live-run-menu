@@ -9,9 +9,11 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . /etc/drbl/drbl-ocs.conf
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
-
 # Load the options from config file
 [ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
+
+# Default we will check if $ocsroot is a mountpoint after the mount action is done.
+chk_ocsroot_mountpont="yes"
 
 # Set initial value if not set
 [ -z "$ocs_live_run" ] && ocs_live_run="ocs-live-general"
@@ -38,6 +40,10 @@ do_ocs_live_run_final() {
        if [ "$final_action" = "rerun1" ]; then
          echo "Completely start over, so umounting $ocsroot..."
          unmount_mounted_fs_before_ocs_live_reboot
+       elif [ "$final_action" = "rerun3" ]; then
+         echo "$msg_remount_subdir"
+	 ocs-live-bind-mount
+         [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
        else
          echo "Keep the mounted image repository $ocsroot..."
        fi
