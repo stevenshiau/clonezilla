@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.1
+Version:	3.22.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.20.29, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.20.30, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jul 07 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.2-drbl1
+- Use ocs-live-bind-mount to bind mount the subdir as image repository for local device mounting.
+- A menu about bind mount subdir was added in prep-ocsroot and ocs-live-final-action.
+
 * Wed Jul 06 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.1-drbl1
 - Add a new mechanism to browse the image repository and bind mount the sub directory. Thanks to Aaron Burling (aaron_burling _at_ lkstevens wednet edu) for providing sample codes.
 
