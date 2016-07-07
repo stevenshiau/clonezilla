@@ -13,8 +13,6 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Default we will check if $ocsroot is a mountpoint after the mount action is done.
 chk_ocsroot_mountpont="yes"
 ntfs_mount_warning="no"
-# Extra option for df when outputing the disk usage. For local device mounting, we add '-a' so that the bind status can be shown. For others, no extra option.
-df_extra_opt=""
 
 # Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
@@ -34,83 +32,8 @@ USAGE() {
     echo "Ex. $0 -l en_US.UTF-8"
 }
 #
-get_existing_dir() {
-   # show existing dir so that user can choose then return chosen to file ANS_TMP
-   local wk_dir="$1"
-   local ANS_TMP="$2"
-   local tgt_file= ans_=
-   local ASK_DIRNAME=1
-   local TMP=`mktemp /tmp/ocs.XXXXXX`
-   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-   numfiles=`ls $wk_dir 2> /dev/null | wc -l`
-   numfiles=`expr $numfiles + 0`
-   # list the previous saved images
-   # the list of images can be put in one page
-   filelist="/ $(rep_whspc_w_udrsc "$msg_top_directory_in_local_dev")"
-   numfiles=1
-   echo -n "Scanning dir $wk_dir."
-   for file in $wk_dir/*; do
-     echo -n "."
-     # Only directory ..., not file
-     [ ! -d "$file" ] && continue
-     # Exclude those special name dir, e.g. with space, or beginning with "-"
-     [ -n "$(echo $file | grep -E "[[:space:]]")" ] && continue
-     [ -n "$(echo "$(basename "$file")" | grep -E "^-+")" ] && continue
-     # Skip Clonezilla image dir
-     [ -e "$file/disk" -a -n "$(ls $file/*-pt.sf 2>/dev/null)" ] && continue
-     [ -e "$file/parts" -a -n "$(ls $file/*-pt.sf 2>/dev/null)" ] && continue
-     fileinfo="$(unalias ls 2>/dev/null; ls -ldh "$file" 2>/dev/null| awk '{ print $6"_"$7; }')"
-     filelist="$filelist $(basename "$file") $fileinfo"
-     numfiles=`expr $numfiles + 1`
-   done
-   echo " done!"
-
-   if [ $numfiles -gt 0 ]; then
-     if [ $numfiles -lt $MAX_DIALOG_HEIGHT ]; then
-       height="$numfiles"
-     else
-       height="$MAX_DIALOG_HEIGHT"
-     fi
-     while [ "$ASK_DIRNAME" -ne 0 ]; do
-       $DIA \
-         --backtitle "$msg_nchc_free_software_labs" \
-         --title "$msg_nchc_clonezilla" \
-         --menu "$msg_which_dir_as_clonezilla_img_home:" 0 $RESTORE_DIA_WIDTH \
-         $height $filelist 2> $TMP
-       tgt_file="$(cat $TMP)"
-       if [ -z "$tgt_file" ]; then
-         $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
-         --yesno "$msg_you_must_input_filename!\n$msg_do_u_want_to_do_it_again!" 0 0 
-         ans_="$?"
-         case "$ans_" in
-           0) # yes is chosen
-              ASK_DIRNAME=1;;
-           1) # no is chosen
-              echo "$msg_program_stop!"
-              [ -f "$TMP" ] && rm -f $TMP
-	      if mountpoint $local_dev_mntpt &>/dev/null; then
-		umount $local_dev_mntpt
-	      fi
-              exit 1;;
-         esac
-       else
-         ASK_DIRNAME=0
-       fi
-     done
-   else
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "No disk image is found in $wk_dir.. Make sure you already saved an image! $msg_program_stop!!!"
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-     exit 1
-   fi
-   [ -f "$TMP" ] && rm -f $TMP
-   # return the valule
-   echo $tgt_file > $ANS_TMP
-} # end of get_existing_dir
 do_mount_local_dev() {
    local target_part part_fs # target_part is like hda1, sda1...
-   local local_dev_mntpt sel_dir
-   df_extra_opt="-a"
 
    prepare_mnt_point_ocsroot
    if [ "$ocs_prompt_mode" = "tui" ]; then
@@ -143,12 +66,6 @@ do_mount_local_dev() {
    part_fs="$(LANG=C ocs-get-part-info /dev/$target_part filesystem)"
    echo "/dev/$target_part filesystem: $part_fs"
    # If ocs_prep_ocsroot_ask_dir is not "no", we just mount the partition as $ocsroot. Otherwise it's a little confusing.
-   if [ "$ocs_prep_ocsroot_ask_dir" != "no" ]; then
-     local_dev_mntpt="/tmp/local-dev"
-   else
-     local_dev_mntpt="$ocsroot"
-   fi
-   mkdir -p $local_dev_mntpt
    case "$part_fs" in 
      ntfs) 
            if [ "$ntfs_mount_warning" = "yes" ]; then
@@ -168,11 +85,11 @@ do_mount_local_dev() {
                   ;;
              esac
            fi
-           echo ntfs-3g /dev/$target_part $local_dev_mntpt -o $ocsroot_def_mnt_opt
-           ntfs-3g /dev/$target_part $local_dev_mntpt -o $ocsroot_def_mnt_opt
-           if ! mountpoint $local_dev_mntpt &>/dev/null; then
+           echo ntfs-3g /dev/$target_part $ocsroot -o $ocsroot_def_mnt_opt
+           ntfs-3g /dev/$target_part $ocsroot -o $ocsroot_def_mnt_opt
+           if ! mountpoint $ocsroot &>/dev/null; then
              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-             echo "Looks like $local_dev_mntpt is not mounted normally! Maybe the NTFS file system in /dev/$target_part was not unmounted normally. Do you want to try to mount it with option "-o force" ? ///NOTE/// This is a little dangerous!"
+             echo "Looks like $ocsroot is not mounted normally! Maybe the NTFS file system in /dev/$target_part was not unmounted normally. Do you want to try to mount it with option "-o force" ? ///NOTE/// This is a little dangerous!"
              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
              echo -n "[y/N] "
              read mount_ntfs_with_force
@@ -181,8 +98,8 @@ do_mount_local_dev() {
                   echo "$msg_ok_let_do_it"
 		  echo "Run ntfsfix on /dev/$target_part first..."
 		  ntfsfix /dev/$target_part
-		  echo "Run ntfs-3g /dev/$target_part $local_dev_mntpt -o force..."
-                  ntfs-3g /dev/$target_part $local_dev_mntpt -o force
+		  echo "Run ntfs-3g /dev/$target_part $ocsroot -o force..."
+                  ntfs-3g /dev/$target_part $ocsroot -o force
                   ;;
              esac
            fi
@@ -203,22 +120,14 @@ do_mount_local_dev() {
                 exit 1
                 ;;
            esac
-	   echo mount -t hfsplus -o force,$ocsroot_def_mnt_opt,nodiratime /dev/$target_part $local_dev_mntpt
-	   LC_ALL=C mount -t hfsplus -o force,$ocsroot_def_mnt_opt,nodiratime /dev/$target_part $local_dev_mntpt
+	   echo mount -t hfsplus -o force,$ocsroot_def_mnt_opt,nodiratime /dev/$target_part $ocsroot
+	   LC_ALL=C mount -t hfsplus -o force,$ocsroot_def_mnt_opt,nodiratime /dev/$target_part $ocsroot
 	   ;;
-     *)    echo mount -t auto -o $ocsroot_def_mnt_opt,nodiratime /dev/$target_part $local_dev_mntpt
-           LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt,nodiratime /dev/$target_part $local_dev_mntpt 
+     *)    echo mount -t auto -o $ocsroot_def_mnt_opt,nodiratime /dev/$target_part $ocsroot
+           LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt,nodiratime /dev/$target_part $ocsroot 
 	   ;;
    esac
-   # If ocs_prep_ocsroot_ask_dir is not "no", we just mount the partition as $ocsroot. Therefore there is no need to ask dir here.
-   #[ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
-   if [ "$ocs_prep_ocsroot_ask_dir" != "no" ]; then
-     sel_dir="$(mktemp /tmp/sel_dir.XXXXXX)"
-     get_existing_dir $local_dev_mntpt $sel_dir
-     real_ocsroot="$(cat $sel_dir)"
-     mount --bind -o $ocsroot_def_mnt_opt,nodiratime $local_dev_mntpt/$real_ocsroot $ocsroot
-     [ -f "$sel_dir" -a -n "$sel_dir" ] &&  rm -f $sel_dir
-   fi
+   ocs-live-bind-mount
    [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
 } # end of do_mount_local_dev
 #
@@ -1030,6 +939,11 @@ do_mount_swift_server(){
    [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
 } # end of do_mount_swift_server
 #
+do_mount_subdir_bind() {
+  ocs-live-bind-mount
+  [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+}
+#
 find_ocsroot_dev_description(){
   local ocsroot_parent filesystem writable rw_test_file
   filesystem="$(get_dir_filesystem $ocsroot)"
@@ -1103,6 +1017,13 @@ swift_ocsroot_dia_des() {
   swift_ocsroot_msg_2="$(rep_whspc_w_udrsc "$msg_mount_swift_server")"
 }
 #
+bind_ocsroot_dia_des() {
+  local rep_dev
+  rep_dev="$(findmnt -Un -o source -T $ocsroot)"
+  bind_ocsroot_msg_1="use_subdir"
+  bind_ocsroot_msg_2="$(rep_whspc_w_udrsc "$msg_remount_subdir: $rep_dev")"
+}
+#
 get_ocsroot_resource() {
   local default_menu
   find_ocsroot_dev_description
@@ -1110,6 +1031,9 @@ get_ocsroot_resource() {
     webdav_ocsroot_dia_des
     s3_ocsroot_dia_des
     swift_ocsroot_dia_des
+  fi
+  if mountpoint $ocsroot 2>&1 >/dev/null; then
+    bind_ocsroot_dia_des
   fi
   local TMP
   #
@@ -1132,6 +1056,7 @@ get_ocsroot_resource() {
     $webdav_ocsroot_msg_1 $webdav_ocsroot_msg_2 \
     $s3_ocsroot_msg_1 $s3_ocsroot_msg_2 \
     $swift_ocsroot_msg_1 $swift_ocsroot_msg_2 \
+    $bind_ocsroot_msg_1 $bind_ocsroot_msg_2 \
     "enter_shell"  "$msg_enter_cml. $msg_do_it_manually" \
     "skip"         "$msg_skip_this_use_existing_ocsroot ($livemedia_des)" \
     2> $TMP
@@ -1144,7 +1069,7 @@ get_ocsroot_resource() {
     [ -f "$TMP" ] && rm -f $TMP
   fi
   case "$ocsroot_src" in
-    "local_dev"|"ssh_server"|"samba_server"|"nfs_server"|"webdav_server"|"s3_server"|"swift_server"|"enter_shell"|"skip")
+    "local_dev"|"ssh_server"|"samba_server"|"nfs_server"|"webdav_server"|"s3_server"|"swift_server"|"use_subdir"|"enter_shell"|"skip")
        true;;
     *)
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -1206,15 +1131,16 @@ fi
 
 #
 case "$ocsroot_src" in
-  local_dev)     do_mount_local_dev;;
-  iscsi_server)  do_mount_iscsi_server;;
-  ssh_server)    do_mount_ssh_server;;
-  samba_server)  do_mount_samba_server;;
-  nfs_server)    do_mount_nfs_server;;
-  ftp_server)    do_mount_ftp_server;;
-  webdav_server) do_mount_webdav_server;;
-  s3_server)     do_mount_s3_server;;
-  swift_server)  do_mount_swift_server;;
+  local_dev)      do_mount_local_dev;;
+  iscsi_server)   do_mount_iscsi_server;;
+  ssh_server)     do_mount_ssh_server;;
+  samba_server)   do_mount_samba_server;;
+  nfs_server)     do_mount_nfs_server;;
+  ftp_server)     do_mount_ftp_server;;
+  webdav_server)  do_mount_webdav_server;;
+  s3_server)      do_mount_s3_server;;
+  swift_server)   do_mount_swift_server;;
+  use_subdir)     do_mount_subdir_bind;;
   enter_shell) 
       echo $msg_enter_another_shell_hint_with_netcfg_prompt
       echo -n "$msg_press_enter_to_continue..."
@@ -1224,7 +1150,7 @@ case "$ocsroot_src" in
   skip)
       echo "$msg_existing_setting_is:"
       echo $msg_delimiter_star_line
-      df -ah
+      findmnt --df --target $ocsroot 2>&1 | tee --append ${OCS_MOUNT_LOG}
       echo $msg_delimiter_star_line
       echo -n "$msg_press_enter_to_continue..."
       read
