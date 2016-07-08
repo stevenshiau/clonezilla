@@ -12078,25 +12078,38 @@ BrowseCurrentDirectory() {
       rc=$?
       option="$(cat $TMP)"
       
+      if [ "$option" = "00-EXIT" ]; then
+        return 1
+      fi
       if [ "$rc" -eq 1 ]; then
-       break
+        break
       else
-       cmd="cd "$option
-       eval $cmd
+        cmd="cd "$option
+        eval $cmd
       fi
     else
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      # No other directories in the working directory. This could be 
+      # (1) The dir itself is the dir of Clonezilla image.
+      # (2) It actually does not have any other dir.
       if [ -e "$currentdir_fullpath/clonezilla-img" ]; then
-        # This is the image dir for Clonezilla image.
-        echo -e "\n$msg_the_dir_you_choose_is_clonezilla_img_dir: $currentdir_fullpath"
+        # Case (1) The dir itself is the dir of Clonezilla image.
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo -e "\n$msg_the_dir_you_choose_is_clonezilla_img_dir: $abs_path"
 	echo "$msg_there_is_no_way_to_mount_subdirectory"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        read -p "$msg_press_enter_to_continue..."
+        [ -f "$TMP" ] && rm -f $TMP
+        return 1
       else
-        echo -e "\n$msg_no_any_image_found: $currentdir_fullpath"
+        # (2) It actually does not have any other dir.
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo -e "\n$msg_no_any_image_found: $abs_path"
+	echo "This image repository can only be used for saving image for the moment."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        read -p "$msg_press_enter_to_continue..."
+        [ -f "$TMP" ] && rm -f $TMP
+	break
       fi
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      read -p "$msg_press_enter_to_continue..."
-      [ -f "$TMP" ] && rm -f $TMP
-      return 1
     fi
   done
   [ -f "$TMP" ] && rm -f $TMP
