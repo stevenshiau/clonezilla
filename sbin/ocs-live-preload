@@ -350,6 +350,13 @@ done
 check_if_root
 ask_and_load_lang_set
 
+# Checking if this program is already run
+if [ -e /var/lib/clonezilla/ocs-live-preload ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Program ocs-live-preload has been successfully run before. Skip running it."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  exit 0
+fi
 #
 ocs_preload_list="$(grep -Ewo "ocs_preload[[:digit:]]*" $cmdl_file | uniq | sort -V)"
 ocs_preload_list="$(echo $ocs_preload_list)"  # in one line
@@ -392,3 +399,10 @@ for i in $ocs_preload_list; do
     esac
   fi
 done
+
+# Creating state file
+if [ "$RETVAL" -eq 0 ]; then
+  touch /var/lib/clonezilla/ocs-live-preload
+fi
+
+exit $RETVAL
