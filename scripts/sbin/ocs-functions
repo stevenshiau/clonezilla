@@ -11961,6 +11961,7 @@ inspect_chksum_for_files_in_dev() {
 #
 set_mode_755_and_unix_format() {
   local file_dest="$1"
+  local rc
   if [ -z "$file_dest" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "No \"file_dest\" assigned in function set_mode_755_and_unix_format!"
@@ -11976,11 +11977,14 @@ set_mode_755_and_unix_format() {
     return 1
   fi
   chmod 755 "$file_dest"
+  rc=$?
   # If its format is "POSIX shell script, ASCII text executable, with CRLF line terminators"
   # it will fail to run like:
   # bash: ./my-script.sh: /bin/sh^M: bad interpreter: No such file or directory
   # Therefore force to convert it to Unix text format
   dos2unix -q "$file_dest"
+  rc="$((rc + $?))"
+  return $rc
 } # end of set_mode_755_and_unix_format
 #
 strip_heading_dev() {

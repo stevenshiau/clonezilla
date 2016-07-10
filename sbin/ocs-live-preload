@@ -28,11 +28,38 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
 # Settings
-cmdl_file="/proc/cmdline"
+cmdl_file_def="/proc/cmdline"
 dest="/opt"
 rm_tarball_flag=""
 
 # Functions
+USAGE() {
+    echo "$ocs - preload a tarball/zip file or copy files from cifs/nfs for live system from boot parameter \"ocs_preload\""
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION]"
+    echo "Options:"
+    echo "-c, --cmdline-file   Assign the kernel boot parameter files. If not assigned, \"$cmdl_file_def\" will be used."
+    echo "Type 1, i.e. for tarball/zip file:"
+    echo "ocs_preload=[http|https|ftp|tftp|file]://[HOST_NAME_or_IP_ADD]/path/to/your_tarball_or_script"
+    echo "Type 2, i.e. for files on a cifs/nfs directory using mount command:"
+    echo "ocs_preload="mount -t cifs //YOUR_CIFS_SERVER/path/to/ /path/to/mounting_point""
+    echo "ocs_preload="mount -t nfs YOUR_CIFS_SERVER:/path/to/ /path/to/mounting_point""
+    echo "Support file format: tar.gz, tgz, tar.bz2, tbz2, tar.xz, txz, zip, .sh"
+    echo "Support network file system: cifs (samba) and nfs2/3/4"
+    echo "E.g. You can put the following in the boot parameter:"
+    echo "     ocs_preload=tftp://192.168.100.254/my-custom.tgz"
+    echo "     ocs_preload=http://192.168.200.254/my-custom.tar.xz"
+    echo "     ocs_preload=ftp://192.168.250.254/my-custom.zip"
+    echo "     ocs_preload=file:///lib/live/mount/medium/my-custom.tar.bz2"
+    echo "     ocs_preload=tftp://192.168.100.254/my-custom.sh"
+    echo "     ocs_preload="mount -t cifs //192.168.120.2/images/ /tmp/cifs -o user=administrator,password=yourpasswd" "
+    echo "     ocs_preload4="mount -t nfs 192.168.120.254:/home/partimag/script/ /tmp/nfs -o ro" "
+    echo "Multiple ocs_preload* are avaiable, just append a number after that. E.g."
+    echo "ocs_prealod=... ocs_preload1=... ocs_preload2=..."
+    echo "Then in Clonezilla live $ocs will be run automatically and the file assigned by ocs_preload will be downloaded and extracted to /opt. Its mode will be set automatically, too. i.e. set as mode 755 and Unix format script."
+} # end of USAGE
+#
 parse_cifs_mount_command() {
   # Function to parse cifs mount command to get the remote source and mount point, like:
   # ocs_preload="mount -t cifs //tech.drbl.org/clonezilla-samba-preload /ocs_preload_tmp -o username=jack,password=abcdefg"
@@ -97,7 +124,7 @@ parse_nfs_mount_command() {
 extract_tarball() {
   # rm_tarball_flag is global variable
   local url download_file local_f download_file_absp
-  local ip rfile lfile
+  local ip rfile lfile rc=1
   url="$1"
 
   if [ -z "$url" ]; then
@@ -138,13 +165,19 @@ extract_tarball() {
   if [ -e "$download_file_absp" ]; then
   	echo "Putting $download_file_absp... to ${dest}/"
   	case "$download_file" in
-  		*tar)           tar -xvf $download_file_absp -C ${dest}/;;
-  		*tar.gz|*tgz)   tar -xvzf $download_file_absp -C ${dest}/;;
-  		*tar.bz2|*tbz2) tar -xvjf $download_file_absp -C ${dest}/;;
-  		*tar.xz|*txz)   tar -xvJf $download_file_absp -C ${dest}/;;
+  		*tar)           tar -xvf $download_file_absp -C ${dest}/
+			        rc=$? ;;
+  		*tar.gz|*tgz)   tar -xvzf $download_file_absp -C ${dest}/
+			        rc=$? ;;
+  		*tar.bz2|*tbz2) tar -xvjf $download_file_absp -C ${dest}/
+			        rc=$? ;;
+  		*tar.xz|*txz)   tar -xvJf $download_file_absp -C ${dest}/
+			        rc=$? ;;
   		*.zip)          unzip -o $download_file_absp -d ${dest}/ 
+			        rc=$?
 				convert_dos_format_script_from_zip_file $download_file_absp;;
   		*.sh)           set_mode_755_and_unix_format $download_file_absp
+			        rc=$?
 				# keep it since it's will be used directly.
   				rm_tarball_flag="no" ;;
   		*)
@@ -169,11 +202,11 @@ extract_tarball() {
   
   echo "File(s) put in directory: ${dest}."
   echo ""
-  return 0
+  return $rc
 } # end of extract_tarball
 #
 replicate_files_from_netfs() {
-  local netfs_mnt_cmd cifs_cp_flist_tmp
+  local netfs_mnt_cmd cifs_cp_flist_tmp rc=1
   netfs_mnt_cmd="$*"
   case "$netfs_mnt_cmd" in
   	mount*-t*cifs*|mount.cifs*)
@@ -194,6 +227,7 @@ replicate_files_from_netfs() {
                 eval $netfs_mnt_cmd
                 echo "Copy Contents of Samba preload share to /opt ..."
                 cp -rv $cifs_mnt_pnt/* /opt | tee $cifs_cp_flist_tmp
+                rc="${PIPESTATUS[0]}"
                 echo "Unmount Samba preload share..."
 		umount $cifs_mnt_pnt
 		convert_dos_format_script_from_cp_rv_list $cifs_cp_flist_tmp
@@ -217,12 +251,14 @@ replicate_files_from_netfs() {
                 eval $netfs_mnt_cmd
                 echo "Copy Contents of NFS preload share to /opt ..."
                 cp -rv $nfs_mnt_pnt/* /opt | tee $nfs_cp_flist_tmp
+                rc="${PIPESTATUS[0]}"
                 echo "Unmount NFS preload share..."
 		umount $nfs_mnt_pnt
 		convert_dos_format_script_from_cp_rv_list $nfs_cp_flist_tmp
 		rm -f $nfs_cp_flist_tmp
   		;;
   esac
+  return $rc
 } # end of replicate_files_from_netfs
 #
 convert_dos_format_script_from_zip_file() {
@@ -289,8 +325,47 @@ convert_dos_format_script_from_cp_rv_list() {
 #################
 ##### MAIN ######
 #################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -c|--cmdline-file)
+      shift
+      if [ -z "$(echo $1 |grep ^-.)" ]; then
+        # skip the -xx option, in case 
+        cmdl_file="$1"
+        shift
+      fi
+      [ -z "$cmdl_file" ] && echo "-c is used, but no cmdl_file assigned." && exit 1
+      ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
 check_if_root
 ask_and_load_lang_set
+
+# Checking if this program is already run
+if [ -e /var/lib/clonezilla/ocs-live-preload ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Program ocs-live-preload has been successfully run before. Skip running it."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  exit 0
+fi
+
+[ -z "$cmdl_file" ] && cmdl_file="$cmdl_file_def"
+if [ ! -e "$cmdl_file" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Kernel cmdline file ($cmdl_file) does _NOT_ exist!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
 
 #
 ocs_preload_list="$(grep -Ewo "ocs_preload[[:digit:]]*" $cmdl_file | uniq | sort -V)"
@@ -319,6 +394,7 @@ mkdir -p ${dest}
 parse_cmdline_option -c $cmdl_file "echo_ocs_preload"
 
 # Now start parsing the paramaters listed in $ocs_preload_list
+RETVAL=0
 for i in $ocs_preload_list; do
   parse_cmdline_option -c $cmdl_file "$i"
   eval iload=\$$i
@@ -329,8 +405,17 @@ for i in $ocs_preload_list; do
       echo "Now process \"$i\": $iload"
     fi
     case "$iload" in
-      mount*)  replicate_files_from_netfs $iload ;;
-           *)  extract_tarball $iload ;;
+      mount*)  replicate_files_from_netfs $iload
+	       RETVAL="$((RETVAL + $?))" ;;
+           *)  extract_tarball $iload
+	       RETVAL="$((RETVAL + $?))" ;;
     esac
   fi
 done
+
+# Creating state file
+if [ "$RETVAL" -eq 0 ]; then
+  touch /var/lib/clonezilla/ocs-live-preload
+fi
+
+exit $RETVAL
