@@ -124,7 +124,7 @@ parse_nfs_mount_command() {
 extract_tarball() {
   # rm_tarball_flag is global variable
   local url download_file local_f download_file_absp
-  local ip rfile lfile
+  local ip rfile lfile rc=1
   url="$1"
 
   if [ -z "$url" ]; then
@@ -165,13 +165,19 @@ extract_tarball() {
   if [ -e "$download_file_absp" ]; then
   	echo "Putting $download_file_absp... to ${dest}/"
   	case "$download_file" in
-  		*tar)           tar -xvf $download_file_absp -C ${dest}/;;
-  		*tar.gz|*tgz)   tar -xvzf $download_file_absp -C ${dest}/;;
-  		*tar.bz2|*tbz2) tar -xvjf $download_file_absp -C ${dest}/;;
-  		*tar.xz|*txz)   tar -xvJf $download_file_absp -C ${dest}/;;
+  		*tar)           tar -xvf $download_file_absp -C ${dest}/
+			        rc=$? ;;
+  		*tar.gz|*tgz)   tar -xvzf $download_file_absp -C ${dest}/
+			        rc=$? ;;
+  		*tar.bz2|*tbz2) tar -xvjf $download_file_absp -C ${dest}/
+			        rc=$? ;;
+  		*tar.xz|*txz)   tar -xvJf $download_file_absp -C ${dest}/
+			        rc=$? ;;
   		*.zip)          unzip -o $download_file_absp -d ${dest}/ 
+			        rc=$?
 				convert_dos_format_script_from_zip_file $download_file_absp;;
   		*.sh)           set_mode_755_and_unix_format $download_file_absp
+			        rc=$?
 				# keep it since it's will be used directly.
   				rm_tarball_flag="no" ;;
   		*)
@@ -196,11 +202,11 @@ extract_tarball() {
   
   echo "File(s) put in directory: ${dest}."
   echo ""
-  return 0
+  return $rc
 } # end of extract_tarball
 #
 replicate_files_from_netfs() {
-  local netfs_mnt_cmd cifs_cp_flist_tmp
+  local netfs_mnt_cmd cifs_cp_flist_tmp rc=1
   netfs_mnt_cmd="$*"
   case "$netfs_mnt_cmd" in
   	mount*-t*cifs*|mount.cifs*)
@@ -221,6 +227,7 @@ replicate_files_from_netfs() {
                 eval $netfs_mnt_cmd
                 echo "Copy Contents of Samba preload share to /opt ..."
                 cp -rv $cifs_mnt_pnt/* /opt | tee $cifs_cp_flist_tmp
+                rc="${PIPESTATUS[0]}"
                 echo "Unmount Samba preload share..."
 		umount $cifs_mnt_pnt
 		convert_dos_format_script_from_cp_rv_list $cifs_cp_flist_tmp
@@ -244,12 +251,14 @@ replicate_files_from_netfs() {
                 eval $netfs_mnt_cmd
                 echo "Copy Contents of NFS preload share to /opt ..."
                 cp -rv $nfs_mnt_pnt/* /opt | tee $nfs_cp_flist_tmp
+                rc="${PIPESTATUS[0]}"
                 echo "Unmount NFS preload share..."
 		umount $nfs_mnt_pnt
 		convert_dos_format_script_from_cp_rv_list $nfs_cp_flist_tmp
 		rm -f $nfs_cp_flist_tmp
   		;;
   esac
+  return $rc
 } # end of replicate_files_from_netfs
 #
 convert_dos_format_script_from_zip_file() {
