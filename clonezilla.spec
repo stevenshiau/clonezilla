@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.5
+Version:	3.22.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jul 10 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.6-drbl1
+- Programs ocs-live-preload and ocs-live-repository will honor the tag file not to be run again if they have been run successfully starting Clonezilla main menu again.
+- Make a prompt about bind mount for different locales. 
+
 * Fri Jul 08 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.5-drbl1
 - Improve image repository browsing:
   (1) Add an option to exit dir browsing.
