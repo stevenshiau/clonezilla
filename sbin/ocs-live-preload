@@ -28,11 +28,38 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
 # Settings
-cmdl_file="/proc/cmdline"
+cmdl_file_def="/proc/cmdline"
 dest="/opt"
 rm_tarball_flag=""
 
 # Functions
+USAGE() {
+    echo "$ocs - preload a tarball/zip file or copy files from cifs/nfs for live system from boot parameter \"ocs_preload\""
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION]"
+    echo "Options:"
+    echo "-c, --cmdline-file   Assign the kernel boot parameter files. If not assigned, \"$cmdl_file_def\" will be used."
+    echo "Type 1, i.e. for tarball/zip file:"
+    echo "ocs_preload=[http|https|ftp|tftp|file]://[HOST_NAME_or_IP_ADD]/path/to/your_tarball_or_script"
+    echo "Type 2, i.e. for files on a cifs/nfs directory using mount command:"
+    echo "ocs_preload="mount -t cifs //YOUR_CIFS_SERVER/path/to/ /path/to/mounting_point""
+    echo "ocs_preload="mount -t nfs YOUR_CIFS_SERVER:/path/to/ /path/to/mounting_point""
+    echo "Support file format: tar.gz, tgz, tar.bz2, tbz2, tar.xz, txz, zip, .sh"
+    echo "Support network file system: cifs (samba) and nfs2/3/4"
+    echo "E.g. You can put the following in the boot parameter:"
+    echo "     ocs_preload=tftp://192.168.100.254/my-custom.tgz"
+    echo "     ocs_preload=http://192.168.200.254/my-custom.tar.xz"
+    echo "     ocs_preload=ftp://192.168.250.254/my-custom.zip"
+    echo "     ocs_preload=file:///lib/live/mount/medium/my-custom.tar.bz2"
+    echo "     ocs_preload=tftp://192.168.100.254/my-custom.sh"
+    echo "     ocs_preload="mount -t cifs //192.168.120.2/images/ /tmp/cifs -o user=administrator,password=yourpasswd" "
+    echo "     ocs_preload4="mount -t nfs 192.168.120.254:/home/partimag/script/ /tmp/nfs -o ro" "
+    echo "Multiple ocs_preload* are avaiable, just append a number after that. E.g."
+    echo "ocs_prealod=... ocs_preload1=... ocs_preload2=..."
+    echo "Then in Clonezilla live $ocs will be run automatically and the file assigned by ocs_preload will be downloaded and extracted to /opt. Its mode will be set automatically, too. i.e. set as mode 755 and Unix format script."
+} # end of USAGE
+#
 parse_cifs_mount_command() {
   # Function to parse cifs mount command to get the remote source and mount point, like:
   # ocs_preload="mount -t cifs //tech.drbl.org/clonezilla-samba-preload /ocs_preload_tmp -o username=jack,password=abcdefg"
