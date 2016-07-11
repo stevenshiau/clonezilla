@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.6
+Version:	3.22.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jul 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.7-drbl1
+- Due to apt>=1.3~pre2 only recommends gnupg/gnupg2, not list them as must, therefore gnupg and gnupg2 have to be included in DEBOOTSTRAP. ref: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=830696
+
 * Sun Jul 10 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.6-drbl1
 - Programs ocs-live-preload and ocs-live-repository will honor the tag file not to be run again if they have been run successfully starting Clonezilla main menu again.
 - Make a prompt about bind mount for different locales. 
