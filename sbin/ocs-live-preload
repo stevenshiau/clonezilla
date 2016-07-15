@@ -31,6 +31,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 cmdl_file_def="/proc/cmdline"
 dest="/opt"
 rm_tarball_flag=""
+force_to_run="no"
 
 # Functions
 USAGE() {
@@ -40,6 +41,7 @@ USAGE() {
     echo "$ocs [OPTION]"
     echo "Options:"
     echo "-c, --cmdline-file   Assign the kernel boot parameter files. If not assigned, \"$cmdl_file_def\" will be used."
+    echo "-f, --force          Force to run $ocs, no matter it has been run successfully or not."
     echo "Type 1, i.e. for tarball/zip file:"
     echo "ocs_preload=[http|https|ftp|tftp|file]://[HOST_NAME_or_IP_ADD]/path/to/your_tarball_or_script"
     echo "Type 2, i.e. for files on a cifs/nfs directory using mount command:"
@@ -340,6 +342,7 @@ while [ $# -gt 0 ]; do
       fi
       [ -z "$cmdl_file" ] && echo "-c is used, but no cmdl_file assigned." && exit 1
       ;;
+   -f|--force) force_to_run="yes"; shift;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
            exit 2 ;;
@@ -350,12 +353,15 @@ done
 check_if_root
 ask_and_load_lang_set
 
-# Checking if this program is already run
-if [ -e /var/lib/clonezilla/ocs-live-preload ]; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Program ocs-live-preload has been successfully run before. Skip running it."
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  exit 0
+# Only when not force to run, we will check the tag file
+if [ "$force_to_run" = "no" ]; then
+  # Checking if this program is already run
+  if [ -e /var/lib/clonezilla/$ocs ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Program $ocs has been successfully run before. Skip running it."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 0
+  fi
 fi
 
 [ -z "$cmdl_file" ] && cmdl_file="$cmdl_file_def"
@@ -415,7 +421,7 @@ done
 
 # Creating state file
 if [ "$RETVAL" -eq 0 ]; then
-  touch /var/lib/clonezilla/ocs-live-preload
+  touch /var/lib/clonezilla/$ocs
 fi
 
 exit $RETVAL
