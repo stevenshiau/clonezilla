@@ -132,24 +132,24 @@ fi
 sel_dir="$(mktemp /tmp/sel_dir.XXXXXX)"
 ASK_DIRNAME=1
 while [ "$ASK_DIRNAME" -ne 0 ]; do
-BrowseCurrentDirectory "$pre_ocsroot_path" $sel_dir
-real_ocsroot="$(cat $sel_dir)"
-if [ -n "$real_ocsroot" -a -d "$real_ocsroot" ]; then
-  if [ ! -e "$real_ocsroot/clonezilla-img" ]; then
-    cmd="mount --bind -o $ocsroot_def_mnt_opt,nodiratime $real_ocsroot $ocsroot"
-    echo "Running: $cmd"
-    eval $cmd
-    ASK_DIRNAME=0
+  BrowseCurrentDirectory "$pre_ocsroot_path" $sel_dir
+  real_ocsroot="$(cat $sel_dir)"
+  if [ -n "$real_ocsroot" -a -d "$real_ocsroot" ]; then
+    if [ ! -e "$real_ocsroot/clonezilla-img" ]; then
+      cmd="mount --bind -o $ocsroot_def_mnt_opt,nodiratime $real_ocsroot $ocsroot"
+      echo "Running: $cmd"
+      eval $cmd
+      ASK_DIRNAME=0
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$msg_the_dir_you_choose_is_clonezilla_img_dir: $real_ocsroot"
+      echo "$msg_there_is_no_way_to_mount_subdirectory"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      read -p "$msg_press_enter_to_continue..."
+      ask_if_bind_mount_again
+    fi
   else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$msg_the_dir_you_choose_is_clonezilla_img_dir: $real_ocsroot"
-    echo "$msg_there_is_no_way_to_mount_subdirectory"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    read -p "$msg_press_enter_to_continue..."
     ask_if_bind_mount_again
   fi
-else
-  ask_if_bind_mount_again
-fi
 done
 [ -f "$sel_dir" -a -n "$sel_dir" ] &&  rm -f $sel_dir
