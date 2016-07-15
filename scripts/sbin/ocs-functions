@@ -12072,8 +12072,7 @@ BrowseCurrentDirectory() {
     # //NOTE// First we have to append "/" in the end of the results of command "pwd" otherwise the 1st level in the media might be shown as like: "/dev/sdd1[]" -> We want "/dev/sdd1[/]"
     mount_dev="$(findmnt -Un -o source -T $pre_ocsroot_path)"
     abs_path="$(LC_ALL=C pwd | sed -r -e "s|$|/|g" -e "s|${pre_ocsroot_path}(.*)|${mount_dev}[\1]|g")"
-    
-    if [ "$numfiles" -gt 0 ]; then
+
       $DIA --backtitle "$msg_nchc_free_software_labs" \
            --title "$msg_dir_browser_for_img" \
            --menu "$msg_which_dir_as_clonezilla_img_home\n$msg_when_current_selected_dir_name_is_ok\n$msg_not_chosing_CZ_IMG_dir\n$msg_path_on_the_resource: $abs_path\n$msg_current_selected_dir_name: \"$currentdir\"" \
@@ -12082,47 +12081,34 @@ BrowseCurrentDirectory() {
       rc=$?
       option="$(cat $TMP)"
       
-      if [ "$option" = "00-EXIT" ]; then
+      if [ "$option" = "<ABORT>" ]; then
         return 1
       fi
       if [ "$rc" -eq 1 ]; then
         break
       else
-        cmd="cd "$option
-        eval $cmd
+	if [ -n "$(echo $filelist_CZ | grep -Ew "$option")" -a \
+             "$option" != ".." ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo -e "\n$msg_the_dir_you_choose_is_clonezilla_img_dir: $abs_path"
+          echo "$msg_there_is_no_way_to_mount_subdirectory"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          read -p "$msg_press_enter_to_continue..."
+        else
+          cmd="cd "$option
+          eval $cmd
+        fi
       fi
-    else
-      # No other directories in the working directory. This could be 
-      # (1) The dir itself is the dir of Clonezilla image.
-      # (2) It actually does not have any other dir.
-      if [ -e "$currentdir_fullpath/clonezilla-img" ]; then
-        # Case (1) The dir itself is the dir of Clonezilla image.
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo -e "\n$msg_the_dir_you_choose_is_clonezilla_img_dir: $abs_path"
-	echo "$msg_there_is_no_way_to_mount_subdirectory"
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        read -p "$msg_press_enter_to_continue..."
-        [ -f "$TMP" ] && rm -f $TMP
-        return 1
-      else
-        # (2) It actually does not have any other dir.
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo -e "\n$msg_no_any_image_found: $abs_path"
-	echo "$msg_this_img_repo_can_only_be_used_for_saving"
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        read -p "$msg_press_enter_to_continue..."
-        [ -f "$TMP" ] && rm -f $TMP
-	break
-      fi
-    fi
   done
   [ -f "$TMP" ] && rm -f $TMP
-  # return the valule
+  # return the results
   echo "$(pwd)" > $ANS_TMP
 } # end of BrowseCurrentDirectory
 #
 get_directories_list_common() {
- # Output: filelist, fileinfo, numfiles, height
+ # Output: filelist, filelist_CZ, fileinfo, numfiles, height (global variables)
+ filelist_ND=""
+ filelist_CZ=""
  for file in ./*; do
    echo -n "."
    # Only directory ..., not file
@@ -12139,9 +12125,27 @@ get_directories_list_common() {
      # This directory only contain itself, no any image in the subdir.
      fileinfo="${fileinfo}_NO_SUBDIR"
    fi
-   filelist="$filelist $(basename "$file") $fileinfo"
+   # Group them, collect normal dirs first, then conezilla img dir.
+   
+   if [ -e "$file/clonezilla-img" ]; then
+     filelist_CZ="$filelist_CZ $(basename "$file") $fileinfo"
+   else
+     filelist_ND="$filelist_ND $(basename "$file") $fileinfo"
+   fi
    numfiles=`expr $numfiles + 1`
  done
+
+ filelist="$filelist $filelist_ND $filelist_CZ"
+ # Strip the leading spaces for filelist
+ filelist="$(echo $filelist | sed -r -e "s/^[[:space:]]*//g")"
+
+ # Append an abort option in the end, so the menu will show:
+ # First is .. (Parent Directory) (if applicable)
+ # second is subdirectories
+ # third is cz_img directories
+ # fourth is Exit/Abort option
+ filelist="$filelist <ABORT> $(rep_whspc_w_udrsc "$msg_exit_browsing")"
+ 
  if [ "$numfiles" -lt "$MAX_DIALOG_HEIGHT" ]; then
    height="$numfiles"
  else
@@ -12150,18 +12154,17 @@ get_directories_list_common() {
 } # end of get_directories_list_common
 #
 GetDirectories() {
-  # First add and option for exit
-  filelist="00-EXIT $(rep_whspc_w_udrsc "$msg_exit_browsing")"
+  # Initialize filelist
   # Keep the parent dir.
-  filelist="$filelist .. $(rep_whspc_w_udrsc "$msg_parent_directory")"
+  filelist=".. $(rep_whspc_w_udrsc "$msg_parent_directory")"
   numfiles=0
   echo -n "Scanning dir $wk_dir."
   get_directories_list_common
 } # end of GetDirectories
 #
 GetSubDirectories() {
-  # First add and option for exit
-  filelist="00-EXIT $(rep_whspc_w_udrsc "$msg_exit_browsing")"
+  # Initialize filelist
+  filelist=""
   numfiles=0
   echo -n "Scanning dir $wk_dir."
   get_directories_list_common
