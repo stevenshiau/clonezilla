@@ -33,6 +33,7 @@ cmdl_file_def="/proc/cmdline"
 chk_ocsroot_mountpont="yes"
 # Since this command is usually run for unattended mode, make it in batch mode
 ocs_batch_mode="on"
+force_to_run="no"
 
 #
 USAGE() {
@@ -42,6 +43,7 @@ USAGE() {
     echo "$ocs [OPTION]"
     echo "Options:"
     echo "-c, --cmdline-file   Assign the kernel boot parameter files. If not assigned, \"$cmdl_file_def\" will be used."
+    echo "-f, --force          Force to run $ocs, no matter it has been run successfully or not."
     echo "-s, --skip-ocsroot-mountpoint-chk   Skip checking if Clonezilla image $ocsroot is a mountpoint."
     echo "The support URI format:"
     echo "local_dev:     dev:///dev/partition"
@@ -293,6 +295,7 @@ while [ $# -gt 0 ]; do
       fi
       [ -z "$cmdl_file" ] && echo "-c is used, but no cmdl_file assigned." && exit 1
       ;;
+   -f|--force) force_to_run="yes"; shift;;
    -s|--skip-ocsroot-mountpoint-chk) chk_ocsroot_mountpont="no"; shift;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
@@ -304,12 +307,15 @@ done
 check_if_root
 ask_and_load_lang_set
 
-# Checking if this program is already run
-if [ -e /var/lib/clonezilla/ocs-live-repository ]; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Program ocs-live-repository has been successfully run before. Skip running it."
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  exit 0
+# Only when not force to run, we will check the tag file
+if [ "$force_to_run" = "no" ]; then
+  # Checking if this program is already run
+  if [ -e /var/lib/clonezilla/$ocs ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Program $ocs has been successfully run before. Skip running it."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 0
+  fi
 fi
 
 [ -z "$cmdl_file" ] && cmdl_file="$cmdl_file_def"
