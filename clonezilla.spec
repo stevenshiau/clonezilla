@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.8
+Version:	3.22.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,20 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jul 15 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.9-drbl1
+- Applied patches from Aaron Burling, including
+  Group dirs in BrowseCurrentDirectory:
+  First is .. (Parent Directory) (if applicable),
+  second is subdirectories,
+  third is cz_img directories,
+  fourth is Exit/Abort option.
+  Prompt word "00-Exit" has been changed to <ABORT> and moved to the
+  bottom of menu.
+
+- Make ocs-live-repository to be run again after rerun1 is run again.
+- Honor ocs_user_subdir in boot parameters so that ocs-live-bind-mount will
+  be run in ocs-live-repository.
+
 * Mon Jul 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.8-drbl1
 - Only include gnupg in the base system. Forget about gnupg2.
 
