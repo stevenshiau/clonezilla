@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.9
+Version:	3.22.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jul 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.10-drbl1
+- Add options "-c" and "-f" for ocs-live-prerun and ocs-live-postrun.
+- Check every boot parameter ocs_prerun*, ocs_postrun*, and ocs_preload*
+  has been successfully run or not. Not only the whole program. If it has
+  been successfully run, a tag file will be created in /var/lib/clonezilla,
+  and the next run won't run it again unless option "-f" is used.
+
 * Fri Jul 15 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.9-drbl1
 - Applied patches from Aaron Burling, including
   Group dirs in BrowseCurrentDirectory:
