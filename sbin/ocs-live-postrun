@@ -77,10 +77,22 @@ fi
 
 parse_cmdline_option -c $cmdl_file "echo_ocs_postrun"
 
+# Now start parsing the paramaters listed in $ocs_postrun_list
+RETVAL=0
 for i in $ocs_postrun_list; do
   parse_cmdline_option -c $cmdl_file "$i"
   eval irun=\$$i
   if [ -n "$irun" ]; then
+    # Only when not force to run, we will check the tag file
+    if [ "$force_to_run" = "no" ]; then
+      # Checking if this program is already run
+      if [ -e /var/lib/clonezilla/$i ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	echo "This boot parameter has been successfully run before, so skip it: $i ($irun)"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        continue
+      fi
+    fi
     echo "**************************"
     # run it
     if [ "$echo_ocs_postrun" != "no" ]; then
@@ -89,8 +101,17 @@ for i in $ocs_postrun_list; do
     # Since "$irun" might not be exe mode, so we test it if it's script, use . $irun, else, run it directly.
     if [ "$(LANG=C file -Ls "$irun" 2>/dev/null | grep -iE "shell script")" ]; then
       $irun
+      rc=$?
     else
       eval $irun
+      rc=$?
+    fi
+    RETVAL="$((RETVAL + $rc))"
+    # Creating state file
+    if [ "$rc" -eq 0 ]; then
+      touch /var/lib/clonezilla/$i
     fi
   fi
 done
+
+exit $RETVAL
