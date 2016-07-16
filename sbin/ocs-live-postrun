@@ -1,4 +1,7 @@
 #!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to run commands assigned in boot parameter ocs_postrun*.
 
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
@@ -6,7 +9,61 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
 #
-cmdl_file="/proc/cmdline"
+cmdl_file_def="/proc/cmdline"
+force_to_run="no"
+
+# Functions
+USAGE() {
+    echo "$ocs - Run commands assigned in boot parameter \"ocs_postrun\""
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION]"
+    echo "Options:"
+    echo "-c, --cmdline-file   Assign the kernel boot parameter file. If not assigned, \"$cmdl_file_def\" will be used."
+    echo "-f, --force          Force to run $ocs, no matter it has been run successfully or not."
+    echo "E.g. To run the commands assigned by ocs_postrun in the kernel boot parameter file 'my-cmdline', run:"
+    echo "     $ocs -c my-cmdline"
+    echo "Multiple ocs_postrun* are available, just append a number after that. E.g."
+    echo "ocs_prealod=... ocs_postrun1=... ocs_postrun2=..."
+} # end of USAGE
+
+#################
+##### MAIN ######
+#################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -c|--cmdline-file)
+      shift
+      if [ -z "$(echo $1 |grep ^-.)" ]; then
+        # skip the -xx option, in case 
+        cmdl_file="$1"
+        shift
+      fi
+      [ -z "$cmdl_file" ] && echo "-c is used, but no cmdl_file assigned." && exit 1
+      ;;
+   -f|--force) force_to_run="yes"; shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+check_if_root
+ask_and_load_lang_set
+
+[ -z "$cmdl_file" ] && cmdl_file="$cmdl_file_def"
+if [ ! -e "$cmdl_file" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Kernel cmdline file ($cmdl_file) does _NOT_ exist!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
 
 ocs_postrun_list="$(grep -Ewo "ocs_postrun[[:digit:]]*" $cmdl_file | uniq | sort -V)"
 ocs_postrun_list="$(echo $ocs_postrun_list)"  # in one line
