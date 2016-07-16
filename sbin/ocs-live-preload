@@ -40,7 +40,7 @@ USAGE() {
     echo "To run $ocs:"
     echo "$ocs [OPTION]"
     echo "Options:"
-    echo "-c, --cmdline-file   Assign the kernel boot parameter files. If not assigned, \"$cmdl_file_def\" will be used."
+    echo "-c, --cmdline-file   Assign the kernel boot parameter file. If not assigned, \"$cmdl_file_def\" will be used."
     echo "-f, --force          Force to run $ocs, no matter it has been run successfully or not."
     echo "Type 1, i.e. for tarball/zip file:"
     echo "ocs_preload=[http|https|ftp|tftp|file]://[HOST_NAME_or_IP_ADD]/path/to/your_tarball_or_script"
@@ -57,7 +57,7 @@ USAGE() {
     echo "     ocs_preload=tftp://192.168.100.254/my-custom.sh"
     echo "     ocs_preload="mount -t cifs //192.168.120.2/images/ /tmp/cifs -o user=administrator,password=yourpasswd" "
     echo "     ocs_preload4="mount -t nfs 192.168.120.254:/home/partimag/script/ /tmp/nfs -o ro" "
-    echo "Multiple ocs_preload* are avaiable, just append a number after that. E.g."
+    echo "Multiple ocs_preload* are available, just append a number after that. E.g."
     echo "ocs_prealod=... ocs_preload1=... ocs_preload2=..."
     echo "Then in Clonezilla live $ocs will be run automatically and the file assigned by ocs_preload will be downloaded and extracted to /opt. Its mode will be set automatically, too. i.e. set as mode 755 and Unix format script."
 } # end of USAGE
@@ -353,17 +353,6 @@ done
 check_if_root
 ask_and_load_lang_set
 
-# Only when not force to run, we will check the tag file
-if [ "$force_to_run" = "no" ]; then
-  # Checking if this program is already run
-  if [ -e /var/lib/clonezilla/$ocs ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Program $ocs has been successfully run before. Skip running it."
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    exit 0
-  fi
-fi
-
 [ -z "$cmdl_file" ] && cmdl_file="$cmdl_file_def"
 if [ ! -e "$cmdl_file" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -405,6 +394,16 @@ for i in $ocs_preload_list; do
   parse_cmdline_option -c $cmdl_file "$i"
   eval iload=\$$i
   if [ -n "$iload" ]; then
+    # Only when not force to run, we will check the tag file
+    if [ "$force_to_run" = "no" ]; then
+      # Checking if this program is already run
+      if [ -e /var/lib/clonezilla/$i ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	echo "This boot parameter has been successfully run before, so skip it: $i ($iload)"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        continue
+      fi
+    fi
     echo "**************************"
     # Process it
     if [ "$echo_ocs_preload" != "no" ]; then
@@ -412,16 +411,17 @@ for i in $ocs_preload_list; do
     fi
     case "$iload" in
       mount*)  replicate_files_from_netfs $iload
-	       RETVAL="$((RETVAL + $?))" ;;
+	       rc=$?
+	       RETVAL="$((RETVAL + $rc))" ;;
            *)  extract_tarball $iload
-	       RETVAL="$((RETVAL + $?))" ;;
+	       rc=$?
+	       RETVAL="$((RETVAL + $rc))" ;;
     esac
+    # Creating state file
+    if [ "$rc" -eq 0 ]; then
+      touch /var/lib/clonezilla/$i
+    fi
   fi
 done
-
-# Creating state file
-if [ "$RETVAL" -eq 0 ]; then
-  touch /var/lib/clonezilla/$ocs
-fi
 
 exit $RETVAL
