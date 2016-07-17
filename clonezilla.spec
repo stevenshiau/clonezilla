@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.10
+Version:	3.22.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jul 17 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.11-drbl1
+- Avoid wrongly parsing dir as clonezilla image in function
+  BrowseCurrentDirectory of ocs-functions.
+
 * Sat Jul 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.10-drbl1
 - Add options "-c" and "-f" for ocs-live-prerun and ocs-live-postrun.
 - Check every boot parameter ocs_prerun*, ocs_postrun*, and ocs_preload*
