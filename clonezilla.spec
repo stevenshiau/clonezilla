@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.11
+Version:	3.22.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.20.32, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.20.34, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jul 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.12-drbl1
+- Move function get_dir_filesystem from drbl-functions to ocs-functions.
+  Use findmnt instead of df to get the file system for a mountpoint.
+- Show sshfs file system when it's mounted in prep-ocsroot.
+
 * Sun Jul 17 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.11-drbl1
 - Avoid wrongly parsing dir as clonezilla image in function
   BrowseCurrentDirectory of ocs-functions.
