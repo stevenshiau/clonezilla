@@ -208,7 +208,7 @@ extract_tarball() {
 } # end of extract_tarball
 #
 replicate_files_from_netfs() {
-  local netfs_mnt_cmd cifs_cp_flist_tmp rc=1
+  local netfs_mnt_cmd cifs_cp_flist_tmp rc=1 rc_mnt ask_ run_again_ans
   netfs_mnt_cmd="$*"
   case "$netfs_mnt_cmd" in
   	mount*-t*cifs*|mount.cifs*)
@@ -225,15 +225,40 @@ replicate_files_from_netfs() {
 		fi
 		echo "Creating Samba (CIFS) mounting point $cifs_mnt_pnt..."
 		mkdir -p $cifs_mnt_pnt
-		echo "Mounting Samba (CIFS) preload share $cifs_rmt_src: $netfs_mnt_cmd"
-                eval $netfs_mnt_cmd
-                echo "Copy Contents of Samba preload share to /opt ..."
-                cp -rv $cifs_mnt_pnt/* /opt | tee $cifs_cp_flist_tmp
-                rc="${PIPESTATUS[0]}"
-                echo "Unmount Samba preload share..."
-		umount $cifs_mnt_pnt
-		convert_dos_format_script_from_cp_rv_list $cifs_cp_flist_tmp
-		rm -f $cifs_cp_flist_tmp
+                ask_="true"
+                while [ "$ask_" = "true" ]; do
+		  echo "Mounting Samba (CIFS) preload share $cifs_rmt_src: $netfs_mnt_cmd"
+                  eval $netfs_mnt_cmd
+                  rc_mnt=$?
+                  if [ "$rc_mnt" -ne 0 ]; then
+                    echo $msg_delimiter_star_line
+                    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+                    echo "Failed to mount Samba server."
+                    echo "$msg_do_u_want_to_do_it_again"
+                    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+                    echo -n "[Y/n] "
+                    read run_again_ans
+                    case "$run_again_ans" in
+                      n|N|[nN][oO]) ask_="false" ;;
+                                 *) ask_="true" ;;
+                    esac
+                  else
+                    ask_="false"
+                  fi
+                done
+		if [ "$rc_mnt" -eq 0 ]; then
+                  echo "Copy Contents of Samba preload share to /opt ..."
+                  cp -rv $cifs_mnt_pnt/* /opt | tee $cifs_cp_flist_tmp
+                  rc="${PIPESTATUS[0]}"
+                  echo "Unmount Samba preload share..."
+                  umount $cifs_mnt_pnt
+                  convert_dos_format_script_from_cp_rv_list $cifs_cp_flist_tmp
+		  rm -f $cifs_cp_flist_tmp
+                  return $rc
+                else
+		  rm -f $cifs_cp_flist_tmp
+		  return 1
+                fi
   		;;
   	mount*-t*nfs*|mount.nfs|mount.nfs4)
                 nfs_cp_flist_tmp="$(mktemp /tmp/nfs_cp_flist.XXXXXX)"
@@ -251,16 +276,22 @@ replicate_files_from_netfs() {
 		mkdir -p $nfs_mnt_pnt
 		echo "Mounting NFS preload share $nfs_rmt_src: $netfs_mnt_cmd"
                 eval $netfs_mnt_cmd
-                echo "Copy Contents of NFS preload share to /opt ..."
-                cp -rv $nfs_mnt_pnt/* /opt | tee $nfs_cp_flist_tmp
-                rc="${PIPESTATUS[0]}"
-                echo "Unmount NFS preload share..."
-		umount $nfs_mnt_pnt
-		convert_dos_format_script_from_cp_rv_list $nfs_cp_flist_tmp
-		rm -f $nfs_cp_flist_tmp
+                rc_mnt=$?
+		if [ "$rc_mnt" -eq 0 ]; then
+                  echo "Copy Contents of NFS preload share to /opt ..."
+                  cp -rv $nfs_mnt_pnt/* /opt | tee $nfs_cp_flist_tmp
+                  rc="${PIPESTATUS[0]}"
+                  echo "Unmount NFS preload share..."
+                  umount $nfs_mnt_pnt
+                  convert_dos_format_script_from_cp_rv_list $nfs_cp_flist_tmp
+                  rm -f $nfs_cp_flist_tmp
+                  return $rc
+	        else
+		  rm -f $cifs_cp_flist_tmp
+		  return 1
+	        fi
   		;;
   esac
-  return $rc
 } # end of replicate_files_from_netfs
 #
 convert_dos_format_script_from_zip_file() {
