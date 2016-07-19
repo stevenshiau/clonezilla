@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.12
+Version:	3.22.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jul 19 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.13-drbl1
+- Add an option to retry when ocs-live-preload fails to mount netfs.
+  Thanks to Aaron Burling (aaron_burling _at_ lkstevens wednet edu)
+  for this suggestion.
+- Bug fixed: if image is the first one or last one, the
+  BrowseCurrentDirectory failed to identify that as clonezilla image
+  even it is.
+
 * Mon Jul 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.12-drbl1
 - Move function get_dir_filesystem from drbl-functions to ocs-functions.
   Use findmnt instead of df to get the file system for a mountpoint.
