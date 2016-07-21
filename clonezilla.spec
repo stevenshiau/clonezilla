@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.14
+Version:	3.22.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jul 21 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.15-drbl1
+- Remove "noeject" from the boot parameters. Now live-medium-eject
+  from live-tool and the program eject should work. Systemd is supported
+  by live-tool 20151214+nmu1.drbl1 with patch from drbl:
+  http://bugs.debian.org/831830
+
 * Tue Jul 19 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.14-drbl1
 - Bug fixed: if image is the first one or last one, the
   BrowseCurrentDirectory failed to identify that as clonezilla image
