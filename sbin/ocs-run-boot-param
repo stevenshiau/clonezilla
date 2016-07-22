@@ -1,7 +1,7 @@
 #!/bin/bash
 # License: GPL 
 # Author: Steven Shiau <steven _at_ clonezilla org>
-# Description: Program to run commands assigned in boot parameter ocs_prerun*.
+# Description: Program to run commands assigned in boot parameter, like: ocs_prerun*, ocs_postrun*, ocs_savedisk_prerun*...
 
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
@@ -14,17 +14,20 @@ force_to_run="no"
 
 # Functions
 USAGE() {
-    echo "$ocs - Run commands assigned in boot parameter \"ocs_prerun\""
+    echo "$ocs - Run commands assigned in boot parameter"
     echo "Usage:"
-    echo "To run $ocs:"
+    echo "To run $ocs PARAM:"
     echo "$ocs [OPTION]"
     echo "Options:"
     echo "-c, --cmdline-file   Assign the kernel boot parameter file. If not assigned, \"$cmdl_file_def\" will be used."
     echo "-f, --force          Force to run $ocs, no matter it has been run successfully or not."
-    echo "E.g. To run the commands assigned by ocs_prerun in the kernel boot parameter file 'my-cmdline', run:"
-    echo "     $ocs -c my-cmdline"
-    echo "Multiple ocs_prerun* are available, just append a number after that. E.g."
-    echo "ocs_prealod=... ocs_prerun1=... ocs_prerun2=..."
+    echo "PARAM is one of the following:"
+    echo "ocs_prerun*, ocs_postrun*, ocs_savedisk_prerun*..."
+    echo "E.g. To run the commands assigned by ocs_prerun* (e.g. ocs_prerun, ocs_prerun1, ocs_prerun2...) in the kernel boot parameter file 'my-cmdline', run:"
+    echo "     $ocs -c my-cmdline ocs_prerun"
+    echo "Multiple PARAMs in boot param are available, i.e. ocs_prerun*, just append a number after that. E.g."
+    echo "ocs_prerun=... ocs_prerun1=... ocs_prerun2=..."
+    echo "//NOTE// use \"ocs_prerun\" for this command only, while putting multiple ocs_prerun* in the boot parameter." 
 } # end of USAGE
 
 #################
@@ -53,6 +56,8 @@ while [ $# -gt 0 ]; do
  esac
 done
 
+ocs_param="$1"
+
 check_if_root
 ask_and_load_lang_set
 
@@ -61,25 +66,27 @@ if [ ! -e "$cmdl_file" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "Kernel cmdline file ($cmdl_file) does _NOT_ exist!"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "$msg_program_stop!"
+  echo "$msg_program_stop"
   exit 1
 fi
 
-ocs_prerun_list="$(grep -Ewo "ocs_prerun[[:digit:]]*" $cmdl_file | uniq | sort -V)"
-ocs_prerun_list="$(echo $ocs_prerun_list)"  # in one line
+ocs_param_list="$(grep -Ewo "${ocs_param}[[:digit:]]*" $cmdl_file | uniq | sort -V)"
+ocs_param_list="$(echo $ocs_param_list)"  # in one line
 
-if [ -z "$ocs_prerun_list" ]; then
-  exit 0
+if [ -z "$ocs_param_list" ]; then
+  exit 1
 else
-  echo "Found ocs_prerun* parameter in boot parameters..."
-  echo "The order to run: $ocs_prerun_list"
+  echo "Found ${ocs_param}* parameter in boot parameters..."
+  echo "The order to run: $ocs_param_list"
 fi
 
-parse_cmdline_option -c $cmdl_file "echo_ocs_prerun"
+parse_cmdline_option -c $cmdl_file "echo_${ocs_param}"
 
-# Now start parsing the paramaters listed in $ocs_prerun_list
+eval echo_ocs_param="\$echo_$ocs_param"
+
+# Now start parsing the paramaters listed in $ocs_param_list
 RETVAL=0
-for i in $ocs_prerun_list; do
+for i in $ocs_param_list; do
   parse_cmdline_option -c $cmdl_file "$i"
   eval irun=\$$i
   if [ -n "$irun" ]; then
@@ -95,7 +102,7 @@ for i in $ocs_prerun_list; do
     fi
     echo "**************************"
     # run it
-    if [ "$echo_ocs_prerun" != "no" ]; then
+    if [ "$echo_ocs_param" != "no" ]; then
       echo "Now run \"$i\": $irun..."
     fi
     # Since "$irun" might not be exe mode, so we test it if it's script, use . $irun, else, run it directly.
