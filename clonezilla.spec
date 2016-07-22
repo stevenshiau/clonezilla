@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.15
+Version:	3.22.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jul 22 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.16-drbl1
+- Adding xserver-xorg-legacy to let non-root user can run startx
+  since we use startx in GParted live. 
+  Ref: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=807015
+
 * Thu Jul 21 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.15-drbl1
 - Remove "noeject" from the boot parameters. Now live-medium-eject
   from live-tool and the program eject should work. Systemd is supported
