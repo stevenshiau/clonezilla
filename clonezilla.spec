@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.16
+Version:	3.22.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,17 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jul 22 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.17-drbl1
+- Program ocs-run-boot-param was added to run for boot parameters
+  ocs_prerun, ocs_postrun, ocs_savedisk_prerun, ocs_saveparts_prerun,
+  ocs_restoredisk_prerun, and ocs_restoreparts_prerun.
+  E.g. ocs-live-prerun -> ocs-run-boot-param ocs_prerun
+  With this, ocs-live-prerun and ocs-live-postrun were removed.
+- Add entry points for ocs_savedisk_prerun, ocs_saveparts_prerun,
+  ocs_restoredisk_prerun, and ocs_restoreparts_prerun in ocs-sr.
+  Thanks to Aaron Burling (aaron_burling _at_ lkstevens wednet edu)
+  for these ideas.
+
 * Fri Jul 22 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.16-drbl1
 - Adding xserver-xorg-legacy to let non-root user can run startx
   since we use startx in GParted live. 
