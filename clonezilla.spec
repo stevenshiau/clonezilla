@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.17
+Version:	3.22.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jul 24 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.18-drbl1
+- Disable service systemd-timesyncd.
+  Clonezilla live and DRBL live should not touch the system time, even for
+  the BIOS it should not.
+  Thanks to Rick and rfried for reporting this issue.
+  Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/b2667447
+
 * Fri Jul 22 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.17-drbl1
 - Program ocs-run-boot-param was added to run for boot parameters
   ocs_prerun, ocs_postrun, ocs_savedisk_prerun, ocs_saveparts_prerun,
