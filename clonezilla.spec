@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.19
+Version:	3.22.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Aug 07 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.20-drbl1
+- Drop the support for boot paramter ocs_chk_img and ocs_fsck_src_part
+  in drbl-functions. Only honor the options of ocs-sr by "-scr", "-scs",
+  "-fsck", "-fsck-y".
+- Make something like "ocs-sr -x -scr" work. It won't ask about if
+  "-scr" should be used or not. Thanks to Aaron for reporting this issue.
+
 * Sun Jul 24 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.19-drbl1
 - Disable service systemd-timesyncd in GParted live, too.
 
