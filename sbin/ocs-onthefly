@@ -2162,8 +2162,7 @@ set_ocs_onthefly_extra_param() {
   fi
 
   # Question about fsck the source partition. By default, no matter it's beginner or advanced mode, we will ask.
-  # However, for some customized case, it it could be set via parameter ocs_fsck_src_part.
-  if [ -z "$ocs_fsck_src_part" ]; then
+  if [ -z "$fsck_src_part_intr" -a -z "$fsck_src_part_auto" ]; then
     $DIA --separate-output --backtitle "$msg_nchc_free_software_labs" --title  \
     "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set:" \
     0 0 0 $DIA_ESC \
@@ -2172,9 +2171,14 @@ set_ocs_onthefly_extra_param() {
     "-fsck-y " "$msg_ocs_onthefly_param_fsck_src_part_yes" \
     2>> $OCS_PARAM_TMP
   else
-    # Convert none to "", as we can not set ocs_fsck_src_part as "" otherwise it will be asked in the previous if block.
-    ocs_fsck_src_part="$(echo $ocs_fsck_src_part | sed -r -e "s/none//g")"
-    echo "$ocs_fsck_src_part " >> $OCS_PARAM_TMP
+    case "$fsck_src_part_intr" in
+      yes) echo "-fsck " >> $OCS_PARAM_TMP;;
+        *) echo " " >> $OCS_PARAM_TMP;;
+    esac
+    case "$fsck_src_part_auto" in
+      yes) echo "-fsck-y " >> $OCS_PARAM_TMP;;
+        *) echo " " >> $OCS_PARAM_TMP;;
+    esac
   fi
 
   # force to strip the unnecessary quotation ', this is specially for dialog (from cdialog) in Mandriva. Otherwise it will cause -p reboot become (containing space) '-p reboot', which is wrong option in dcs.

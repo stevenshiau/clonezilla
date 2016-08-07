@@ -42,8 +42,8 @@ check_md5sum="no"
 check_sha1sum="no"
 gen_chksum_for_files_in_dev="no"
 chk_chksum_for_files_in_dev="no"
-chk_img_restoreable_mod_save="yes"
-chk_img_restoreable_mod_restore="yes"
+chk_img_restoreable_mod_save_def="yes"
+chk_img_restoreable_mod_restore_def="yes"
 # Flag to save restoring error log
 save_restore_error_log="no"
 # Flag to check target disk size before creating partition table
@@ -561,7 +561,7 @@ wrap_up_opt() {
   
   # put default postrun if empty
   [ -z "$postrun" ] && postrun="$POSTRUN_DEF"
-  
+
   # change to other mount point for extra harddisk
   # Note: functions get_existing_disk_image, get_existing_parts_image and get_existing_partitions_from_img will use $imagedir 
   if [ -n "$mount_point" ]; then
@@ -625,6 +625,18 @@ wrap_up_opt() {
   # If VOL_LIMIT is too large, split won't work. Check and fix it if required.
   check_and_fix_vol_limit_if_required
 } # end of wrap_up_opt
+#
+wrap_up_opt_after_interactive_selection() {
+  wrap_up_opt
+  # For case when interactive mode the option "-scr" or "-scs" is used.
+  # i.e. command like: "ocs-sr -x -scr" or "ocs-sr -x "-scs"
+  if [ -z "$chk_img_restoreable_mod_save" ]; then
+    chk_img_restoreable_mod_save="$chk_img_restoreable_mod_save_def"
+  fi
+  if [ -z "$chk_img_restoreable_mod_restore" ]; then
+    chk_img_restoreable_mod_restore="$chk_img_restoreable_mod_restore_def"
+  fi
+} # end of wrap_up_opt_after_interactive_selection
 #
 run_ocs_sr_again_prompt() {
   local img dev
@@ -1126,7 +1138,7 @@ case "$ocs_sr_type" in
     target_hd="$(cat $ANS_TMP | tr -d \")"
     [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
     get_extra_param_when_type_is_ask_user_and_interactive_mode
-    wrap_up_opt  # Since extra param inputed again, wrap up again
+    wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
 
     task_processing_after_parameters_checked
 
@@ -1189,7 +1201,7 @@ case "$ocs_sr_type" in
       target_hd="$ocs_sr_dev"
     fi
     get_extra_param_when_type_is_ask_user_and_interactive_mode
-    wrap_up_opt  # Since extra param inputed again, wrap up again
+    wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
 
     task_processing_after_parameters_checked
 
@@ -1285,7 +1297,7 @@ case "$ocs_sr_type" in
     target_parts="$(cat $ANS_TMP | tr -d \")"
     [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
     get_extra_param_when_type_is_ask_user_and_interactive_mode
-    wrap_up_opt  # Since extra param inputed again, wrap up again
+    wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
 
     task_processing_after_parameters_checked
 
@@ -1368,7 +1380,7 @@ case "$ocs_sr_type" in
     fi
     #
     get_extra_param_when_type_is_ask_user_and_interactive_mode
-    wrap_up_opt  # Since extra param inputed again, wrap up again
+    wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
     # Append the option if restoring to different partition on the destination disk.
     if [ -n "$source_part" ]; then
 	OCS_OPTS="$OCS_OPTS -f $source_part"
