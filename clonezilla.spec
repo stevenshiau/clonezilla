@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.20
+Version:	3.22.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,17 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Aug 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.21-drbl1
+- Save ocs-related variables in /var/lib/clonezilla/ocs-vars so that
+  the customized program can use. Thanks to Aaron Burling
+  (aaron_burling _at_ lkstevens wednet edu) for this idea.
+- Program ocs-clean-part-fs was added to clean the file system/LVM info in
+  every partition of the assigned disk.
+- Clean file system/LVM info before creating partition table. Thanks to
+  Mircea Dan (byreal _at_ users sf net) and Pete Morris
+  (morrispj _at_ jmu edu) for reporting this issue.
+  Ref: https://sourceforge.net/p/clonezilla/bugs/254/
+
 * Sun Aug 07 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.20-drbl1
 - Drop the support for boot paramter ocs_chk_img and ocs_fsck_src_part
   in drbl-functions. Only honor the options of ocs-sr by "-scr", "-scs",
