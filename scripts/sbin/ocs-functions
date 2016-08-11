@@ -3301,6 +3301,13 @@ create_partition() {
     fi
   fi
 
+  # Before Writing partition table, clean every file system and LV info
+  # in every partition. Otherwise, when partition table is created, 
+  # the residual info, like LVM might be detected by kernel and instantly
+  # enabled. This will make some device is busy.
+  # Ref: https://sourceforge.net/p/clonezilla/bugs/254/
+  ocs-clean-part-fs $tgt_hd_file
+
   clean_mbr_gpt_part_table $tgt_hd_file
 
   # Decide if the partition is gpt or mbr
@@ -4816,7 +4823,7 @@ clean_filesystem_header_in_partition() {
   local part_="$1"
   if [ -n "$part_" -a -e "$part_" ]; then
     echo "Clean filesystem header in device $part_..."
-    wipefs -a $part_
+    wipefs -a -f $part_
     dd if=/dev/zero of="$part_" bs=1M count=1 &>/dev/null
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
