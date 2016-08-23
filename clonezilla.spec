@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.21
+Version:	3.22.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Aug 23 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.22-drbl1
+- Check if PV of LVM is listed in the device to be backuped. If so, 
+  stop LVM first in ocs-clean-part-fs.
+
 * Thu Aug 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.21-drbl1
 - Save ocs-related variables in /var/lib/clonezilla/ocs-vars so that
   the customized program can use. Thanks to Aaron Burling
