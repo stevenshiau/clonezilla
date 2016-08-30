@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.22.22
+Version:	3.22.23
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.20.35, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.20.38, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,17 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Aug 30 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.23-drbl1
+  - Failed to create the checksum files for files in LV, i.e. when
+    option "-gmf" or "-cmf" is enabled.
+    Thanks to Mircea Dan.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/260/
+  - Change /proc/sys/vm/highmem_is_dirtyable to 1 when running i686 Linux
+    kernel and the RAM size is larger than 8 GB.
+    Thanks to Little Vulpix for this suggestion.
+    Ref: 
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/ba31ffc8
+
 * Tue Aug 23 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.22-drbl1
 - Check if PV of LVM is listed in the device to be backuped. If so, 
   stop LVM first in ocs-clean-part-fs.
