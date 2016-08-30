@@ -8278,6 +8278,35 @@ task_restoreparts() {
       inspect_chksum_for_files_in_dev /dev/$ipartition "$target_dir_fullpath"
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     done
+    # Process LVM part
+    if [ "$do_LVM_restore" = "yes" ]; then
+      # LVM exists, check the files in LV
+      echo "LVM exists, checking files in LV." | tee --append ${OCS_LOGFILE}
+      PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
+      LOGV_PARSE_CONF="$target_dir_fullpath/lvm_logv.list"
+      target_logv=""
+      exec 3< $LOGV_PARSE_CONF
+      while read -u 3 lv fs; do
+       [ ! -e $lv ] && continue
+       # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
+       fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
+       # Log the logical volume which is restored. The leading "/dev/" is removed, i.e. the results might be: lucid-server/root lucid-server/usr
+       target_logv="$target_logv ${lv#/dev/*}"
+       case "$fs" in 
+         *[Ss][Ww][Aa][Pp]*)
+            echo $msg_delimiter_star_line
+            echo "Found the swap partition $lv info. No need to check."
+            echo $msg_delimiter_star_line
+            # then skip the rest.
+            continue;; 
+       esac
+       echo "Inspecting files in device /dev/$fn..." | tee --append $OCS_LOGFILE
+       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+       inspect_chksum_for_files_in_dev $lv "$target_dir_fullpath"
+       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+      done
+      exec 3<&-
+    fi
   fi
 
   # Clear the NTFS volume dirty flag if the volume can be fixed and mounted.
@@ -11832,7 +11861,7 @@ get_chksum_info_from_img() {
   chksum_file=""
   chksum_cmd=""
   # If "*" used for partition name, when multiple files exist, choose the 1st ne.
-  chksum_file="$(LC_ALL=C find $img_f_path_ -name "${prt_}.files-*sum.info.gz" -print | head -n 1)"
+  chksum_file="$(LC_ALL=C find $img_f_path_ -name "$(to_filename ${prt_}).files-*sum.info.gz" -print | head -n 1)"
   if [ -n "${chksum_file}" ]; then
     csumf_basename_="$(basename ${chksum_file})"
     if [ -n "$(echo $csumf_basename_ | grep -Eo -- ".files-.*sum.info.gz")" ]; then
@@ -11871,11 +11900,11 @@ gen_chksum_for_files_in_dev() {
     echo "Creating checksums for totally $reg_file_lines files in /dev/$sum_part..."
     cat $part_reg_f_list | xargs -d '\n' $chksum_cmd_for_files_in_dev \
     | pv -peltf -s $reg_file_lines | $gz_stdin_cmd \
-    > $tgt_dir/${sum_part}.files-${chksum_cmd_for_files_in_dev}.info.gz \
+    > $tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz \
     | tee --append ${OCS_LOGFILE}
     rc_chk="${PIPESTATUS[0]}"
 
-    chmod 600 $tgt_dir/${sum_part}.files-${chksum_cmd_for_files_in_dev}.info.gz
+    chmod 600 $tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz
     umount /dev/$sum_part
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -11932,10 +11961,10 @@ inspect_chksum_for_files_in_dev() {
       chksum_file_lines="$(LC_ALL=C zcat $chksum_file | wc -l)"
       echo "Inspecting $chksum_cmd checksum for totally $chksum_file_lines files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
       LC_ALL=C zcat $chksum_file | $chksum_cmd -c | pv -N "/dev/$sum_part" -peltf -s $chksum_file_lines \
-      | tee --append ${OCS_LOGFILE} | cat - > /var/log/${sum_part}-${chksum_cmd}-results.log
+      | tee --append ${OCS_LOGFILE} | cat - > /var/log/$(to_filename ${sum_part})-${chksum_cmd}-results.log
       rc_chk="${PIPESTATUS[2]}"
       # Strip the mount point path before going on
-      perl -pi -e "s|$sum_part_tmpd||g" /var/log/${sum_part}-${chksum_cmd}-results.log
+      perl -pi -e "s|$sum_part_tmpd||g" /var/log/$(to_filename ${sum_part})-${chksum_cmd}-results.log
       if [ "$rc_chk" -ne 0 ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "$msg_chksum_for_files_not_match: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
@@ -11946,7 +11975,7 @@ inspect_chksum_for_files_in_dev() {
         fi
       else
        echo "$msg_chksum_inspection_for_files_passed: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
-       echo "$msg_chksum_results_saved_in_this_file: /var/log/${sum_part}-${chksum_cmd}-results.log" | tee --append ${OCS_LOGFILE} 
+       echo "$msg_chksum_results_saved_in_this_file: /var/log/$(to_filename ${sum_part})-${chksum_cmd}-results.log" | tee --append ${OCS_LOGFILE} 
       fi
       umount /dev/$sum_part
     else
