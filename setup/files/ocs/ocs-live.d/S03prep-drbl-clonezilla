@@ -206,3 +206,17 @@ echo "LIVE_USERNAME=\"${live_autologin_account}\"" > /run/live/live-config
 
 # Prepare mounting point for $ocsroot
 [ -n "$ocsroot" ] && mkdir -p $ocsroot
+
+# Tune the system for different arch
+cpu_arch="$(LC_ALL=C uname -m)"
+case $cpu_arch in
+  i686|i386) 
+	# Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/ba31ffc8
+	# http://stackoverflow.com/questions/30519417/why-linux-disables-disk-write-buffer-when-system-ram-is-greater-than-8gb
+	# Linux kernel disables disk write buffer when system ram is greater than 8GB.
+	ram_size_in_MB="$(LC_ALL=C vmstat -S M -s | grep -i "total memory" | awk -F" " '{print $1}')"
+	if [ "$ram_size_in_MB" -gt 8192 ]; then
+          echo 1 > /proc/sys/vm/highmem_is_dirtyable
+        fi
+        ;;
+esac
