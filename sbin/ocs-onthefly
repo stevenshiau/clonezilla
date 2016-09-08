@@ -2234,6 +2234,12 @@ set_ocs_onthefly_extra_param() {
       echo "-icds ">> $OCS_PARAM_TMP
     fi
   fi
+  # For both beginner and expert modes, if user has specified postaction, then we do not have to set it. Otherwise, ask it.
+  if [ -n "$postaction" ]; then
+    echo "-p $postaction " >> $OCS_PARAM_TMP
+  else
+    ocs_onthefly_param_postaction_after_clone $OCS_PARAM_TMP
+  fi
   # parse them
   ocs_onthefly_adv_param="$(cat $OCS_PARAM_TMP)"
   ocs_onthefly_adv_param="$(echo $ocs_onthefly_adv_param)"  # make it one line
@@ -2361,10 +2367,10 @@ parse_ocs_onthefly_cmd_options() {
               shift
               if [ -z "$(echo $1 |grep ^-.)" ]; then
                 # skip the -xx option, in case 
-                postrun="$1"
+                postaction="$1"
                 shift
               fi
-              [ -z "$postrun" ] && USAGE && exit 1
+              [ -z "$postaction" ] && USAGE && exit 1
               ;;
       -q1|--force-to-use-dd) FORCE_TO_USE_DD="yes"; shift ;;
       -i|--filter)
@@ -2521,6 +2527,13 @@ prepare_chksum_for_source_part(){
     mv -vf $hd_tgt_tmp/$imname $hd_tgt_tmp/$newname
   done
 } # end of prepare_chksum_for_source_part
+#
+save_ocs_onthefly_related_vars() {
+  # Function to save ocs-related variables so that some customized program can use.
+  # The old one will be overwritten
+  echo "postaction=\"$postaction\"" >> /var/lib/clonezilla/ocs-vars
+  echo "ocs_onthefly_mode=\"$ocs_onthefly_mode\"" >> /var/lib/clonezilla/ocs-vars
+} # end of save_ocs_related_var
 
 ########################
 ##### MAIN PROGRAM #####
@@ -2566,6 +2579,9 @@ update_efi_nvram="yes"
 PARTCLONE_RESTORE_ONTHEFLY_OPT="$PARTCLONE_RESTORE_ONTHEFLY_OPT_INIT"
 #
 partclone_log="/var/log/partclone.log"
+
+# Clean the previous saved env so if ocs-onthefly is cancelled, won't read the previous env and reboot/poweroff.
+rm -f /var/lib/clonezilla/ocs-vars
 
 # Rotate the log file
 ocs_log_rotate $OCS_LOGFILE
@@ -2743,6 +2759,9 @@ esac
 # create swap partition, resize partition, clean the temp partition table, and re-install grub
 post_process_in_target_dev
 
+#
+save_ocs_onthefly_related_vars
+
 # Restore the udevd rules (if exists) which were disabled by ocs-lvm2-stop.
 restore_lvm2_udevd_rules
 
@@ -2757,11 +2776,13 @@ elif [ "$STATUS" = "clone_client" ]; then
   echo 'done!' | tee --append ${OCS_LOGFILE}
 fi
 
-# reboot/poweroff/choose...
-[ -z "$postrun" ] && postrun="choose"
 echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}
 sync;sync;sync
-run_post_cmd_when_clone_end "$postrun" | tee --append ${OCS_LOGFILE}
+
+if [ "$ocs_onthefly_mode" != "interactive" ]; then
+  # Only when not in interactive mode we will run run_post_cmd_when_clone_end here.
+  run_post_cmd_when_clone_end "$postaction" | tee --append ${OCS_LOGFILE}
+fi
 
 # Clean tmp dir
 clean_tmp_dirs

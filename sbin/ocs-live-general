@@ -49,10 +49,17 @@ get_live_media_mnt_point
 # prepare the clonezilla live environment.
 ocs-live-env-prepare
 
-# Do not ask powerer/reboot/choose (-p) in ocs-sr,  just use "-p true". Since it might be in bterm, and Debian live "Press Enter" message when poweroff/shutdown might be covered by bterm and user will not have any idea what's happening after choose poweroff/reboot.
-# ocs_lang and ocs_live_extra_param are loaded from /etc/ocs/ocs-live.conf
 # "-n" was added since we will run show-general-ocs-live-prompt after command clonezilla
-LC_ALL=$ocs_lang clonezilla -p true -n $ocs_live_extra_param
+LC_ALL=$ocs_lang clonezilla -n $ocs_live_extra_param
 
-# Show prompt
-show-general-ocs-live-prompt
+# Show prompt when in interactive mode
+if [ -e /var/lib/clonezilla/ocs-vars ]; then
+  . /var/lib/clonezilla/ocs-vars
+  # Only in interactive mode, and if it's not reboot or poweroff, the prompt is shown.
+  if [ "$ocs_sr_mode" = "interactive" ]; then
+    case "$postaction" in
+      reboot|poweroff) true;;
+      *) show-general-ocs-live-prompt;;
+    esac
+  fi
+fi

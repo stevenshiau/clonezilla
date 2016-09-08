@@ -480,10 +480,10 @@ parse_ocs_sr_cmd_options_with_dash() {
             shift; n_shift=$((n_shift+1)); 
             if [ -z "$(echo $1 |grep ^-.)" ]; then
               # skip the -xx option, in case 
-	      postrun="$1"
+	      postaction="$1"
 	      shift; n_shift=$((n_shift+1))
             fi
-            [ -z "$postrun" ] && USAGE && exit 1
+            [ -z "$postaction" ] && USAGE && exit 1
             ;;
     --restore-only)
 	    ocs_x_mode="restore_only"
@@ -559,9 +559,6 @@ one_image_to_multiple_disks_dia_des() {
 wrap_up_opt() {
   [ -z "$VOL_LIMIT" ] && VOL_LIMIT=$VOL_LIMIT_DEFAULT
   
-  # put default postrun if empty
-  [ -z "$postrun" ] && postrun="$POSTRUN_DEF"
-
   # change to other mount point for extra harddisk
   # Note: functions get_existing_disk_image, get_existing_parts_image and get_existing_partitions_from_img will use $imagedir 
   if [ -n "$mount_point" ]; then
@@ -605,11 +602,11 @@ wrap_up_opt() {
   [ "$select_img_in_client" = "yes" ] && echo "$msg_you_have_to_input_image_names_in_client"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   
-  # Append postrun, since we did not ask that in set_ocs_sr_extra_param and we might already set that.
-  if [ -n "$postrun" -a \
+  # Append postaction, since we did not ask that in set_ocs_sr_extra_param and we might already set that.
+  if [ -n "$postaction" -a \
        -z "$(echo $OCS_OPTS | grep -Ewo -- "-p")" ]
   then
-       OCS_OPTS="$OCS_OPTS -p $postrun"
+       OCS_OPTS="$OCS_OPTS -p $postaction"
   fi
   if [ "$verbose" = "on" ]; then
     PARTCLONE_SAVE_OPT="$PARTCLONE_SAVE_OPT -d"
@@ -636,6 +633,9 @@ wrap_up_opt_after_interactive_selection() {
   if [ -z "$chk_img_restoreable_mod_restore" ]; then
     chk_img_restoreable_mod_restore="$chk_img_restoreable_mod_restore_def"
   fi
+  # Shall we set default postaction if empty here?
+  #[ -z "$postaction" ] && postaction="$POSTACTION_DEF"
+
 } # end of wrap_up_opt_after_interactive_selection
 #
 run_ocs_sr_again_prompt() {
@@ -660,11 +660,13 @@ run_ocs_sr_again_prompt() {
   fi
 } # end of run_ocs_sr_again_prompt
 #
-save_ocs_related_vars() {
+save_ocs_sr_related_vars() {
   # Function to save ocs-related variables so that some customized program can use.
   # The old one will be overwritten
   echo "target_dir=\"$target_dir\"" > /var/lib/clonezilla/ocs-vars
   echo "target_hd=\"$target_hd\"" >> /var/lib/clonezilla/ocs-vars
+  echo "postaction=\"$postaction\"" >> /var/lib/clonezilla/ocs-vars
+  echo "ocs_sr_mode=\"$ocs_sr_mode\"" >> /var/lib/clonezilla/ocs-vars
 } # end of save_ocs_related_var
 #
 create_clonezilla_live_recovery_iso_zip() {
@@ -999,6 +1001,9 @@ if [ "$ocs_sr_type_assign" = "ask_user" -o \
   #
   [ -z "$ocs_user_mode" ] && ask_if_beginner_or_expert_mode
 
+  # Clean the previous saved env so if ocs-onthefly is cancelled, won't read the previous env and reboot/poweroff.
+  rm -f /var/lib/clonezilla/ocs-vars
+
   #
   echo "Choose the mode for ocs-sr"
   TMP="$(mktemp /tmp/menu-ocs.XXXXXX)"
@@ -1034,9 +1039,6 @@ if [ "$ocs_sr_type_assign" = "ask_user" -o \
   # If ocs_sr_type from ask_user, then we should let ocs_sr_img_name & ocs_sr_dev as ask_user, too
   ocs_sr_img_name="ask_user"
   ocs_sr_dev="ask_user"
-  # Do not default to reboot, otherwise if it's save mode, user does not have
-  # any chance to umount device after save is done. If postrun is assigned, honor that.
-  [ -z "$postrun" ] && postrun="choose"
   # Overwrite the default HALT_REBOOT_OPT (-f -n) so that if user choose to halt/reboot, it will use normal halt/reboot sequence, then mounted device will be unmounted.
   HALT_REBOOT_OPT=""
   VOL_LIMIT="$VOL_LIMIT_IN_INTERACTIVE"
@@ -1149,7 +1151,7 @@ case "$ocs_sr_type" in
 
     task_processing_after_parameters_checked
 
-    save_ocs_related_vars
+    save_ocs_sr_related_vars
     run_ocs_sr_again_prompt "$target_dir" "$target_hd"
 
     # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
@@ -1213,7 +1215,7 @@ case "$ocs_sr_type" in
 
     task_processing_after_parameters_checked
 
-    save_ocs_related_vars
+    save_ocs_sr_related_vars
     run_ocs_sr_again_prompt "$target_dir" "$target_hd"
 
     # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
@@ -1310,7 +1312,7 @@ case "$ocs_sr_type" in
 
     task_processing_after_parameters_checked
 
-    save_ocs_related_vars
+    save_ocs_sr_related_vars
     run_ocs_sr_again_prompt "$target_dir" "$target_parts"
 
     # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
@@ -1396,7 +1398,7 @@ case "$ocs_sr_type" in
 	OCS_OPTS="$OCS_OPTS -f $source_part"
     fi
 
-    save_ocs_related_vars
+    save_ocs_sr_related_vars
     run_ocs_sr_again_prompt "$target_dir" "$target_parts"
 
     # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
