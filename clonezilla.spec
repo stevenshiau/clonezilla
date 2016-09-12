@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.2
+Version:	3.23.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Sep 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.3-drbl1
+  - Pause when error occurs in the end of Clonezilla live if not
+    in batch mode.
+
 * Fri Sep 09 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.2-drbl1
   - Save variable ocs_cmd in /var/lib/clonezilla/ocs-vars so later it can be
     used.
