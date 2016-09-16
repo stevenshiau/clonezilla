@@ -127,6 +127,21 @@ do_ocs_live_run_final() {
     *) echo ;;
   esac
 } # end of do_ocs_live_run_final
+#
+decide_final_action_from_cmdline_and_user_assign() {
+  # First find if ocs_final_action is assigned in cmdline
+  parse_cmdline_option -c $cmdl_file "ocs_final_action"
+  if [ -n "$ocs_final_action" ]; then
+    final_action="$ocs_final_action"
+  fi
+  # Then find if user has assigned it in ocs-sr. This may overwrite the one assigned in boot parameter.
+  if [ -e /var/lib/clonezilla/ocs-vars ]; then
+    . /var/lib/clonezilla/ocs-vars
+    if [ -n "$postaction" ]; then
+      final_action="$postaction"
+    fi
+  fi
+} # end of decide_final_action_from_cmdline_and_user_assign
 
 ####################
 ### Main program ###
@@ -152,15 +167,15 @@ while [ $# -gt 0 ]; do
  esac
 done
 
+#
+input_status="$1"
+
 ask_and_load_lang_set $ocs_lang
 
 # check DIA
 check_DIA_set_ESC $DIA
 
-##############
-#### main ####
-##############
-
+#
 [ -z "$cmdl_file" ] && cmdl_file="$cmdl_file_def"
 if [ ! -e "$cmdl_file" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -170,18 +185,18 @@ if [ ! -e "$cmdl_file" ]; then
   exit 1
 fi
 
-# First find if ocs_final_action is assigned in cmdline
-parse_cmdline_option -c $cmdl_file "ocs_final_action"
-if [ -n "$ocs_final_action" ]; then
-  final_action="$ocs_final_action"
-fi
-
-# Then find if user has assigned it in ocs-sr. This may overwrite the one assigned in boot parameter.
-if [ -e /var/lib/clonezilla/ocs-vars ]; then
-  . /var/lib/clonezilla/ocs-vars
-  if [ -n "$postaction" ]; then
-    final_action="$postaction"
+if [ -n "$input_status" ]; then
+  # The input status is the return code
+  if [ "$input_status" -eq 0 ]; then
+    # Normal exit.
+    decide_final_action_from_cmdline_and_user_assign
+  else
+    # Fail. Exit code is not 0
+    final_action="choose"
   fi
+else
+  # input status unknown.
+  decide_final_action_from_cmdline_and_user_assign
 fi
 
 # If final_action is still unknown or is "choose", ask it.
