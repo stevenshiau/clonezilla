@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.4
+Version:	3.23.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Sep 16 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.5-drbl1
+  -  Add options -sfsck and -senc in the Clonezilla live interactive menu.
+
 * Mon Sep 12 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.4-drbl1
   - Show the abortion prompt by pressing Ctrl-C during reboot/poweroff.
 
