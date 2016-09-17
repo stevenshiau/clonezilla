@@ -56,6 +56,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
   - Ask the post action (choose, reboot, poweroff) before starting cloning.
     Replace variable postrun with postaction.
     Thanks to Aaron Burling (aaron_burling _at_ lkstevens wednet edu) for this idea.
+  - Add new boot paramater ocs_sshd_port so that the non-standard port of
+    sshd can be assigned. Thanks to rj555 for asking this.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/0add50dd
 
 * Tue Aug 30 2016 Steven Shiau <steven _at_ nchc org tw> 3.22.23-drbl1
   - Failed to create the checksum files for files in LV, i.e. when
