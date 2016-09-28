@@ -28,6 +28,9 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . /etc/drbl/drbl-ocs.conf
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
 # Settings
 cmdl_file_def="/proc/cmdline"
 chk_ocsroot_mountpont="yes"
@@ -63,18 +66,17 @@ USAGE() {
 #
 set_ocs_batch_mode() {
   # ocs_batch_mode will be passed to check_if_ocsroot_a_mountpoint 
-  # ocs_live_batch might be loaded from drbl-ocs.conf
+  # ocs_live_batch might be loaded from ocs-live.conf
   local assign_m="$1"
-  if [ -n "$assign_m" ]; then
-    # Assigned, set it.
-    ocs_batch_mode="$assign_m"
-  else
-    # Not assigned, check ocs_live_batch.
+  # ocs_live_batch has higher prority, so it can overwrite the mode assigned by assign_m
+  if [ -n "$ocs_live_batch" ]; then
     case "$ocs_live_batch" in
       yes) ocs_batch_mode="on";;
        no) ocs_batch_mode="off";;
-        *) ocs_batch_mode="on";; # default to make it batch mode.
     esac
+  elif [ -n "$assign_m" ]; then
+      # Assigned, set it.
+      ocs_batch_mode="$assign_m"
   fi
 } # end of set_ocs_batch_mode
 #
