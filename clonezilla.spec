@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.6
+Version:	3.23.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Sep 28 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.7-drbl1
+  - Program ocs-live-repository should honor boot param ocs_live_batch with
+    higher priority.
+  - Program ocs-live-preload should read /etc/ocs-live.conf.
+
 * Mon Sep 26 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.6-drbl1
   * If batch mode is on, no need to confirm in ocs-sr saving mode.
 
