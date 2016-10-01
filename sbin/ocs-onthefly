@@ -2166,7 +2166,7 @@ set_ocs_onthefly_extra_param() {
     $DIA --separate-output --backtitle "$msg_nchc_free_software_labs" --title  \
     "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set:" \
     0 0 0 $DIA_ESC \
-    " "     "$msg_skip_check_source_fs" \
+    "-sfsck "  "$msg_skip_check_source_fs" \
     "-fsck "   "$msg_ocs_onthefly_param_fsck_src_part" \
     "-fsck-y " "$msg_ocs_onthefly_param_fsck_src_part_yes" \
     2>> $OCS_PARAM_TMP
@@ -2236,7 +2236,7 @@ set_ocs_onthefly_extra_param() {
   fi
   # For both beginner and expert modes, if user has specified postaction, then we do not have to set it. Otherwise, ask it.
   if [ -n "$postaction" ]; then
-    echo "-p $postaction " >> $OCS_PARAM_TMP
+    echo "-pa $postaction " >> $OCS_PARAM_TMP
   else
     ocs_onthefly_param_postaction_after_clone $OCS_PARAM_TMP
   fi
@@ -2402,6 +2402,9 @@ parse_ocs_onthefly_cmd_options() {
       -ius|--ius) shift; do_update_syslinux="no";;
       -icds|--ignore-chk-dsk-size-pt) shift; chk_tgt_disk_size_bf_mk_pt="no";;
       -iefi|--ignore-update-efi-nvram) shift; update_efi_nvramt="no";;
+      -sfsck|--skip-fsck-src-part) shift; 
+                                   fsck_src_part_intr="no"
+                                   fsck_src_part_auto="no";;
       -fsck-src-part|--fsck-src-part|-fsck) shift; fsck_src_part_intr="yes";;
       -fsck-src-part-y|--fsck-src-part-y|-fsck-y) shift; fsck_src_part_auto="yes";;
       -cmf|--chk-chksum-for-files-in-dev) shift; chksum_for_files_in_dev="yes" ;;
@@ -2655,6 +2658,9 @@ else
   echo "$msg_delimiter_star_line"
   mode="local"
 fi
+
+# Boot parameter ocs_overwrite_postaction has higher priority than the action assigned by option "-pa".
+overwrite_postaction_if_assigned clone
 
 #
 set_filter_program
