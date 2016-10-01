@@ -12230,3 +12230,21 @@ get_dir_filesystem(){
   #echo $df_list | awk -F" " '{print $2}'
   LC_ALL=C findmnt -Un -o FSTYPE -T $target_dir
 } # end of get_dir_filesystem
+#
+overwrite_postaction_if_assigned() {
+  local run_mod_="$1"
+  local ocs_overwrite_postaction_job ocs_overwrite_postaction_type
+  local cmdl_file=/proc/cmdline
+  # ocs_overwrite_postaction="[prompt|choose|reboot|poweroff]-on-[restoredisk|restoreparts|savedisk|saveparts|clone]"
+  [ -z "${run_mod_}" ] && echo "No run_mod_ in overwrite_postaction_if_assigned!" && exit 1
+  parse_cmdline_option -c $cmdl_file "ocs_overwrite_postaction"
+  if [ -z "$ocs_overwrite_postaction" ]; then
+    return 3
+  fi
+  ocs_overwrite_postaction_job="$(echo $ocs_overwrite_postaction | sed -r -e "s/-on-.*$//")"
+  ocs_overwrite_postaction_type="$(echo $ocs_overwrite_postaction | sed -r -e "s/^.*-on-//")"
+  if [ "$ocs_overwrite_postaction_type" = "${run_mod_}" ]; then
+    postaction="$ocs_overwrite_postaction_job"
+  fi
+  return 0
+} # end of overwrite_postaction_if_assigned
