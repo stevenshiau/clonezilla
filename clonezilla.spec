@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.8
+Version:	3.23.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Oct 02 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.9-drbl1
+  - Remove "nodmraid" from boot parameters in drbl-ocs.conf.
+
 * Sat Oct 01 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.8-drbl1
   - Boot parameter ocs_overwrite_postaction has higher priority than the
     action assigned by option "-p" in ocs-sr, and "-pa" in ocs-onthefly.
