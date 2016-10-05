@@ -264,6 +264,59 @@ inform_kernel_partition_table_changed() {
   if ! is_whole_disk $tdisk; then
     return 3
   fi
+  if check_if_disk_busy $tdisk; then
+    # If we force to re-read partition table when disk is busy, the
+    # extended partition might be gone in /proc/partitions, while
+    # logical drives still exist. This is weird, but it does disappear
+    # in /proc/partitions. This will make clonezilla exit when
+    # restoring EBR by complaining:
+    # Unable to find target partition "sda3".********.
+    # i.e., 
+    # root@debian:~# df
+    # Filesystem     1K-blocks   Used Available Use% Mounted on
+    # udev             1011972      0   1011972   0% /dev
+    # tmpfs             205160   3136    202024   2% /run
+    # /dev/shm          154024 149024      5000  97% /lib/live/mount/medium
+    # /dev/loop0        149504 149504         0 100% /lib/live/mount/rootfs/filesystem.squashfs
+    # tmpfs            1025796      0   1025796   0% /lib/live/mount/overlay
+    # overlay          1025796   7660   1018136   1% /
+    # tmpfs            1025796      0   1025796   0% /dev/shm
+    # tmpfs               5120      0      5120   0% /run/lock
+    # tmpfs            1025796      0   1025796   0% /sys/fs/cgroup
+    # tmpfs            1025796    572   1025224   1% /tmp
+    # tmpfs             205156      0    205156   0% /run/user/1000
+    # /dev/sda6        3030800 566848   2290284  20% /home/partimag <- busy logical drive
+    # root@debian:~# cat /proc/partitions
+    # major minor  #blocks  name
+    # 
+    #    8        0   12710008 sda
+    #    8        1     524288 sda1
+    #    8        2    3145728 sda2
+    #    8        3          1 sda3 <---
+    #    8        4     524288 sda4
+    #    8        5    1045504 sda5
+    #    8        6    3145728 sda6
+    #   11        0     189440 sr0
+    #    7        0     149024 loop0
+    # root@debian:~# partprobe
+    # Warning: Unable to open /dev/sr0 read-write (Read-only file system).  /dev/sr0 has been opened read-only.
+    # Warning: Unable to open /dev/sr0 read-write (Read-only file system).  /dev/sr0 has been opened read-only.
+    # Error: Can't have a partition outside the disk!
+    # root@debian:~# cat /proc/partitions
+    # major minor  #blocks  name
+    # 
+    #    8        0   12710008 sda
+    #    8        1     524288 sda1
+    #    8        2    3145728 sda2
+    #    8        4     524288 sda4 <--- No sda3.
+    #    8        5    1045504 sda5
+    #    8        6    3145728 sda6
+    #   11        0     189440 sr0
+    #    7        0     149024 loop0
+    # Ref: https://sourceforge.net/p/clonezilla/bugs/265/
+    echo "Disk $tdisk is busy. Forget about informing the OS of partition table changes..."
+    return 3
+  fi
   echo -n "Informing the OS of partition table changes..."
   case "$ptype" in
   mbr|both)
@@ -9104,6 +9157,26 @@ check_if_disk_busy_before_create_partition() {
     exit 1
   fi
 } # end of check_if_disk_busy_before_create_partition
+#
+check_if_disk_busy() {
+  # Check disk is busy or not. E.g. 
+  # /dev/sda is busy due to /dev/sda1 is mounted.
+  # /dev/cciss/c0d0 is busy due to /dev/cciss/c0d0p1 is mounted.
+  # /dev/mmcblk0 is busy due to /dev/mmcblk0p1 is mounted.
+  # /dev/nvme0n1 is busy due to /dev/nvme0n1p1 is mounted.
+  # /dev/md126 is busy due to /dev/md126p1 is mounted.
+  # /dev/nbd0 is busy due to /dev/nbd0p1 is mounted.
+  local src_dev=$1
+  local rc_d
+  [ -z "$src_dev" ] && return 1
+  mounted_parts="$(LC_ALL=C mount | grep -Ew -- "^${src_dev}([0-9]*|(p[0-9]+))")"
+  if [ -n "$mounted_parts" ]; then
+    rc_d=0
+  else
+    rc_d=1
+  fi
+  return $rc_
+} # end of check_if_disk_busy
 #
 is_spawned_by_drbl_ocs() {
   local ppid_="$1" 
