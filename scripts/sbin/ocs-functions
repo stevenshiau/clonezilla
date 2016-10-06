@@ -9133,31 +9133,6 @@ check_if_dev_busy() {
   fi
 } # end of check_if_dev_busy
 #
-check_if_disk_busy_before_create_partition() {
-  # Check disk is busy or not. E.g. 
-  # /dev/sda is busy due to /dev/sda1 is mounted.
-  # /dev/cciss/c0d0 is busy due to /dev/cciss/c0d0p1 is mounted.
-  # /dev/mmcblk0 is busy due to /dev/mmcblk0p1 is mounted.
-  # /dev/nvme0n1 is busy due to /dev/nvme0n1p1 is mounted.
-  # /dev/md126 is busy due to /dev/md126p1 is mounted.
-  # /dev/nbd0 is busy due to /dev/nbd0p1 is mounted.
-  local src_dev=$1
-  [ -z "$src_dev" ] && return 1
-  mounted_parts="$(LC_ALL=C mount | grep -Ew -- "^${src_dev}([0-9]*|(p[0-9]+))")"
-  if [ -n "$mounted_parts" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$src_dev is busy. Some partition is mounted." | tee --append ${OCS_LOGFILE}
-    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-    echo "$mounted_parts" | tee --append ${OCS_LOGFILE}
-    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-    echo "You have to unmount them first. Or you can choose '-k' to skip partition recreation when you start clonezilla!" | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-    [ "$save_restore_error_log" = "yes" ] && copy_error_log
-    exit 1
-  fi
-} # end of check_if_disk_busy_before_create_partition
-#
 check_if_disk_busy() {
   # Check disk is busy or not. E.g. 
   # /dev/sda is busy due to /dev/sda1 is mounted.
@@ -9177,6 +9152,30 @@ check_if_disk_busy() {
   fi
   return $rc_
 } # end of check_if_disk_busy
+#
+check_if_disk_busy_before_create_partition() {
+  # Check disk is busy or not. E.g. 
+  # /dev/sda is busy due to /dev/sda1 is mounted.
+  # /dev/cciss/c0d0 is busy due to /dev/cciss/c0d0p1 is mounted.
+  # /dev/mmcblk0 is busy due to /dev/mmcblk0p1 is mounted.
+  # /dev/nvme0n1 is busy due to /dev/nvme0n1p1 is mounted.
+  # /dev/md126 is busy due to /dev/md126p1 is mounted.
+  # /dev/nbd0 is busy due to /dev/nbd0p1 is mounted.
+  local src_dev=$1
+  [ -z "$src_dev" ] && return 1
+  if check_if_disk_busy "$src_dev"; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$src_dev is busy. Some partition is mounted." | tee --append ${OCS_LOGFILE}
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    echo "$mounted_parts" | tee --append ${OCS_LOGFILE}
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    echo "You have to unmount them first. Or you can choose '-k' to skip partition recreation when you start clonezilla!" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    [ "$save_restore_error_log" = "yes" ] && copy_error_log
+    exit 1
+  fi
+} # end of check_if_disk_busy_before_create_partition
 #
 is_spawned_by_drbl_ocs() {
   local ppid_="$1" 
