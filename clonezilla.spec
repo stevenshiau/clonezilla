@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.9
+Version:	3.23.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,16 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 06 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.11-drbl1
+  - Rewrite functios in ocs-functions, including:
+    check_if_disk_busy_before_create_partition &
+    check_if_disk_busy.
+
+* Wed Oct 05 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.10-drbl1
+  - Inform kernel partition changes only when disk is not busy. This should
+    solve the issue:
+    https://sourceforge.net/p/clonezilla/bugs/265/
+
 * Sun Oct 02 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.9-drbl1
   - Remove "nodmraid" from boot parameters in drbl-ocs.conf.
 
