@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.11
+Version:	3.23.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Oct 07 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.12-drbl1
+  - Bug fixed: typo, therefore return wrong result in function
+    check_if_disk_busy.
+
 * Thu Oct 06 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.11-drbl1
   - Rewrite functios in ocs-functions, including:
     check_if_disk_busy_before_create_partition &
