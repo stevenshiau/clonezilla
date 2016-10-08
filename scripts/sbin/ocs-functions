@@ -622,7 +622,7 @@ get_part_vol_name() {
 get_dev_model_shown() {
   # dev_model_shown is a global variable
   local dev_list_="$1"
-  local DEV_MODEL i machine_name
+  local DEV_MODEL i machine_name rc_g
   gen_proc_partitions_map_file
   dev_model_shown=""
 
@@ -638,6 +638,8 @@ get_dev_model_shown() {
     # If only the disk or partition exists, we show the warning about the disk/partition will be overwritten.
     if [ -n "$(grep -Ew "$i" $partition_table)" ]; then
       get_disk_or_part_hardware_info "$i" default
+      rc_g=$?
+      [ "$rc_g" -eq 8 ] && continue
       dev_model_shown="$dev_model_shown$i ($DEV_MODEL)\n"
     fi
   done
@@ -3997,10 +3999,14 @@ get_disk_or_part_hardware_info() {
     #part_type="$(LC_ALL=C file -Ls "/dev/$p" 2>/dev/null)"
     part_type="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null)"
     rc=$?
-    [ "$rc" -gt 0 ] && continue 
-    [ -n "$(echo $part_type | grep -Ei "(swap|extended|0x5|0xf)")" ] && continue
+    # The return "8" means return "continue" (8 characters). 
+    # Here this function is extracted from a loop.
+    # No more using "continue" in this function.
+    # Because >= bash 4.4 raises it as a warning, and then continue won't be run.
+    [ "$rc" -gt 0 ] && return 8
+    [ -n "$(echo $part_type | grep -Ei "(swap|extended|0x5|0xf)")" ] && return 8
     if [ "$flag_skip_lvm" = "yes" ]; then
-      [ -n "$(echo "$part_type" | grep -Ei "LVM")" ] && continue
+      [ -n "$(echo "$part_type" | grep -Ei "LVM")" ] && return 8
     fi
     dsize="$(LC_ALL=C ocs-get-part-info /dev/$p size)"
     [ -n "$dsize" ] && DEV_MODEL="${dsize}"
@@ -4212,7 +4218,7 @@ get_input_dev_name() {
     local dev_chosen_def=""
     local NUMDEV=0
     local height
-    local part_list hdtmp msg_not_mounted_dev_found TMP FILE dsk_ DEV_MODEL_EXT dsize ans_
+    local part_list hdtmp msg_not_mounted_dev_found TMP FILE dsk_ DEV_MODEL_EXT dsize ans_ rc_g
     local ASK_INPUT=1   # init value 1 means we have to ask
 
     [ -z "$dev_type" ] && echo "You must specify the type get be entered!!! $msg_program_stop!" && exit 1
@@ -4307,6 +4313,8 @@ get_input_dev_name() {
          [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
        fi
        get_disk_or_part_hardware_info "$p" default
+       rc_g=$?
+       [ "$rc_g" -eq 8 ] && continue
        [ -z "$DEV_MODEL" ] && DEV_MODEL="No_description"
        # If only 1 device, make it on as default, else let user choose (off).
        #echo "selection=$selection"
