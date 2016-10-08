@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.12
+Version:	3.23.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Oct 08 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.13-drbl1
+  - The drbl/clonezilla live version info will be put in /etc/ocs/ocs-live.conf,
+    and when an image is saved, the info will be saved in Info-packages.txt.
+  - A workaround to avoid the warning:
+    continue: only meaningful in a `for', `while', or `until' loop
+    Because >= bash 4.4 raises it as a warning, and then continue won't be run.
+
 * Fri Oct 07 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.12-drbl1
   - Bug fixed: typo, therefore return wrong result in function
     check_if_disk_busy.
