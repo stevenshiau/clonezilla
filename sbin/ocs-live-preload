@@ -356,6 +356,43 @@ convert_dos_format_script_from_cp_rv_list() {
   done < $cp_flist_tmp
   rm -f $cp_flist_tmp
 } # end of convert_dos_format_script_from_cp_rv_list
+#
+overwrite_proc_boot_param() {
+  # Script by Aaron Burling (burlingaaron _at_ gmail com, aaron_burling _at_ lkstevens wednet edu)
+  # This script checks if /opt/overwrite-boot-param exists (Downloaded from root of ocs_preload)
+  # If /opt/overwrite-boot-param exists, create newcmdline which is combination of /proc/cmdline and /opt/overwrite-boot-param
+  # Finally, /proc/cmdline is redirected to point to newcmdline
+  # This enables insertion of Clonezilla Options via Options File in root of ocs_preload
+  # A normal Clonezilla live boot parameters in /proc/cmdline:
+  # BOOT_IMAGE=/live/vmlinuz initrd=/live/initrd.img boot=live union=overlay username=user config components quiet noswap edd=on nomodeset locales= keyboard-layouts= ocs_live_run="ocs-live-general" ocs_live_extra_param="" ocs_live_batch=no vga=788 ip= net.ifnames=0  nosplash i915.blacklist=yes radeonhd.blacklist=yes nouveau.blacklist=yes vmwgfx.enable_fbdev=1
+  # "BOOT_IMAGE=/live/vmlinuz initrd=/live/initrd.img" has to be kept, the rest user can overwrite.
+  if [ -e "/opt/overwrite-boot-param" ]; then
+    # Get the existing "BOOT_IMAGE" & "initrd"
+    parse_cmdline_option -c $cmdl_file "BOOT_IMAGE"
+    parse_cmdline_option -c $cmdl_file "initrd"
+    cp -a /opt/overwrite-boot-param /newcmdline
+    # (1) Update "BOOT_IMAGE"
+    if grep -Eq "BOOT_IMAGE=[^[:space:]]+[[:space:]]+" /newcmdline; then
+      # Found it. Modify it.
+      perl -pi -e "s|BOOT_IMAGE=[^[:space:]]+[[:space:]]+|BOOT_IMAGE=$BOOT_IMAGE |g" /newcmdline
+    else
+      # Not found. Precede it.
+      perl -pi -e "s|^(.*)|BOOT_IMAGE=$BOOT_IMAGE \$1|g" /newcmdline
+    fi
+    # (2) Update "initrd"
+    if grep -Eq "initrd=[^[:space:]]+[[:space:]]+" /newcmdline; then
+      # Found it. Modify it.
+      perl -pi -e "s|initrd=[^[:space:]]+[[:space:]]+|initrd=$initrd |g" /newcmdline
+    else
+      # Not found. Precede it.
+      perl -pi -e "s|^(BOOT_IMAGE=[^[:space:]]+)[[:space:]]+(.*)|\$1 initrd=$initrd \$2|g" /newcmdline
+    fi
+    # Overrite the existing /proc/cmdline by /newcmdline
+    mount -n --bind -o ro /newcmdline /proc/cmdline
+  fi
+  # Re-generate ocs-live.conf since /proc/cmdline is different
+  /etc/ocs/ocs-live.d/S03prep-drbl-clonezilla
+} # end of overwrite_proc_boot_param
 
 #################
 ##### MAIN ######
@@ -456,5 +493,8 @@ for i in $ocs_preload_list; do
     fi
   fi
 done
+
+# When /opt/overwrite-boot-param exists, overwrite /proc/cmdline
+overwrite_proc_boot_param
 
 exit $RETVAL
