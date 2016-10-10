@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.17
+Version:	3.23.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Oct 10 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.18-drbl1
+  * Skip overwriting /proc/cmdline when no any overwrite* files in /opt.
+  * Put new cmdline file in /var/lib/clonezilla/new-cmdline instead of / in
+    live system.
+
 * Mon Oct 10 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.17-drbl1
   - Show messages about overwriting /proc/cmdline in ocs-live-preload.
 
