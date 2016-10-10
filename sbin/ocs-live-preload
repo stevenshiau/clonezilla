@@ -61,7 +61,7 @@ USAGE() {
     echo "     ocs_preload4="mount -t nfs 192.168.120.254:/home/partimag/script/ /tmp/nfs -o ro" "
     echo "Multiple ocs_preload* are available, just append a number after that. E.g."
     echo "ocs_prealod=... ocs_preload1=... ocs_preload2=..."
-    echo "Then in Clonezilla live $ocs will be run automatically and the file assigned by ocs_preload will be downloaded and extracted to /opt. Its mode will be set automatically, too. i.e. set as mode 755 and Unix format script."
+    echo "Then in Clonezilla live $ocs will be run automatically and the file assigned by ocs_preload will be downloaded and extracted to ${dest}. Its mode will be set automatically, too. i.e. set as mode 755 and Unix format script."
 } # end of USAGE
 #
 parse_cifs_mount_command() {
@@ -249,8 +249,8 @@ replicate_files_from_netfs() {
                   fi
                 done
 		if [ "$rc_mnt" -eq 0 ]; then
-                  echo "Copy Contents of Samba preload share to /opt ..."
-                  cp -rv $cifs_mnt_pnt/* /opt | tee $cifs_cp_flist_tmp
+                  echo "Copy Contents of Samba preload share to ${dest} ..."
+                  cp -rv $cifs_mnt_pnt/* ${dest} | tee $cifs_cp_flist_tmp
                   rc="${PIPESTATUS[0]}"
                   echo "Unmount Samba preload share..."
                   umount $cifs_mnt_pnt
@@ -280,8 +280,8 @@ replicate_files_from_netfs() {
                 eval $netfs_mnt_cmd
                 rc_mnt=$?
 		if [ "$rc_mnt" -eq 0 ]; then
-                  echo "Copy Contents of NFS preload share to /opt ..."
-                  cp -rv $nfs_mnt_pnt/* /opt | tee $nfs_cp_flist_tmp
+                  echo "Copy Contents of NFS preload share to ${dest} ..."
+                  cp -rv $nfs_mnt_pnt/* ${dest} | tee $nfs_cp_flist_tmp
                   rc="${PIPESTATUS[0]}"
                   echo "Unmount NFS preload share..."
                   umount $nfs_mnt_pnt
@@ -339,8 +339,8 @@ convert_dos_format_script_from_cp_rv_list() {
   # chmod and conver to unix format for the copied files list
   # i.e. the files list got from: cp -rv source dest
   # The list is like (it might contain whitespace in file name):
-  # '/tmp/cifs/my-script.sh.txt' -> '/opt/my-script.sh.txt'
-  # '/tmp/cifs/your script.sh.txt' -> '/opt/your script.sh.txt'
+  # '/tmp/cifs/my-script.sh.txt' -> '${dest}/my-script.sh.txt'
+  # '/tmp/cifs/your script.sh.txt' -> '${dest}/your script.sh.txt'
   local cp_rv_flist="$1"
   local cp_flist_tmp kfl
   cp_flist_tmp="$(mktemp /tmp/cp_flist.XXXXXX)"
@@ -359,18 +359,22 @@ convert_dos_format_script_from_cp_rv_list() {
 #
 overwrite_proc_boot_param() {
   # Script by Aaron Burling (burlingaaron _at_ gmail com, aaron_burling _at_ lkstevens wednet edu)
-  # This script checks if /opt/overwrite-boot-param exists (Downloaded from root of ocs_preload)
-  # If /opt/overwrite-boot-param exists, create newcmdline which is combination of /proc/cmdline and /opt/overwrite-boot-param
+  # This script checks if ${dest}/{overwrite-all-boot-param,overwrite-part-boot-param} exists (Downloaded from root of ocs_preload)
+  # File overwrite-all-boot-param is to overwrite the whole /proc/cmdline, while
+  # overwrite-part-boot-param only overwrite part of the variables in /proc/cmdline. Especially those "ocs_*" parameters.
+  # If ${dest}/{overwrite-all-boot-param,overwrite-part-boot-param} exists, create newcmdline which is combination of /proc/cmdline and ${dest}/{overwrite-all-boot-param,overwrite-part-boot-param}
   # Finally, /proc/cmdline is redirected to point to newcmdline
   # This enables insertion of Clonezilla Options via Options File in root of ocs_preload
   # A normal Clonezilla live boot parameters in /proc/cmdline:
   # BOOT_IMAGE=/live/vmlinuz initrd=/live/initrd.img boot=live union=overlay username=user config components quiet noswap edd=on nomodeset locales= keyboard-layouts= ocs_live_run="ocs-live-general" ocs_live_extra_param="" ocs_live_batch=no vga=788 ip= net.ifnames=0  nosplash i915.blacklist=yes radeonhd.blacklist=yes nouveau.blacklist=yes vmwgfx.enable_fbdev=1
   # "BOOT_IMAGE=/live/vmlinuz initrd=/live/initrd.img" has to be kept, the rest user can overwrite.
-  if [ -e "/opt/overwrite-boot-param" ]; then
+  local param_m
+  if [ -e "${dest}/overwrite-all-boot-param" ]; then
+    # To overwrite the whole /proc/cmdline
     # Get the existing "BOOT_IMAGE" & "initrd"
     parse_cmdline_option -c $cmdl_file "BOOT_IMAGE"
     parse_cmdline_option -c $cmdl_file "initrd"
-    cp -a /opt/overwrite-boot-param /newcmdline
+    cp -a ${dest}/overwrite-all-boot-param /newcmdline
     # (1) Update "BOOT_IMAGE"
     if grep -Eq "BOOT_IMAGE=[^[:space:]]+[[:space:]]+" /newcmdline; then
       # Found it. Modify it.
@@ -387,9 +391,29 @@ overwrite_proc_boot_param() {
       # Not found. Precede it.
       perl -pi -e "s|^(BOOT_IMAGE=[^[:space:]]+)[[:space:]]+(.*)|\$1 initrd=$initrd \$2|g" /newcmdline
     fi
-    # Overrite the existing /proc/cmdline by /newcmdline
-    mount -n --bind -o ro /newcmdline /proc/cmdline
+  elif [ -e "${dest}/overwrite-part-boot-param" ]; then
+    # Only overwrite part of the boot params, e.g. replace these two:
+    # ocs_live_run="ocs-sr -x" ocs_live_batch="yes"
+    cat /proc/cmdline > /newcmdline
+    param_m="$(LC_ALL=C grep -Eo "[^[:space:]]+=" ${dest}/overwrite-part-boot-param | sed -r -e "s/=$//g")"
+    (
+      # Run in sub shell to avoid affecting the system variables.
+      . ${dest}/overwrite-part-boot-param
+      iv=""
+      for im in $param_m; do
+        eval iv=\$${im}
+        if grep -Pq "${im}=\".*?\"[[:space:]]+" /newcmdline; then
+          # Found it. Modify it.
+          perl -pi -e "s|${im}=\".*?\"[[:space:]]+|${im}=\"${iv}\" |g" /newcmdline
+        else
+          # Not found. Appened it.
+          perl -pi -e "s|^(.*)$|\$1 ${im}=\"${iv}\" |g" /newcmdline
+        fi
+      done
+    )
   fi
+  # Overrite the existing /proc/cmdline by /newcmdline
+  mount -n --bind -o ro /newcmdline /proc/cmdline
   # Re-generate ocs-live.conf since /proc/cmdline is different
   /etc/ocs/ocs-live.d/S03prep-drbl-clonezilla
 } # end of overwrite_proc_boot_param
@@ -494,7 +518,7 @@ for i in $ocs_preload_list; do
   fi
 done
 
-# When /opt/overwrite-boot-param exists, overwrite /proc/cmdline
+# When ${dest}/overwrite-all-boot-param or ${dest}/overwrite-part-boot-param exists, overwrite /proc/cmdline
 overwrite_proc_boot_param
 
 exit $RETVAL
