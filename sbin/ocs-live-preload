@@ -371,6 +371,22 @@ overwrite_proc_boot_param() {
   # BOOT_IMAGE=/live/vmlinuz initrd=/live/initrd.img boot=live union=overlay username=user config components quiet noswap edd=on nomodeset locales= keyboard-layouts= ocs_live_run="ocs-live-general" ocs_live_extra_param="" ocs_live_batch=no vga=788 ip= net.ifnames=0  nosplash i915.blacklist=yes radeonhd.blacklist=yes nouveau.blacklist=yes vmwgfx.enable_fbdev=1
   # "BOOT_IMAGE=/live/vmlinuz initrd=/live/initrd.img" has to be kept, the rest user can overwrite.
   local param_m
+  # Do 2 checks before going on:
+  if [ -e /var/lib/clonezilla/overwrite_proc_boot_param ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "File /proc/cmdline has been successfully overwritten before, so skip doing it again."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 2
+  fi
+  if mountpoint -q /proc/cmdline; then
+    # If here we do it again, the result $newcmdline will be empty
+    # because we copy or cat its contents to itself.
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "File /proc/cmdline is now in overwritten state, so skip doing it again."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 2
+  fi
+
   if [ -e "${dest}/overwrite-all-boot-param" ]; then
     # To overwrite the whole /proc/cmdline
     # Get the existing "BOOT_IMAGE" & "initrd"
@@ -427,6 +443,8 @@ overwrite_proc_boot_param() {
     cat /proc/cmdline
     # Re-generate ocs-live.conf since /proc/cmdline is different
     /etc/ocs/ocs-live.d/S03prep-drbl-clonezilla
+    # Creating state file
+    touch /var/lib/clonezilla/overwrite_proc_boot_param
   fi
 } # end of overwrite_proc_boot_param
 
