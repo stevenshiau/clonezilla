@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.15
+Version:	3.23.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,18 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Oct 10 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.16-drbl1
+  - Now ocs-live-preload check if 
+    /opt/{overwrite-all-boot-param,overwrite-part-boot-param}
+    exists (Downloaded from root of ocs_preload).
+    File overwrite-all-boot-param is to overwrite the whole
+    /proc/cmdline, while overwrite-part-boot-param only overwrites
+    part of the variables in /proc/cmdline. Especially those
+    "ocs_*" parameters.
+  - For the universal usage for boot parameters ocs*, put
+    double quotation mark for ocs_live_batch in the config file of
+    clonezilla live.
+
 * Sun Oct 09 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.15-drbl1
   - If ocs-live-preload is run and /etc/ocs-live.conf is updated, we need
     reread it in ocs-live-run-menu after running ocs-live-preload.
