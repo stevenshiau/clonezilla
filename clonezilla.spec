@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.16
+Version:	3.23.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Oct 10 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.17-drbl1
+  - Show messages about overwriting /proc/cmdline in ocs-live-preload.
+
 * Mon Oct 10 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.16-drbl1
   - Now ocs-live-preload check if 
     /opt/{overwrite-all-boot-param,overwrite-part-boot-param}
