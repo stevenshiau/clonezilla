@@ -34,6 +34,8 @@ cmdl_file_def="/proc/cmdline"
 dest="/opt"
 rm_tarball_flag=""
 force_to_run="no"
+# The file to overwrite /proc/cmdline
+newcmdline="/var/lib/clonezilla/new-cmdline"
 
 # Functions
 USAGE() {
@@ -362,8 +364,8 @@ overwrite_proc_boot_param() {
   # This script checks if ${dest}/{overwrite-all-boot-param,overwrite-part-boot-param} exists (Downloaded from root of ocs_preload)
   # File overwrite-all-boot-param is to overwrite the whole /proc/cmdline, while
   # overwrite-part-boot-param only overwrites part of the parameters in /proc/cmdline. Especially those "ocs_*" parameters.
-  # If ${dest}/{overwrite-all-boot-param,overwrite-part-boot-param} exists, create newcmdline which is combination of /proc/cmdline and ${dest}/{overwrite-all-boot-param,overwrite-part-boot-param}
-  # Finally, /proc/cmdline is redirected to point to newcmdline
+  # If ${dest}/{overwrite-all-boot-param,overwrite-part-boot-param} exists, create $newcmdline which is combination of /proc/cmdline and ${dest}/{overwrite-all-boot-param,overwrite-part-boot-param}
+  # Finally, /proc/cmdline is redirected to point to $newcmdline
   # This enables insertion of Clonezilla Options via Options File in root of ocs_preload
   # A normal Clonezilla live boot parameters in /proc/cmdline:
   # BOOT_IMAGE=/live/vmlinuz initrd=/live/initrd.img boot=live union=overlay username=user config components quiet noswap edd=on nomodeset locales= keyboard-layouts= ocs_live_run="ocs-live-general" ocs_live_extra_param="" ocs_live_batch=no vga=788 ip= net.ifnames=0  nosplash i915.blacklist=yes radeonhd.blacklist=yes nouveau.blacklist=yes vmwgfx.enable_fbdev=1
@@ -372,29 +374,31 @@ overwrite_proc_boot_param() {
   if [ -e "${dest}/overwrite-all-boot-param" ]; then
     # To overwrite the whole /proc/cmdline
     # Get the existing "BOOT_IMAGE" & "initrd"
+    echo "Found ${dest}/overwrite-all-boot-param."
     parse_cmdline_option -c $cmdl_file "BOOT_IMAGE"
     parse_cmdline_option -c $cmdl_file "initrd"
-    cp -a ${dest}/overwrite-all-boot-param /newcmdline
+    cp -a ${dest}/overwrite-all-boot-param $newcmdline
     # (1) Update "BOOT_IMAGE"
-    if grep -Eq "BOOT_IMAGE=[^[:space:]]+[[:space:]]+" /newcmdline; then
+    if grep -Eq "BOOT_IMAGE=[^[:space:]]+[[:space:]]+" $newcmdline; then
       # Found it. Modify it.
-      perl -pi -e "s|BOOT_IMAGE=[^[:space:]]+[[:space:]]+|BOOT_IMAGE=$BOOT_IMAGE |g" /newcmdline
+      perl -pi -e "s|BOOT_IMAGE=[^[:space:]]+[[:space:]]+|BOOT_IMAGE=$BOOT_IMAGE |g" $newcmdline
     else
       # Not found. Precede it.
-      perl -pi -e "s|^(.*)|BOOT_IMAGE=$BOOT_IMAGE \$1|g" /newcmdline
+      perl -pi -e "s|^(.*)|BOOT_IMAGE=$BOOT_IMAGE \$1|g" $newcmdline
     fi
     # (2) Update "initrd"
-    if grep -Eq "initrd=[^[:space:]]+[[:space:]]+" /newcmdline; then
+    if grep -Eq "initrd=[^[:space:]]+[[:space:]]+" $newcmdline; then
       # Found it. Modify it.
-      perl -pi -e "s|initrd=[^[:space:]]+[[:space:]]+|initrd=$initrd |g" /newcmdline
+      perl -pi -e "s|initrd=[^[:space:]]+[[:space:]]+|initrd=$initrd |g" $newcmdline
     else
       # Not found. Precede it.
-      perl -pi -e "s|^(BOOT_IMAGE=[^[:space:]]+)[[:space:]]+(.*)|\$1 initrd=$initrd \$2|g" /newcmdline
+      perl -pi -e "s|^(BOOT_IMAGE=[^[:space:]]+)[[:space:]]+(.*)|\$1 initrd=$initrd \$2|g" $newcmdline
     fi
   elif [ -e "${dest}/overwrite-part-boot-param" ]; then
     # Only overwrite part of the boot params, e.g. replace these two:
     # ocs_live_run="ocs-sr -x" ocs_live_batch="yes"
-    cat /proc/cmdline > /newcmdline
+    echo "Found ${dest}/overwrite-part-boot-param."
+    cat /proc/cmdline > $newcmdline
     param_m="$(LC_ALL=C grep -Eo "[^[:space:]]+=" ${dest}/overwrite-part-boot-param | sed -r -e "s/=$//g")"
     (
       # Run in sub shell to avoid affecting the system variables.
@@ -402,23 +406,28 @@ overwrite_proc_boot_param() {
       iv=""
       for im in $param_m; do
         eval iv=\$${im}
-        if grep -Pq "${im}=\".*?\"[[:space:]]+" /newcmdline; then
+        if grep -Pq "${im}=\".*?\"[[:space:]]+" $newcmdline; then
           # Found it. Modify it.
-          perl -pi -e "s|${im}=\".*?\"[[:space:]]+|${im}=\"${iv}\" |g" /newcmdline
+          perl -pi -e "s|${im}=\".*?\"[[:space:]]+|${im}=\"${iv}\" |g" $newcmdline
         else
           # Not found. Appened it.
-          perl -pi -e "s|^(.*)$|\$1 ${im}=\"${iv}\" |g" /newcmdline
+          perl -pi -e "s|^(.*)$|\$1 ${im}=\"${iv}\" |g" $newcmdline
         fi
       done
     )
+  else
+    # No any overwriting files. Exit this fucntion
+    return 2
   fi
-  # Overwrite the existing /proc/cmdline by /newcmdline
-  echo "Overwrite the existing /proc/cmdline by /newcmdline..."
-  mount -n --bind -o ro /newcmdline /proc/cmdline
-  echo "The new /proc/cmdline:"
-  cat /proc/cmdline
-  # Re-generate ocs-live.conf since /proc/cmdline is different
-  /etc/ocs/ocs-live.d/S03prep-drbl-clonezilla
+  if [ -e "$newcmdline" ]; then
+    # Overwrite the existing /proc/cmdline by $newcmdline
+    echo "Overwrite the existing /proc/cmdline by $newcmdline..."
+    mount -n --bind -o ro $newcmdline /proc/cmdline
+    echo "The new /proc/cmdline:"
+    cat /proc/cmdline
+    # Re-generate ocs-live.conf since /proc/cmdline is different
+    /etc/ocs/ocs-live.d/S03prep-drbl-clonezilla
+  fi
 } # end of overwrite_proc_boot_param
 
 #################
