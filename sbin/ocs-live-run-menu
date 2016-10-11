@@ -19,7 +19,26 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 [ -z "$ocs_lang" ] && ocs_lang="en_US.UTF-8"
 
 
-#
+# Functions
+decide_use_fb_term_or_not(){
+  get_fb_term
+  [ "$fb_term" = "bterm" -a ! -e "$uni_font" ] && exit 1
+  
+  use_fb_term=""
+  # Ex. zh_TW.UTF-8 -> zh_TW
+  locale_region="$(echo "$ocs_lang" | sed -e "s|\..*||g")"
+  if `locale_required_bterm_or_not "$locale_region"` && \
+     [ -n "$fb_term" ] && \
+     ([ -e /dev/fb/0 ] || [ -e /dev/fb0 ]); then 
+     use_fb_term="yes"
+  else
+     use_fb_term="no"
+  fi
+} # end of decide_use_fb_term_or_not
+
+###############
+#####MAIN######
+###############
 if [ -z "$ocs_live_run" ]; then
   echo "No \$ocs_live_run was assigned (Either from /etc/ocs/ocs-live.conf or command kernel parameters). Skip Clonezilla-related action."
   exit 3
@@ -37,19 +56,7 @@ if [ -z "$LIVE_MEDIA" -o ! -d "/$LIVE_MEDIA" ]; then
 fi
 
 #
-get_fb_term
-[ "$fb_term" = "bterm" -a ! -e "$uni_font" ] && exit 1
-
-use_fb_term=""
-# Ex. zh_TW.UTF-8 -> zh_TW
-locale_region="$(echo "$ocs_lang" | sed -e "s|\..*||g")"
-if `locale_required_bterm_or_not "$locale_region"` && \
-   [ -n "$fb_term" ] && \
-   ([ -e /dev/fb/0 ] || [ -e /dev/fb0 ]); then 
-   use_fb_term="yes"
-else
-   use_fb_term="no"
-fi
+decide_use_fb_term_or_not
 
 #
 gen_locale_if_not_found $locale_region $ocs_lang
@@ -85,9 +92,29 @@ ocs-run-boot-param ocs_prerun
 # Pre load. This must be after pre-run since it might need network connection
 # which could be done in ocs-live-prerun
 ocs-live-preload
-# If ocs-live-preload is run and /etc/ocs-live.conf is updated, we need to reread it
-# Even if it's not modified, re-read it won't cause any problem.
-. /etc/ocs/ocs-live.conf
+if [ -e /var/lib/clonezilla/overwrite_proc_boot_param ]; then
+  # If ocs-live-preload is run and /etc/ocs-live.conf is updated,
+  # we need to reread it
+  . /etc/ocs/ocs-live.conf
+  if [ -n "$ocs_lang" ]; then
+    locale_region="$(echo "$ocs_lang" | sed -e "s|\..*||g")"
+    gen_locale_if_not_found $locale_region $ocs_lang
+    # Make it work now
+    export LANG=$ocs_lang
+    decide_use_fb_term_or_not
+  fi
+  if [ -n "$live_keyboard_layouts" ]; then
+    ( # Run in subshell to avoid affecting running env.
+      kb_conf_run="$(LC_ALL=C find /lib/live/config/ -iname "*keyboard-configuration*" -print)"
+      rm /var/lib/live/config/keyboard-configuration
+      export LIVE_KEYBOARD_LAYOUTS=$live_keyboard_layouts
+      . $kb_conf_run
+      # Make it work now
+      setupcon
+    )
+  fi
+fi
+
 
 # Prepare image repository if ocs_repository is assigned.
 rc=""

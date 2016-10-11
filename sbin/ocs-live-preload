@@ -370,7 +370,7 @@ overwrite_proc_boot_param() {
   # A normal Clonezilla live boot parameters in /proc/cmdline:
   # BOOT_IMAGE=/live/vmlinuz initrd=/live/initrd.img boot=live union=overlay username=user config components quiet noswap edd=on nomodeset locales= keyboard-layouts= ocs_live_run="ocs-live-general" ocs_live_extra_param="" ocs_live_batch=no vga=788 ip= net.ifnames=0  nosplash i915.blacklist=yes radeonhd.blacklist=yes nouveau.blacklist=yes vmwgfx.enable_fbdev=1
   # "BOOT_IMAGE=/live/vmlinuz initrd=/live/initrd.img" has to be kept, the rest user can overwrite.
-  local param_m
+  local param_m im_s
   # Do 2 checks before going on:
   if [ -e /var/lib/clonezilla/overwrite_proc_boot_param ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -418,13 +418,30 @@ overwrite_proc_boot_param() {
     param_m="$(LC_ALL=C grep -Eo "[^[:space:]]+=" ${dest}/overwrite-part-boot-param | sed -r -e "s/=$//g")"
     (
       # Run in sub shell to avoid affecting the system variables.
-      . ${dest}/overwrite-part-boot-param
+      # To avoid variable like keyboard-layouts=en fails then makes all variable fail to obtain in bash, we do not run it directly to get the variable content (i.e., ". ${dest}/overwrite-part-boot-param"), instead we use parse_cmdline_option to get that.
       iv=""
+      im_s=""
       for im in $param_m; do
-        eval iv=\$${im}
+	if [ -n "$(echo $im | grep -- "-")" ]; then
+          # Special case, like keyboard-layouts=en, the variable "keyboard-layouts" not working for function parse_cmdline_option because it is not a valid Bash variable with "-" in the variable name.
+	  im_s="$(grep -Eo "${im}=[^[:space:]]+[[:space:]]+" ${dest}/overwrite-part-boot-param | sed -r -e "s/^.*=//g")"
+          eval iv=${im_s}
+	else
+          # Normal case, valid variable for bash.
+          parse_cmdline_option -c ${dest}/overwrite-part-boot-param "$im"
+          eval iv=\$${im}
+        fi
+	# Three types of variables, ="", ='', =, e.g.
+        # xxx="xyz -a", xxx='xyz -a', or xxx=xyz
         if grep -Pq "${im}=\".*?\"[[:space:]]+" $newcmdline; then
-          # Found it. Modify it.
+	  # Found case 1 (xxx="xyz -a"). Modify it.
           perl -pi -e "s|${im}=\".*?\"[[:space:]]+|${im}=\"${iv}\" |g" $newcmdline
+        elif grep -Pq "${im}=\'.*?\'[[:space:]]+" $newcmdline; then
+	  # Found case 2 (x='xyz -a'). Modify it.
+          perl -pi -e "s|${im}=\'.*?\'[[:space:]]+|${im}=\'${iv}\' |g" $newcmdline
+        elif grep -Eq "${im}=[^[:space:]]+[[:space:]]+" $newcmdline; then
+	  # Found case 3 (xxx=xyz). Modify it.
+          perl -pi -e "s|${im}=[^[:space:]]+[[:space:]]+|${im}=${iv} |g" $newcmdline
         else
           # Not found. Appened it.
           perl -pi -e "s|^(.*)$|\$1 ${im}=\"${iv}\" |g" $newcmdline
