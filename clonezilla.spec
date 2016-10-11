@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.19
+Version:	3.23.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Oct 11 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.20-drbl1
+  - Make system reload keyboard-layout and locales if it's changed in
+    ocs-live-preload.
+
 * Mon Oct 10 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.19-drbl1
   - Add a mechanism to avoid overwriting cmdline twice in
     ocs-live-preload.
