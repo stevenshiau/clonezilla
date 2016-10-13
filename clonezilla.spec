@@ -1,7 +1,7 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
 Version:	3.23.22
-Release:	drbl2
+Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.xz
