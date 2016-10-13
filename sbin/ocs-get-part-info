@@ -460,6 +460,35 @@ get_type_from_lsblk() {
     echo "$part_type"
   fi
 } # end of get_type_from_lsblk
+#
+check_if_bitlocker_fs() {
+  local rc_n rc_f
+  if type dislocker-find &>/dev/null; then
+    dislocker-find $part &>/dev/null
+    # //NOTE// Here the return code for dislocker-find is the number of bitlocker partition. Not the true/false.
+    rc_n=$?
+    if [ "$rc_n" -eq 1 ]; then
+      rc_f="bitlocker"
+    else
+      rc_f=""
+    fi
+    echo "$rc_f"
+  fi
+} # end of check_if_bitlocker_fs
+#
+check_if_MSR_part() {
+  local rc_n rc_f
+  # Microsoft Reserved Partition
+  # The GPT label for this partition type is E3C9E316-0B5C-4DB8-817D-F92DF00215AE.
+  # Only exists on GPT partition table. It's not UUID of file system, nor the PARTUUID for the GPT partition. Actually there is no any file system for this. Here we just want to identify it.
+  #
+  rc_n="$(LC_ALL=C sfdisk -d "/dev/$(get_diskname $part)" 2>/dev/null | grep -Ew "$part" | grep -Eo type=[[:alnum:]-]+)"
+  rc_f=""
+  if [ "$(echo $rc_n | grep -Ewi "E3C9E316-0B5C-4DB8-817D-F92DF00215AE")" ]; then
+   rc_f="MS_Reserved_Partition"
+  fi
+  echo "$rc_f"
+} # end of check_if_MSR_part
 
 # Some notes:
 # First priority is to use blkid to get filesystem, 2 reasons:
@@ -516,6 +545,12 @@ for wanted in $request; do
        fs="$(get_fs_from_partclone_fstype $part)"
        if [ -z "$fs" ]; then
          fs="$(get_fs_from_blkid $part)"
+       fi
+       if [ -z "$fs" ]; then
+	 fs="$(check_if_bitlocker_fs $part)"
+       fi
+       if [ -z "$fs" ]; then
+	 fs="$(check_if_MSR_part $part)"
        fi
        if [ -z "$fs" ]; then
          get_from_parted
