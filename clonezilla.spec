@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.23
+Version:	3.23.24
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Oct 17 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.24-drbl1
+  - Prepare the state dir /var/lib/clonezilla/ in the begining of
+    ocs-live-run-menu. 
+
 * Fri Oct 14 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.23-drbl1
   - Force to make timeout as 60 secs. Debian uses 60, but Ubuntu uses 300.
     Too long. Thanks to Cecile, Adam (Adam.Cecile _at_ hitec lu) for
