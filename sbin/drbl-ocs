@@ -853,7 +853,17 @@ case "$drbl_ocs_type" in
     ;;
   *)
     USAGE
+    exit 1
     ;;
 esac
+
+if [ "$LIST_HOST" = "on" ]; then
+  HOSTS_TMP="$(mktemp /tmp/hosts_tmp.XXXXXXX)"
+  trap "[ -f "$HOSTS_TMP" ] && rm -f $HOSTS_TMP" HUP INT QUIT TERM EXIT
+  echo $IP_LIST > $HOSTS_TMP
+fi
+# deploy_pxecfg_grubefi_files need the IP addresses list or MAC addresses list in $HOSTS_TMP file when LIST_HOST is on.
+deploy_pxecfg_grubefi_files
+[ -f "$HOSTS_TMP" ] && rm -f $HOSTS_TMP
 
 exit 0
