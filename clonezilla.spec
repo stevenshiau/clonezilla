@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.23.24
+Version:	3.23.25
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Oct 18 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.25-drbl1
+  - Forgot to load grub.cfg-$IP before grub.cfg for uEFI netboot client.
+    Thanks to Anshu Arya for reporting this issue.
+    Ref: https://sourceforge.net/p/drbl/discussion/DRBL_for_Debian/thread/73a26bf9
+  - Run deploy_pxecfg_grubefi_files inside drbl-ocs because the prompt to
+    start clonezilla SE service only mentions to run drbl-ocs.
+
 * Mon Oct 17 2016 Steven Shiau <steven _at_ nchc org tw> 3.23.24-drbl1
   - Prepare the state dir /var/lib/clonezilla/ in the begining of
     ocs-live-run-menu. 
