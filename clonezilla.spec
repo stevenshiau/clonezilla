@@ -1,7 +1,7 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.24.1
-Release:	drbl2
+Version:	3.24.2
+Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.xz
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Oct 25 2016 Steven Shiau <steven _at_ nchc org tw> 3.24.2-drbl1
+  - Avoid showing unrelated error messages in ocs-related-srv.
+
 * Tue Oct 25 2016 Steven Shiau <steven _at_ nchc org tw> 3.24.1-drbl2
   - Typo fixied: Make create-ubuntu-live support "Zesty". 
 
