@@ -19,7 +19,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Since from live-build 3.0~a55 "minimal" for debootstrap was removed. We use the option --variant of "debootstrap", i.e. "minbase" for minimal.
 debian_type="minbase"
 #debian_type="standard"
-DEBIAN_DIST_DEF="utopic"
+DEBIAN_DIST_DEF="yakkety"
 pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DRBL_FOR_CLONEZILLA_LIVE"
 categories_default="main restricted universe multiverse"
 cpu_flavor_default="386"
@@ -51,7 +51,7 @@ USAGE() {
     echo "-b, --branch [s|stable|t|testing|u|unstable|e|experimental]  Specify the DRBL branch to be used in Live CD. Default is stable."
     echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (cdebootstrap or debootstrap). If not specified, $bootstrap_default will be used."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main universe', default is \'$categories_default\' if not specified."
-    echo "-d, --debian-dist [trusty|wily|xenial|yakkety]  Assign Ubuntu dist, the default is $DEBIAN_DIST_DEF if not assigned."
+    echo "-d, --debian-dist [xenial|yakkety|zesty]  Assign Ubuntu dist, the default is $DEBIAN_DIST_DEF if not assigned."
     echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 386 or amd64. If it's not assigned, $cpu_flavor_default will be used."
     echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
@@ -113,16 +113,13 @@ build_it(){
     DEBOOTSTRAP_OPTIONS="$DEBOOTSTRAP_OPTIONS --include=ubuntu-keyring,gnupg,initramfs-tools"
   fi
   
-  if [  "$debian_dist" = "utopic" -o \
-  	"$debian_dist" = "wily" -o \
-  	"$debian_dist" = "xenial" -o \
-  	"$debian_dist" = "yakkety" \
+  if [  "$debian_dist" = "xenial" -o \
+  	"$debian_dist" = "yakkety" -o \
+  	"$debian_dist" = "zesty" \
      ]; then
     # For Uubntu 12.10+, linux-image has spilt as linux-image and linux-image-extra
     # Ref: https://lists.ubuntu.com/archives/kernel-team/2012-May/020448.html
-    if [ "$debian_dist" != "precise" ]; then
-      pkgs="$pkgs linux-image-extra-${release_kernel_ver}"
-    fi
+    pkgs="$pkgs linux-image-extra-${release_kernel_ver}"
     # From live-build 3.0~a58-1, no --bootstrap-flavour option. We use debootstrap options now.
     # $pref lb config --bootstrap-flavour $debian_type 
     $pref lb config --debootstrap-options="${DEBOOTSTRAP_OPTIONS} --variant=$debian_type"
@@ -200,11 +197,7 @@ build_it(){
   #$pref lb config --syslinux-theme "live-build"
   
   # Ubuntu <= 14.10 uses upstart instead of sysvinit, while >=15.04 uses systemd.
-  if [  "$debian_dist" = "utopic" ]; then
-    $pref lb config --initsystem upstart
-  else
-    $pref lb config --initsystem systemd
-  fi
+  $pref lb config --initsystem systemd
   
   # Put files to be included in the chroot hook
   mkdir -p config/includes.chroot/live-hook-dir
