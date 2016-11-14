@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.24.4
+Version:	3.24.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 14 2016 Steven Shiau <steven _at_ nchc org tw> 3.24.5-drbl1
+  - Filter unsigned kernel in get_latest_kernel_ver_in_repository
+    of ocs-functions.
 * Mon Nov 14 2016 Steven Shiau <steven _at_ nchc org tw> 3.24.4-drbl1
   - Use Packages.xz instead of Packages.gz in function
     get_latest_kernel_ver_in_repository of ocs-functions because
