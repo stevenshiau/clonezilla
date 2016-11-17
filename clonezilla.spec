@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.24.5
+Version:	3.24.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Nov 17 2016 Steven Shiau <steven _at_ nchc org tw> 3.24.6-drbl1
+  - Remove partprobe command after ocs-scan-disk. It delays the
+    GPT partition to be shown in /proc/partitions.
+  - Add package xserver-xorg-legacy for drbl-live in program
+    create-drbl-live-by-pkg.
+
 * Mon Nov 14 2016 Steven Shiau <steven _at_ nchc org tw> 3.24.5-drbl1
   - Filter unsigned kernel in get_latest_kernel_ver_in_repository
     of ocs-functions.
