@@ -203,6 +203,9 @@ if [ -z "$OCS_OPTS" ]; then
   [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
   run_again_flag="true"
 fi
+# Extract the postaction, like "-p poweroff", "-p choose" for later use, and for to use "-p true" ocs-sr.
+mdev_postact="$(echo $OCS_OPTS | grep -Ewo -- "-p[[:space:]]+[[:alpha:]+[[:space:]]+")"
+OCS_OPTS="$(echo $OCS_OPTS | sed -r -e "s|$mdev_postact|-p true|g")"
 
 # Run again prompt
 if [ "$run_again_flag" = "true" ]; then
@@ -321,4 +324,10 @@ for i in $tgt_dsks; do
     rmdir $ocsroot/${image_name}_cnvt_${i}
   fi
 done
-my_ocs_exit 1
+
+# After ocs-sr is run, /var/lib/clonezilla/ocs-vars will be created, and ocs-live-final-action will honor that. However, here we should do the final action "$mdev_postact"
+perl -pi -e "s/postaction=.*/postaction=$mdev_postact/g" /var/lib/clonezilla/ocs-vars
+ask_and_load_lang_set en_US.UTF-8
+ocs-live-final-action
+
+my_ocs_exit 0
