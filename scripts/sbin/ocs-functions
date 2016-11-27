@@ -394,16 +394,7 @@ output_ocs_related_pkgs() {
     done
   fi
   echo "$installed_pkgs" >> $img_d/$output_f
-
-  # Append Clonezilla live version if it's found
-  if [ -e "/etc/ocs/ocs-live.conf" ]; then
-    # Use sub shell to avoid affecting global variables.
-    ( . /etc/ocs/ocs-live.conf
-      if [ -n "$drbl_ocs_live_ver" ]; then
-        echo "Saved by ${drbl_ocs_live_ver}." >> $img_d/$output_f
-      fi
-    )
-  fi
+  append_clonezilla_live_ver_des_if_available $img_d/$output_f
 } # end of output_ocs_related_pkgs
 #
 dump_hardware_software_info() {
@@ -3749,6 +3740,7 @@ task_postprocessing() {
     "saveparts"|"savedisk")
       # Output a file name to tag the image and put the log for saving the image. It's easier for us to identify in the future.
       echo "This image was saved by Clonezilla at $(LC_ALL=C date +%F' '%T' '%Z)." > $img_dir/clonezilla-img
+      append_clonezilla_live_ver_des_if_available $img_dir/clonezilla-img
       echo "The log during saving:" >> $img_dir/clonezilla-img
       echo "----------------------------------------------------------" >> $img_dir/clonezilla-img
       cat ${OCS_LOGFILE} >> $img_dir/clonezilla-img
@@ -12331,3 +12323,20 @@ overwrite_postaction_if_assigned() {
   fi
   return 0
 } # end of overwrite_postaction_if_assigned
+#
+append_clonezilla_live_ver_des_if_available() {
+  local out_f_="$1"
+  if [ ! -e "$out_f_" ]; then
+    echo "No appending file was assigned in function append_clonezilla_live_ver_des_if_available!"
+    return 1
+  fi
+  if [ -e "/etc/ocs/ocs-live.conf" ]; then
+    # Use sub shell to avoid affecting global variables.
+    ( . /etc/ocs/ocs-live.conf
+      if [ -n "$drbl_ocs_live_ver" ]; then
+        echo "Saved by ${drbl_ocs_live_ver}." >> $out_f_
+      fi
+    )
+  fi
+  return 0
+} # end of append_clonezilla_live_ver_des_if_available
