@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.24.8
+Version:	3.24.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Dec 01 2016 Steven Shiau <steven _at_ nchc org tw> 3.24.9-drbl1
+  - Add option "-br" in gen-rec-iso.
+
 * Mon Nov 28 2016 Steven Shiau <steven _at_ nchc org tw> 3.24.8-drbl1
   - Add local boot menu in the uEFI Clonezilla live.
 
