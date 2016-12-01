@@ -17,8 +17,10 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
 # Settings
-# ocs_batch_mode could be: on, off
-ocs_batch_mode="off"
+# ocs_imgchk_batch_mode could be: on, off
+ocs_imgchk_batch_mode="off"
+# ocs_imgrest_batch_mode could be: on, off
+ocs_imgrest_batch_mode="off"
 tui="true"   # Default to turn on TUI
 chk_ocsroot_mountpont="yes"
 # The destination disk when restoring. By default we will ask user.
@@ -31,7 +33,8 @@ USAGE() {
     echo "To run $ocs:"
     echo "$ocs [OPTION] SRC_HARD_DRIVE ISO_FILE_NAME"
     echo "Options:"
-    echo "-b, --batch   Run image checking in batch mode"
+    echo "-b, --batch            Run image checking in batch mode"
+    echo "-br, --batch-restore   Set image restoring as batch mode when using the created iso (Dangerous!)"
     echo "-d, --working-dir  DIR   Assign the working dir as DIR. If not assigned, $ocsroot will be used."
     echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone or Partimage, use text only"
     echo "-p, --preset-dest-dev  DEV   Preset the destination device (e.g., sdg, vda...) when restoring. If not assigned, $preset_dest_dev will be used."
@@ -54,7 +57,8 @@ ocs=`basename $ocs_file`
 #
 while [ $# -gt 0 ]; do
  case "$1" in
-   -b|--batch) ocs_batch_mode="on"; shift;;
+   -b|--batch) ocs_imgchk_batch_mode="on"; shift;;
+   -br|--batch-restore) ocs_imgrest_batch_mode="on"; shift;;
    -s|--skip-ocsroot-mountpoint-chk) chk_ocsroot_mountpont="no"; shift;;
    -d|--working-dir) 
             # overwrite the ocsroot in drbl.conf
@@ -115,10 +119,16 @@ else
 fi
 
 #
-if [ "$ocs_batch_mode" = "on" ]; then
-  ocs_sr_batch_opt="--batch"
+if [ "$ocs_imgchk_batch_mode" = "on" ]; then
+  ocs_imgchk_batch_opt="--batch"
 else
-  ocs_sr_batch_opt="-c"
+  ocs_imgchk_batch_opt="-c"
+fi
+#
+if [ "$ocs_imgrest_batch_mode" = "on" ]; then
+  ocs_imgrest_batch_opt="--batch"
+else
+  ocs_imgrest_batch_opt="-c"
 fi
 if [ "$tui" = "false" ]; then
   ocs_sr_nogui_opt="--nogui"
@@ -129,14 +139,14 @@ fi
 
 
 # Save the disk as an image
-ocs-sr $ocs_sr_batch_opt $ocs_sr_nogui_opt -q2 -j2 -z1p -i 2000 -sc -p true savedisk $dest_fname $target_hd
+ocs-sr $ocs_imgchk_batch_opt $ocs_sr_nogui_opt -q2 -j2 -z1p -i 2000 -sc -p true savedisk $dest_fname $target_hd
 rc_sr="$?"
 if [ "$rc_sr" -eq 0 ]; then
   # Todo: Modify isolinux to add title?
   echo $msg_delimiter_star_line
   (
   cd $ocsroot
-  ocs-iso -g en_US.UTF-8 -t -k NONE -e "-g auto -e1 auto -e2 -c -r -j2 -scr -k1 -p choose restoredisk $dest_fname $preset_dest_dev" $dest_fname
+  ocs-iso -g en_US.UTF-8 -t -k NONE -e "-g auto -e1 auto -e2 $ocs_imgrest_batch_opt -r -j2 -scr -k1 -p choose restoredisk $dest_fname $preset_dest_dev" $dest_fname
   )
   echo "done!"
 fi
