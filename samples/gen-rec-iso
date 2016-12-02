@@ -25,6 +25,8 @@ tui="true"   # Default to turn on TUI
 chk_ocsroot_mountpont="yes"
 # The destination disk when restoring. By default we will ask user.
 preset_dest_dev="ask_user"
+#
+postaction_def="choose"
 
 #
 USAGE() {
@@ -33,12 +35,14 @@ USAGE() {
     echo "To run $ocs:"
     echo "$ocs [OPTION] SRC_HARD_DRIVE ISO_FILE_NAME"
     echo "Options:"
+    echo "-a, --postaction [choose|poweroff|reboot|command|CMD]  Set the action when restoration finishes. It can be poweroff, reboot, command (in command line prompt) or run CMD. Default is $postaction_def"
     echo "-b, --batch            Run image checking in batch mode"
     echo "-br, --batch-restore   Set image restoring as batch mode when using the created iso (Dangerous!)"
     echo "-d, --working-dir  DIR   Assign the working dir as DIR. If not assigned, $ocsroot will be used."
     echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone or Partimage, use text only"
     echo "-p, --preset-dest-dev  DEV   Preset the destination device (e.g., sdg, vda...) when restoring. If not assigned, $preset_dest_dev will be used."
     echo "-s, --skip-ocsroot-mountpoint-chk   Skip checking if Clonezilla image $ocsroot is a mountpoint."
+    echo "-x, --extra-boot-param  EXTRA_PARAM  Assign extra boot parameter EXTRA_PARAM for clonezilla live kernel to read. These parameters are the same with that from live-boot or live-config. Ex. \"noeject\" can be use to not prompt to eject the CD on reboot."
     echo "SRC_HARD_DRIVE is the hard drive to be taken as an image, e.g. sda, sdb..."
     echo "ISO_FILE_NAME is the name you want to give for the created file."
     echo "If no SRC_HARD_DRIVE/ISO_FILE_NAME is specified, a dialog menu will be shown."
@@ -81,10 +85,29 @@ while [ $# -gt 0 ]; do
             [ -z "$preset_dest_dev" ] && USAGE && exit 1
 	    ;;
    -nogui|--nogui)
-           shift; 
-           # -nogui is for backward compatable, better to use --nogui
-           tui="false"
-           ;;
+            shift; 
+            # -nogui is for backward compatable, better to use --nogui
+            tui="false"
+            ;;
+   -x|--extra-boot-param)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              live_extra_boot_param="$1"
+              shift
+            fi
+            [ -z "$live_extra_boot_param" ] && USAGE && exit 1
+            ;;
+   -a|--postaction) 
+            # Preset the device when restoring
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              postaction="$1"
+	      shift
+            fi
+            [ -z "$postaction" ] && USAGE && exit 1
+	    ;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
            exit 2 ;;
@@ -98,6 +121,7 @@ dest_fname="$2"
 #
 ask_and_load_lang_set
 
+[ -z "$postaction" ] && postaction=$postaction_def
 #
 if [ -z "$target_hd" ]; then
   get_target_hd_name_from_local_machine "Choose the source disk to be imaged for the recovery" "menu"
@@ -130,6 +154,7 @@ if [ "$ocs_imgrest_batch_mode" = "on" ]; then
 else
   ocs_imgrest_batch_opt="-c"
 fi
+#
 if [ "$tui" = "false" ]; then
   ocs_sr_nogui_opt="--nogui"
 fi
@@ -146,7 +171,12 @@ if [ "$rc_sr" -eq 0 ]; then
   echo $msg_delimiter_star_line
   (
   cd $ocsroot
-  ocs-iso -g en_US.UTF-8 -t -k NONE -e "-g auto -e1 auto -e2 $ocs_imgrest_batch_opt -r -j2 -scr -k1 -p choose restoredisk $dest_fname $preset_dest_dev" $dest_fname
+  if [ -n "$live_extra_boot_param" ]; then
+    extra_boot_param_opt="-x \"$live_extra_boot_param\""
+    ocs-iso -x "$live_extra_boot_param" -g en_US.UTF-8 -t -k NONE -e "-g auto -e1 auto -e2 $ocs_imgrest_batch_opt -r -j2 -scr -k1 -p $postaction restoredisk $dest_fname $preset_dest_dev" $dest_fname
+  else
+    ocs-iso -g en_US.UTF-8 -t -k NONE -e "-g auto -e1 auto -e2 $ocs_imgrest_batch_opt -r -j2 -scr -k1 -p $postaction restoredisk $dest_fname $preset_dest_dev" $dest_fname
+  fi
   )
   echo "done!"
 fi
