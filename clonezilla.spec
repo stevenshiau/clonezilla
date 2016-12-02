@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.24.9
+Version:	3.24.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Dec 02 2016 Steven Shiau <steven _at_ nchc org tw> 3.24.10-drbl1
+  - Update descriptions for ocs-iso and ocs-live-dev.
+  - Fix typos in the usage for ocs-sr. 
+  - Add options -a|--postaction, -x|--extra-boot-param for gen-rec-iso.
+
 * Thu Dec 01 2016 Steven Shiau <steven _at_ nchc org tw> 3.24.9-drbl1
   - Add option "-br" in gen-rec-iso.
 
