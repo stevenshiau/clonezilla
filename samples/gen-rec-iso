@@ -159,6 +159,11 @@ if [ "$tui" = "false" ]; then
   ocs_sr_nogui_opt="--nogui"
 fi
 
+#
+if [ -n "$live_extra_boot_param" ]; then
+  extra_boot_param_opt="-x \"$live_extra_boot_param\""
+fi
+
 # Give warning if $ocsroot is not a mount point.
 [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
 
@@ -171,12 +176,9 @@ if [ "$rc_sr" -eq 0 ]; then
   echo $msg_delimiter_star_line
   (
   cd $ocsroot
-  if [ -n "$live_extra_boot_param" ]; then
-    extra_boot_param_opt="-x \"$live_extra_boot_param\""
-    ocs-iso -x "$live_extra_boot_param" -g en_US.UTF-8 -t -k NONE -e "-g auto -e1 auto -e2 $ocs_imgrest_batch_opt -r -j2 -scr -k1 -p $postaction restoredisk $dest_fname $preset_dest_dev" $dest_fname
-  else
-    ocs-iso -g en_US.UTF-8 -t -k NONE -e "-g auto -e1 auto -e2 $ocs_imgrest_batch_opt -r -j2 -scr -k1 -p $postaction restoredisk $dest_fname $preset_dest_dev" $dest_fname
-  fi
+  ocs_iso_cmd="ocs-iso $extra_boot_param_opt -g en_US.UTF-8 -t -k NONE -e \"-g auto -e1 auto -e2 $ocs_imgrest_batch_opt -r -j2 -scr -k1 -p $postaction restoredisk $dest_fname $preset_dest_dev\" $dest_fname"
+  echo "Running: $ocs_iso_cmd"
+  eval $ocs_iso_cmd
   )
   echo "done!"
 fi
