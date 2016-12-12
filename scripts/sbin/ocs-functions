@@ -701,6 +701,9 @@ get_image_cat_zip_cmd() {
   # (1)
   comp_prog_ref="$(echo "$imgf" | grep -Eo -- ".ptcl-img.(gz|bz2|lzo|lzma|xz|lzip|lrz|uncomp)?")"
   cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)" 
+  cat_prog=""
+  zip_stdin_cmd=""
+  unzip_stdin_cmd=""
   if [ -n "$comp_prog_ref" ]; then
     comp_prog="$(echo "$comp_prog_ref" | sed -e "s/.ptcl-img.//g")" 
     case "$comp_prog" in
@@ -5944,7 +5947,115 @@ feed_multicast_restoreparts() {
     feed_multicast_restoreparts "$tgt_dir" "$tgt_parts"
   fi
 } # end of feed_multicast_restoreparts
+# function to feed bittorrent for restoring partitions
+feed_bittorrent_restoreparts() {
+  # This is for None-LVM parts
+  local tgt_dir="$1"
+  local tgt_parts="$2" # e.g. sda1, sda2...
+  local time_to_pause_before_mail mail_client="" time_tag part_is_lvm
+  local bts_cmd pt_no_lvm
+  # prepare the mail client
+  if type mutt &>/dev/null; then
+    mail_client="mutt"
+  elif type mail &>/dev/null; then
+    mail_client="mail"
+  elif type mailx &>/dev/null; then
+    mail_client="mailx"
+  fi
+  do_LVM_restore_feed="no"
+  pt_no_lvm=""
+  for partition in $tgt_parts; do
+    # sda1 -> sda
+    hd_tmp="$(get_diskname $partition)"
+    part_is_lvm="no"
+    # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
+    if [ -n "$(grep -Ew "$partition" $imagedir/$tgt_dir/lvm_vg_dev.list 2>/dev/null)" ]; then
+      # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
+      part_is_lvm="yes"
+      continue
+    fi
+    # Create the image files for BT if they do not exist.
+    if [ ! -d "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" ]; then
+      echo "Create the image files for BT if they do not exist..."
+      create_bt_image_files_from_partclone_img_if_necessary $partition
+    fi
+    pt_no_lvm="$pt_no_lvm $partition"
+  done
+  bts_cmd="ocs-btsrv start $tgt_dir $pt_no_lvm"
+  echo "Running: $bts_cmd"
+  eval $bts_cmd
 
+  # We have to do restore LVM (PV/VG/LV) together, not follow every partition
+  if [ "$part_is_lvm" = "yes" ]; then
+    do_LVM_restore_feed="yes"
+    # LVM exists, feed images to restore PV/VG/LV.
+    feed_LVM_bittorrent "$tgt_parts"
+  fi
+  # spawn a background program to wait and mail the clonezilla-jogs.log to root
+  # if we can find mail/mutt program then we do it, otherwise skip.
+  # When the udp-sender finishes, clonezilla client need to do more:
+  # 0. Sync the disk
+  # 1. Prepare the next step (time necessary: $SLEEP_TIME_AFTER_PART_CLONED)
+  # 2. Restore MBR (time necessary: < 1 sec)
+  # 3. Run grub-install if assigned (time necessary: maybe 5 secs or more)
+  # 4. Run resize
+  # 5. Notify ocsmgrd its job is done (time necessary: $NOTIFY_OCS_SERVER_TIME_LIMIT secs)
+  # For 0-4, we estimate it as 120 secs totally.
+  time_to_pause_before_mail="$((120+$SLEEP_TIME_AFTER_PART_CLONED+$NOTIFY_OCS_SERVER_TIME_LIMIT))"
+  (
+   if [ -n "$mail_client" ]; then
+     sleep $time_to_pause_before_mail
+     # Now all clients should finish all their jobs, we can mail now.
+     mail_clonezilla_log_to_root $mail_client
+   fi
+  ) &
+  # Keep the log. We have to wait like what mail_clonezilla_log_to_root does
+  (
+    sleep $time_to_pause_before_mail
+    time_tag="$(LC_ALL=C head -n 1 $ocs_log_dir/clonezilla-jobs.log | cut -d "," -f 1 | sed -r -e "s/[[:space:]]//g")"
+    cp -a $ocs_log_dir/clonezilla-jobs.log $ocs_log_dir/jobs-$time_tag.log
+  ) &
+} # end of feed_bittorrent_restoreparts
+#
+do_bittorrent_restore() {
+  local target_d="$1"
+  local part_img_dir="$(to_filename $2)"
+  local part="$3"  # part is like /dev/sda1
+  local start_time end_time image_name_ split_by dd_report_sig_pid part_size hdtmp pt_type
+  local btimg_name btc_cmd
+  # if the report_msg is empty, put the initial one: image_name_
+  image_name_="$(basename $target_d)"
+  [ -z "$report_msg" ] && report_msg="Bittorrent restored $image_name_,"
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  check_if_dev_busy $part
+  echo $msg_delimiter_star_line
+  # time_elapsed, time_elapsed_in_min and speed are global variables
+  # target_d is like: /home/partimag/xenial-x86-20161010
+  # While the bt files will be: /home/partimag/btzone/xenial-x86-20161010
+  btimg_name="$(basename $target_d)"
+  if [ ! -e "$ocsroot_btzone/$btimg_name/${part_img_dir}.torrent" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$ocsroot_btzone/$btimg_name/${part_img_dir}.torrent NOT found!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    exit 1
+  fi
+  clean_filesystem_header_in_partition $part
+  parse_cmdline_option -c /proc/cmdline "ezio_opt"
+  # Squeeze multiple spaces to one only
+  btc_cmd="$(echo ezio $ezio_opt $ocsroot_btzone/$btimg_name/${part_img_dir}.torrent $part | sed -r -e "s|[[:space:]]+| |g")"
+  echo "Running: $btc_cmd"
+  eval $btc_cmd
+  rc=$?
+  echo "Finished unicast restoring image ${target_d##*/} to $part." | tee --append ${OCS_LOGFILE}
+  sleep 1
+  # Informing kernel that the OS that partition table has changed since for BSD system, the partitions info exists in the slice
+  hdtmp="$(get_disk_from_part $part)"
+  pt_type="$(get_partition_table_type_from_disk $hdtmp)"
+  inform_kernel_partition_table_changed $pt_type $hdtmp | tee --append ${OCS_LOGFILE}
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  return $rc
+} # end of do_bittorrent_restore
 # Check if LVM
 check_LVM_partition() {
   # This function is to check existing LVM partition
@@ -6122,7 +6233,7 @@ save_logv() {
   exec 3< $LOGV_PARSE_CONF
   while read -u 3 lv fs; do
    [ ! -e "$lv" ] && continue
-   fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
+   fn="$(to_filename ${lv#/dev/*})"
    echo "Saving $lv as filename: $fn. $lv info: $fs" | tee --append $OCS_LOGFILE
    # skip swap or extended partition
    case "$fs" in 
@@ -6301,7 +6412,7 @@ restore_logv() {
    # If not in the chosen partition, skip this, continue with the next.
    [ "$is_in_chosen_partition" = "no" ] && continue
    # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
-   fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
+   fn="$(to_filename ${lv#/dev/*})"
    # Log the logical volume which is restored. The leading "/dev/" is removed, i.e. the results might be: lucid-server/root lucid-server/usr
    target_logv="$target_logv ${lv#/dev/*}"
    # create the swap if it's swap partition
@@ -6327,13 +6438,17 @@ restore_logv() {
    esac
    echo "Restoring device $fn..." | tee --append $OCS_LOGFILE
    case "$mode" in
-     unicast)
+     "unicast")
        do_unicast_stdin_restore $target_dir_fullpath $fn $lv
-       rc=$?
+       rc="$?"
        ;;
-     multicast)
+     "multicast")
        do_multicast_udpcast_restore $target_dir_fullpath $fn $lv
-       rc=$?
+       rc="$?"
+       ;;
+     "bittorrent")
+       do_bittorrent_restore $target_dir_fullpath $fn $lv
+       rc="$?"
        ;;
    esac
    if [ $rc -gt 0 ]; then
@@ -6391,14 +6506,15 @@ feed_LVM_multicast() {
      fi
    done
    [ "$is_in_chosen_partition" = "no" ] && continue
-   fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
+   # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
+   fn="$(to_filename ${lv#/dev/*})"
    # Skip feeding swap
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*) continue;; 
    esac
-   if [ -z "$(unalias ls 2>/dev/null; ls $imagedir/$target_dir/$(to_filename $fn)* 2>/dev/null)" ]; then
+   if [ -z "$(unalias ls 2>/dev/null; ls $imagedir/$target_dir/${fn}* 2>/dev/null)" ]; then
      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "$imagedir/$target_dir/$(to_filename $fn)* was not found! The restored OS might be uncompleted!"
+     echo "$imagedir/$target_dir/${fn}* was not found! The restored OS might be uncompleted!"
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
      echo -n "$msg_press_enter_to_continue..."
      read
@@ -6408,6 +6524,60 @@ feed_LVM_multicast() {
   done
   exec 3<&-
 } # end of feed_LVM_multicast
+
+# Bittorrent feeding to Restore LVM: PV/VG/LV data
+# Part of these codes are from http://www.trickytools.com/php/clonesys.php
+# Thanks to Jerome Delamarche (jd@inodes-fr.com)
+feed_LVM_bittorrent() {
+  # This is for LVM parts
+  # imagedir, port and ipart are global variable
+  local tgt_parts="$1"
+  local volg n
+  local btl_cmd
+  local fn
+  # Note! With a leading $imagedir before /$target_dir
+  PV_PARSE_CONF="$imagedir/$target_dir/lvm_vg_dev.list"
+  LOGV_PARSE_CONF="$imagedir/$target_dir/lvm_logv.list"
+  [ ! -f "$PV_PARSE_CONF" ] && exit 1
+  [ ! -f "$LOGV_PARSE_CONF" ] && exit 1
+  
+  while read lv fs; do
+   # Process the real data partition, only those in the chosen partitions
+   # Ex:
+   # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
+   # Then lvol0 is belong to VG vg3
+   volg="$(echo "$lv" | awk -F"/" '{print $3}')"
+   # Find if the LV is in the chosen partition (via VG, we can determine that)
+   # EX: tgt_parts: hda1, hda3, hda5...
+   #     vg3 /dev/hda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
+   is_in_chosen_partition="no"
+   for ipt in $tgt_parts; do
+     if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
+       # Found the chosen partitions is in the VG
+       is_in_chosen_partition="yes"
+       break
+     fi
+   done
+   [ "$is_in_chosen_partition" = "no" ] && continue
+   # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
+   fn="$(to_filename ${lv#/dev/*})"
+   # Skip feeding swap
+   case "$fs" in 
+     *[Ss][Ww][Aa][Pp]*) continue;; 
+   esac
+   if [ ! -d "$ocsroot_btzone/$tgt_dir/$fn" ]; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "$ocsroot_btzone/$tgt_dir/$fn was not found! The restored OS might be uncompleted!"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     echo -n "$msg_press_enter_to_continue..."
+     read
+     continue
+   fi
+   btl_cmd="ocs-btsrv start $target_dir ${lv#/dev/*}"
+   echo "Running: $btl_cmd"
+   eval $btl_cmd
+  done < $LOGV_PARSE_CONF
+} # end of feed_LVM_bittorrent
 #
 check_target_hd() {
   local disk_file="$1"
@@ -6463,6 +6633,9 @@ stop_ocs_service() {
     kill_ps_by_kill_9 drbl-ocs
     kill_ps_by_killall_9 ocsmgrd
     kill_ps_by_killall_9 udp-sender
+
+    # Stop BT-related services
+    ocs-btsrv stop
     
     # clean the tag
     rm -f $ocs_lock_dir/clonezilla.lock
@@ -6718,6 +6891,12 @@ start_ocs_service() {
     "multicast_restoreparts")
        ocs_menu_label="$multi_broad_cast_prompt restore $tgt_img_menu to part $tgt_dev_menu"
        ;;
+    "bt_restoredisk")
+       ocs_menu_label="Bittorrent restore $tgt_img_menu to disk $tgt_dev_menu"
+       ;;
+    "bt_restoreparts")
+       ocs_menu_label="Bittorrent restore $tgt_img_menu to part $tgt_dev_menu"
+       ;;
      *)
   esac
 
@@ -6827,6 +7006,52 @@ start_ocs_service() {
       fi
       feed_multicast_restoreparts "$target_dir" "$target_parts" &
       ;;
+
+    "bt_restoredisk")
+      # find the available partitions
+      target_parts=""
+      # Note! $target_dir is not absolute path, because when task_saveparts do the real job later, it will add $imagedir, so we have to put $imagedir here.
+      # Thanks to Orgad Shaneh to provide this 1st-disk patch.
+      # Ref: https://sourceforge.net/tracker/?func=detail&atid=671650&aid=2817447&group_id=115473
+      if [ "$target_hd" = "1st-disk" ]; then
+        target_hd="$(< $imagedir/$target_dir/disk)"
+      fi
+      for ihd in $target_hd; do
+        for partition in `get_parts_list_from_img $imagedir/$target_dir`; do
+          if [ -n "$(echo "$partition" | grep -iE "$ihd")" ]; then
+            # Ex. hda2 is for hda, so when hda is chosen, we will include hda2 as target partition.
+            target_parts="$target_parts $partition"
+          fi
+        done
+      done
+
+      # Strip the single white space which should be nothing. Thanks to Borksoft.
+      target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
+      # Let feed_multicast_restoreparts do the real job
+      # target_dir will be got from $option when run feed_multicast_restoreparts
+      if [ -z "$target_parts" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "No target partitions were found from image $target_dir!" | tee --append ${OCS_LOGFILE}
+	echo "Failed to start bittorrent clone service for image $target_dir!" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+        exit 1
+      fi
+      feed_bittorrent_restoreparts "$target_dir" "$target_parts"
+      ;;
+
+    "bt_restoreparts")
+      if [ -z "$target_parts" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "No target partitions were found from image $target_dir!" | tee --append ${OCS_LOGFILE}
+	echo "Failed to start $multi_broad_cast_prompt clone service for image $target_dir!" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+        exit 1
+      fi
+      feed_bittorrent_restoreparts "$target_dir" "$target_parts"
+      ;;
+
   esac
 
   # To avoid, clientdir=node_root is missing.. we check here.
@@ -7978,6 +8203,35 @@ task_multicast_restoredisk() {
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_multicast_restoredisk
 
+# task "bt_restoredisk" 
+# parameter:
+#   $1 port
+#   $2 target_dir
+#   $3 target_hd
+task_bt_restoredisk() {
+  local target_dir="$1"
+  local target_hd="$2"
+  local port=$3  # for BT, the port is assigned as "bt" from ocs-sr
+  # For bt, we check md5/sha1 sums on DRBL server, not clients. Force to set check_md5sum and check_sha1sum as no
+  check_md5sum="no"; check_sha1sum="no"
+  task_restoredisk "$target_dir" "$target_hd" "$port"
+} # end of task_bt_restoredisk
+#
+# task "bt_restoreparts" 
+# parameter:
+#   $1 port
+#   $2 target_dir
+#   $3 target_hd
+task_bt_restoreparts() {
+  local target_dir="$1"
+  local target_parts="$2"
+  local port=$3  # for BT, the port is assigned as "bt" from ocs-sr
+  # For bt, we check md5/sha1 sums on DRBL server, not clients. Force to set check_md5sum and check_sha1sum as no
+  # To do backward compatability, we still keep task_bt_restoreparts function, but let task_restoreparts do the real job.
+  check_md5sum="no"; check_sha1sum="no"
+  task_restoreparts "$target_dir" "$target_parts" "$port"
+} # end of task_bt_restoreparts
+
 # task "restoreparts" 
 # parameter:
 #   $1 target_image
@@ -8034,11 +8288,13 @@ task_restoreparts() {
     get_target_parts_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt
   fi
 
-  # we use the port to identify it's unicast or multicast.
-  if [ -n "$port" ]; then
-    net_mode="multicast"
-  else
+  # we use the port to identify it's unicast, bittorrent or multicast.
+  if [ -z "$port" ]; then
     net_mode="unicast"
+  elif [ "$port" = "bt" ]; then
+    net_mode="bittorrent"
+  else
+    net_mode="multicast"
   fi
 
   # target_hd will be extract from $target_parts, maybe we will have one more
@@ -8189,6 +8445,10 @@ task_restoreparts() {
         ;;
      "multicast")
         do_multicast_udpcast_restore $target_dir_fullpath $partition /dev/$partition
+        rc="$?"
+        ;;
+     "bittorrent")
+        do_bittorrent_restore $target_dir_fullpath $partition /dev/$partition
         rc="$?"
         ;;
     esac
@@ -8366,7 +8626,7 @@ task_restoreparts() {
       while read -u 3 lv fs; do
        [ ! -e $lv ] && continue
        # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
-       fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
+       fn="$(to_filename ${lv#/dev/*})"
        # Log the logical volume which is restored. The leading "/dev/" is removed, i.e. the results might be: lucid-server/root lucid-server/usr
        target_logv="$target_logv ${lv#/dev/*}"
        case "$fs" in 
@@ -8547,7 +8807,7 @@ do_startdisk() {
         "save")
            target_image="ask_user"
 	   ;;
-        "restore")
+        "restore"|"bt_restore")
 	   if [ "$select_img_in_client" = "yes" ]; then
              # if user want to select the image name in client
              target_image="ask_user"
@@ -8576,6 +8836,7 @@ do_startdisk() {
            ;;
          *)
            echo "Usage: $ocs_file startdisk {save|restore|multicast_restore} target_image target_hd"
+           #echo "Usage: $ocs_file startdisk {save|restore|multicast_restore|bt_restore} target_image target_hd"
            exit 0
            ;;
       esac
@@ -8602,7 +8863,7 @@ do_startdisk() {
         "save")
            target_hd="ask_user"
            ;;
-        "restore")
+        "restore"|"bt_restore")
 	   if [ "$select_img_in_client" = "yes" ]; then
              # if user want to select the image name in client
              target_hd="ask_user"
@@ -8641,7 +8902,7 @@ do_startdisk() {
     fi
 
     case "$task" in
-      "restore"|"multicast_restore")
+      "restore"|"multicast_restore"|"bt_restore")
         if [ "$target_image" != "ask_user" ]; then
           # If it's restore, we have to conver the old format to newer
           convert_ocs_format_from_1.5_to_2.0_or_newer $imagedir/$target_image/
@@ -8679,7 +8940,7 @@ do_startparts () {
         "save")
            target_image="ask_user"
 	   ;;
-        "restore")
+        "restore"|"bt_restore")
 	   if [ "$select_img_in_client" = "yes" ]; then
              # if user want to select the image name in client
              target_image="ask_user"
@@ -8708,6 +8969,7 @@ do_startparts () {
            ;;
          *)
            echo "Usage: $ocs_file startparts {save|restore|multicast_restore} target_image target_parts"
+           # echo "Usage: $ocs_file startparts {save|restore|multicast_restore|bt_restore} target_image target_parts"
            exit 0
            ;;
       esac
@@ -8734,7 +8996,7 @@ do_startparts () {
         "save")
            target_parts="ask_user"
            ;;
-        "restore")
+        "restore"|"bt_restore")
 	   if [ "$select_img_in_client" = "yes" ]; then
              # if user want to select the image name in client
              target_parts="ask_user"
@@ -8777,7 +9039,7 @@ do_startparts () {
     fi
 
     case "$task" in
-      "restore"|"multicast_restore")
+      "restore"|"multicast_restore"|"bt_restore")
         if [ "$target_image" != "ask_user" ]; then
           # If it's restore, we have to conver the old format to newer
           convert_ocs_format_from_1.5_to_2.0_or_newer $imagedir/$target_image/
@@ -8872,7 +9134,7 @@ prompt_to_turn_on_client() {
       "save")
          turn_on_client_msg="$msg_turn_on_client_to_make_template"
          ;;
-      "restore"|"multicast_restore")
+      "restore"|"multicast_restore"|"bt_restore")
          turn_on_client_msg="$msg_turn_on_client_to_clone"
          ;;
       "select_in_client")
@@ -11395,6 +11657,7 @@ put_ecryptefs_tag_file_in_img(){
 } # end of put_ecryptefs_tag_file_in_img
 #
 get_parts_list_from_img() {
+  # Return partitions list without /dev/, like sda1, sda2...
   local img_path="$1"  # Full path for the image dir
   local p_lst
   if [ -z "$img_path" -o \
@@ -12348,3 +12611,85 @@ append_clonezilla_live_ver_des_if_available() {
   fi
   return 0
 } # end of append_clonezilla_live_ver_des_if_available
+#
+create_bt_image_files_from_partclone_img_if_necessary() {
+  # //NOTE// 2016/12/12 This function is not finished.
+  local idev="$1"  # e.g. sda1, vg001/lv001
+  local target_d   # e.g. /home/partimag/my-img
+  local img_file   # e.g. sda1, vg001-lv001 (use for something like sda1.ext4-ptcl-img.gz.aa)
+  local file_
+  if [ -z "$idev" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No input parameter \$idev in function create_bt_image_files_from_partclone_img_if_necessary!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 3
+  fi
+  img_file="$(to_filename $idev)"
+  if [ ! -d "$ocsroot_btzone/$tgt_dir/$img_file" ]; then
+    if is_partclone_image $ocsroot/$tgt_dir $img_file; then
+      # ===========================================
+      target_d="$ocsroot/$tgt_dir"
+      # First, we find the filesystem 
+      file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
+      if [ -n "${file_}" ]; then
+        file_basename="$(basename ${file_})"
+        if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
+          # new format, image file is like: sda1.ext4-ptcl-img.gz, sda1.ext4-ptcl-img.gz.aa
+          fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-ptcl-img.*//g")"
+        fi
+      fi
+      if [ -z "${fs_}" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "The file system for the image \"$img_file\" is unknown! Maybe it's not saved by Clonezilla with Partclone?" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+        exit 1
+      fi
+    
+      if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img")" ]; then
+        # New format
+        if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img.*.aa")" ]; then
+          # New format with image split, e.g. sda1.ext4-ptcl-img.gz.aa
+          get_image_cat_zip_cmd ${file_basename}
+          # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
+          # e.g. sda1.ext4-ptcl-img.gz.aaa -> sda1.ext4-ptcl-img.gz.*
+          img_file_prefix="$(echo ${file_basename} | sed -r -e "s/\.aa*$//").*"
+        else
+          # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
+          get_image_cat_zip_cmd ${file_basename}
+          # The file is NOT split, so the file name is just like "sda1.ext4-ptcl-img.gz" only, no "."
+          img_file_prefix="${file_basename}"
+        fi
+      fi
+      if [ -z "$unzip_stdin_cmd" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "The compression format for the image \"$img_file\" is unknown!" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+        exit 1
+      fi
+      mkdir -p $ocsroot_btzone/$tgt_dir/$img_file
+      cd $ocsroot_btzone/$tgt_dir/$img_file
+      ( for img in $target_d/$img_file_prefix; do
+          cat $img
+        done
+      ) \
+      | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
+      | LC_ALL=C partclone.${fs_} -bt $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -OBT $ocsroot_btzone/$tgt_dir/$img_file 
+      retcodes=(${PIPESTATUS[@]})
+      
+      if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
+        rc=0
+      else
+        rc=1
+      fi
+      # ===========================================
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Only the image saved by Partclone can be converted to bittorrent files."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      exit 1
+    fi
+  fi
+} # end of create_bt_image_files_from_partclone_img_if_necessary
