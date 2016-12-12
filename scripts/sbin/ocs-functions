@@ -2994,6 +2994,7 @@ clean_mbr_gpt_part_table() {
 } # end of clean_mbr_gpt_part_table
 #
 create_mbr_partition_table() {
+  local opt_wm sfdisk_cmd_mbr
   # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
   if [ "$use_HD_CHS_from_EDD_pref" = "yes" ]; then
     if [ -z "$(LC_ALL=C strings $tgt_dir/$(to_filename ${tgt_hd_name})-mbr | grep -i "grub")" ]
@@ -3065,6 +3066,11 @@ create_mbr_partition_table() {
       fi
       ;;
     y|Y|[yY][eE][sS])
+      # Sfdisk >= 0.26 has option --wipe, we should use it to avoid confliction
+      opt_wm=""
+      if [ -n "$(LC_ALL=C sfdisk --help 2>&1 | grep -Ew -- "--wipe")" ]; then
+        opt_wm="--wipe always"
+      fi
       case "$create_part_type" in
         "proportion")
           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -3077,7 +3083,10 @@ create_mbr_partition_table() {
             ocs_expand_mbr_pt_opt="-icds"
             PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT -C"
           fi
-          EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-mbr-pt $ocs_expand_mbr_pt_opt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
+	  sfdisk_cmd_mbr="EXTRA_SFDISK_OPT=\"$EXTRA_SFDISK_OPT $opt_wm\" ocs-expand-mbr-pt $ocs_expand_mbr_pt_opt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1"
+	  echo "Running: $sfdisk_cmd_mbr" | tee -a $OCS_LOGFILE
+	  eval $sfdisk_cmd_mbr | tee -a $OCS_LOGFILE
+          echo "This was done by $sfdisk_cmd_mbr" | tee -a $OCS_LOGFILE
           ;;
         "manual")
           echo "$msg_enter_another_shell_for_fdisk" | tee --append $OCS_LOGFILE
@@ -3090,10 +3099,11 @@ create_mbr_partition_table() {
           # If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
           init_mbr_part_table_if_not_existing $tgt_hd_file
           check_mbr_disk_size_gt_2TiB $tgt_hd_file warning 
-          echo "Running sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
-          LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf 2>&1 | tee -a $OCS_LOGFILE
+          sfdisk_cmd_mbr="LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf 2>&1 | tee -a $OCS_LOGFILE"
+          echo "Running: $sfdisk_cmd_mbr" | tee -a $OCS_LOGFILE
+	  eval $sfdisk_cmd_mbr | tee -a $OCS_LOGFILE
           RETVAL="${PIPESTATUS[0]}"
-          echo "This was done by sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
+          echo "This was done by: $sfdisk_cmd_mbr " | tee -a $OCS_LOGFILE
           # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
           if [ "$RETVAL" -ne 0 ]; then
             [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -3128,21 +3138,30 @@ create_mbr_partition_table() {
 } # end of create_mbr_partition_table
 #
 create_gpt_partition_table() {
+  local do_gpt_dd sgdisk_rc
+  local opt_wm sfdisk_cmd_gpt
   echo $msg_delimiter_star_line
+
+  # Before really create partition table, we should do some tasks...
+  clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
+  # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
+  echo $msg_delimiter_star_line
+  if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
+    echo "LV is still active, try to deactive it..."
+    ocs-lvm2-stop
+  fi
+  create_gpt_table_if_no_table $tgt_hd_file
+
+  # Sfdisk >= 0.26 has option --wipe, we should use it to avoid confliction
+  opt_wm=""
+  if [ -n "$(LC_ALL=C sfdisk --help 2>&1 | grep -Ew -- "--wipe")" ]; then
+    opt_wm="--wipe always"
+  fi
   case "$create_part_type" in
     "proportion")
        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
        echo "Create the proportional partition table in $tgt_hd_file based on $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf and the size of $tgt_hd_file..." | tee --append $OCS_LOGFILE
        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-       clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
-       # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
-       echo $msg_delimiter_star_line
-       if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
-         echo "LV is still active, try to deactive it..."
-         ocs-lvm2-stop
-       fi
-       create_gpt_table_if_no_table $tgt_hd_file
-
        # We use environmental variable EXTRA_SFDISK_OPT so it can be used in ocs-expand-mbr-pt
        EXTRA_SFDISK_OPT=""
        [ -n "$sfdisk_opt" ] && EXTRA_SFDISK_OPT="$sfdisk_opt"
@@ -3150,10 +3169,11 @@ create_gpt_partition_table() {
          ocs_expand_gpt_pt_opt="-icds"
          PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT -C"
        fi
-       EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-gpt-pt $ocs_expand_gpt_pt_opt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE
-
+       sfdisk_cmd_gpt="EXTRA_SFDISK_OPT=\"$EXTRA_SFDISK_OPT $opt_wm\" ocs-expand-gpt-pt $ocs_expand_gpt_pt_opt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1"
+       echo "Running: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
+       eval $sfdisk_cmd_gpt | tee -a $OCS_LOGFILE
        RETVAL="${PIPESTATUS[0]}"
-       echo "This was done by sfdisk: EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT" ocs-expand-gpt-pt $ocs_expand_gpt_pt_opt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1 | tee --append $OCS_LOGFILE" | tee -a $OCS_LOGFILE
+       echo "This was done by $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
        # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
        if [ "$RETVAL" -ne 0 ]; then
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -3201,19 +3221,15 @@ create_gpt_partition_table() {
       # /dev/sda3 : start=      819200, size=      262144, type=E3C9E316-0B5C-4DB8-817D-F92DF00215AE, uuid=B3E0D044-8F53-423F-9C37-90F3D8F84815, name="Microsoft reserved partition", attrs="GUID:63"
       # /dev/sda4 : start=     1081344, size=   124745728, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, uuid=A3E73070-CFBD-4D9F-ADB9-8372BFB5AC0B, name="Basic data partition"
       # ===================================================
-      if [ -n "$(LC_ALL=C grep -Ew "^label: gpt" "$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf")" ]; then
-        clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
-        # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
-        echo $msg_delimiter_star_line
-        if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
-          echo "LV is still active, try to deactive it..."
-          ocs-lvm2-stop
-        fi
-        create_gpt_table_if_no_table $tgt_hd_file
-        echo "Running sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
-        LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf 2>&1 | tee -a $OCS_LOGFILE
+      if [ "$create_part_by_sfdisk" = "no" ]; then
+        # Force to use dd to create GPT partition table
+        do_gpt_dd="yes"
+      elif [ -n "$(LC_ALL=C grep -Ew "^label: gpt" "$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf")" ]; then
+	sfdisk_cmd_gpt="LC_ALL=C sfdisk $opt_wm $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf 2>&1"
+        echo "Running: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
+	eval $sfdisk_cmd_gpt | tee -a $OCS_LOGFILE
         RETVAL="${PIPESTATUS[0]}"
-        echo "This was done by sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf" | tee -a $OCS_LOGFILE
+        echo "This was done by: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
         # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
         if [ "$RETVAL" -ne 0 ]; then
           [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -3230,17 +3246,10 @@ create_gpt_partition_table() {
           do_gpt_dd="yes"
         fi
       elif [ -e "$tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk" ]; then
-        clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
-        # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
-        echo $msg_delimiter_star_line
-        if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
-          echo "LV is still active, try to deactive it..."
-          ocs-lvm2-stop
-        fi
-        create_gpt_table_if_no_table $tgt_hd_file
         gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
-        echo "Running: sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file" | tee --append ${OCS_LOGFILE}
-        LC_ALL=C sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file 2>&1 | tee $gdisk_tmp | tee --append ${OCS_LOGFILE}
+	sfdisk_cmd_gpt="LC_ALL=C sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file 2>&1 | tee $gdisk_tmp"
+        echo "Running: $sfdisk_cmd_gpt" | tee -a ${OCS_LOGFILE}
+	eval $sfdisk_cmd_gpt | tee -a ${OCS_LOGFILE}
         sgdisk_rc="${PIPESTATUS[0]}"
         if [ "$sgdisk_rc" -eq 0 ]; then
           # There is a bug about sgdisk 0.6.14, i.e.
@@ -3258,10 +3267,10 @@ create_gpt_partition_table() {
           else
             do_gpt_dd="no"
           fi
-  	# Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
-  	if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -E "^Partition Table: unknown")" ]; then
-            do_gpt_dd="yes"
-  	fi
+          # Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
+          if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -E "^Partition Table: unknown")" ]; then
+               do_gpt_dd="yes"
+          fi
         else
           do_gpt_dd="yes"
         fi
@@ -3273,9 +3282,6 @@ create_gpt_partition_table() {
         fi
   
         [ -e "$gdisk_tmp" ] && rm -f $gdisk_tmp
-      else
-        # For old style of image, there is no ${tgt_hd_name}-gpt.gdisk. We have to use dd to create the GPT partition table.
-        do_gpt_dd="yes"
       fi
       ;;
    esac
@@ -3284,7 +3290,9 @@ create_gpt_partition_table() {
      echo "Restoring the primary GPT to $tgt_hd_file..." | tee -a $OCS_LOGFILE
      # ///NOTE/// We can not use ocs-create-gpt (parted) to clone GPT, since the original GPT contains unique GUID! Ref:  http://developer.apple.com/technotes/tn2006/tn2166.html#SECCOPYINGCONCERNS for more details.
      # ocs-create-gpt $tgt_dir/${tgt_hd_name}-pt.parted
-     LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-1st of=$tgt_hd_file 2>&1 | tee -a $OCS_LOGFILE
+     sfdisk_cmd_gpt="LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-1st of=$tgt_hd_file 2>&1"
+     echo "Running: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
+     eval $sfdisk_cmd_gpt | tee -a $OCS_LOGFILE
      retv="${PIPESTATUS[0]}"
      if [ "$retv" -gt 0 ]; then
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -3306,7 +3314,9 @@ create_gpt_partition_table() {
      # --------------------
      echo "Restoring the secondary GPT to $tgt_hd_file..."
      to_seek="$((${src_disk_size_sec}-33+1))"
-     LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-2nd of=$tgt_hd_file seek=${to_seek} bs=512 count=33 2>&1 | tee -a $OCS_LOGFILE
+     sfdisk_cmd_gpt="LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-2nd of=$tgt_hd_file seek=${to_seek} bs=512 count=33 2>&1"
+     echo "Running: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
+     eval $sfdisk_cmd_gpt | tee -a $OCS_LOGFILE
    fi
   
    inform_kernel_partition_table_changed gpt $tgt_hd_file | tee --append ${OCS_LOGFILE}
@@ -3327,7 +3337,7 @@ create_partition() {
   local tgt_dir="$2"
   local tgt_hd_name="${tgt_hd_file#/dev/*}"
   local pt_type=""
-  local src_disk_size_sec src_disk_size_GB tgt_disk_size_sec tgt_disk_size_GB to_seek do_gpt_dd gdisk_tmp sgdisk_rc
+  local src_disk_size_sec src_disk_size_GB tgt_disk_size_sec tgt_disk_size_GB to_seek gdisk_tmp sgdisk_rc
   local ocs_expand_mbr_pt_opt=""
   local sfdisk_cyl_opt_flag=""
 
@@ -3378,10 +3388,8 @@ create_partition() {
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
     ;;
-  mbr)
-    create_mbr_partition_table ;;
-  gpt)
-    create_gpt_partition_table ;;
+  mbr) create_mbr_partition_table;;
+  gpt) create_gpt_partition_table;;
   esac
 } # end of create_partition
 #
