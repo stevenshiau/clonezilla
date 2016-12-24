@@ -3787,7 +3787,7 @@ task_postprocessing() {
   # 
 } # end of task_postprocessing
 #
-ask_time_or_clients_to_wait() {
+ask_time_or_clients_to_wait_for_mcast() {
   local n_clients_tmp
   local time_opt_tmp
   # Note!!! We must use common tmp file to pass the result, we can not
@@ -3862,7 +3862,31 @@ ask_time_or_clients_to_wait() {
        exit 1
   esac 
   [ -f "$TMP" ] && rm -f $TMP
-} # end of ask_time_or_clients_to_wait
+} # end of ask_time_or_clients_to_wait_for_mcast
+#
+ask_clients_to_wait_for_bittorrent() {
+  local n_clients_tmp
+  ANS_TMP="$1"
+  local bt_cln_no="$2"
+  TMP=`mktemp /tmp/ocs.XXXXXX`
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  n_clients_tmp=0
+  if [ -z "$bt_cln_no" ]; then
+    n_clients_tmp_default="$(get-client-ip-list | wc -l | sed -e "s/ //g")"
+  else
+    n_clients_tmp_default="$bt_cln_no"
+  fi
+  ## ask how many clients to restore
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+  --inputbox "$msg_how_many_clients_to_restore ?" 0 0 "$n_clients_tmp_default" 2> $TMP
+  n_clients_tmp=$(cat $TMP)
+  # check client no.
+  # Steven TODO, better to re-ask if n_client <=0
+  [ -z "$n_clients_tmp" ] && echo "You must specify the client number! $msg_program_stop!" && exit 1
+  [ $n_clients_tmp -le 0 ] && echo "Client number can NOT <= 0! $msg_program_stop!!!" && exit 1
+  echo "clients_to_wait=$n_clients_tmp" > $ANS_TMP
+  [ -f "$TMP" ] && rm -f $TMP
+} # end of ask_clients_to_wait_for_bittorrent
 #
 rm_target_image_if_exist() {
   local tgt_image="$1"
@@ -5954,6 +5978,7 @@ feed_bittorrent_restoreparts() {
   local tgt_parts="$2" # e.g. sda1, sda2...
   local time_to_pause_before_mail mail_client="" time_tag part_is_lvm
   local bts_cmd pt_no_lvm
+  local track_max_client_opt
   # prepare the mail client
   if type mutt &>/dev/null; then
     mail_client="mutt"
@@ -5981,7 +6006,10 @@ feed_bittorrent_restoreparts() {
     fi
     pt_no_lvm="$pt_no_lvm $partition"
   done
-  bts_cmd="ocs-btsrv start $tgt_dir $pt_no_lvm"
+  [ -n "$n_clients" ] && track_max_client_opt="-m $n_clients"
+  bts_cmd="ocs-btsrv $track_max_client_opt start $tgt_dir $pt_no_lvm"
+  # Squeeze multiple spaces as one only
+  bts_cmd="$(echo $bts_cmd | sed -r -e "s|[[:space:]]+| |g")"
   echo "Running: $bts_cmd"
   eval $bts_cmd
 
@@ -6535,6 +6563,7 @@ feed_LVM_bittorrent() {
   local volg n
   local btl_cmd
   local fn
+  local track_max_client_opt
   # Note! With a leading $imagedir before /$target_dir
   PV_PARSE_CONF="$imagedir/$target_dir/lvm_vg_dev.list"
   LOGV_PARSE_CONF="$imagedir/$target_dir/lvm_logv.list"
@@ -6573,7 +6602,10 @@ feed_LVM_bittorrent() {
      read
      continue
    fi
-   btl_cmd="ocs-btsrv start $target_dir ${lv#/dev/*}"
+   [ -n "$n_clients" ] && track_max_client_opt="-m $n_clients"
+   btl_cmd="ocs-btsrv $track_max_client_opt start $target_dir ${lv#/dev/*}"
+   # Squeeze multiple spaces as one only
+   btl_cmd="$(echo $btl_cmd | sed -r -e "s|[[:space:]]+| |g")"
    echo "Running: $btl_cmd"
    eval $btl_cmd
   done < $LOGV_PARSE_CONF
@@ -8920,6 +8952,7 @@ do_startdisk() {
     esac
 
     get_multicast_restore_mode_if_mcast
+    get_bt_restore_mode_if_bittorrent
 
     # Check MD5SUMS, SHA1SUMS
     check_md5_sha1_sums_for_img "$imagedir/$target_image"
@@ -9154,12 +9187,26 @@ get_multicast_restore_mode_if_mcast() {
       if [ -z "$mcast_wait_time" -a -z "$n_clients" -a -z "$mcast_max_wait_time" ] ; then
        ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
        trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-       ask_time_or_clients_to_wait $ANS_TMP
+       ask_time_or_clients_to_wait_for_mcast $ANS_TMP
        . $ANS_TMP
        # we will get time_to_wait or clients_to_wait.
        [ -n "$time_to_wait" ] && mcast_wait_time="$time_to_wait"
        [ -n "$clients_to_wait" ] && n_clients="$clients_to_wait"
        [ -n "$max_time_to_wait" ] && mcast_max_wait_time="$max_time_to_wait"
+       [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
+      fi
+    fi
+} # end of get_multicast_restore_mode_if_mcast
+#
+get_bt_restore_mode_if_bittorrent() {
+    # n_clients (for bittorrent restoring only)
+    if [ -z "$n_clients" -a "$task" = "bt_restore" ]; then
+      if [ -z "$n_clients" ] ; then
+       ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+       trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+       ask_clients_to_wait_for_bittorrent $ANS_TMP
+       . $ANS_TMP
+       [ -n "$clients_to_wait" ] && n_clients="$clients_to_wait"
        [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
       fi
     fi

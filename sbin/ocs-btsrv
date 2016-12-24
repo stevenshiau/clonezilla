@@ -28,6 +28,7 @@ USAGE() {
     echo "Options:"
     echo "-c, --ctorrent-mkmetainfo    Use ctorrent instead of mktorrent to create the metainfo (.torrent) file"
     echo "-g, --log-dir DIR            Use DIR as the log dir. Default value is \"$btlog_dir\""
+    echo "-m, --max-client-no NO       Assign the client number as NO. When this number of clients finishes downloading, BT tracker will exit so that client will stop, too."
     echo "-p, --bt-srv-ip  IP          Assign the IP address for using in tracker's URL. If not assigned, the IP address detected on the machine will be used"
     echo "-r, --bt-root DIR            Use DIR as the working dir. It's preceded to the files downloaded. Default value is \"$ocsroot_btzone\""
     echo "-t, --bt-client PROG         Use PROG instead of ctorrent as the bittorrent client program. Available PROG: lftp, btdownloadheadless"
@@ -126,8 +127,13 @@ start_bt_srv() {
     d_file="$btlog_dir/${idir_name}-dfile"
     log_file="$btlog_dir/${idir_name}-tracker.log"
     tracker_pid_log="$btlog_dir/${idir_name}-tracker.pid"
+    if [ -n "$btclient_no" ]; then
+      btclient_no_opt="--tracker_max_completed $btclient_no"
+    fi
     rm -f $d_file $log_file $tracker_pid_log
-    cmd_start_tracker="ocs-bttrack --port $port_b --dfile $d_file --logfile $log_file --nat_check 0 --scrape_allowed full --allowed_dir $(dirname $(readlink -f $ocsroot_btzone/${idir}.torrent)) &"
+    cmd_start_tracker="ocs-bttrack --port $port_b --dfile $d_file $btclient_no_opt --logfile $log_file --nat_check 0 --scrape_allowed full --allowed_dir $(dirname $(readlink -f $ocsroot_btzone/${idir}.torrent)) &"
+    # Squeeze multiple spaces to one only
+    cmd_start_tracker="$(echo "$cmd_start_tracker" | sed -r -e "s|[[:space:]]+| |g")"
     echo "Start tracker by:"
     echo "$cmd_start_tracker"
     eval $cmd_start_tracker
@@ -229,6 +235,15 @@ while [ $# -gt 0 ]; do
              shift;
            fi
            [ -z "$btlog_dir" ] && USAGE && exit 1
+           ;;
+   -m|--max-client-no)
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             btclient_no="$1"
+             shift;
+           fi
+           [ -z "$btclient_no" ] && USAGE && exit 1
            ;;
    -p|--bt-srv-ip)
            shift; 
