@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.1
+Version:	3.25.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Dec 24 2016 Steven Shiau <steven _at_ nchc org tw> 3.25.2-drbl1
+  - Use ocs-btttrack instead of bttrack in ocs-btsrv.
+
 * Mon Dec 12 2016 Steven Shiau <steven _at_ nchc org tw> 3.25.1-drbl1
   - Rewrite codes about partition creation. It's neater now.
   - Add initial codes for bittorrent restoring. Not finished yet.
