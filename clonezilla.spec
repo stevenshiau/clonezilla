@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.3
+Version:	3.25.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 26 2016 Steven Shiau <steven _at_ nchc org tw> 3.25.5-drbl1
+  - Use ezio or ezio-static automatically.
+
+* Mon Dec 26 2016 Steven Shiau <steven _at_ nchc org tw> 3.25.4-drbl1
+  Do not use ":" in file name for the log file, use "~" instead. e.g.
+  xenial-x64-20161104~sda1.log, not xenial-x64-20161104:sda1.log
+  Shell does not like file name with ":".
+
 * Sat Dec 24 2016 Steven Shiau <steven _at_ nchc org tw> 3.25.3-drbl1
   - Add experimental bittorrent restoring codes for assigning max client no.
 
