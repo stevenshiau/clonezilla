@@ -6050,7 +6050,7 @@ do_bittorrent_restore() {
   local part_img_dir="$(to_filename $2)"
   local part="$3"  # part is like /dev/sda1
   local start_time end_time image_name_ split_by dd_report_sig_pid part_size hdtmp pt_type
-  local btimg_name btc_cmd
+  local btimg_name ezio_prog btc_cmd
   # if the report_msg is empty, put the initial one: image_name_
   image_name_="$(basename $target_d)"
   [ -z "$report_msg" ] && report_msg="Bittorrent restored $image_name_,"
@@ -6070,8 +6070,14 @@ do_bittorrent_restore() {
   fi
   clean_filesystem_header_in_partition $part
   parse_cmdline_option -c /proc/cmdline "ezio_opt"
+  # Find if ezio or ezio-static
+  if type ezio &>/dev/null; then
+    ezio_prog="ezio"
+  else
+    ezio_prog="ezio-static"
+  fi
   # Squeeze multiple spaces to one only
-  btc_cmd="$(echo ezio $ezio_opt $ocsroot_btzone/$btimg_name/${part_img_dir}.torrent $part | sed -r -e "s|[[:space:]]+| |g")"
+  btc_cmd="$(echo $ezio_prog $ezio_opt $ocsroot_btzone/$btimg_name/${part_img_dir}.torrent $part | sed -r -e "s|[[:space:]]+| |g")"
   echo "Running: $btc_cmd"
   eval $btc_cmd
   rc=$?
