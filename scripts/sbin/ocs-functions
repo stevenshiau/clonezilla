@@ -1123,7 +1123,7 @@ save_part_by_ntfsclone() {
   echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins), average speed: $speed"
   [ -e "$ntfs_img_info_tmp" ] && rm -f $ntfs_img_info_tmp
   # For better security
-  chmod 600 $tgt_dir/${tgt_file}.ntfs-img* 2>/dev/null
+  set_acess_mode_for_img "$tgt_dir/${tgt_file}.ntfs-img*"
   # prepare statistic report
   conv_return_code_to_human_read $rc
   report_msg="$report_msg $source_dev, $clone_status, $space_used, $time_elapsed_in_min mins, $speed;"
@@ -1260,7 +1260,7 @@ save_part_by_partclone() {
     # no preparation time, it's accurate enough.
     echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append ${OCS_LOGFILE}
     # For better security
-    chmod 600 $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}* 2>/dev/null
+    set_acess_mode_for_img "$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}*" 
   else
     if ls $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}* &>/dev/null; then
       rm -f $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}*
@@ -1327,7 +1327,7 @@ save_part_by_partimage() {
   calculate_elapsed_time $start_time $end_time
   echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append ${OCS_LOGFILE}
   # For better security
-  chmod 600 $tgt_dir/${tgt_file}* 2>/dev/null
+  set_acess_mode_for_img "$tgt_dir/${tgt_file}*" 
   # prepare statistic report
   conv_return_code_to_human_read $rc
   report_msg="$report_msg $source_dev, $clone_status, $time_elapsed_in_min mins;"
@@ -1489,7 +1489,7 @@ save_part_by_dd() {
     # no preparation time, it's accurate enough.
     echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append ${OCS_LOGFILE}
     # For better security
-    chmod 600 $tgt_dir/$(to_filename ${tgt_file}).dd-img* 2>/dev/null
+    set_acess_mode_for_img "$tgt_dir/$(to_filename ${tgt_file}).dd-img*" 
   else
     if ls $tgt_dir/$(to_filename ${tgt_file}).dd-img* &>/dev/null; then
       rm -f $tgt_dir/$(to_filename ${tgt_file}).dd-img*
@@ -12311,7 +12311,7 @@ gen_chksum_for_files_in_dev() {
     | tee --append ${OCS_LOGFILE}
     rc_chk="${PIPESTATUS[0]}"
 
-    chmod 600 $tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz
+    set_acess_mode_for_img "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz"
     umount /dev/$sum_part
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -12746,3 +12746,11 @@ create_bt_image_files_from_partclone_img_if_necessary() {
     fi
   fi
 } # end of create_bt_image_files_from_partclone_img_if_necessary
+#
+set_acess_mode_for_img() {
+  local img_prefix="$1"
+  if [ "$only_access_by_owner" = "yes" -a -n "$img_prefix" ]; then
+    echo "Change mode to 600 for these files: $img_prefix"
+    chmod 600 $img_prefix 2>/dev/null
+  fi
+} # end of set_acess_mode_for_img
