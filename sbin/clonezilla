@@ -12,6 +12,10 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
+# Default settings
+do_prep_ocsroot="yes"
+wait_before_exit="yes"
+
 #
 check_if_root
 
@@ -28,52 +32,6 @@ USAGE() {
     echo " -k, --skip-prep-ocsroot  Skip preparing the clonezilla image home directory (assume it's ready), this is specially for device <-> image clone."
     echo "Ex. $0 -l en"
 }
-
-# default setting
-do_prep_ocsroot="yes"
-wait_before_exit="yes"
-#
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -l|--language)
-            shift; n_shift=$((n_shift+1))
-            if [ -z "$(echo $1 |grep ^-.)" ]; then
-              # skip the -xx option, in case 
-	      specified_lang="$1"
-              shift; n_shift=$((n_shift+1))
-            fi
-            [ -z "$specified_lang" ] && USAGE && exit 1
-	    ;;
-    -d0|--dialog)   DIA="dialog" ; shift;;
-    -d1|--Xdialog)  DIA="Xdialog"; shift;;
-    -d2|--whiptail) DIA="whiptail"; shift;;
-    -d3|--gdialog)  DIA="gdialog"; shift;;
-    -d4|--kdialog)  DIA="kdialog"; shift;;
-    -p|--postaction)  
-            shift
-            if [ -z "$(echo $1 |grep ^-.)" ]; then
-              # skip the -xx option, in case 
-	      postaction="$1"
-              shift
-            fi
-	    [ -z "$postaction" ] && USAGE && exit 1
-            ;;
-    -k|--skip-prep-ocsroot)  
-            shift
-            if [ -z "$(echo $1 |grep ^-.)" ]; then
-              # skip the -xx option, in case 
-	      do_prep_ocsroot="no"
-              shift
-            fi
-	    [ -z "$do_prep_ocsroot" ] && USAGE && exit 1
-            ;;
-    -n|--no-wait-before-exit)  wait_before_exit="no"; shift;;
-    -*)     echo "${0}: ${1}: invalid option" >&2
-            USAGE >& 2
-            exit 2 ;;
-    *)      break ;;
-  esac
-done
 #
 ocs_interactive() {
   local TMP
@@ -118,6 +76,49 @@ ocs_interactive() {
 } # end of ocs_interactive
 
 #
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l|--language)
+            shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      specified_lang="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$specified_lang" ] && USAGE && exit 1
+	    ;;
+    -d0|--dialog)   DIA="dialog" ; shift;;
+    -d1|--Xdialog)  DIA="Xdialog"; shift;;
+    -d2|--whiptail) DIA="whiptail"; shift;;
+    -d3|--gdialog)  DIA="gdialog"; shift;;
+    -d4|--kdialog)  DIA="kdialog"; shift;;
+    -p|--postaction)  
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      postaction="$1"
+              shift
+            fi
+	    [ -z "$postaction" ] && USAGE && exit 1
+            ;;
+    -k|--skip-prep-ocsroot)  
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      do_prep_ocsroot="no"
+              shift
+            fi
+	    [ -z "$do_prep_ocsroot" ] && USAGE && exit 1
+            ;;
+    -n|--no-wait-before-exit)  wait_before_exit="no"; shift;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+#
 ask_and_load_lang_set $specified_lang
 
 # check DIA
@@ -137,14 +138,9 @@ check_DIA_set_ESC $DIA
 # If the above params are not found. Run the normal interactive mode of ocs.
 
 ker_param_chklist="ocs_sr_opt ocs_onthefly_opt"
-parse_tmp="$(mktemp /tmp/cmdtmp.XXXXXX)"
 for ik in $ker_param_chklist; do
-  # the parameter maybe like: ocs_sr_opt=-x or ocs_sr_opt="-x"
-  grep -oE "$ik=[\"]*.*[\"]*[[:space:]]+" /proc/cmdline > $parse_tmp
-  # now we can get the variable $ocs_sr_opt or $ocs_onthefly_opt
-  . $parse_tmp
+  parse_cmdline_option "$ik"	
 done
-[ -f "$parse_tmp" ] && rm -f $parse_tmp
 
 #
 if [ -n "$ocs_sr_opt" ]; then
