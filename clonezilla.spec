@@ -1,14 +1,14 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
 Version:	3.25.7
-Release:	drbl1
+Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.23.8, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.23.12, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jan 26 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.7-drbl2
+  - Set required drbl version as >= 2.23.12.
+
 * Mon Jan 09 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.7-drbl1
   - Adding "only_access_by_owner" as one of the  boot parameters so that it
     can be used like -noabo for ocs-sr.
