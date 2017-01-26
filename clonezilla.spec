@@ -1,7 +1,7 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.7
-Release:	drbl2
+Version:	3.25.8
+Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.xz
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jan 26 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.8-drbl1
+  - Bug fixed: temporaty mount point "/tmp/ocsroot_bind_root"
+    should be made 1st in ocs-live-bind-mount.
+
 * Thu Jan 26 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.7-drbl2
   - Set required drbl version as >= 2.23.12.
 
