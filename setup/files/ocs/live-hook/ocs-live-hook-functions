@@ -557,9 +557,13 @@ query_and_install_PKG_TO_QUERY() {
   local pkg_2_inst
   echo "Searching if $PKG_TO_QUERY available... "
   for ipkg in $PKG_TO_QUERY; do
-    if [ -n "$(LC_ALL=C apt-cache show $ipkg 2>/dev/null)" ]; then
-      echo "Package $ipkg exists in repository."
-      pkg_2_inst="$pkg_2_inst $ipkg"
+    if ! chk_deb_installed $ipkg; then
+      # Only when it's not installed we will check it. Otherwise maybe we have force to
+      # use older version and if this package is installed again, the newer version will be installed.
+      if [ -n "$(LC_ALL=C apt-cache show $ipkg 2>/dev/null)" ]; then
+        echo "Package $ipkg exists in repository."
+        pkg_2_inst="$pkg_2_inst $ipkg"
+      fi
     fi
   done
   echo "Installing packages: $pkg_2_inst"
