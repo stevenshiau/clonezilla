@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.9
+Version:	3.25.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jan 31 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.10-drbl1
+  - Remove duplicated BOOTUP related codes in function
+    ocs-live-env-prepare of ocs-functions and ocs-live-save.
+
 * Mon Jan 30 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.9-drbl1
   - Function query_and_install_PKG_TO_QUERY in ocs-live-hook-functions
     should only install those not installed packages. Do not install those
