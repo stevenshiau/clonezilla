@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.13
+Version:	3.25.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Feb 24 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.14-drbl1
+  - Service dnsmasq is the service for dhcpd and tftpd, too.
+    With it, no need to re-configure drbl system when running
+    ocs-srv-live.
+
 * Fri Feb 24 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.13-drbl1
   - Update tracker's name when it does not fit the running environment in
     .torrent file in ocs-btsrv.
