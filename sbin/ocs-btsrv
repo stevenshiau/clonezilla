@@ -116,25 +116,28 @@ start_bt_srv() {
     echo $msg_delimiter_star_line
     get_idir_name $idir # Obtian $idir_name
     #rm -fv $ocsroot_btzone/${idir}.torrent
+    # Set the variable cmd_make_metainfo
+    if [ "$metainfo_creator" = "ctorrent" ]; then
+      cmd_make_metainfo="ctorrent -t -p -c For_Clonezilla -l ${p_length_ctorrent} -u http://${btsrv_ip}:$port_b/announce -s $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
+    else
+      cpu_no="$(LC_ALL=C grep -Ew "^processor[[:space:]]+" /proc/cpuinfo | wc -l)"
+      cmd_make_metainfo="mktorrent -p -c For_Clonezilla -t ${cpu_no} -l ${p_length_mktorrent} -a http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
+    fi
     if [ ! -e $ocsroot_btzone/${idir}.torrent ]; then
-      if [ "$metainfo_creator" = "ctorrent" ]; then
-        cmd_make_metainfo="ctorrent -t -p -c For_Clonezilla -l ${p_length_ctorrent} -u http://${btsrv_ip}:$port_b/announce -s $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
-      else
-        cpu_no="$(LC_ALL=C grep -Ew "^processor[[:space:]]+" /proc/cpuinfo | wc -l)"
-        cmd_make_metainfo="mktorrent -p -c For_Clonezilla -t ${cpu_no} -l ${p_length_mktorrent} -a http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
-      fi
       echo "Generate metainfo file $ocsroot_btzone/${idir}.torrent by:"
       echo "$cmd_make_metainfo"
       eval $cmd_make_metainfo
     else
-      # Maybe server IP address is changed. Check it and modify it if necessary.
+      # Maybe server IP address is changed. If so, regenerate it.
       # E.g. ...:announce35:http://192.168.22.250:6969/announce7:...
       existing_ip="$(LC_ALL=C strings $ocsroot_btzone/${idir}.torrent | grep -Eo ":announce[[:digit:]]+:http://[[:digit:]\.:]+.*announce[[:digit:]]+:" | awk -F":" '{print $4}' | sed -r -e "s|\/\/||g")"
       if [ "${existing_ip}" != "${btsrv_ip}" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "Updating existing tracker \"${existing_ip}\" in $ocsroot_btzone/${idir}.torrent as \"${btsrv_ip}\"..."
+        echo "Regenerating metainfo due to existing tracker \"${existing_ip}\" in $ocsroot_btzone/${idir}.torrent is different from detected one:\"${btsrv_ip}\"..."
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	perl -pi -e "s|:(announce[[:digit:]]+):http://${existing_ip}:([[:digit:]]+/announce[[:digit:]]+)|:\$1:http://${btsrv_ip}:\$2|g" $ocsroot_btzone/${idir}.torrent
+	rm -f $ocsroot_btzone/${idir}.torrent
+        echo "$cmd_make_metainfo"
+        eval $cmd_make_metainfo
       fi
     fi
 
