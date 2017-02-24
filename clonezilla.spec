@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.12
+Version:	3.25.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Feb 24 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.13-drbl1
+  - Update tracker's name when it does not fit the running environment in
+    .torrent file in ocs-btsrv.
+
 * Fri Feb 24 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.12-drbl1
   - Add generating BT slices for Clonezilla image.
     This is still in experimental status, and partclone >= 0.3.5e is
