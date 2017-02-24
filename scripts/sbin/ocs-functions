@@ -6001,7 +6001,8 @@ feed_bittorrent_restoreparts() {
       continue
     fi
     # Create the image files for BT if they do not exist.
-    if [ ! -d "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" ]; then
+    if [ ! -d "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" -o \
+	   -z "$(ls -A "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" 2>/dev/null)" ]; then
       echo "Create the image files for BT if they do not exist..."
       create_bt_image_files_from_partclone_img_if_necessary $partition
     fi
@@ -6017,6 +6018,7 @@ feed_bittorrent_restoreparts() {
   # We have to do restore LVM (PV/VG/LV) together, not follow every partition
   if [ "$part_is_lvm" = "yes" ]; then
     do_LVM_restore_feed="yes"
+    create_LVM_bt_image_files_from_partclone_img_if_necessary "$tgt_parts"
     # LVM exists, feed images to restore PV/VG/LV.
     feed_LVM_bittorrent "$tgt_parts"
   fi
@@ -12664,7 +12666,8 @@ create_bt_image_files_from_partclone_img_if_necessary() {
   local idev="$1"  # e.g. sda1, vg001/lv001
   local target_d   # e.g. /home/partimag/my-img
   local img_file   # e.g. sda1, vg001-lv001 (use for something like sda1.ext4-ptcl-img.gz.aa)
-  local file_
+  local file_ unzip_stdin_cmd_error img_size_sum
+  unzip_stdin_cmd_error="$(mktemp /tmp/unzip_stdin_cmd_error.XXXXXX)"
   if [ -z "$idev" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "No input parameter \$idev in function create_bt_image_files_from_partclone_img_if_necessary!"
@@ -12672,74 +12675,143 @@ create_bt_image_files_from_partclone_img_if_necessary() {
     return 3
   fi
   img_file="$(to_filename $idev)"
-  if [ ! -d "$ocsroot_btzone/$tgt_dir/$img_file" ]; then
-    if is_partclone_image $ocsroot/$tgt_dir $img_file; then
-      # ===========================================
-      target_d="$ocsroot/$tgt_dir"
-      # First, we find the filesystem 
-      file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
-      if [ -n "${file_}" ]; then
-        file_basename="$(basename ${file_})"
-        if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
-          # new format, image file is like: sda1.ext4-ptcl-img.gz, sda1.ext4-ptcl-img.gz.aa
-          fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-ptcl-img.*//g")"
-        fi
+  if is_partclone_image $ocsroot/$tgt_dir $img_file; then
+    # ===========================================
+    target_d="$ocsroot/$tgt_dir"
+    # First, we find the filesystem 
+    file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
+    if [ -n "${file_}" ]; then
+      file_basename="$(basename ${file_})"
+      if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
+        # new format, image file is like: sda1.ext4-ptcl-img.gz, sda1.ext4-ptcl-img.gz.aa
+        fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-ptcl-img.*//g")"
       fi
-      if [ -z "${fs_}" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "The file system for the image \"$img_file\" is unknown! Maybe it's not saved by Clonezilla with Partclone?" | tee --append ${OCS_LOGFILE}
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-        exit 1
-      fi
-    
-      if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img")" ]; then
-        # New format
-        if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img.*.aa")" ]; then
-          # New format with image split, e.g. sda1.ext4-ptcl-img.gz.aa
-          get_image_cat_zip_cmd ${file_basename}
-          # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
-          # e.g. sda1.ext4-ptcl-img.gz.aaa -> sda1.ext4-ptcl-img.gz.*
-          img_file_prefix="$(echo ${file_basename} | sed -r -e "s/\.aa*$//").*"
-        else
-          # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
-          get_image_cat_zip_cmd ${file_basename}
-          # The file is NOT split, so the file name is just like "sda1.ext4-ptcl-img.gz" only, no "."
-          img_file_prefix="${file_basename}"
-        fi
-      fi
-      if [ -z "$unzip_stdin_cmd" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "The compression format for the image \"$img_file\" is unknown!" | tee --append ${OCS_LOGFILE}
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-        exit 1
-      fi
-      mkdir -p $ocsroot_btzone/$tgt_dir/$img_file
-      cd $ocsroot_btzone/$tgt_dir/$img_file
-      ( for img in $target_d/$img_file_prefix; do
-          cat $img
-        done
-      ) \
-      | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
-      | LC_ALL=C partclone.${fs_} -bt $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -OBT $ocsroot_btzone/$tgt_dir/$img_file 
-      retcodes=(${PIPESTATUS[@]})
-      
-      if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
-        rc=0
-      else
-        rc=1
-      fi
-      # ===========================================
-    else
+    fi
+    if [ -z "${fs_}" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Only the image saved by Partclone can be converted to bittorrent files."
+      echo "The file system for the image \"$img_file\" is unknown! Maybe it's not saved by Clonezilla with Partclone?" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
+      echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
       exit 1
     fi
+  
+    if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img")" ]; then
+      # New format
+      if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img.*.aa")" ]; then
+        # New format with image split, e.g. sda1.ext4-ptcl-img.gz.aa
+        get_image_cat_zip_cmd ${file_basename}
+        # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
+        # e.g. sda1.ext4-ptcl-img.gz.aaa -> sda1.ext4-ptcl-img.gz.*
+        img_file_prefix="$(echo ${file_basename} | sed -r -e "s/\.aa*$//").*"
+      else
+        # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
+        get_image_cat_zip_cmd ${file_basename}
+        # The file is NOT split, so the file name is just like "sda1.ext4-ptcl-img.gz" only, no "."
+        img_file_prefix="${file_basename}"
+      fi
+    fi
+    if [ -z "$unzip_stdin_cmd" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "The compression format for the image \"$img_file\" is unknown!" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+      exit 1
+    fi
+    mkdir -p $ocsroot_btzone/$tgt_dir/${img_file} $ocsroot_btzone/$tgt_dir/${img_file}-mnt
+    cd $ocsroot_btzone/$tgt_dir/$img_file
+    ## Method 1: Use Partclone >= 0.3.5 to mount uncompressed image as BT slices.
+    # Somehow it's still slow. Therefore copy files from fuse dir to disk
+    echo "Preparing uncompressed image for BT use: $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img"
+    img_size_sum="$(LC_ALL=C du -sb $target_d/${img_file_prefix}* | awk '{print $1}')"
+    ( for img in $target_d/$img_file_prefix; do
+        cat $img
+      done
+    ) \
+    | pv -petf -s $img_size_sum \
+    | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
+    > $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img
+    retcodes=(${PIPESTATUS[@]})
+    #
+    # Use the workaround: Mount it then copy files. In the future Partclone should support
+    # dump the files without mounting by partclone.imgfuse. No need the space for ${img_file}.ptcl.img.
+    # Hence we can save the space.
+    partclone.imgfuse $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img $ocsroot_btzone/$tgt_dir/${img_file}-mnt
+    echo "Copying files in Partclone fuse dir to dir: $ocsroot_btzone/$tgt_dir/${img_file}"
+    rsync -a --info=progress2 $ocsroot_btzone/$tgt_dir/${img_file}-mnt $ocsroot_btzone/$tgt_dir/${img_file}
+    umount $ocsroot_btzone/$tgt_dir/${img_file}-mnt
+    rm -f $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img
+
+    ## Method 2: Extract the slices for BT
+    #( for img in $target_d/$img_file_prefix; do
+    #    cat $img
+    #  done
+    #) \
+    #| $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
+    #| LC_ALL=C partclone.${fs_} -bt $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -OBT $ocsroot_btzone/$tgt_dir/$img_file 
+
+    ## Method 3: Use archivemount + partclone.imgfuse to mount the compressed image.
+    # This is very slow. Need to be improved.
+    
+    if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
+      rc=0
+    else
+      rc=1
+    fi
+    # ===========================================
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Only the image saved by Partclone can be converted to bittorrent files."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
   fi
 } # end of create_bt_image_files_from_partclone_img_if_necessary
+#
+create_LVM_bt_image_files_from_partclone_img_if_necessary() {
+  # This is for LVM parts
+  # imagedir, port and ipart are global variable
+  local tgt_parts="$1"
+  local volg n
+  local btl_cmd
+  local fn
+  local track_max_client_opt
+  # Note! With a leading $imagedir before /$target_dir
+  PV_PARSE_CONF="$imagedir/$target_dir/lvm_vg_dev.list"
+  LOGV_PARSE_CONF="$imagedir/$target_dir/lvm_logv.list"
+  [ ! -f "$PV_PARSE_CONF" ] && exit 1
+  [ ! -f "$LOGV_PARSE_CONF" ] && exit 1
+  
+  while read lv fs; do
+   # Process the real data partition, only those in the chosen partitions
+   # Ex:
+   # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
+   # Then lvol0 is belong to VG vg3
+   volg="$(echo "$lv" | awk -F"/" '{print $3}')"
+   # Find if the LV is in the chosen partition (via VG, we can determine that)
+   # EX: tgt_parts: hda1, hda3, hda5...
+   #     vg3 /dev/hda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
+   is_in_chosen_partition="no"
+   for ipt in $tgt_parts; do
+     if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
+       # Found the chosen partitions is in the VG
+       is_in_chosen_partition="yes"
+       break
+     fi
+   done
+   [ "$is_in_chosen_partition" = "no" ] && continue
+   # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
+   fn="$(to_filename ${lv#/dev/*})"
+   # Skip feeding swap
+   case "$fs" in 
+     *[Ss][Ww][Aa][Pp]*) continue;; 
+   esac
+   if [ ! -d "$ocsroot_btzone/$tgt_dir/$(to_filename $fn)" -o \
+          -z "$(ls -A "$ocsroot_btzone/$tgt_dir/$(to_filename $fn)" 2>/dev/null)" ]; then
+     echo "Create the image files for BT if they do not exist..."
+     create_bt_image_files_from_partclone_img_if_necessary $fn
+   fi
+  done < $LOGV_PARSE_CONF
+} # end of create_LVM_bt_image_files_from_partclone_img_if_necessary
 #
 set_acess_mode_for_img() {
   local img_prefix="$1"
