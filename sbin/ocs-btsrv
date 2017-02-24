@@ -2,6 +2,10 @@
 # License: GPL 
 # Author: Steven Shiau <steven _at_ clonezilla org>
 # Description: Program to start BT service for restoring
+# Including 3 parts:
+# Part 1: create metainfo file (.torrent)
+# Part 2: start tracker
+# Part 3: start bitorrent client program
 
 #
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -119,10 +123,20 @@ start_bt_srv() {
         cpu_no="$(LC_ALL=C grep -Ew "^processor[[:space:]]+" /proc/cpuinfo | wc -l)"
         cmd_make_metainfo="mktorrent -p -c For_Clonezilla -t ${cpu_no} -l ${p_length_mktorrent} -a http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
       fi
+      echo "Generate metainfo file $ocsroot_btzone/${idir}.torrent by:"
+      echo "$cmd_make_metainfo"
+      eval $cmd_make_metainfo
+    else
+      # Maybe server IP address is changed. Check it and modify it if necessary.
+      # E.g. ...:announce35:http://192.168.22.250:6969/announce7:...
+      existing_ip="$(LC_ALL=C strings $ocsroot_btzone/${idir}.torrent | grep -Eo ":announce[[:digit:]]+:http://[[:digit:]\.:]+.*announce[[:digit:]]+:" | awk -F":" '{print $4}' | sed -r -e "s|\/\/||g")"
+      if [ "${existing_ip}" != "${btsrv_ip}" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Updating existing tracker \"${existing_ip}\" in $ocsroot_btzone/${idir}.torrent as \"${btsrv_ip}\"..."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	perl -pi -e "s|:(announce[[:digit:]]+):http://${existing_ip}:([[:digit:]]+/announce[[:digit:]]+)|:\$1:http://${btsrv_ip}:\$2|g" $ocsroot_btzone/${idir}.torrent
+      fi
     fi
-    echo "Generate metainfo file $ocsroot_btzone/${idir}.torrent by:"
-    echo "$cmd_make_metainfo"
-    eval $cmd_make_metainfo
 
     # Part 2: start tracker
     echo $msg_delimiter_star_line
