@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.15
+Version:	3.25.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Feb 25 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.16-drbl1
+  - Add a mechanism to check if the BT files should be recreated.
+    Info-img-id.txt is added in the image dir for identifying the image.
+
 * Fri Feb 24 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.15-drbl1
   - Regenerate the metainfo file (.torrent) when necessary, such as
     server IP address has changed. Not not updating it by perl brutally.
