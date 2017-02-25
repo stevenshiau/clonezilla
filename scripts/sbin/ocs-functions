@@ -3758,6 +3758,10 @@ task_postprocessing() {
       cat ${OCS_LOGFILE} >> $img_dir/clonezilla-img
       echo "### End of log ###" >> $img_dir/clonezilla-img
       echo "### Image created time: $(date +%Y-%m%d-%H%M)" >> $img_dir/clonezilla-img
+      # Generate a checksum for identifying the image later. This is based on the file $img_dir/clonezilla-img.
+      echo "Generating a tag file for this image..."
+      echo "# This checksum is only for identifying the image." > $img_dir/Info-img-id.txt
+      echo "IMG_ID=$(LC_ALL=C sha512sum $img_dir/clonezilla-img | awk -F" " '{print $1}')" >> $img_dir/Info-img-id.txt
       # Unmount the encrypted image
       if [ "$encrypt_ocs_img" = "yes" ]; then
 	# Before unmounting ecryptfs img, we have to keep something for later to be saved in the file ecryptfs.info.
@@ -5980,6 +5984,17 @@ feed_bittorrent_restoreparts() {
   local time_to_pause_before_mail mail_client="" time_tag part_is_lvm
   local bts_cmd pt_no_lvm
   local track_max_client_opt
+  # do_regen_BT_img is a global variable. It's the flag about regenerating the BT files
+
+  if [ ! -d $ocsroot_btzone/$tgt_dir ]; then
+    mkdir -p $ocsroot_btzone/$tgt_dir/
+    # Put the tag file into corresponding dir
+    # //NOTE// Copy will only happens when the dir is newly created. Otherwise it will overwrite the existing one.
+    if [ -e $imagedir/$tgt_dir/Info-img-id.txt ]; then
+      cp -a $imagedir/$tgt_dir/Info-img-id.txt $ocsroot_btzone/$tgt_dir/
+    fi
+  fi
+
   # prepare the mail client
   if type mutt &>/dev/null; then
     mail_client="mutt"
@@ -5990,6 +6005,7 @@ feed_bittorrent_restoreparts() {
   fi
   do_LVM_restore_feed="no"
   pt_no_lvm=""
+  do_regen_BT_img="no" # //NOTE// do_regen_BT_img will never be changed to no if it's already yes once.
   for partition in $tgt_parts; do
     # sda1 -> sda
     hd_tmp="$(get_diskname $partition)"
@@ -6003,8 +6019,28 @@ feed_bittorrent_restoreparts() {
     # Create the image files for BT if they do not exist.
     if [ ! -d "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" -o \
 	   -z "$(ls -A "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" 2>/dev/null)" ]; then
+      do_regen_BT_img="yes"  # Keep for later use in LVM
       echo "Create the image files for BT if they do not exist..."
-      create_bt_image_files_from_partclone_img_if_necessary $partition
+      create_bt_image_files_from_partclone_img $partition
+    else
+      # Corresponding dir exists, but ID many not match
+      if [ -e "$imagedir/$tgt_dir/Info-img-id.txt" ]; then
+        . $imagedir/$tgt_dir/Info-img-id.txt
+        src_img_id="$IMG_ID"
+      fi
+      if [ -e "$ocsroot_btzone/$tgt_dir/Info-img-id.txt" ]; then
+        . $ocsroot_btzone/$tgt_dir/Info-img-id.txt
+        tgt_img_id="$IMG_ID"
+      fi
+      if [ "$src_img_id" != "$tgt_img_id" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Found existing Clonezilla BT files, but image ID does not match! Regenerating..."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        do_regen_BT_img="yes"  # Keep for later use in LVM
+        create_bt_image_files_from_partclone_img $partition
+      else
+        echo "Existing Clonezilla BT files match the source image. Not need to regenerate..."
+      fi
     fi
     pt_no_lvm="$pt_no_lvm $partition"
   done
@@ -6018,7 +6054,7 @@ feed_bittorrent_restoreparts() {
   # We have to do restore LVM (PV/VG/LV) together, not follow every partition
   if [ "$part_is_lvm" = "yes" ]; then
     do_LVM_restore_feed="yes"
-    create_LVM_bt_image_files_from_partclone_img_if_necessary "$tgt_parts"
+    create_LVM_bt_image_files_from_partclone_img "$tgt_parts"
     # LVM exists, feed images to restore PV/VG/LV.
     feed_LVM_bittorrent "$tgt_parts"
   fi
@@ -12661,7 +12697,7 @@ append_clonezilla_live_ver_des_if_available() {
   return 0
 } # end of append_clonezilla_live_ver_des_if_available
 #
-create_bt_image_files_from_partclone_img_if_necessary() {
+create_bt_image_files_from_partclone_img() {
   # //NOTE// 2016/12/12 This function is not finished.
   local idev="$1"  # e.g. sda1, vg001/lv001
   local target_d   # e.g. /home/partimag/my-img
@@ -12670,7 +12706,7 @@ create_bt_image_files_from_partclone_img_if_necessary() {
   unzip_stdin_cmd_error="$(mktemp /tmp/unzip_stdin_cmd_error.XXXXXX)"
   if [ -z "$idev" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "No input parameter \$idev in function create_bt_image_files_from_partclone_img_if_necessary!"
+    echo "No input parameter \$idev in function create_bt_image_files_from_partclone_img!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     return 3
   fi
@@ -12737,8 +12773,11 @@ create_bt_image_files_from_partclone_img_if_necessary() {
     # Hence we can save the space.
     partclone.imgfuse $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img $ocsroot_btzone/$tgt_dir/${img_file}-mnt
     echo "Copying files in Partclone fuse dir to dir: $ocsroot_btzone/$tgt_dir/${img_file}"
-    rsync -a --info=progress2 $ocsroot_btzone/$tgt_dir/${img_file}-mnt $ocsroot_btzone/$tgt_dir/${img_file}
+    # //NOTE// If it's not rsync, we have to remove the whole directory then extract them.
+    # Stale files should not be kept.
+    rsync -a --delete --info=progress2 $ocsroot_btzone/$tgt_dir/${img_file}-mnt/ $ocsroot_btzone/$tgt_dir/${img_file}/
     umount $ocsroot_btzone/$tgt_dir/${img_file}-mnt
+    rmdir $ocsroot_btzone/$tgt_dir/${img_file}-mnt
     rm -f $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img
 
     ## Method 2: Extract the slices for BT
@@ -12765,9 +12804,9 @@ create_bt_image_files_from_partclone_img_if_necessary() {
     echo "$msg_program_stop!"
     exit 1
   fi
-} # end of create_bt_image_files_from_partclone_img_if_necessary
+} # end of create_bt_image_files_from_partclone_img
 #
-create_LVM_bt_image_files_from_partclone_img_if_necessary() {
+create_LVM_bt_image_files_from_partclone_img() {
   # This is for LVM parts
   # imagedir, port and ipart are global variable
   local tgt_parts="$1"
@@ -12775,6 +12814,7 @@ create_LVM_bt_image_files_from_partclone_img_if_necessary() {
   local btl_cmd
   local fn
   local track_max_client_opt
+  # do_regen_BT_img is a global variable.
   # Note! With a leading $imagedir before /$target_dir
   PV_PARSE_CONF="$imagedir/$target_dir/lvm_vg_dev.list"
   LOGV_PARSE_CONF="$imagedir/$target_dir/lvm_logv.list"
@@ -12808,10 +12848,14 @@ create_LVM_bt_image_files_from_partclone_img_if_necessary() {
    if [ ! -d "$ocsroot_btzone/$tgt_dir/$(to_filename $fn)" -o \
           -z "$(ls -A "$ocsroot_btzone/$tgt_dir/$(to_filename $fn)" 2>/dev/null)" ]; then
      echo "Create the image files for BT if they do not exist..."
-     create_bt_image_files_from_partclone_img_if_necessary $fn
+     create_bt_image_files_from_partclone_img $fn
+    else
+      if [ "$do_regen_BT_img" = "yes" ]; then
+        create_bt_image_files_from_partclone_img $fn
+      fi
    fi
   done < $LOGV_PARSE_CONF
-} # end of create_LVM_bt_image_files_from_partclone_img_if_necessary
+} # end of create_LVM_bt_image_files_from_partclone_img
 #
 set_acess_mode_for_img() {
   local img_prefix="$1"
