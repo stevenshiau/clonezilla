@@ -17,7 +17,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
 # Settings
-bt_client="ctorrent"
+# bt_client is defined in drbl-ocs.conf, or command option -t|--bt-client.
 metainfo_creator="mkttorrent"
 # Flag to brutally kill the related service
 brutal_kill="no"
@@ -35,7 +35,7 @@ USAGE() {
     echo "-m, --max-client-no NO       Assign the client number as NO. When this number of clients finishes downloading, BT tracker will exit so that client will stop, too."
     echo "-p, --bt-srv-ip  IP          Assign the IP address for using in tracker's URL. If not assigned, the IP address detected on the machine will be used"
     echo "-r, --bt-root DIR            Use DIR as the working dir. It's preceded to the files downloaded. Default value is \"$ocsroot_btzone\""
-    echo "-t, --bt-client PROG         Use PROG instead of ctorrent as the bittorrent client program. Available PROG: lftp, btdownloadheadless"
+    echo "-t, --bt-client PROG         Use PROG instead of ctorrent as the bittorrent client program. Available PROG: ctorrent, lftp, btdownloadheadless, aria2c"
     echo "IMAGE is the image name under \"$ocsroot_btzone\""
     echo "DEV* is the device name"
     echo "Ex:"
@@ -167,8 +167,11 @@ start_bt_srv() {
       cmd_start_seeding="lftp -c torrent -O $(dirname $ocsroot_btzone/${idir}) $ocsroot_btzone/${idir}.torrent"
     elif [ "$bt_client" = "btdownloadheadless" ]; then
       cmd_start_seeding="btdownloadheadless --saveas $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent &"
+    elif [ "$bt_client" = "aria2c" ]; then
+      # //NOTE// The working dir is the parent dir.
+      cmd_start_seeding="aria2c -D --bt-max-peers 4 --seed-ratio=0.0 --enable-dht6=false --enable-dht=false --bt-seed-unverified -d $ocsroot_btzone/"$(dirname ${idir})" $ocsroot_btzone/${idir}.torrent"
     else
-      cmd_start_seeding="ctorrent -d -s $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent"
+      cmd_start_seeding="ctorrent -M 20 -m 4 -d -s $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent"
     fi
     echo "Start seeding by:"
     echo "$cmd_start_seeding"
@@ -200,7 +203,7 @@ stop_bt_srv() {
 
   # All
   if [ "$brutal_kill" = "no" ]; then
-    echo "Stop service: ocs-bttrack and ctorrent/lftp/btdownloadheadless if available..."
+    echo "Stop service: ocs-bttrack and ctorrent/lftp/btdownloadheadless/aria2c if available..."
     for i in $id_file; do
       [ ! -e "$i" ] && continue
       all_pid="$all_pid $(cat $i)"
@@ -218,11 +221,12 @@ stop_bt_srv() {
       echo "No pid was found... Do nothing."
     fi
   else
-    echo "Brutally kill service ocs-bttrack and ctorrent/lftp/btdownloadheadless if available..."
+    echo "Brutally kill service ocs-bttrack and ctorrent/lftp/btdownloadheadless/aria2c if available..."
     pkill -9 ocs-bttrack
     pkill -9 ctorrent
     pkill -9 lftp
     pkill -9 btdownloadheadless
+    pkill -9 aria2c
   fi
   echo "Done!"
 } # end of stop_bt_srv
