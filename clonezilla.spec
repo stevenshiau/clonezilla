@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.17
+Version:	3.25.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Mar 04 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.18-drbl1
+  - Add option "-f" to ctorrent in ocs-btsrv. No need to check the hash
+    after mktorrent.
+
 * Sat Mar 04 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.17-drbl1
   - Add an option for using another BT client: aria2c.
     Tune ctorrent running options: -M 20 -n 4 (The minimum value for -M is
