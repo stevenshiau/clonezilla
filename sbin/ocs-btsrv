@@ -169,18 +169,36 @@ start_bt_srv() {
       cmd_start_seeding="btdownloadheadless --saveas $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent &"
     elif [ "$bt_client" = "aria2c" ]; then
       # //NOTE// The working dir is the parent dir.
-      cmd_start_seeding="aria2c -D --bt-max-peers 4 --seed-ratio=0.0 --enable-dht6=false --enable-dht=false --bt-seed-unverified -d $ocsroot_btzone/"$(dirname ${idir})" $ocsroot_btzone/${idir}.torrent"
+      cmd_start_seeding="aria2c -D --seed-ratio=0.0 --enable-dht6=false --enable-dht=false --bt-seed-unverified $aria2c_extra_opt -d $ocsroot_btzone/"$(dirname ${idir})" $ocsroot_btzone/${idir}.torrent"
     else
-      cmd_start_seeding="ctorrent -M 20 -m 4 -f -d -s $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent"
+      # Check the option -M of ctorrent, if it only allows 20-1000, modify it as "-M 20" from "-M 4", for example.
+      # DRBL patched ctorrent allows -M to be 4-1000, otherwise it must be within 20-1000.
+      # //NOTE// Here the white space after echo is a must. To avoid something like: echo "-n" -> make it as: echo " -n".
+      ct_M="$(echo " $ctorrent_extra_opt" | grep -Ewo -- "[^[:space:]]*-M[[:space:]]+[[:digit:]]+[[:space:]]+" | awk -F" " '{print $2}')"
+      if [ -n "$ct_M" ]; then
+        if [ -n "$(LC_ALL=C strings `which ctorrent` | grep -Ew -- "^-%c argument must be between 20 and 1000")" ]; then
+          # Lower limit for -M option is 20.
+          if [ "$ct_M" -lt 20 ]; then
+            # Force to make it as 20
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "The argument assigned in ctorrent_extra_opt for -M is $ct_M, which is lower than 20, the value allowed in the version of original ctorrent. Force to make it as 20."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    ctorrent_extra_opt="$(echo " $ctorrent_extra_opt" | sed -r -e "s|-M[[:space:]]+[[:digit:]]+[[:space:]]+|-M 20 |" | sed -r -e "s|^[[:space:]]*||g")"
+	  fi
+        fi
+      fi
+      cmd_start_seeding="ctorrent -f -d $ctorrent_extra_opt -s $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent"
     fi
     echo "Start seeding by:"
     echo "$cmd_start_seeding"
     eval $cmd_start_seeding
-    # Fail to get pid in this case by checking the $!.
+    # Fail to get pid in this case by checking the $! if the command is run in daemon mode.
     # Ref: http://unix.stackexchange.com/questions/90244/bash-run-command-in-background-and-capture-pid
     #ct_pid="$!"
     # Since start-stop-daemon is not available for all distributions, we use general solution here.
+    # TODO: Improve this. If user put more space or // in the path, it will be converted by system and the matching by grep won't work.
     ct_pid="$(LC_ALL=C ps -www -C "$bt_client" -o pid,cmd | grep -Ew "$cmd_start_seeding" | awk -F" " '{print $1}')"
+    ct_pid="$(echo $ct_pid)"  # Make it in a line.
     echo "$ct_pid" > $ct_pid_log
     echo $msg_delimiter_star_line
   done
