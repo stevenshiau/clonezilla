@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.19
+Version:	3.25.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.23.26, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.23.27, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Mar 21 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.20-drbl1
+  - Bug fix: ocs-expand-gpt-pt should keep space for 2nd GPT table,
+    i.e., limit the partition size to the maximum usable sectors
+    for a GPT disk (total sectors – 34).
+    Thanks to Leandro Gustavo Biss Becker <lbecker _at_ positivo com br>
+    for providing the patched file.
+
 * Sun Mar 05 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.19-drbl1
   - Extract ctorrent and aria2c command options as variables, and put in
     drbl-ocs.conf.
