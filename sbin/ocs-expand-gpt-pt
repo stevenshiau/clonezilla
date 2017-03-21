@@ -157,6 +157,8 @@ fi
 tgt_disk_size="$(LC_ALL=C parted -s $target_disk unit s print | grep -E "^Disk /dev" | awk -F":" '{print $2}' | sed -e "s/s$//g")"
 
 #
+echo "Size of original disk: $ori_disk_size sectors."
+echo "Size of target disk  : $tgt_disk_size sectors."
 ratio=$(echo "scale=10; $tgt_disk_size / $ori_disk_size" | bc -l) || exit 1
 echo "The ratio for target disk size to original disk size is $ratio."
 if [ "$chk_tgt_disk_size_bf_mk_pt" = "yes" ]; then
@@ -169,6 +171,12 @@ if [ "$chk_tgt_disk_size_bf_mk_pt" = "yes" ]; then
     exit 1
   fi
 fi
+
+# Leandro Becker - Positivo Informática S/A
+# Sometimes the ratio causes the last partition new size 
+# to overlap the second GPT table at end of disk, so calculate
+# the maximum sector that can be used by the last partition
+last_usable_sector=$(echo "$tgt_disk_size - 34" | bc -l)
 
 new_sf="$(mktemp /tmp/new_sf.XXXXXX)" || exit 1
 new_sf_tmp="$(mktemp /tmp/new_sf_tmp.XXXXXX)" || exit 1
@@ -304,14 +312,27 @@ while read dev start start_no size size_no type uuid name attrs; do
       # For Linux Swap partition
       if [ -n "$(echo $type | grep -iE "type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F")" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	echo "Linux swap partition \"$type\" found. Not to expand this partition."
+	    echo "Linux swap partition \"$type\" found. Not to expand this partition."
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         expand="false"
       fi
 
       if [ "$expand" = "true" ]; then
-	start_no="$(LC_ALL=C printf "%.0f" "$(echo "($start_no_keep + $size_no_keep)" | bc -l)")"
-	size_no="$(LC_ALL=C printf "%.0f" "$(echo "${size_no/,/}*$ratio + $append_to_next" | bc -l)")"
+        start_no="$(LC_ALL=C printf "%.0f" "$(echo "($start_no_keep + $size_no_keep)" | bc -l)")"
+        size_no="$(LC_ALL=C printf "%.0f" "$(echo "${size_no/,/}*$ratio + $append_to_next" | bc -l)")"
+        # Leandro Becker - Positivo Informatica S/A
+        # Check if this partition (last one) will overlap the
+        # second GPT partition table copy, if so
+        # truncate it to the maximum size possible
+        if [ "$(LC_ALL=C echo "$start_no + $size_no > $last_usable_sector" | bc -l)" = "1" ]; then
+          size2_no="$(LC_ALL=C echo "$last_usable_sector - $start_no + 1" | bc -l)"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "The last usable sector for this partition is $last_usable_sector."
+          echo "Changing the calculated partition size from $size_no to $size2_no."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          size_no=$size2_no
+        fi
+
 	# Reset the space append_to_next.
 	append_to_next="0"
       else
