@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.20
+Version:	3.25.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Mar 23 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.21-drbl1
+  - Add stop-drbl-live and stop-ocs-live services in systemd environment for
+    Clonezilla live and DRBL live.
+
 * Tue Mar 21 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.20-drbl1
   - Bug fix: ocs-expand-gpt-pt should keep space for 2nd GPT table,
     i.e., limit the partition size to the maximum usable sectors
