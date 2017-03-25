@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.21
+Version:	3.25.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Mar 25 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.22-drbl1
+  - Remove prerun and postrun service in drbl live. It's duplicated since we
+    have that in ocs-live-run-menu both for DRBL live and Clonezilla live.
+    Remove upstart setting, too. It's not used anymore.
+
 * Thu Mar 23 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.21-drbl1
   - Add stop-drbl-live and stop-ocs-live services in systemd environment for
     Clonezilla live and DRBL live.
