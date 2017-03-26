@@ -1,0 +1,39 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Script to run boot parameter drbl_prerun*, which is different from ocs_prerun.
+# drbl_prerun* is specially for DRBl client to run.
+
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+#
+cmdl_file="/proc/cmdline"
+
+drbl_prerun_list="$(grep -Ewo "drbl_prerun[[:digit:]]*" $cmdl_file | uniq | sort -n)"
+drbl_prerun_list="$(echo $drbl_prerun_list)"  # in one line
+
+if [ -z "$drbl_prerun_list" ]; then
+  exit 1
+else
+  echo "Found drbl_prerun* parameter in boot parameters..."
+  echo "The order to run: $drbl_prerun_list"
+fi
+
+for i in $drbl_prerun_list; do
+  parse_cmdline_option -c $cmdl_file "$i"
+  eval irun=\$$i
+  if [ -n "$irun" ]; then
+    echo "**************************"
+    # run it
+    echo "Now run \"$i\": $irun..."
+    # Since "$irun" might not be exe mode, so we test it if it's script, use . $irun, else, run it directly.
+    if [ "$(LANG=C file -Ls "$irun" 2>/dev/null | grep -iE "shell script")" ]; then
+      $irun
+    else
+      eval $irun
+    fi
+  fi
+done
