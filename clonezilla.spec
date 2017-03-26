@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.22
+Version:	3.25.23
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.23.27, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.23.28, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.89, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 26 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.23-drbl1
+  - Add S06pre-run in drbl-live.d again, however, it will honor drbl_prerun*
+    instead of ocs_prerun*. Otherwise ocs_prerun* will be run in S06pre-run
+    of drbl-live.d and ocs-live-run-menu.
+
 * Sat Mar 25 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.22-drbl1
   - Remove prerun and postrun service in drbl live. It's duplicated since we
     have that in ocs-live-run-menu both for DRBL live and Clonezilla live.
