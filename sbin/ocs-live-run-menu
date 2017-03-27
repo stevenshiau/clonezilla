@@ -194,8 +194,7 @@ fi
 ocs-run-boot-param ocs_postrun
 
 # Post actions
-# Case 1: Clonezilla SE's client: comment the execution to avoid it's run twice (since all the commands are from /proc/cmdline, and if user inputs "exit" in the shell, the job will be started again in batch mode without stop. While in Clonezilla live interactive mode, it won't be run in batch mode.)
-# Case 2: Clonezilla live interactive mode: ask if want to reboot, shutdown or in command line...
+# Clonezilla SE's client: comment the execution to avoid it's run twice (since all the commands are from /proc/cmdline, and if user inputs "exit" in the shell, the job will be started again in batch mode without stop. While in Clonezilla live interactive mode, it won't be run in batch mode.)
 if [ -n "$(LC_ALL=C grep -iE "ocs_server" /proc/cmdline)" ]; then
   # Case 1: Clonezilla SE's client 
   # Once the job is done, and if it's started by Clonezilla Server (ocs_server found in /proc/cmdline), we have to comment the autologin account's ~/.bash_profile
@@ -208,35 +207,36 @@ if [ -n "$(LC_ALL=C grep -iE "ocs_server" /proc/cmdline)" ]; then
   fi
   get_live_auto_login_id_home
   LANG=C perl -pi -e 's|(^[^#]*[[:space:]]*)(sudo -i ocs-live-run-menu)|$1true # $2 # commented after clonezilla job is done.|g' $live_auto_login_id_home/.bash_profile
-else
-  # Case 2: Clonezilla live interactive mode
-  if [ "$use_fb_term" = "yes" ];then
-    ocs_live_final_tmp="$(mktemp /tmp/ocs_live_final_tmp.XXXXXX)"
-    cat <<-RUN_END > $ocs_live_final_tmp
+fi
+
+# For both Clonezilla live interactive mode and Clonezilla SE client.
+# Ask if want to reboot, shutdown or in command line...
+if [ "$use_fb_term" = "yes" ]; then
+  ocs_live_final_tmp="$(mktemp /tmp/ocs_live_final_tmp.XXXXXX)"
+  cat <<-RUN_END > $ocs_live_final_tmp
 #!/bin/bash
 ocs-live-final-action $EXIT
 RUN_END
-    chmod 755 $ocs_live_final_tmp
-    case "$fb_term" in
-     "bterm")
-         # Since bterm can only use one parameter (i.e. not working if we run 'bterm -l zh_TW.UTF-8 -f $uni_font ls -alF /etc/', i.e. only ls will be respected. There is no such issue for jfbterm). Here we use a workaround to make it work for bterm, i.e. use a tmp file to run it.
-         export TERM=bterm
-         set +e
-         # bterm need full path command even it's in the PATH already.
-         bterm -l $LANG -f $uni_font $ocs_live_final_tmp
-         EXIT=$?
-         ;;
-    "jfbterm")
-         export TERM=jfbterm
-         set +e
-         jfbterm -q -e $ocs_live_final_tmp
-         EXIT=$?
-         ;;
-    esac
-    [ -e "$ocs_live_final_tmp" ] && rm -f $ocs_live_final_tmp
-  else
-    # At this point, it's not in bterm/jfbterm, only text console. Use English. 
-    ask_and_load_lang_set en_US.UTF-8
-    ocs-live-final-action $EXIT
-  fi
+  chmod 755 $ocs_live_final_tmp
+  case "$fb_term" in
+   "bterm")
+       # Since bterm can only use one parameter (i.e. not working if we run 'bterm -l zh_TW.UTF-8 -f $uni_font ls -alF /etc/', i.e. only ls will be respected. There is no such issue for jfbterm). Here we use a workaround to make it work for bterm, i.e. use a tmp file to run it.
+       export TERM=bterm
+       set +e
+       # bterm need full path command even it's in the PATH already.
+       bterm -l $LANG -f $uni_font $ocs_live_final_tmp
+       EXIT=$?
+       ;;
+  "jfbterm")
+       export TERM=jfbterm
+       set +e
+       jfbterm -q -e $ocs_live_final_tmp
+       EXIT=$?
+       ;;
+  esac
+  [ -e "$ocs_live_final_tmp" ] && rm -f $ocs_live_final_tmp
+else
+  # At this point, it's not in bterm/jfbterm, only text console. Use English. 
+  ask_and_load_lang_set en_US.UTF-8
+  ocs-live-final-action $EXIT
 fi

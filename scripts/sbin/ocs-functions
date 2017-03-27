@@ -3785,8 +3785,11 @@ task_postprocessing() {
 
   # reboot/poweroff/choose...
   if [ "$ocs_sr_mode" != "interactive" ]; then
-    # Only when not in interactive mode we will run run_post_cmd_when_clone_end here.
-    run_post_cmd_when_clone_end "$postaction" | tee --append ${OCS_LOGFILE}
+    # Only when not in interactive mode and no ocs_postrun in /proc/cmdline
+    # we will run run_post_cmd_when_clone_end here. Otherwise let ocs-live-final-action deal with that.
+    if [ -z "$(grep -Ewo "ocs_postrun[[:digit:]]*=" /proc/cmdline)" ]; then
+      run_post_cmd_when_clone_end "$postaction" | tee --append ${OCS_LOGFILE}
+    fi
   fi
 
   # 
