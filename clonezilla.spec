@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.23
+Version:	3.25.24
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Mar 27 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.24-drbl1
+  - Make boot parameter ocs_postrun work even ocs-sr is run with
+    -p reboot/halt in Clonezilla SE (DRBL live) mode.
+    This fixes the issue that reboot/halt was run before ocs_postrun.
+
 * Sun Mar 26 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.23-drbl1
   - Add S06pre-run in drbl-live.d again, however, it will honor drbl_prerun*
     instead of ocs_prerun*. Otherwise ocs_prerun* will be run in S06pre-run
