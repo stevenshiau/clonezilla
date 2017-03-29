@@ -33,6 +33,24 @@ parse_cmdline_option "$param_2_be_parsed"
 # 2012/06/30 Give warning about ocs_lang and ocs_live_keymap are deprecated.
 show_deprecated_ocs_lang_and_keymap
 
+# Before writting these parameters to /etc/ocs/ocs-live.conf, first we deal with console parameter. The ocs_live_run_tty will be overwritten by console=.* boot parameter if console=.* is set.
+# i.e. if live-getty and console=... (e.g. live-getty console=ttyS0,38400n81) are assigned in boot parameters, we make it as the default for ocs_live_run_tty.
+# The priority for the boot parameters: (1) console=.* parameter (2) ocs_live_run_tty parameter
+ocs_live_run_tty_set_in_cmdline=""
+[ -n "$ocs_live_run_tty" ] && ocs_live_run_tty_set_in_cmdline="yes"
+if [ -n "$(LC_ALL=C grep -iw live-getty /proc/cmdline)" -a \
+     -n "$(LC_ALL=C grep -io "console=.*" /proc/cmdline)" ]; then
+  # The following is borrowed from live-initramfs
+  for ARGUMENT in $(cat /proc/cmdline); do
+    case "${ARGUMENT}" in
+      console=*) DEFCONSOLE="${ARGUMENT#*=}" ;;
+    esac
+  done
+  ocs_live_run_tty="/dev/$(echo "${DEFCONSOLE}" | sed -e 's%,.*%%')"
+  if [ "$ocs_live_run_tty_set_in_cmdline" = "yes" ]; then
+    echo "//NOTE// Boot parameters live-getty and $DEFCONSOLE were found in /proc/cmdline! Make ocs_live_run_tty=$ocs_live_run_tty! The original assignment of ocs_live_run_tty in the boot parameter is ignored!"
+  fi
+fi
 #
 mkdir -p /etc/ocs/
 
