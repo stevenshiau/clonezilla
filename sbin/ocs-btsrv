@@ -17,8 +17,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
 # Settings
-# bt_client is defined in drbl-ocs.conf, or command option -t|--bt-client.
-metainfo_creator="mkttorrent"
+# metainfo_creator and bt_client is default defined in drbl-ocs.conf, or command option -t|--bt-client.
 # Flag to brutally kill the related service
 brutal_kill="no"
 # BT_PORT_INIT, p_length_ctorrent, p_length_mktorrent, ocsroot_btzone, btlog_dir are loaded from drbl-ocs.conf.
@@ -30,7 +29,7 @@ USAGE() {
     echo "To run $ocs:"
     echo "$ocs [OPTION] [start|stop|status] [IMAGE] [DEV1] [DEV1]..."
     echo "Options:"
-    echo "-c, --ctorrent-mkmetainfo    Use ctorrent instead of mktorrent to create the metainfo (.torrent) file"
+    echo "-c, --metainfo-creator  PROG  Use PROG to create the metainfo (.torrent) file"
     echo "-g, --log-dir DIR            Use DIR as the log dir. Default value is \"$btlog_dir\""
     echo "-m, --max-client-no NO       Assign the client number as NO. When this number of clients finishes downloading, BT tracker will exit so that client will stop, too."
     echo "-p, --bt-srv-ip  IP          Assign the IP address for using in tracker's URL. If not assigned, the IP address detected on the machine will be used"
@@ -119,6 +118,8 @@ start_bt_srv() {
     # Set the variable cmd_make_metainfo
     if [ "$metainfo_creator" = "ctorrent" ]; then
       cmd_make_metainfo="ctorrent -t -p -c For_Clonezilla -l ${p_length_ctorrent} -u http://${btsrv_ip}:$port_b/announce -s $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
+    elif [ "$metainfo_creator" = "transmission-create" ]; then
+      cmd_make_metainfo="transmission-create -p -c For_Clonezilla -t http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
     else
       cpu_no="$(LC_ALL=C grep -Ew "^processor[[:space:]]+" /proc/cpuinfo | wc -l)"
       cmd_make_metainfo="mktorrent -p -c For_Clonezilla -t ${cpu_no} -l ${p_length_mktorrent} -a http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
@@ -266,8 +267,15 @@ while [ $# -gt 0 ]; do
  case "$1" in
    -b|--brutal-kill) brutal_kill="yes"
 	   shift;;
-   -c|--ctorrent-mkmetainfo) metainfo_creator="ctorrent"
-	   shift;;
+   -c|--metainfo-creator) 
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+	     metainfo_creator="$1"
+             shift;
+           fi
+           [ -z "$btlog_dir" ] && USAGE && exit 1
+           ;;
    -g|--log-dir)
            shift; 
            if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -325,6 +333,10 @@ shift
 img_dir="$1"
 shift
 parts="$*"
+
+# Load deafult values if not specified.
+[ -z "$metainfo_creator" ] && metainfo_creator="$metainfo_creator_def"
+[ -z "$bt_client" ] && bt_client="$bt_client_def"
 
 # Strip the leading /dev/ if it's assigned. Make it like sda1, sdb1, not /dev/sda1, /dev/sdb1.
 parts="$(echo $parts | sed -r -e "s|/dev/||g")"  # partition name, e.g. sda1, sda2
