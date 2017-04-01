@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.24
+Version:	3.25.27
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,17 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Apr 01 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.27-drbl1
+  - Add support to use transmission-create to create metainfo file.
+
+* Fri Mar 31 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.26-drbl1
+  - Set default piece length for bittorrent as 16 MB.
+  - Disable vim defaults so that copy & paste can work in drbl live.
+
+* Wed Mar 29 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.25-drbl1
+  - Boot parameter ocs_live_run_tty in DRBL live should be consistent
+    with live-getty console parameters.
+
 * Mon Mar 27 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.24-drbl1
   - Make boot parameter ocs_postrun work even ocs-sr is run with
     -p reboot/halt in Clonezilla SE (DRBL live) mode.
