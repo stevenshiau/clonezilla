@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.27
+Version:	3.25.28
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Apr 04 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.28-drbl1
+  - Update partition layout to kernel before EBR is restored.
+    Thanks to Ron (https://sourceforge.net/u/norotops/) for reporting.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/c047c8d2/
+  - Switch to use transmission-create as the default program to create
+    bittorrent metainfo. It is automatic to adjust the piece size and
+    counts.
+
 * Sat Apr 01 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.27-drbl1
   - Add support to use transmission-create to create metainfo file.
 
