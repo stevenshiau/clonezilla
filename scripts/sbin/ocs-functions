@@ -8613,6 +8613,11 @@ task_restoreparts() {
       # Extended partition only exists in MBR disk type, not in GPT.
       case "$ptype" in
        mbr)
+          # Thanks to Ron (https://sourceforge.net/u/norotops/) for reporting.
+          # Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/c047c8d2/
+          echo "Probing $target_hd with blockdev before restoring EBR..." | tee --append $OCS_LOGFILE
+          blockdev --rereadpt /dev/$target_hd
+
           echo "Finding extended partition(s) in parted table $target_dir_fullpath/$(to_filename ${ihd})-pt.parted..." | tee --append $OCS_LOGFILE
           for partition in `get_extended_partition_parted_format $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; do
             echo "Restoring extended boot record (EBR) in extended partition /dev/$partition..." | tee --append $OCS_LOGFILE
