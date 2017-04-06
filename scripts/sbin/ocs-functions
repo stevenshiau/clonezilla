@@ -5958,11 +5958,13 @@ feed_multicast_restoreparts() {
    fi
   ) &
   # Keep the log. We have to wait like what mail_clonezilla_log_to_root does
-  (
-    sleep $time_to_pause_before_mail
-    time_tag="$(LC_ALL=C head -n 1 $ocs_log_dir/clonezilla-jobs.log | cut -d "," -f 1 | sed -r -e "s/[[:space:]]//g")"
-    cp -a $ocs_log_dir/clonezilla-jobs.log $ocs_log_dir/jobs-$time_tag.log
-  ) &
+  if [ -e "$ocs_log_dir/clonezilla-jobs.log" ]; then
+    (
+      sleep $time_to_pause_before_mail
+      time_tag="$(LC_ALL=C head -n 1 $ocs_log_dir/clonezilla-jobs.log | cut -d "," -f 1 | sed -r -e "s/[[:space:]]//g")"
+      cp -a $ocs_log_dir/clonezilla-jobs.log $ocs_log_dir/jobs-$time_tag.log
+    ) &
+  fi
   # If always restore, i.e. multicast loop, respawn itself
   if [ "$always_restore" = "yes" ]; then
     mcast_loop="$(( mcast_loop + 1 ))"
@@ -6835,6 +6837,7 @@ start_ocs_service() {
   local tgt_dev=""
   local regen_opt
   local mgrd_opt
+  local	feed_only="no"
   while [ $# -gt 0 ]; do
     case "$1" in
       -t|--task)
@@ -6855,6 +6858,9 @@ start_ocs_service() {
          fi
          [ -z "$option" ] && echo "-o is used, but no option assigned." && exit 1
          ;;
+      -f|--feed-only)
+	 feed_only="yes"
+         shift;;
       -n|--n-clients)
          shift
          if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -6866,161 +6872,160 @@ start_ocs_service() {
          ;;
     esac
   done
-  # The option="$target_image $target_dev", we can get tgt_img & target_dev
-  tgt_img_menu="$(echo $option | awk -F" " '{print $1}')"
-  tgt_dev_menu="$(echo $option | awk '{ for (i=2; i<=NF; i++) printf "%s ", $i; printf "\n"; }' | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")"
-  # maybe it will be ask_user, if so, change it as choose later
-  tgt_img_menu="$(echo "$tgt_img_menu" | sed -e "s/ask_user/(choose later)/g")"
-  tgt_dev_menu="$(echo "$tgt_dev_menu" | sed -e "s/ask_user/(choose later)/g")"
-  
-
-  echo "clonezilla.lock dir: $ocs_lock_dir"
-  # Create the ocs_lock_dir if it does not exist
-  [ ! -d "$ocs_lock_dir" ] && mkdir -p $ocs_lock_dir
-
-  # For old version, we have to remove the old tag, now we use $ocs_lock_dir/clonezilla.lock instead of $ocsroot/clonezilla.lock
-  rm -f $ocsroot/clonezilla.lock
-
-  # Is "ocsmgrd" running ?
-  if [ -e "$ocs_lock_dir/clonezilla.lock" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Your system is already in clonezilla mode... we will stop it first if necessary, then start it again..."
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    # We do not have to generate SSI files in stop_ocs_service, since later the files will be created.
-    stop_ocs_service no
-  fi
-
-  if [ ! -e "$SYSCONF_PATH/$DHCP_SRV_NAME" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "You must setup DRBL first. Check http://drbl.org or http://drbl.nchc.org.tw for more details."
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  fi
-
-  # Warning if range option is used in dhcpd.conf
-  check_dhcpd_if_range
-
-  # restart nfs to make sure stalled NFS is cleaned.
-  [ "$nfs_restart" != "no" ] && do_nfs_restart
-
-  # Loading the mode when drblpush, we need to know if it's clonezilla_box_mode
-  # This only necessary in clonezilla server, since /etc/drbl/drbl_deploy.conf does not exist in client.
-  . /etc/drbl/drbl_deploy.conf
-
-  # From clonezilla 2.0, the ocs-srv-reset is almost useless. Comment it.
-  # make sure next time when server boots, it is NOT in ocs mode
-  #( cd $RCX_ROOTDIR/rc0.d/; ln -fs $RCX_REL_INITD/ocs-srv-reset S05ocs-srv-reset )
-  #( cd $RCX_ROOTDIR/rc6.d/; ln -fs $RCX_REL_INITD/ocs-srv-reset S05ocs-srv-reset )
-
-  # (1) set the UDP port for multicast
-  # (2) get the multicast ethernet port $eth_for_multicast
-  if [ -n "$(echo "$task" | grep -e "^multicast_restore")" ]; then
-    # (1)
-    # OCS_OPT is a global variable from ocs-sr
-    OCS_OPT="$OCS_OPT --mcast-port $MULTICAST_PORT"
-    # (2)
-    [ -z "$eth_for_multicast" ] && find_multicast_ethernet_port
-    # echo notes for network environment in multicast clonezilla
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_you_are_using_multicast_clonezilla"
-    echo "$msg_ethernet_port_is_up_confirm: $eth_for_multicast "
-    echo "$msg_more_NIC_connect_each_other"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    if [ "$ocs_batch_mode" != "on" ]; then
-      echo -n "$msg_press_enter_to_continue..."
-      read
+  if [ "$feed_only" = "no" ]; then
+    # The option="$target_image $target_dev", we can get tgt_img & target_dev
+    tgt_img_menu="$(echo $option | awk -F" " '{print $1}')"
+    tgt_dev_menu="$(echo $option | awk '{ for (i=2; i<=NF; i++) printf "%s ", $i; printf "\n"; }' | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")"
+    # maybe it will be ask_user, if so, change it as choose later
+    tgt_img_menu="$(echo "$tgt_img_menu" | sed -e "s/ask_user/(choose later)/g")"
+    tgt_dev_menu="$(echo "$tgt_dev_menu" | sed -e "s/ask_user/(choose later)/g")"
+    
+    
+    echo "clonezilla.lock dir: $ocs_lock_dir"
+    # Create the ocs_lock_dir if it does not exist
+    [ ! -d "$ocs_lock_dir" ] && mkdir -p $ocs_lock_dir
+    
+    # Is "ocsmgrd" running ?
+    if [ -e "$ocs_lock_dir/clonezilla.lock" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Your system is already in clonezilla mode... we will stop it first if necessary, then start it again..."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      # We do not have to generate SSI files in stop_ocs_service, since later the files will be created.
+      stop_ocs_service no
     fi
-  fi
-
-  # HOST_OPTION_MODIFY: modified since we specify hosts.
-  # Note! We can not use "for ihost in $drblroot/*; do" since we have to create every pxelinux config for client. If we use that, it will fail in DRBL SSI and Clonezilla box.
-  # nb_conf_trigger is the flag to see if the network boot config files (for both PXE and GRUB, i.e. /tftpboot/nbi_img/pxelinux.cfg/{default,01-$MAC,...} and /tftpboot/nbi_img/grub-efi.cfg/grub.cfg-*) need to be updated for every IP address or not.
-  nb_conf_trigger=""
-  for node_ip in `get-client-ip-list`; do
-    # if the LIST_HOST is on, skip those IP not listed in the $IP_LIST
-    if [ "$LIST_HOST" = "on" ]; then
-      [ -z "$(echo $IP_LIST | grep -Ew "$node_ip")" ] && continue
+    
+    if [ ! -e "$SYSCONF_PATH/$DHCP_SRV_NAME" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "You must setup DRBL first. Check http://drbl.org or http://drbl.nchc.org.tw for more details."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
-    echo "Starting the OCS service for node IP add. = $node_ip"
-    prep_client_inittab_rc_srv $node_ip $task "$option"
-  done
-
-  # Set the single user mode password if not setting for client...This will be safer..."
-  set_clients_rc1_passwd $IP_LIST
-
-  # HOST_OPTION_MODIFY: 
-  # before start the ocsmgrd, kill the stale one
-  kill_ps_by_killall_9 ocsmgrd
-
-  # make client to boot in drbl mode with menu label specified.
-  case "$task" in
-    "saveparts")
-       ocs_menu_label="save partitions $tgt_dev_menu as image $tgt_img_menu"
-       ;;
-    "savedisk")
-       ocs_menu_label="save disk $tgt_dev_menu as image $tgt_img_menu"
-       ;;
-    "restoreparts")
-       ocs_menu_label="unicast restore $tgt_img_menu to part $tgt_dev_menu"
-       ;;
-    "restoredisk")
-       ocs_menu_label="unicast restore $tgt_img_menu to disk $tgt_dev_menu"
-       ;;
-    "multicast_restoredisk")
-       ocs_menu_label="$multi_broad_cast_prompt restore $tgt_img_menu to disk $tgt_dev_menu"
-       ;;
-    "multicast_restoreparts")
-       ocs_menu_label="$multi_broad_cast_prompt restore $tgt_img_menu to part $tgt_dev_menu"
-       ;;
-    "bt_restoredisk")
-       ocs_menu_label="Bittorrent restore $tgt_img_menu to disk $tgt_dev_menu"
-       ;;
-    "bt_restoreparts")
-       ocs_menu_label="Bittorrent restore $tgt_img_menu to part $tgt_dev_menu"
-       ;;
-     *)
-  esac
-
-  # First, set the pxe menu to Clonezilla:..., since maybe it's in drbl mode. If -y0 is set, later we will switch the default menu to local.
-  if [ "$diskless_client_os" = "clonezilla-live" ]; then
-    force_pxe_clients_boot_label Clonezilla-live "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
-    force_grub_efi_clients_boot_label clonezilla-live-client "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
-  else
-    force_pxe_clients_boot_label clonezilla "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
-    force_grub_efi_clients_boot_label clonezilla-se-client "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
-    # set runlevel 1 to kernel parameter in pxelinux config
-    add_runlevel_1_in_pxelinux_cfg_block clonezilla
-    add_runlevel_1_in_grub_efi_cfg_block clonezilla-se-client
-  fi
-
-  # If the mode is in always_restore, and PXE default menu is assigned to local (-y0), we will set local boot as default. Since the always_restore mode is only useful with local OS exists. But if in some scenario, such as production clone flow, maybe pxe_menu_default_mode=clone is useful, since a lot of hardisks will be replaced one by one.
-  if [ "$always_restore" = "yes" ]; then
-   case "$pxe_menu_default_mode" in
-     "local")
-         force_pxe_clients_boot_label local "$local_os_menu_label"
-         force_grub_efi_clients_boot_label local-disk
+    
+    # Warning if range option is used in dhcpd.conf
+    check_dhcpd_if_range
+    
+    # restart nfs to make sure stalled NFS is cleaned.
+    [ "$nfs_restart" != "no" ] && do_nfs_restart
+    
+    # Loading the mode when drblpush, we need to know if it's clonezilla_box_mode
+    # This only necessary in clonezilla server, since /etc/drbl/drbl_deploy.conf does not exist in client.
+    . /etc/drbl/drbl_deploy.conf
+    
+    # From clonezilla 2.0, the ocs-srv-reset is almost useless. Comment it.
+    # make sure next time when server boots, it is NOT in ocs mode
+    #( cd $RCX_ROOTDIR/rc0.d/; ln -fs $RCX_REL_INITD/ocs-srv-reset S05ocs-srv-reset )
+    #( cd $RCX_ROOTDIR/rc6.d/; ln -fs $RCX_REL_INITD/ocs-srv-reset S05ocs-srv-reset )
+    
+    # (1) set the UDP port for multicast
+    # (2) get the multicast ethernet port $eth_for_multicast
+    if [ -n "$(echo "$task" | grep -e "^multicast_restore")" ]; then
+      # (1)
+      # OCS_OPT is a global variable from ocs-sr
+      OCS_OPT="$OCS_OPT --mcast-port $MULTICAST_PORT"
+      # (2)
+      [ -z "$eth_for_multicast" ] && find_multicast_ethernet_port
+      # echo notes for network environment in multicast clonezilla
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "$msg_you_are_using_multicast_clonezilla"
+      echo "$msg_ethernet_port_is_up_confirm: $eth_for_multicast "
+      echo "$msg_more_NIC_connect_each_other"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      if [ "$ocs_batch_mode" != "on" ]; then
+        echo -n "$msg_press_enter_to_continue..."
+        read
+      fi
+    fi
+    
+    # HOST_OPTION_MODIFY: modified since we specify hosts.
+    # Note! We can not use "for ihost in $drblroot/*; do" since we have to create every pxelinux config for client. If we use that, it will fail in DRBL SSI and Clonezilla box.
+    # nb_conf_trigger is the flag to see if the network boot config files (for both PXE and GRUB, i.e. /tftpboot/nbi_img/pxelinux.cfg/{default,01-$MAC,...} and /tftpboot/nbi_img/grub-efi.cfg/grub.cfg-*) need to be updated for every IP address or not.
+    nb_conf_trigger=""
+    for node_ip in `get-client-ip-list`; do
+      # if the LIST_HOST is on, skip those IP not listed in the $IP_LIST
+      if [ "$LIST_HOST" = "on" ]; then
+        [ -z "$(echo $IP_LIST | grep -Ew "$node_ip")" ] && continue
+      fi
+      echo "Starting the OCS service for node IP add. = $node_ip"
+      prep_client_inittab_rc_srv $node_ip $task "$option"
+    done
+    
+    # Set the single user mode password if not setting for client...This will be safer..."
+    set_clients_rc1_passwd $IP_LIST
+    
+    # HOST_OPTION_MODIFY: 
+    # before start the ocsmgrd, kill the stale one
+    kill_ps_by_killall_9 ocsmgrd
+    
+    # make client to boot in drbl mode with menu label specified.
+    case "$task" in
+      "saveparts")
+         ocs_menu_label="save partitions $tgt_dev_menu as image $tgt_img_menu"
          ;;
-     "drbl")
-         force_pxe_clients_boot_label drbl
-         force_grub_efi_clients_boot_label drbl-client
+      "savedisk")
+         ocs_menu_label="save disk $tgt_dev_menu as image $tgt_img_menu"
          ;;
-   esac
-  fi
-
-  # start the ocsmgrd daemon
-  # the $ocs_lock_dir/clonezilla.lock is a tag for ocs is running,
-  # after start/stop cloning, we will remove $ocs_lock_dir/clonezilla.lock
-  touch $ocs_lock_dir/clonezilla.lock
-  # UDPCAST MODIFY
-  if [ "$always_restore" = "yes" ]; then
-    # If it's always_restore, we do not generate client's PXE config when receiving job is done message from client.
-    mgrd_opt="--nopxecfg"
-  fi
-  ocsmgrd $mgrd_opt &
-  ocs_log_file="$(LC_ALL=C grep -F "joblogfile =>" `which ocsmgrd` | awk -F" " '{print $3}')"
-  echo "$msg_client_job_are_logged_in: $ocs_log_file"
-  if [ -n "$(echo $task | grep -i "restore")" ]; then
-    # if the mode restore, show the log prompt
-    echo "$msg_client_sfdisk_log_are_in $OCS_LOGFILE"
+      "restoreparts")
+         ocs_menu_label="unicast restore $tgt_img_menu to part $tgt_dev_menu"
+         ;;
+      "restoredisk")
+         ocs_menu_label="unicast restore $tgt_img_menu to disk $tgt_dev_menu"
+         ;;
+      "multicast_restoredisk")
+         ocs_menu_label="$multi_broad_cast_prompt restore $tgt_img_menu to disk $tgt_dev_menu"
+         ;;
+      "multicast_restoreparts")
+         ocs_menu_label="$multi_broad_cast_prompt restore $tgt_img_menu to part $tgt_dev_menu"
+         ;;
+      "bt_restoredisk")
+         ocs_menu_label="Bittorrent restore $tgt_img_menu to disk $tgt_dev_menu"
+         ;;
+      "bt_restoreparts")
+         ocs_menu_label="Bittorrent restore $tgt_img_menu to part $tgt_dev_menu"
+         ;;
+       *)
+    esac
+    
+    # First, set the pxe menu to Clonezilla:..., since maybe it's in drbl mode. If -y0 is set, later we will switch the default menu to local.
+    if [ "$diskless_client_os" = "clonezilla-live" ]; then
+      force_pxe_clients_boot_label Clonezilla-live "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
+      force_grub_efi_clients_boot_label clonezilla-live-client "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
+    else
+      force_pxe_clients_boot_label clonezilla "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
+      force_grub_efi_clients_boot_label clonezilla-se-client "$clonezilla_client_menu_label_prefix: $ocs_menu_label"
+      # set runlevel 1 to kernel parameter in pxelinux config
+      add_runlevel_1_in_pxelinux_cfg_block clonezilla
+      add_runlevel_1_in_grub_efi_cfg_block clonezilla-se-client
+    fi
+    
+    # If the mode is in always_restore, and PXE default menu is assigned to local (-y0), we will set local boot as default. Since the always_restore mode is only useful with local OS exists. But if in some scenario, such as production clone flow, maybe pxe_menu_default_mode=clone is useful, since a lot of hardisks will be replaced one by one.
+    if [ "$always_restore" = "yes" ]; then
+     case "$pxe_menu_default_mode" in
+       "local")
+           force_pxe_clients_boot_label local "$local_os_menu_label"
+           force_grub_efi_clients_boot_label local-disk
+           ;;
+       "drbl")
+           force_pxe_clients_boot_label drbl
+           force_grub_efi_clients_boot_label drbl-client
+           ;;
+     esac
+    fi
+    
+    # start the ocsmgrd daemon
+    # the $ocs_lock_dir/clonezilla.lock is a tag for ocs is running,
+    # after start/stop cloning, we will remove $ocs_lock_dir/clonezilla.lock
+    touch $ocs_lock_dir/clonezilla.lock
+    # UDPCAST MODIFY
+    if [ "$always_restore" = "yes" ]; then
+      # If it's always_restore, we do not generate client's PXE config when receiving job is done message from client.
+      mgrd_opt="--nopxecfg"
+    fi
+    ocsmgrd $mgrd_opt &
+    ocs_log_file="$(LC_ALL=C grep -F "joblogfile =>" `which ocsmgrd` | awk -F" " '{print $3}')"
+    echo "$msg_client_job_are_logged_in: $ocs_log_file"
+    if [ -n "$(echo $task | grep -i "restore")" ]; then
+      # if the mode restore, show the log prompt
+      echo "$msg_client_sfdisk_log_are_in $OCS_LOGFILE"
+    fi
   fi
 
   # Multicast part
@@ -9143,6 +9148,7 @@ do_startparts () {
     esac
 
     get_multicast_restore_mode_if_mcast
+    get_bt_restore_mode_if_bittorrent
 
     # Check MD5SUMS, SHA1SUMS
     check_md5_sha1_sums_for_img "$imagedir/$target_image"
