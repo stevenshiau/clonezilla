@@ -1,0 +1,80 @@
+#!/bin/bash
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Functions
+task_run_restoring() {
+  network_config_if_necessary
+  if ! mountpoint $ocsroot >/dev/null 2>&1; then 
+    prep-ocsroot
+  fi
+  
+  # Ask about multicast feeding server
+  TMP="$(mktemp /tmp/nfs.XXXXXX)"
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
+  ask_="true"
+  while [ "$ask_" = "true" ]; do
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    "Multicast server" --inputbox "$msg_ip_address_or_FQDN_of_server: Multicast server" \
+    0 0 $srv_default $DIA_ESC \
+    2> $TMP
+    cast_srv="$(cat $TMP)"
+    if [ -z "$cast_srv" ]; then
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+      --yesno "$msg_you_must_input_a_server\n$msg_do_u_want_to_do_it_again" 0 0
+      ans_="$?"
+      case "$ans_" in
+        0) # yes is chosen
+           ask_="true";;
+        1) # no is chosen
+           echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+           [ -f "$TMP" ] && rm -f $TMP
+           exit 1;;
+      esac
+    else
+      # Got the one we want
+      ask_="false"
+    fi
+  done
+  [ -f "$TMP" ] && rm -f $TMP
+  echo "Multicast server is: $cast_srv"
+  rm -f /tmp/ocs-client-run.sh
+  wget -P /tmp/ http://$cast_srv/ocs-client-run.sh
+  chmod 755 /tmp/ocs-client-run.sh
+  /tmp/ocs-client-run.sh
+} # end of task_run_restoring
+
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -b|--batch) ocs_batch_mode="on"; shift;;
+   -v|--verbose)
+           verbose="on"
+	   shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+#
+check_if_root
+ask_and_load_lang_set
+
+#
+task_run_restoring

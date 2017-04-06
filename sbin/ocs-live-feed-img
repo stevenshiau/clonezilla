@@ -1,0 +1,218 @@
+#!/bin/bash
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Required options:
+# image name, target_hd, # of clients, eth_for_multicast
+# Extra steps:
+# 1. Image repository has to be mounted first.
+# 2. Provide full command for client to run. Put in httpd server. E.g.
+# =================
+# mount -t nfs 192.168.22.3:/home/partimag /home/partimag/
+# ocs-sr -l en_US.UTF-8 -g auto -e1 auto -e2 -r --clone-hidden-data -p reboot --max-time-to-wait 300 -scr --mcast-port 2232 multicast_restoredisk xenial-x86-20161122 sda
+# =================
+
+nfs_restart="no"
+udpcast_stderr="/dev/null"
+# TODO: auto detect.
+eth_for_multicast="eth0"
+
+# Functions
+USAGE() {
+    echo "$ocs - To start feeding image for multicast mode in Clonezilla"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] MODE [IMAGE_NAME] [DEVICE]"
+    echo "This program is specially used in Clonezilla live to start feeding multicast packets for clients."
+    echo "Options:"
+    echo "-b, --batch-mode   Run in batch mode"
+    echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone, use text only"
+    echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
+    echo "IMAGE_NAME is the image dir name, not absolute path"
+    echo "DEVICE is the device name, e.g. sda, sda1, sda2..."
+    echo "If \"ask_user\" is used as IMAGE_NAME or DEVICE, a dialog menu will be shown to allow selection."
+    echo "If no IMAGE_NAME is specified, a dialog menu will be shown."
+    echo "Ex:"
+    echo "To start feeding the image \"my-image\" for restoring it in client's device sda, run"
+    echo "   $ocs start my-image sda"
+    echo
+} # end of USAGE
+#
+task_start_feed_img_for_mcast() {
+  local MCAST_TMP ans_ mcast_dev_action
+  local start_cmd
+
+  MCAST_TMP=`mktemp /tmp/ocs_recovery_tmp.XXXXXX`
+  trap "[ -f "$MCAST_TMP" ] && rm -f $MCAST_TMP" HUP INT QUIT TERM EXIT
+
+  if [ -n "$(pidof udp-sender)" ]; then
+    task_stop_feed_img_for_mcast
+  fi
+
+  prep-ocsroot
+  # Ask image name first (disk or parts image)
+  # Image name
+  [ -z "$ocs_restore_img_name" ] && ocs_restore_img_name="ask_user"
+  if [ "$ocs_restore_img_name" = "ask_user" ]; then
+    # Since get_target_dir_name_when_restoring_parts can search disk and parts image, we use this function instead of get_target_dir_name_when_restoring_disk
+    get_target_dir_name_when_restoring_parts # get $target_dir
+  else
+    target_dir="$ocs_restore_img_name"
+  fi
+  check_input_target_image "$ocsroot/$target_dir"
+  # Check if the image is disk or parts
+  if [ -e "$ocsroot/$target_dir/disk" ]; then
+    mcast_dev_action=restoredisk
+  else
+    mcast_dev_action=restoreparts
+  fi
+  
+  # ask target disk/parts
+  case "$mcast_dev_action" in
+   "restoredisk")
+         dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'hda' $msg_or 'sda' $msg_or 'hda hdb' $msg_or 'sda sdb') \n$msg_linux_disk_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
+         # savedisk_preset is borrowed from drbl-ocs.conf
+         dev_preset="$(get_disk_list_from_img $ocsroot/$target_dir)"
+         ;;
+   "restoreparts")
+         dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'hda1 hda2' $msg_or 'sda1 sda2') \n$msg_linux_parts_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
+         # saveparts_preset is borrowed from drbl-ocs.conf
+         dev_preset="$(get_parts_list_from_img $ocsroot/$target_dir)"
+         ;;
+  esac
+  ASK_DEV_NAME=1
+  while [ "$ASK_DEV_NAME" -ne 0 ]; do
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+    --inputbox "$dev_prompt_and_example" 0 0 "$dev_preset" 2> $MCAST_TMP
+    target_hd="$(cat $MCAST_TMP)"
+    if [ -z "$target_hd" ]; then
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+      --yesno "$msg_you_must_input_device_name_to_be_restored! $msg_do_u_want_to_do_it_again" 0 0 
+       ans_="$?"
+       case "$ans_" in
+         0) # yes is chosen
+            ASK_DEV_NAME=1;;
+         1) # no is chosen
+            echo "$msg_program_stop!"
+            [ -f "$MCAST_TMP" ] && rm -f $MCAST_TMP
+            exit 1;;
+       esac
+    else
+      ASK_DEV_NAME=0
+    fi
+  done
+  rm -f $MCAST_TMP
+
+  task="multicast_restore"
+  if [ -z "$n_clients" ]; then
+    get_multicast_restore_mode_if_mcast
+    # Obtain: mcast_wait_time, n_clients, mcast_max_wait_time
+  fi
+
+  start_cmd="start_ocs_service -f -n "$n_clients" -t \"multicast_$mcast_dev_action\" -o \"$target_dir $target_hd\""
+  echo "Running: $start_cmd"
+  eval $start_cmd
+  # TODO: improve this
+  sleep 1
+  echo "Feeding status:"
+  ps -www -C "udp-sender" -o pid,tname,cmd
+  
+  # Prepare the commands for clients
+  if ! systemctl status lighttpd >/dev/null 2>&1; then
+    systemctl start lighttpd
+  fi
+
+  # TODO: ask for beginner/expert mode options
+  rm -f /var/www/html/ocs-client-run.sh
+  cat <<-CLIENT_END > /var/www/html/ocs-client-run.sh
+#!/bin/bash
+ocs-sr -l en_US.UTF-8 -g auto -e1 auto -e2 -r --clone-hidden-data -p reboot --max-time-to-wait $mcast_max_wait_time -scr --mcast-port 2232 multicast_$mcast_dev_action $target_dir $target_hd
+CLIENT_END
+
+} # end of task_start_feed_img_for_mcast
+
+task_stop_feed_img_for_mcast() {
+  # 1. Kill process
+  kill_ps_by_killall_9 udp-sender
+  # 2. Remove the file for clients.
+} # task_stop_feed_img_for_mcast
+
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -b|--batch) ocs_batch_mode="on"; shift;;
+   -or|--ocsroot)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             ocsroot="$1"
+             shift;
+           fi
+           [ -z "$ocsroot" ] && USAGE && exit 1
+           ;;
+   -nogui|--nogui)
+           shift; 
+           # -nogui is for backward compatable, better to use --nogui
+           nogui="on"
+           ;;
+   -n|--n-clients)
+           shift
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             n_clients="$1"
+             shift
+           fi
+           [ -z "$n_clients" ] && USAGE && exit 1
+           ;;
+   -v|--verbose)
+           verbose="on"
+	   shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+mode="$1"
+shift
+ocs_restore_img_name="$1"
+shift
+ocs_restore_dev="$*"
+
+# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
+# otherwise setterm will complain.
+[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
+echo "Setting the TERM as $TERM"
+export TERM="$TERM"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+if [ "$verbose" = "on" ]; then
+  # The default output for udpcast stderr is surpressed, now turn it on
+  udpcast_stderr="/dev/stderr"
+fi
+
+imagedir="$ocsroot"  # Used in ocs-functions.
+
+case "$mode" in 
+  start) task_start_feed_img_for_mcast;;
+   stop) task_stop_feed_img_for_mcast;;
+      *) USAGE;;
+esac
