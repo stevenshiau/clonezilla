@@ -9380,7 +9380,7 @@ USAGE_common_restore(){
     echo " -irvd, --irvd            Skip removing the NTFS volume dirty flag after the file system is restored."
     echo " -ius, --ius              Skip updating syslinux-related files on the restored GNU/Linux."
     echo " -icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
-    echo "-iefi, --ignore-update-efi-nvram  Skip updating boot entries in EFI NVRAM after restoring."
+    echo " -iefi, --ignore-update-efi-nvram  Skip updating boot entries in EFI NVRAM after restoring."
     echo " -k1,                     Create partition table in the target disk proportionally."
     echo " -k2,                     Enter command line prompt to create partition table manually before restoring image."
     echo " -scr, --skip-check-restorable-r   By default Clonezilla will check the image if restorable before restoring. This option allows you to skip that."
@@ -9389,8 +9389,6 @@ USAGE_common_restore(){
     echo " -e, --load-geometry  Force to use the saved CHS (cylinders, heads, sectors) when using sfdisk"
     echo " -e1, --change-geometry NTFS-BOOT-PARTITION Force to change the CHS (cylinders, heads, sectors) value of NTFS boot partition after image is restored. NTFS-BOOT-PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the NTFS boot partition automatically)"
     echo " -e2, --load-geometry-from-edd  Force to use the CHS (cylinders, heads, sectors) from EDD (Enhanced Disk Device) when creating partition table by sfdisk"
-    echo " -y, -y0, --always-restore, --always-restore-default-local  Let Clonezilla server as restore server, i.e. client will always has restore mode to choose (However default mode in PXE menu is local boot)"
-    echo " -y1, --always-restore-default-clone Let Clonezilla server as restore server, i.e. client will always has restore mode to choose (The default mode in PXE menu is clone, so if client boots, it will enter clone always, i.e. clone forever)"
     echo " -j, --create-part-by-sfdisk Use sfdisk to create partition table instead of using dd to dump the partition table from saved image (This is default)"
     echo " -j0, --create-part-by-dd  Use dd to dump the partition table from saved image instead of sfdisk. ///Note/// This does NOT work when logical drives exist."
     echo " -j1, --dump-mbr-in-the-end  Use dd to dump the MBR (total 512 bytes, i.e. 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes) after disk image was restored. This is an insurance for some hard drive has different numbers of cylinder, head and sector between image was saved and restored."
@@ -9405,8 +9403,15 @@ USAGE_common_restore(){
     echo " -cs, --check-sha1sum  Check the SHA1 checksum for the image. To use this option, you must enable -gs|--gen-sha1sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
     echo " -cmf, --chk-chksum-for-files-in-dev   Check the checksum for the files in the device. To use this option, you must enable -gmf|--gen-chksum-for-files-in-dev when the image is saved. Note! (1) The file system must be supported by Linux kernel so that it can be mounted as read-only to check the files. (2) It might take a lot of time to check if there are many files in the source device."
     echo " -srel, --save-restore-error-log  Save the error log file in the image dir. By default the log file won't be saved when error occurs."
-
 } # end of USAGE_common_restore
+#
+USAGE_common_restore_server(){
+    # Common restore usage help messages for server, i.e., drbl-ocs and ocs-live-feed-img
+    echo " --time-to-wait TIME  Even when the necessary amount of clients do have connected, still wait until TIME seconds since first client connection have passed"
+    echo " --clients-to-wait NUMBER  Automatically start as soon as a minimal number of clients NUMBER have connected"
+    echo " -brdcst, --broadcast  Use Ethernet broadcast, rather than multicast in udpcast. Useful if you have Ethernet cards or switch which don't support multicast."
+    echo " -sc0, --skip-check-restorable-on-srv  Skip checking image if restorable or not on Clonezilla server before restoring. By default it will be checked before restoring."
+} # end of USAGE_common_restore_server
 #
 USAGE_reserved_word_for_restore() {
     echo " Some words are reserved for IMAGE_NAME, \"ask_user\" is used to let user to input a name when saving an image. \"autoproductname\" is used to automatically get the image name based on hardware product model from dmidecode."
@@ -10537,36 +10542,19 @@ check_image_if_restorable() {
   if [ -z "$img_nm" ]; then
     img_nm="$target_dir"
   fi
-  # This function is used to test the intrgrity of clonzilla image
-  if [ -z "$chk_img_restoreable_mod_save" -o -z "$chk_img_restoreable_mod_restore" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_do_u_want_to_check_img_is_restorable?"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo -n "[Y/n] "
-    read ans_continue
-  fi
-  case "$ans_continue" in
-    n|N|[nN][oO]) chk_img_r_="no" ;;
-    *)            chk_img_r_="yes" ;;
-  esac
   if [ -n "$ocs_root_" ]; then
     ocs_root_opt="--ocsroot ${ocs_root_}"
   fi
 
-  if [ "$chk_img_r_" = "yes" ]; then
-    sleep 1
-    echo "Start checking the saved image $img_nm if restorable..."
-    if [ -z "$(echo "$PARTCLONE_SAVE_OPT" | grep -Ew -- "(-N|--ncurses)")" ]; then
-      OCS_CHKIMG_OPT="--nogui"
-    else
-      OCS_CHKIMG_OPT=""
-    fi
-    ocs-chkimg $ocs_root_opt $OCS_CHKIMG_OPT $img_nm
-    rc_chk="$?"
+  sleep 1
+  echo "Start checking the saved image $img_nm if restorable..."
+  if [ -z "$(echo "$PARTCLONE_SAVE_OPT" | grep -Ew -- "(-N|--ncurses)")" ]; then
+    OCS_CHKIMG_OPT="--nogui"
   else
-    echo "Skip checking image $img_nm if restorable..."
-    rc_chk="0"
+    OCS_CHKIMG_OPT=""
   fi
+  ocs-chkimg $ocs_root_opt $OCS_CHKIMG_OPT $img_nm
+  rc_chk="$?"
   return $rc_chk
 } # end of check_image_if_restorable
 #
