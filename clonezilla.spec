@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.25.29
+Version:	3.26.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Apr 09 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.1-drbl1
+  - Rewrite ocs-live-feed-img and ocs-live-get-img:
+    1. Use image tarball for clients to download. The tarball does not
+    contain the image files of file system. They will be sent by udpcast.
+    2. Improve the whole program. Add complete command line options.
+    3. Add prompt about running the program again.
+  - Bug fixed: missing option -irvd|--irvd in drbl-ocs.
+
 * Fri Apr 07 2017 Steven Shiau <steven _at_ nchc org tw> 3.25.29-drbl1
   - Disable lighttpd by default for clonezilla/drbl live.
   - Add ocs-live-feed-img and ocs-live-get-img so that Clonezilla live can be
