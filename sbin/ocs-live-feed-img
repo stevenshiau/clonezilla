@@ -1,4 +1,13 @@
 #!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to feed multicast packets for clients to restore.
+# What will be done in this program:
+# 1. Image repository has to be mounted first.
+# 2. Create a tarball about the image which contains all files in the image except file system image files.
+# 3. Provide full command for client to run. 
+# For 2 and 3, the files will be put in httpd server.
+
 #
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
@@ -8,20 +17,9 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
-# Required options:
-# image name, target_hd, # of clients, eth_for_multicast
-# Extra steps:
-# 1. Image repository has to be mounted first.
-# 2. Provide full command for client to run. Put in httpd server. E.g.
-# =================
-# mount -t nfs 192.168.22.3:/home/partimag /home/partimag/
-# ocs-sr -l en_US.UTF-8 -g auto -e1 auto -e2 -r --clone-hidden-data -p reboot --max-time-to-wait 300 -scr --mcast-port 2232 multicast_restoredisk xenial-x86-20161122 sda
-# =================
-
+# Settings
 nfs_restart="no"
 udpcast_stderr="/dev/null"
-# TODO: auto detect.
-eth_for_multicast="eth0"
 
 # Functions
 USAGE() {
@@ -31,9 +29,23 @@ USAGE() {
     echo "$ocs [OPTION] MODE [IMAGE_NAME] [DEVICE]"
     echo "This program is specially used in Clonezilla live to start feeding multicast packets for clients."
     echo "Options:"
-    echo "-b, --batch-mode   Run in batch mode"
-    echo "-nogui, --nogui    Do not show GUI (TUI) of Partclone, use text only"
-    echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
+    USAGE_common_restore
+    echo " --time-to-wait TIME  Even when the necessary amount of clients do have connected, still wait until TIME seconds since first client connection have passed"
+    echo " --clients-to-wait NUMBER  Automatically start as soon as a minimal number of clients NUMBER have connected"
+    echo " -brdcst, --broadcast  Use Ethernet broadcast, rather than multicast in udpcast. Useful if you have Ethernet cards or switch which don't support multicast."
+    echo " -sc0, --skip-check-restorable-on-srv  Skip checking image if restorable or not on Clonezilla server before restoring. By default it will be checked before restoring."
+    USAGE_reserved_word_for_restore
+    echo
+    echo " General options:"
+    USAGE_common_general
+    dialog_like_prog_help_prompt
+    echo " -s, --skip-hw-detect     Skip the hardware detection (kudzu, harddrake or discover)"
+    echo " -n, --no-nfs-restart     Do not to restart nfs when start or stop $ocs (This is default)"
+    echo " -f, --nfs-restart        Restart nfs when start or stop $ocs (Default is to restart nfs)"
+    echo " --mcast-iface  PORT      Specify the multicast seed ethernet port PORT (eth0, eth1, eth2...). Suppose clonezilla will try to find that for you, but in some case, you might want to specify that."
+    echo " -x, --full-duplex         Use full-duplex network with udpcast in multicast mode (faster, but does not work with network hub, only works in switch.)."
+    echo
+    echo "MODE is \"start\" or \"stop\""
     echo "IMAGE_NAME is the image dir name, not absolute path"
     echo "DEVICE is the device name, e.g. sda, sda1, sda2..."
     echo "If \"ask_user\" is used as IMAGE_NAME or DEVICE, a dialog menu will be shown to allow selection."
@@ -44,9 +56,319 @@ USAGE() {
     echo
 } # end of USAGE
 #
+parse_ocs_live_feed_img_cmd_options_with_dash() { 
+  n_shift=0
+  #
+  while [ $# -gt 0 ]; do
+   case "$1" in
+      -p|--postaction)  
+	    shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              postaction="$1"
+	      shift; n_shift=$((n_shift+1))
+            fi
+            OCS_OPT="$OCS_OPT -p $postaction"
+            ;;
+      -g|--grub-install)  
+            install_grub="on"
+  	    shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              grub_partition=$1
+  	    shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$grub_partition" ] && USAGE && exit 1
+  	    OCS_OPT="$OCS_OPT -g $grub_partition"
+            ;;
+      -a|--no-force-dma-on)  
+  	    OCS_OPT="$OCS_OPT --no-force-dma-on"
+  	    shift; n_shift=$((n_shift+1));;
+      -k|--no-fdisk|--no-create-partition)  
+  	    create_part="no"
+  	    OCS_OPT="$OCS_OPT -k"
+  	    shift; n_shift=$((n_shift+1));;
+      -k1|--fdisk-proportion)  
+  	    create_part="yes"
+  	    create_part_type="proportion"
+  	    OCS_OPT="$OCS_OPT -k1"
+  	    shift; n_shift=$((n_shift+1));;
+      -k2|--fdisk-manual)  
+  	    create_part="yes"
+  	    create_part_type="manual"
+  	    OCS_OPT="$OCS_OPT -k2"
+  	    shift; n_shift=$((n_shift+1));;
+      -t|--no-restore-mbr)  
+  	    restore_mbr="no"
+  	    OCS_OPT="$OCS_OPT -t"
+              shift; n_shift=$((n_shift+1));;
+      -t1|--restore-raw-mbr)  
+              # The flag to restore syslinux mbr.bin to M$ windows system.
+  	    restore_prebuild_mbr="yes"
+  	    OCS_OPT="$OCS_OPT -t1"
+              shift; n_shift=$((n_shift+1));;
+      -t2|--no-restore-ebr)  
+  	    restore_ebr="no"
+  	    OCS_OPT="$OCS_OPT -t2"
+              shift; n_shift=$((n_shift+1));;
+      -e|--load-geometry)
+  	    OCS_OPT="$OCS_OPT -e"
+              shift; n_shift=$((n_shift+1));;
+      -e1|--change-geometry)  
+              change_ntfs_boot_chs="on"
+              shift; n_shift=$((n_shift+1))
+              # skip the -xx option, in case 
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                ntfs_boot_partition=$1
+                shift; n_shift=$((n_shift+1))
+              fi
+              [ -z "$ntfs_boot_partition" ] && USAGE && exit 1
+  	    OCS_OPT="$OCS_OPT -e1 $ntfs_boot_partition"
+              ;;
+      -e2|--load-geometry-from-edd)
+  	    OCS_OPT="$OCS_OPT -e2"
+              shift; n_shift=$((n_shift+1));;
+      -y|-y0|--always-restore|--always-restore-default-local)
+  	    always_restore="yes"
+  	    OCS_OPT="$OCS_OPT -y0"
+              shift; n_shift=$((n_shift+1));;
+      -y1|--always-restore-default-clone)
+  	    always_restore="yes"
+  	    OCS_OPT="$OCS_OPT -y1"
+              shift; n_shift=$((n_shift+1));;
+      -y2|--always-restore-default-drbl)
+  	    always_restore="yes"
+  	    OCS_OPT="$OCS_OPT -y2"
+              shift; n_shift=$((n_shift+1));;
+      -c|--confirm)
+  	    OCS_OPT="$OCS_OPT -c"
+  	    shift; n_shift=$((n_shift+1));;
+      -w|--wait-time)
+              shift; n_shift=$((n_shift+1))
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+  	      TIME_to_wait="$1"
+  	      OCS_OPT="$OCS_OPT -w $TIME_to_wait"
+                shift; n_shift=$((n_shift+1))
+              fi
+  	    ;;
+      -s|--skip-hw-detect)
+              hw_detect="off"
+  	    shift; n_shift=$((n_shift+1));;
+      --debug=?*)
+            debug_level=${1#--debug=}
+  	    OCS_OPT="$OCS_OPT --debug=$debug_level"
+  	    shift; n_shift=$((n_shift+1));;
+      -b|--batch)
+            # Here we append --batch to OCS_OPT instead of -b, (it will confuse init, sinice -b for init is emergency mode)
+            ocs_batch_mode="on"
+  	    OCS_OPT="$OCS_OPT --batch"
+  	    shift; n_shift=$((n_shift+1));;
+      -d|--debug-mode)
+            debug_mode="on"
+  	    OCS_OPT="$OCS_OPT -d"
+  	    shift; n_shift=$((n_shift+1));;
+      -d0|--dialog)   DIA="dialog"; shift; n_shift=$((n_shift+1));;
+      -d1|--Xdialog)  DIA="Xdialog"; shift; n_shift=$((n_shift+1));;
+      -d2|--whiptail) DIA="whiptail"; shift; n_shift=$((n_shift+1));;
+      -d3|--gdialog)  DIA="gdialog"; shift; n_shift=$((n_shift+1));;
+      -d4|--kdialog)  DIA="kdialog"; shift; n_shift=$((n_shift+1));;
+      -r|--resize-partition)
+  	    OCS_OPT="$OCS_OPT -r"
+  	    shift; n_shift=$((n_shift+1));;
+      -v|--verbose)
+  	    verbose="on"
+  	    OCS_OPT="$OCS_OPT -v"
+  	    shift; n_shift=$((n_shift+1));;
+      -nogui|--nogui)
+            # -nogui is for backward compatable, better to use --nogui
+            OCS_OPT="$OCS_OPT --nogui"
+  	    shift; n_shift=$((n_shift+1));;
+      -rm-win-swap-hib|--rm-win-swap-hib)
+            # Remove page and hibernation files in M$ windows
+            OCS_OPT="$OCS_OPT --rm-win-swap-hib"
+  	    shift; n_shift=$((n_shift+1));;
+      -rescue|--rescue)
+            OCS_OPT="$OCS_OPT --rescue"
+  	    shift; n_shift=$((n_shift+1));;
+      -mp|--mount-point)
+            shift; 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              mount_point=$1
+  	    shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$mount_point" ] && USAGE && exit 1
+  	    OCS_OPT="$OCS_OPT --mount-point $mount_point" ; 
+  	    ;;
+      --time-to-wait)
+  	    shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+  	    mcast_wait_time="$1"
+  	    shift; n_shift=$((n_shift+1))
+            fi
+  	    ;;
+      --clients-to-wait)
+  	    shift; n_shift=$((n_shift+1))
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+  	      n_clients="$1"
+  	      shift; n_shift=$((n_shift+1))
+              fi
+  	    ;;
+      --max-time-to-wait)
+  	    shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+  	    mcast_max_wait_time="$1"
+  	    shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$mcast_max_wait_time" ] && USAGE && exit 1
+  	    # Client need to know the --max-time-to-wait so that when sleeping
+  	    # between partitions restoring clone won't timeout.
+              OCS_OPT="$OCS_OPT --max-time-to-wait $mcast_max_wait_time"
+  	    ;;
+      -x|--full-duplex)
+            udp_sender_extra_opt="$udp_sender_extra_opt --full-duplex"
+  	    shift; n_shift=$((n_shift+1));;
+      -brdcst|--broadcast)
+            udp_sender_extra_opt="$udp_sender_extra_opt --broadcast"
+  	    shift; n_shift=$((n_shift+1));;
+      -j|--create-part-by-sfdisk)
+            # We leave this option for backward compatability.
+  	    OCS_OPT="$OCS_OPT --create-part-by-sfdisk"
+  	    shift; n_shift=$((n_shift+1));;
+      -j0|--create-part-by-dd)
+  	    OCS_OPT="$OCS_OPT --create-part-by-dd"
+  	    shift; n_shift=$((n_shift+1));;
+      -j1|--dump-mbr-in-the-end)
+  	    OCS_OPT="$OCS_OPT --dump-mbr-in-the-end"
+  	    shift; n_shift=$((n_shift+1));;
+      -j2|--clone-hidden-data)
+  	    OCS_OPT="$OCS_OPT --clone-hidden-data"
+  	    shift; n_shift=$((n_shift+1));;
+      -icrc|--icrc)
+  	    OCS_OPT="$OCS_OPT --icrc"
+  	    shift; n_shift=$((n_shift+1));;
+      -irvd|--irvd)
+  	    OCS_OPT="$OCS_OPT --irvd"
+  	    shift; n_shift=$((n_shift+1));;
+      -irhr|--irhr)
+  	    OCS_OPT="$OCS_OPT --irhr"
+  	    shift; n_shift=$((n_shift+1));;
+      -ius|--ius)
+  	    OCS_OPT="$OCS_OPT --ius"
+  	    shift; n_shift=$((n_shift+1));;
+      -icds|--ignore-chk-dsk-size-pt)
+  	    OCS_OPT="$OCS_OPT --ignore-chk-dsk-size-pt"
+  	    shift; n_shift=$((n_shift+1));;
+      -iefi|--ignore-update-efi-nvram)
+  	    OCS_OPT="$OCS_OPT --ignore-update-efi-nvram"
+  	    shift; n_shift=$((n_shift+1));;
+      -srel|--save-restore-error-log)
+  	    OCS_OPT="$OCS_OPT --save-restore-error-log"
+  	    shift; n_shift=$((n_shift+1));;
+      -hn0)
+  	    shift; n_shift=$((n_shift+1))
+            change_win_hostname="By_IP"
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+  	    win_hostname_prefix="$1"
+  	    shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$win_hostname_prefix" ] && USAGE && exit 1
+            OCS_OPT="$OCS_OPT -hn0 $win_hostname_prefix"
+  	    ;;
+      -hn1)
+  	    shift; n_shift=$((n_shift+1))
+            change_win_hostname="By_MAC"
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+  	    win_hostname_prefix="$1"
+  	    shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$win_hostname_prefix" ] && USAGE && exit 1
+            OCS_OPT="$OCS_OPT -hn1 $win_hostname_prefix"
+  	    ;;
+      -o|-o1|--run-postrun-dir) 
+              # -o is for backward compatability
+  	    run_postrun_dir="yes"
+  	    OCS_OPT="$OCS_OPT --run-postrun-dir"
+  	    shift; n_shift=$((n_shift+1));;
+      -o0|--run-prerun-dir) 
+  	    run_prerun_dir="yes"
+  	    OCS_OPT="$OCS_OPT --run-prerun-dir"
+  	    shift; n_shift=$((n_shift+1));;
+      -ns|--ntfs-progress-in-image-dir)
+  	    OCS_OPT="$OCS_OPT --ntfs-progress-in-image-dir"
+  	    shift; n_shift=$((n_shift+1));;
+      -cm|--check-md5sum)
+  	    check_md5sum="yes"
+  	    OCS_OPT="$OCS_OPT -cm"
+  	    shift; n_shift=$((n_shift+1));;
+      -cs|--check-sha1sum)
+  	    check_sha1sum="yes"
+  	    OCS_OPT="$OCS_OPT -cs"
+  	    shift; n_shift=$((n_shift+1));;
+      -cmf|--chk-chksum-for-files-in-dev)
+  	    chk_chksum_for_files_in_dev="yes"
+  	    OCS_OPT="$OCS_OPT -cmf"
+  	    shift; n_shift=$((n_shift+1));;
+      --mcast-iface)
+  	    shift; n_shift=$((n_shift+1))
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+  	      eth_for_multicast="$1"
+  	      shift; n_shift=$((n_shift+1))
+              fi
+              [ -z "$eth_for_multicast" ] && USAGE && exit 1
+  	    ;;
+      -um|--user-mode)
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              ocs_user_mode="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$ocs_user_mode" ] && USAGE && exit 1
+  	    OCS_OPT="$OCS_OPT -um"
+  	    ;;
+      -sc0|--skip-check-restorable-on-srv)
+            # flag to check if the image is restorable on clonezilla server
+  	    chk_img_restoreable_on_srv="no"
+  	    shift; n_shift=$((n_shift+1));;
+      -sc|-scs|--skip-check-restorable|--skip-check-restorable-s)
+            # flag to check if the image is restorable
+  	    chk_img_restoreable_mod_save="no"
+  	    OCS_OPT="$OCS_OPT -scs"
+  	    shift; n_shift=$((n_shift+1));;
+      -scr|--skip-check-restorable-r)
+            # Flag to check if the image is restorable
+  	    chk_img_restoreable_mod_restore="no"
+  	    OCS_OPT="$OCS_OPT -scr"
+  	    shift; n_shift=$((n_shift+1));;
+      -*)   echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+       *)   break ;;
+   esac
+  done
+} # end of parse_ocs_live_feed_img_cmd_options_with_dash
+#
 task_start_feed_img_for_mcast() {
   local MCAST_TMP ans_ mcast_dev_action
   local start_cmd
+  local OCS_OPT_PRE
+  local interactive_mode="no"
+
+  [ -z "$ocs_restore_img_name" ] && ocs_restore_img_name="ask_user"
+  [ -z "$ocs_restore_dev" ] && ocs_restore_dev="ask_user"
+
+  if [ "$ocs_restore_img_name" = "ask_user" -a \
+       "$ocs_restore_dev" = "ask_user" ]; then
+     interactive_mode="yes"
+  fi
 
   MCAST_TMP=`mktemp /tmp/ocs_recovery_tmp.XXXXXX`
   trap "[ -f "$MCAST_TMP" ] && rm -f $MCAST_TMP" HUP INT QUIT TERM EXIT
@@ -55,85 +377,180 @@ task_start_feed_img_for_mcast() {
     task_stop_feed_img_for_mcast
   fi
 
-  prep-ocsroot
+  # When $ocsroot is not a mount point, and nothing lists under it, run prep-ocsroot
+  if [ "$interactive_mode" = "yes" ]; then
+    if ! mountpoint $ocsroot &>/dev/null; then
+      if [ -z "$(ls -d $ocsroot/*/ 2>/dev/null)" ]; then
+        prep-ocsroot
+      fi
+    fi
+  fi
+
+  # eth_for_multicast will be passed to function start_ocs_service
+  # When Clonezilla live runs as multicast feeding server, the uplink port is where the packets sending.
+  eth_for_multicast="$(LC_ALL=C get-all-nic-ip -u)" 
+
+  if [ "$interactive_mode" = "yes" ]; then
+    [ -z "$ocs_user_mode" ] && ask_if_beginner_or_expert_mode
+  fi
+
   # Ask image name first (disk or parts image)
   # Image name
-  [ -z "$ocs_restore_img_name" ] && ocs_restore_img_name="ask_user"
   if [ "$ocs_restore_img_name" = "ask_user" ]; then
     # Since get_target_dir_name_when_restoring_parts can search disk and parts image, we use this function instead of get_target_dir_name_when_restoring_disk
     get_target_dir_name_when_restoring_parts # get $target_dir
+    ocs_restore_img_name="$target_dir"  # Keep it for later use in run_again prompt
   else
     target_dir="$ocs_restore_img_name"
   fi
   check_input_target_image "$ocsroot/$target_dir"
   # Check if the image is disk or parts
   if [ -e "$ocsroot/$target_dir/disk" ]; then
-    mcast_dev_action=restoredisk
+    mcast_dev_action="restoredisk"
+    dev_type="disk"
   else
-    mcast_dev_action=restoreparts
+    mcast_dev_action="restoreparts"
+    dev_type="parts"
+  fi
+
+  if [ "$interactive_mode" = "yes" ]; then
+    # ask if want to set ocs extra param
+    OCS_PARAM_TMP=`mktemp /tmp/ocs_param_tmp.XXXXXX`
+    trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
+    set_drbl_ocs_extra_param restore $OCS_PARAM_TMP $dev_type
+    # OCS_OPT_PRE is for drbl-ocs, we have to convert to that for ocs-sr
+    OCS_OPT_PRE="$(cat $OCS_PARAM_TMP)"
+    OCS_OPT_PRE="$(echo $OCS_OPT_PRE)"  # Make it in one line
+    parse_ocs_live_feed_img_cmd_options_with_dash $OCS_OPT_PRE  # Obtain $OCS_OPT for ocs-sr
+    [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
   fi
   
-  # ask target disk/parts
-  case "$mcast_dev_action" in
-   "restoredisk")
-         dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'hda' $msg_or 'sda' $msg_or 'hda hdb' $msg_or 'sda sdb') \n$msg_linux_disk_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
-         # savedisk_preset is borrowed from drbl-ocs.conf
-         dev_preset="$(get_disk_list_from_img $ocsroot/$target_dir)"
-         ;;
-   "restoreparts")
-         dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'hda1 hda2' $msg_or 'sda1 sda2') \n$msg_linux_parts_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
-         # saveparts_preset is borrowed from drbl-ocs.conf
-         dev_preset="$(get_parts_list_from_img $ocsroot/$target_dir)"
-         ;;
-  esac
-  ASK_DEV_NAME=1
-  while [ "$ASK_DEV_NAME" -ne 0 ]; do
-    $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-    --inputbox "$dev_prompt_and_example" 0 0 "$dev_preset" 2> $MCAST_TMP
-    target_hd="$(cat $MCAST_TMP)"
-    if [ -z "$target_hd" ]; then
-      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
-      --yesno "$msg_you_must_input_device_name_to_be_restored! $msg_do_u_want_to_do_it_again" 0 0 
-       ans_="$?"
-       case "$ans_" in
-         0) # yes is chosen
-            ASK_DEV_NAME=1;;
-         1) # no is chosen
-            echo "$msg_program_stop!"
-            [ -f "$MCAST_TMP" ] && rm -f $MCAST_TMP
-            exit 1;;
-       esac
-    else
-      ASK_DEV_NAME=0
-    fi
-  done
-  rm -f $MCAST_TMP
+  if [ -z "$ocs_restore_dev" -o \
+          "$ocs_restore_dev" = "ask_user" ]; then
+    # ask target disk/parts
+    case "$mcast_dev_action" in
+     "restoredisk")
+           dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'sda' $msg_or 'sda sdb') \n$msg_linux_disk_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
+           # savedisk_preset is borrowed from drbl-ocs.conf
+           dev_preset="$(get_disk_list_from_img $ocsroot/$target_dir)"
+           ;;
+     "restoreparts")
+           dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'sda1 sda2') \n$msg_linux_parts_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
+           # saveparts_preset is borrowed from drbl-ocs.conf
+           dev_preset="$(get_parts_list_from_img $ocsroot/$target_dir)"
+           ;;
+    esac
+    ASK_DEV_NAME=1
+    while [ "$ASK_DEV_NAME" -ne 0 ]; do
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+      --inputbox "$dev_prompt_and_example" 0 0 "$dev_preset" 2> $MCAST_TMP
+      target_hd="$(cat $MCAST_TMP)"
+      if [ -z "$target_hd" ]; then
+        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+        --yesno "$msg_you_must_input_device_name_to_be_restored! $msg_do_u_want_to_do_it_again" 0 0 
+         ans_="$?"
+         case "$ans_" in
+           0) # yes is chosen
+              ASK_DEV_NAME=1;;
+           1) # no is chosen
+              echo "$msg_program_stop!"
+              [ -f "$MCAST_TMP" ] && rm -f $MCAST_TMP
+              exit 1;;
+         esac
+      else
+        ASK_DEV_NAME=0
+      fi
+    done
+    rm -f $MCAST_TMP
+    ocs_restore_dev="$target_hd"  # keep it for later use in run_again prompt
+  else
+    target_hd="$ocs_restore_dev"
+  fi
 
   task="multicast_restore"
-  if [ -z "$n_clients" ]; then
-    get_multicast_restore_mode_if_mcast
-    # Obtain: mcast_wait_time, n_clients, mcast_max_wait_time
+  OCS_OPT="$OCS_OPT --mcast-port $MULTICAST_PORT"
+  if [ "$interactive_mode" = "yes" ]; then
+    if [ -z "$n_clients" ]; then
+      get_multicast_restore_mode_if_mcast
+      # Obtain mcast_wait_time, n_clients, mcast_max_wait_time (global variables) to pass to function start_ocs_service
+    fi
+  fi
+  if [ -n "$n_clients" ]; then
+    mcast_client_no_opt="-n $n_clients"  # Used for start_ocs_service
+    OCS_OPT_PRE="$OCS_OPT_PRE --clients-to-wait $n_clients"  # For re-run prompt
+  fi
+  if [ -n "$mcast_wait_time" ]; then
+    OCS_OPT_PRE="$OCS_OPT_PRE --time-to-wait $mcast_wait_time"  # For re-run prompt
+  fi
+  if [ -n "$mcast_max_wait_time" ]; then
+    OCS_OPT_PRE="$OCS_OPT_PRE --max-time-to-wait $mcast_max_wait_time"  # For re-run prompt
   fi
 
-  start_cmd="start_ocs_service -f -n "$n_clients" -t \"multicast_$mcast_dev_action\" -o \"$target_dir $target_hd\""
+  start_cmd="start_ocs_service $mcast_client_no_opt -f -t \"multicast_$mcast_dev_action\" -o \"$target_dir $target_hd\""
   echo "Running: $start_cmd"
   eval $start_cmd
-  # TODO: improve this
-  sleep 1
+  while [ -z "$(LC_ALL=C ps -www --no-headers -C "udp-sender" -o pid,cmd)" ]; do
+    sleep 0.2
+  done
   echo "Feeding status:"
-  ps -www -C "udp-sender" -o pid,tname,cmd
-  
+  echo $msg_delimiter_star_line
+  ps -www -C "cat" -C "udp-sender" -o pid,cmd
+  echo $msg_delimiter_star_line
+  echo "More udp-sender and cat comamnds (if available) will be spawned when the 1st one is done."
   # Prepare the commands for clients
   if ! systemctl status lighttpd >/dev/null 2>&1; then
     systemctl start lighttpd
   fi
 
-  # TODO: ask for beginner/expert mode options
-  rm -f /var/www/html/ocs-client-run.sh
+  echo $msg_delimiter_star_line
+  # Two parts: img-wo-fs.tar.xz and ocs-client-run.sh
+  # Part 1: img-wo-fs.tar.xz
+  rm -f /var/www/html/ocs-client-run.sh /var/www/html/img-wo-fs.tar.xz
+  echo "Preparing files for clients to download in /var/www/html/: ocs-client-run.sh, img-wo-fs.tar.xz"
+  echo "Packing the tarball containing no file system images: img-wo-fs.tar.xz..."
+  img_no_fs_tmp="$(mktemp -d /tmp/img_no_fs.XXXXXX)"
+  rsync -a --exclude=*-ptcl-img.* --exclude=*.ntfs-img.* --exclude=*.dd-img.* $imagedir/$target_dir/* $img_no_fs_tmp
+  # TODO: partimage file name, or drop it?
+  for ifile in $imagedir/$target_dir/*-ptcl-img.* \
+	       $imagedir/$target_dir/*.ntfs-img.* \
+	       $imagedir/$target_dir/*.dd-img.*; do
+    [ ! -e "$ifile" ] && continue  
+    fn="$(basename $ifile)"
+    touch $img_no_fs_tmp/$fn
+  done
+  ( cd $img_no_fs_tmp
+    tar -cJf /var/www/html/img-wo-fs.tar.xz *
+  )
+  if [ -d "$img_no_fs_tmp" -a \
+       -n "$(echo $img_no_fs_tmp | grep -i "img_no_fs")" ]; then
+    rm -rf "$img_no_fs_tmp"
+  fi
+  # Part 2: ocs-client-run.sh
+  srv_ip="$(drbl-get-ipadd $eth_for_multicast)"
   cat <<-CLIENT_END > /var/www/html/ocs-client-run.sh
 #!/bin/bash
-ocs-sr -l en_US.UTF-8 -g auto -e1 auto -e2 -r --clone-hidden-data -p reboot --max-time-to-wait $mcast_max_wait_time -scr --mcast-port 2232 multicast_$mcast_dev_action $target_dir $target_hd
+echo "Preparing the image info..."
+rm -f /tmp/img-wo-fs.tar.xz
+wget -P /tmp/ http://$srv_ip/img-wo-fs.tar.xz
+mkdir /tmp/$target_dir
+tar -xJf /tmp/img-wo-fs.tar.xz -C /tmp/$target_dir/
+echo "Starting restoring..."
+ocs-sr --ocsroot /tmp/ -l en_US.UTF-8 $OCS_OPT --max-time-to-wait $mcast_max_wait_time -scr multicast_$mcast_dev_action $target_dir $target_hd
 CLIENT_END
+  if [ -e "/var/www/html/img-wo-fs.tar.xz" -a -e "/var/www/html/ocs-client-run.sh" ]; then
+    echo "Files /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.sh created successfully:"
+    ls -lv /var/www/html/img-wo-fs.tar.xz /var/www/html/ocs-client-run.sh
+  fi
+  echo $msg_delimiter_star_line
+
+  #
+  run_again_fname="/tmp/ocs-live-feed-img-`date +%F-%H-%M`"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+  echo PS. $msg_run_drbl_ocs_again_cmd | tee --append ${OCS_LOGFILE}
+  echo $ocs $OCS_OPT_PRE $mode $ocs_restore_img_name $ocs_restore_dev | tee $run_again_fname
+  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
+  echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
 } # end of task_start_feed_img_for_mcast
 
@@ -150,44 +567,9 @@ task_stop_feed_img_for_mcast() {
 
 ocs_file="$0"
 ocs=`basename $ocs_file`
-#
-while [ $# -gt 0 ]; do
- case "$1" in
-   -b|--batch) ocs_batch_mode="on"; shift;;
-   -or|--ocsroot)
-           # overwrite the ocsroot in drbl.conf
-           shift; 
-           if [ -z "$(echo $1 |grep ^-.)" ]; then
-             # skip the -xx option, in case 
-             ocsroot="$1"
-             shift;
-           fi
-           [ -z "$ocsroot" ] && USAGE && exit 1
-           ;;
-   -nogui|--nogui)
-           shift; 
-           # -nogui is for backward compatable, better to use --nogui
-           nogui="on"
-           ;;
-   -n|--n-clients)
-           shift
-           if [ -z "$(echo $1 |grep ^-.)" ]; then
-             # skip the -xx option, in case 
-             n_clients="$1"
-             shift
-           fi
-           [ -z "$n_clients" ] && USAGE && exit 1
-           ;;
-   -v|--verbose)
-           verbose="on"
-	   shift;;
-   -*)     echo "${0}: ${1}: invalid option" >&2
-           USAGE >& 2
-           exit 2 ;;
-   *)      break ;;
- esac
-done
 
+parse_ocs_live_feed_img_cmd_options_with_dash $*
+shift ${n_shift}
 mode="$1"
 shift
 ocs_restore_img_name="$1"
@@ -204,12 +586,23 @@ export TERM="$TERM"
 check_if_root
 ask_and_load_lang_set
 
+# check DIA
+check_DIA_set_ESC $DIA
+
+# Change to other mount point for extra harddisk
+# Note: functions get_existing_disk_image, get_existing_parts_image and get_existing_partitions_from_img will use $imagedir 
+if [ -n "$mount_point" ]; then
+   echo "Using the image root directory $mount_point instead of $ocsroot."
+   imagedir="$mount_point" 
+else
+   imagedir="$ocsroot"
+fi
+
+echo $msg_delimiter_star_line
 if [ "$verbose" = "on" ]; then
   # The default output for udpcast stderr is surpressed, now turn it on
   udpcast_stderr="/dev/stderr"
 fi
-
-imagedir="$ocsroot"  # Used in ocs-functions.
 
 case "$mode" in 
   start) task_start_feed_img_for_mcast;;

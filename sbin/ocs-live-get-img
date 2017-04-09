@@ -1,4 +1,10 @@
 #!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to restore an image by receiving multicast packets from server
+# What will be done in this program:
+# 1. Get a tarball about the image which contains all files in the image except file system image files.
+# 3. Get a script about the full command to start restoring.
 #
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
@@ -9,48 +15,66 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
 # Functions
+USAGE() {
+    echo "$ocs - To start restoring an image from multicast server by Clonezilla"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] [SERVER]"
+    echo "This program is specially used in Clonezilla live to start restoring an image with multicast packets in clients."
+    echo "Options:"
+    echo "-b, --batch-mode   Run in batch mode"
+    echo "SERVER is the multicast server IP address or FQDN, e.g. 192.168.25.111..."
+    echo "If no SERVER is specified, a dialog menu will be shown."
+    echo "Ex:"
+    echo "To start restoring an image in client machine from multicaast feeding server 192.168.25.111, run"
+    echo "   $ocs 192.168.25.111"
+    echo
+} # end of USAGE
+#
 task_run_restoring() {
   network_config_if_necessary
-  if ! mountpoint $ocsroot >/dev/null 2>&1; then 
-    prep-ocsroot
-  fi
+  # No need for this. We have a tarball solution.
+  #if ! mountpoint $ocsroot >/dev/null 2>&1; then 
+  #  prep-ocsroot
+  #fi
   
-  # Ask about multicast feeding server
-  TMP="$(mktemp /tmp/nfs.XXXXXX)"
-  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-  srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
-  ask_="true"
-  while [ "$ask_" = "true" ]; do
-    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
-    "Multicast server" --inputbox "$msg_ip_address_or_FQDN_of_server: Multicast server" \
-    0 0 $srv_default $DIA_ESC \
-    2> $TMP
-    cast_srv="$(cat $TMP)"
-    if [ -z "$cast_srv" ]; then
-      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
-      --yesno "$msg_you_must_input_a_server\n$msg_do_u_want_to_do_it_again" 0 0
-      ans_="$?"
-      case "$ans_" in
-        0) # yes is chosen
-           ask_="true";;
-        1) # no is chosen
-           echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-           [ -f "$TMP" ] && rm -f $TMP
-           exit 1;;
-      esac
-    else
-      # Got the one we want
-      ask_="false"
-    fi
-  done
-  [ -f "$TMP" ] && rm -f $TMP
+  if [ "$cast_srv" = "ask_user" ]; then
+    # Ask about multicast feeding server
+    TMP="$(mktemp /tmp/nfs.XXXXXX)"
+    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+    srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
+    ask_="true"
+    while [ "$ask_" = "true" ]; do
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+      "Multicast server" --inputbox "$msg_ip_address_or_FQDN_of_server: Multicast server" \
+      0 0 $srv_default $DIA_ESC \
+      2> $TMP
+      cast_srv="$(cat $TMP)"
+      if [ -z "$cast_srv" ]; then
+        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+        --yesno "$msg_you_must_input_a_server\n$msg_do_u_want_to_do_it_again" 0 0
+        ans_="$?"
+        case "$ans_" in
+          0) # yes is chosen
+             ask_="true";;
+          1) # no is chosen
+             echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+             [ -f "$TMP" ] && rm -f $TMP
+             exit 1;;
+        esac
+      else
+        # Got the one we want
+        ask_="false"
+      fi
+    done
+    [ -f "$TMP" ] && rm -f $TMP
+  fi
   echo "Multicast server is: $cast_srv"
   rm -f /tmp/ocs-client-run.sh
   wget -P /tmp/ http://$cast_srv/ocs-client-run.sh
   chmod 755 /tmp/ocs-client-run.sh
   /tmp/ocs-client-run.sh
 } # end of task_run_restoring
-
 
 ####################
 ### Main program ###
@@ -72,9 +96,14 @@ while [ $# -gt 0 ]; do
  esac
 done
 
+cast_srv="$1"
+[ -z "$cast_srv" ] && cast_srv="ask_user"
 #
 check_if_root
 ask_and_load_lang_set
+
+# check DIA
+check_DIA_set_ESC $DIA
 
 #
 task_run_restoring
