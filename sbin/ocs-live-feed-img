@@ -393,27 +393,71 @@ task_start_feed_img_for_mcast() {
   # Ask image name first (disk or parts image)
   # Image name
   if [ "$ocs_restore_img_name" = "ask_user" ]; then
-    # Since get_target_dir_name_when_restoring_parts can search disk and parts image, we use this function instead of get_target_dir_name_when_restoring_disk
-    get_target_dir_name_when_restoring_parts # get $target_dir
+    TMP=$(mktemp /tmp/menu.XXXXXX)
+    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+    $DIA \
+    --backtitle "$msg_nchc_title" \
+    --title "$msg_start_clonezilla_mode" \
+    --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
+    "restoredisk" "$msg_clonezilla_restore_disk" \
+    "restoreparts" "$msg_clonezilla_restore_parts" \
+    2> $TMP
+    mcast_dev_action=$(cat $TMP)
+    [ -f "$TMP" ] && rm -f $TMP
+    case "$mcast_dev_action" in
+    "restoredisk")
+      get_target_dir_name_when_restoring_disk # get $target_dir
+      dev_type="disk"
+      ;;
+    "restoreparts")
+      get_target_dir_name_when_restoring_parts # get $target_dir
+      dev_type="parts"
+      ;;
+    esac
     ocs_restore_img_name="$target_dir"  # Keep it for later use in run_again prompt
   else
     target_dir="$ocs_restore_img_name"
   fi
   check_input_target_image "$ocsroot/$target_dir"
-  # Check if the image is disk or parts
-  if [ -e "$ocsroot/$target_dir/disk" ]; then
-    mcast_dev_action="restoredisk"
-    dev_type="disk"
+
+  # Get target device
+  if [ -z "$ocs_restore_dev" -o \
+          "$ocs_restore_dev" = "ask_user" ]; then
+    # choose the only dev we want
+    case "$dev_type" in
+     "disk")
+        ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+        trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+	get_existing_disks_from_img $ANS_TMP $imagedir/$target_dir
+        # we have to remove " (comes with checklist in dialog) so that for loop
+        # will work (Specially for FC3/4...)
+        target_hd="$(cat $ANS_TMP | tr -d \")"
+        ocs_restore_dev="$target_hd" # keep it for later use in run_again prompt
+        [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+        ;;
+     "parts")
+        ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+        trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+	get_existing_partitions_from_img $ANS_TMP $imagedir/$target_dir no restore
+        # we have to remove " (comes with checklist in dialog) so that for loop
+        # will work (Specially for FC3/4...)
+        target_parts="$(cat $ANS_TMP | tr -d \")"
+        ocs_restore_dev="$target_parts" # keep it for later use in run_again prompt
+        [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+        ;;
+    esac
   else
-    mcast_dev_action="restoreparts"
-    dev_type="parts"
+    case "$dev_type" in
+      "disk") target_hd="$ocs_restore_dev";;
+      "parts") target_parts="$ocs_restore_dev";;
+    esac
   fi
 
   if [ "$interactive_mode" = "yes" ]; then
     # ask if want to set ocs extra param
     OCS_PARAM_TMP=`mktemp /tmp/ocs_param_tmp.XXXXXX`
     trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
-    set_drbl_ocs_extra_param restore $OCS_PARAM_TMP $dev_type
+    set_drbl_ocs_extra_param -s -p reboot restore $OCS_PARAM_TMP $dev_type
     # OCS_OPT_PRE is for ocs-live-feed-img, we have to convert to that for ocs-sr
     OCS_OPT_PRE="$(cat $OCS_PARAM_TMP)"
     OCS_OPT_PRE="$(echo $OCS_OPT_PRE)"  # Make it in one line
@@ -423,48 +467,6 @@ task_start_feed_img_for_mcast() {
   # Load default settings if not assigned
   if [ -z "$chk_img_restoreable_on_srv" ]; then
     chk_img_restoreable_on_srv="$chk_img_restoreable_on_srv_def"
-  fi
-  
-  if [ -z "$ocs_restore_dev" -o \
-          "$ocs_restore_dev" = "ask_user" ]; then
-    # ask target disk/parts
-    case "$mcast_dev_action" in
-     "restoredisk")
-           dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'sda' $msg_or 'sda sdb') \n$msg_linux_disk_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
-           # savedisk_preset is borrowed from drbl-ocs.conf
-           dev_preset="$(get_disk_list_from_img $ocsroot/$target_dir)"
-           ;;
-     "restoreparts")
-           dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'sda1 sda2') \n$msg_linux_parts_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
-           # saveparts_preset is borrowed from drbl-ocs.conf
-           dev_preset="$(get_parts_list_from_img $ocsroot/$target_dir)"
-           ;;
-    esac
-    ASK_DEV_NAME=1
-    while [ "$ASK_DEV_NAME" -ne 0 ]; do
-      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-      --inputbox "$dev_prompt_and_example" 0 0 "$dev_preset" 2> $MCAST_TMP
-      target_hd="$(cat $MCAST_TMP)"
-      if [ -z "$target_hd" ]; then
-        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
-        --yesno "$msg_you_must_input_device_name_to_be_restored! $msg_do_u_want_to_do_it_again" 0 0 
-         ans_="$?"
-         case "$ans_" in
-           0) # yes is chosen
-              ASK_DEV_NAME=1;;
-           1) # no is chosen
-              echo "$msg_program_stop!"
-              [ -f "$MCAST_TMP" ] && rm -f $MCAST_TMP
-              exit 1;;
-         esac
-      else
-        ASK_DEV_NAME=0
-      fi
-    done
-    rm -f $MCAST_TMP
-    ocs_restore_dev="$target_hd"  # keep it for later use in run_again prompt
-  else
-    target_hd="$ocs_restore_dev"
   fi
 
   # Force to make client won't check the image integrity since this is for multicast restoring.
@@ -500,7 +502,9 @@ task_start_feed_img_for_mcast() {
     fi
   fi
 
-  start_cmd="start_ocs_service $mcast_client_no_opt -f -t \"multicast_$mcast_dev_action\" -o \"$target_dir $target_hd\""
+  # For multicast_restoredisk, the input device variable is $target_hd
+  # For multicast_restoreparts, the input device variable is $target_parts
+  start_cmd="start_ocs_service $mcast_client_no_opt -f -t \"multicast_$mcast_dev_action\" -o \"$target_dir $ocs_restore_dev\""
   echo "Running: $start_cmd"
   eval $start_cmd
   while [ -z "$(LC_ALL=C ps -www --no-headers -C "udp-sender" -o pid,cmd)" ]; do
@@ -540,16 +544,16 @@ task_start_feed_img_for_mcast() {
     rm -rf "$img_no_fs_tmp"
   fi
   # Part 2: ocs-client-run.sh
-  srv_ip="$(drbl-get-ipadd $eth_for_multicast)"
+  mcast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_multicast)"
   cat <<-CLIENT_END > /var/www/html/ocs-client-run.sh
 #!/bin/bash
 echo "Preparing the image info..."
 rm -f /tmp/img-wo-fs.tar.xz
-wget -P /tmp/ http://$srv_ip/img-wo-fs.tar.xz
+wget -P /tmp/ http://$mcast_srv_ip/img-wo-fs.tar.xz
 mkdir /tmp/$target_dir
 tar -xJf /tmp/img-wo-fs.tar.xz -C /tmp/$target_dir/
 echo "Starting restoring..."
-ocs-sr --ocsroot /tmp/ -l en_US.UTF-8 $OCS_OPT --max-time-to-wait $mcast_max_wait_time multicast_$mcast_dev_action $target_dir $target_hd
+ocs-sr --ocsroot /tmp/ -l en_US.UTF-8 $OCS_OPT --max-time-to-wait $mcast_max_wait_time multicast_$mcast_dev_action $target_dir $ocs_restore_dev
 CLIENT_END
   if [ -e "/var/www/html/img-wo-fs.tar.xz" -a -e "/var/www/html/ocs-client-run.sh" ]; then
     echo "Files /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.sh created successfully:"
@@ -567,6 +571,11 @@ CLIENT_END
     echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
+  echo $msg_delimiter_star_line
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_boot_client_with_same_version_clonezilla_live: $mcast_srv_ip"
+  echo "$msg_append_parameter_for_unattended_mode: locales=en_US.UTF-8 keyboard-layouts=us ocs_live_run=\"ocs-live-get-img $mcast_srv_ip\""
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
 } # end of task_start_feed_img_for_mcast
 
