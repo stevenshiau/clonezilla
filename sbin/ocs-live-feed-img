@@ -451,10 +451,27 @@ task_start_feed_img_for_mcast() {
         ;;
     esac
   else
-    case "$dev_type" in
-      "disk") target_hd="$ocs_restore_dev";;
-      "parts") target_parts="$ocs_restore_dev";;
-    esac
+    if [ -n "$dev_type" ]; then
+      # In interactive mode, we know $dev_type is.
+      case "$dev_type" in
+        "disk") target_hd="$ocs_restore_dev";;
+        "parts") target_parts="$ocs_restore_dev";;
+      esac
+    else
+      # When not in interactive mode, we have no idea what $dev_type is.
+      # However, we can tell from $ocs_restore_dev, e.g. sda -> disk, sda1 -> parts
+      # mcast_dev_action is required for function start_ocs_service
+      # while target_hd or target_parts is required for function 
+      # multicast_restoredisk and multicast_restoreparts (hence for start_ocs_service)
+      first_ele="$(echo $ocs_restore_dev | awk -F" " '{print $1}')"
+      if is_whole_disk $first_ele; then
+        mcast_dev_action="restoredisk"
+        target_hd="$ocs_restore_dev"
+      else
+        mcast_dev_action="restoreparts"
+        target_parts="$ocs_restore_dev"
+      fi
+    fi
   fi
 
   if [ "$interactive_mode" = "yes" ]; then
