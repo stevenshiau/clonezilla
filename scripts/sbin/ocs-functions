@@ -6826,11 +6826,13 @@ stop_ocs_service() {
 #   option
 #      "$target_image" for save/restore the partition /dev/hda1
 #      "$target_dir $target_hd" for save/restore the disk
+#      "$target_dir $target_parts" for restore the parts
 #   n_clients
 #      how many clients will be connected (for multicast only)
+# //NOTE// The $target_dev provided by the tag_option "$target_image $target_dev" is only for prompt use, not the input for target device. The actual used variable is $target_hd or $target_parts.
 start_ocs_service() {
   local task
-  local option
+  local tag_option
   local n_clients
   local node_ip
   local tgt_img=""
@@ -6849,14 +6851,14 @@ start_ocs_service() {
          fi
          [ -z "$task" ] && echo "-t is used, but no task assigned." && exit 1
          ;;
-      -o|--option)
+      -o|--tag-option)
          shift
          if [ -z "$(echo $1 |grep ^-.)" ]; then
            # skip the -xx option, in case 
-           option="$1"
+           tag_option="$1"
            shift
          fi
-         [ -z "$option" ] && echo "-o is used, but no option assigned." && exit 1
+         [ -z "$tag_option" ] && echo "-o is used, but no tag_option assigned." && exit 1
          ;;
       -f|--feed-only)
 	 feed_only="yes"
@@ -6873,9 +6875,9 @@ start_ocs_service() {
     esac
   done
   if [ "$feed_only" = "no" ]; then
-    # The option="$target_image $target_dev", we can get tgt_img & target_dev
-    tgt_img_menu="$(echo $option | awk -F" " '{print $1}')"
-    tgt_dev_menu="$(echo $option | awk '{ for (i=2; i<=NF; i++) printf "%s ", $i; printf "\n"; }' | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")"
+    # The tag_option="$target_image $target_dev", we can get tgt_img & target_dev
+    tgt_img_menu="$(echo $tag_option | awk -F" " '{print $1}')"
+    tgt_dev_menu="$(echo $tag_option | awk '{ for (i=2; i<=NF; i++) printf "%s ", $i; printf "\n"; }' | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")"
     # maybe it will be ask_user, if so, change it as choose later
     tgt_img_menu="$(echo "$tgt_img_menu" | sed -e "s/ask_user/(choose later)/g")"
     tgt_dev_menu="$(echo "$tgt_dev_menu" | sed -e "s/ask_user/(choose later)/g")"
@@ -6945,7 +6947,7 @@ start_ocs_service() {
         [ -z "$(echo $IP_LIST | grep -Ew "$node_ip")" ] && continue
       fi
       echo "Starting the OCS service for node IP add. = $node_ip"
-      prep_client_inittab_rc_srv $node_ip $task "$option"
+      prep_client_inittab_rc_srv $node_ip $task "$tag_option"
     done
     
     # Set the single user mode password if not setting for client...This will be safer..."
@@ -7043,7 +7045,7 @@ start_ocs_service() {
   fi
 
   #
-  target_dir="$(echo "$option" | awk -F' ' '{print $1}')"
+  target_dir="$(echo "$tag_option" | awk -F' ' '{print $1}')"
   case "$task" in
     "multicast_restoredisk")
       # find the available partitions
@@ -7066,7 +7068,6 @@ start_ocs_service() {
       # Strip the single white space which should be nothing. Thanks to Borksoft.
       target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
       # Let feed_multicast_restoreparts do the real job
-      # target_dir will be got from $option when run feed_multicast_restoreparts
       if [ -z "$target_parts" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
         echo "No target partitions were found from image $target_dir!" | tee --append ${OCS_LOGFILE}
@@ -7080,7 +7081,6 @@ start_ocs_service() {
 
     "multicast_restoreparts")
       # Let feed_multicast_restoreparts do the real job
-      #feed_multicast_restoreparts "$option" &
       if [ -z "$target_parts" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
         echo "No target partitions were found from image $target_dir!" | tee --append ${OCS_LOGFILE}
@@ -7113,7 +7113,6 @@ start_ocs_service() {
       # Strip the single white space which should be nothing. Thanks to Borksoft.
       target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
       # Let feed_multicast_restoreparts do the real job
-      # target_dir will be got from $option when run feed_multicast_restoreparts
       if [ -z "$target_parts" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
         echo "No target partitions were found from image $target_dir!" | tee --append ${OCS_LOGFILE}
