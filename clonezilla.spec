@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.4
+Version:	3.26.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Apr 10 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.5-drbl1
+  - Bug fixed: batch mode of ocs-live-feed-img failed.
+
 * Mon Apr 10 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.4-drbl1
   - Bug fixed for ocs-live-feed-img:
     Even if it's local repository, we still have to configure network
