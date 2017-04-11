@@ -568,17 +568,45 @@ task_start_feed_img_for_mcast() {
   mcast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_multicast)"
   cat <<-CLIENT_END > /var/www/html/ocs-client-run.sh
 #!/bin/bash
+DRBL_SCRIPT_PATH="\${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. \$DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. \$DRBL_SCRIPT_PATH/sbin/ocs-functions
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+ask_and_load_lang_set
 echo "Preparing the image info..."
 rm -f /tmp/img-wo-fs.tar.xz
 wget -P /tmp/ http://$mcast_srv_ip/img-wo-fs.tar.xz
-mkdir /tmp/$target_dir
-tar -xJf /tmp/img-wo-fs.tar.xz -C /tmp/$target_dir/
-echo "Starting restoring..."
-ocs-sr --ocsroot /tmp/ -l en_US.UTF-8 $OCS_OPT --max-time-to-wait $mcast_max_wait_time multicast_$mcast_dev_action $target_dir $ocs_restore_dev
+if [ ! -e /tmp/img-wo-fs.tar.xz ]; then
+  [ "\$BOOTUP" = "color" ] && \$SETCOLOR_FAILURE
+  echo "Failed to retreive img-wo-fs.tar.xz from http://$mcast_srv_ip/."
+  [ "\$BOOTUP" = "color" ] && \$SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+image="\$(mktemp -d /tmp/ocs-img.XXXXXX)"
+tar -xJf /tmp/img-wo-fs.tar.xz -C \$image
+if [ -n "\$(ls -A \$image 2>/dev/null)" ]; then
+  echo "Starting restoring..."
+  ocs-sr --ocsroot /tmp/ -l en_US.UTF-8 $OCS_OPT --max-time-to-wait $mcast_max_wait_time multicast_$mcast_dev_action "\$(basename \$image)" $ocs_restore_dev
+else
+  [ "\$BOOTUP" = "color" ] && \$SETCOLOR_FAILURE
+  echo "Failed to find the correct pseudo image dir \$image"
+  [ "\$BOOTUP" = "color" ] && \$SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
 CLIENT_END
   if [ -e "/var/www/html/img-wo-fs.tar.xz" -a -e "/var/www/html/ocs-client-run.sh" ]; then
     echo "Files /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.sh created successfully:"
     ls -lv /var/www/html/img-wo-fs.tar.xz /var/www/html/ocs-client-run.sh
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to create /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.sh."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    exit 1
   fi
   echo $msg_delimiter_star_line
 
