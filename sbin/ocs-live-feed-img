@@ -410,11 +410,21 @@ task_start_feed_img_for_mcast() {
     [ -f "$TMP" ] && rm -f $TMP
     case "$mcast_dev_action" in
     "restoredisk")
-      get_target_dir_name_when_restoring_disk # get $target_dir
+      ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+      trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+      get_existing_disk_image $ANS_TMP rest-unenc
+      # the return name will be only one image name.
+      target_dir="$(cat $ANS_TMP)"
+      [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
       dev_type="disk"
       ;;
     "restoreparts")
-      get_target_dir_name_when_restoring_parts # get $target_dir
+      ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+      trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+      get_existing_parts_image $ANS_TMP rest-unenc
+      # the return name will be only one image name.
+      target_dir="$(cat $ANS_TMP)"
+      [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
       dev_type="parts"
       ;;
     esac
