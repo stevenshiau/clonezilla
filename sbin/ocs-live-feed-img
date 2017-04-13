@@ -541,24 +541,24 @@ task_start_feed_img_for_mcast() {
   while [ -z "$(LC_ALL=C ps -www --no-headers -C "udp-sender" -o pid,cmd)" ]; do
     sleep 0.2
   done
-  echo "Feeding status:"
-  echo $msg_delimiter_star_line
-  ps -www -C "cat" -C "udp-sender" -o pid,cmd
-  echo $msg_delimiter_star_line
-  echo "More udp-sender and cat comamnds (if available) will be spawned when the 1st one is done."
+  echo "Feeding status:" | tee --append ${OCS_LOGFILE}
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  ps -www -C "cat" -C "udp-sender" -o pid,cmd | tee --append ${OCS_LOGFILE}
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  echo "More udp-sender and cat comamnds (if available) will be spawned when the 1st one is done." | tee --append ${OCS_LOGFILE}
   # Prepare the commands for clients
   if ! systemctl status lighttpd >/dev/null 2>&1; then
-    systemctl start lighttpd
+    systemctl start lighttpd | tee --append ${OCS_LOGFILE}
   fi
 
   echo $msg_delimiter_star_line
   # Two parts: img-wo-fs.tar.xz and ocs-client-run.sh
   # Part 1: img-wo-fs.tar.xz
-  rm -f /var/www/html/ocs-client-run.sh /var/www/html/img-wo-fs.tar.xz
-  echo "Preparing files for clients to download in /var/www/html/: ocs-client-run.sh, img-wo-fs.tar.xz"
-  echo "Packing the tarball containing no file system images: img-wo-fs.tar.xz..."
+  rm -f /var/www/html/ocs-client-run.sh /var/www/html/img-wo-fs.tar.xz | tee --append ${OCS_LOGFILE}
+  echo "Preparing files for clients to download in /var/www/html/: ocs-client-run.sh, img-wo-fs.tar.xz" | tee --append ${OCS_LOGFILE}
+  echo "Packing the tarball containing no file system images: img-wo-fs.tar.xz..." | tee --append ${OCS_LOGFILE}
   img_no_fs_tmp="$(mktemp -d /tmp/img_no_fs.XXXXXX)"
-  rsync -a --exclude=*-ptcl-img.* --exclude=*.ntfs-img.* --exclude=*.dd-img.* $imagedir/$target_dir/* $img_no_fs_tmp
+  rsync -a --exclude=*-ptcl-img.* --exclude=*.ntfs-img.* --exclude=*.dd-img.* $imagedir/$target_dir/* $img_no_fs_tmp | tee --append ${OCS_LOGFILE}
   # TODO: partimage file name, or drop it?
   for ifile in $imagedir/$target_dir/*-ptcl-img.* \
 	       $imagedir/$target_dir/*.ntfs-img.* \
@@ -572,7 +572,7 @@ task_start_feed_img_for_mcast() {
   )
   if [ -d "$img_no_fs_tmp" -a \
        -n "$(echo $img_no_fs_tmp | grep -i "img_no_fs")" ]; then
-    rm -rf "$img_no_fs_tmp"
+    rm -rf "$img_no_fs_tmp" | tee --append ${OCS_LOGFILE}
   fi
   # Part 2: ocs-client-run.sh
   mcast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_multicast)"
@@ -609,11 +609,11 @@ else
 fi
 CLIENT_END
   if [ -e "/var/www/html/img-wo-fs.tar.xz" -a -e "/var/www/html/ocs-client-run.sh" ]; then
-    echo "Files /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.sh created successfully:"
-    ls -lv /var/www/html/img-wo-fs.tar.xz /var/www/html/ocs-client-run.sh
+    echo "Files /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.sh created successfully:" | tee --append ${OCS_LOGFILE}
+    ls -lv /var/www/html/img-wo-fs.tar.xz /var/www/html/ocs-client-run.sh | tee --append ${OCS_LOGFILE}
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Failed to create /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.sh."
+    echo "Failed to create /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.sh." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
@@ -632,15 +632,15 @@ CLIENT_END
   fi
   echo $msg_delimiter_star_line
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "$msg_boot_client_with_same_version_clonezilla_live: $mcast_srv_ip"
-  echo "$msg_append_parameter_for_unattended_mode: locales=en_US.UTF-8 keyboard-layouts=us ocs_live_run=\"ocs-live-get-img $mcast_srv_ip\""
+  echo "$msg_boot_client_with_same_version_clonezilla_live: $mcast_srv_ip" | tee --append ${OCS_LOGFILE}
+  echo "$msg_append_parameter_for_unattended_mode: locales=en_US.UTF-8 keyboard-layouts=us ocs_live_run=\"ocs-live-get-img $mcast_srv_ip\"" | tee --append ${OCS_LOGFILE}
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
 } # end of task_start_feed_img_for_mcast
 
 task_stop_feed_img_for_mcast() {
   # 1. Kill process
-  kill_ps_by_killall_9 udp-sender
+  kill_ps_by_killall_9 udp-sender | tee --append ${OCS_LOGFILE}
   # 2. Remove the file for clients.
 } # task_stop_feed_img_for_mcast
 
@@ -676,7 +676,7 @@ check_DIA_set_ESC $DIA
 # Change to other mount point for extra harddisk
 # Note: functions get_existing_disk_image, get_existing_parts_image and get_existing_partitions_from_img will use $imagedir 
 if [ -n "$mount_point" ]; then
-   echo "Using the image root directory $mount_point instead of $ocsroot."
+   echo "Using the image root directory $mount_point instead of $ocsroot." | tee --append ${OCS_LOGFILE}
    imagedir="$mount_point" 
 else
    imagedir="$ocsroot"
