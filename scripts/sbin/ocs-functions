@@ -6044,7 +6044,10 @@ feed_bittorrent_restoreparts() {
         do_regen_BT_img="yes"  # Keep for later use in LVM
         create_bt_image_files_from_partclone_img $partition
       else
-        echo "Existing Clonezilla BT files match the source image. Not need to regenerate..."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Existing Clonezilla BT files match the source image. No need to regenerate..."
+        echo "BT slice files dir: $ocsroot_btzone/$tgt_dir/$(to_filename $partition)"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       fi
     fi
     pt_no_lvm="$pt_no_lvm $partition"
@@ -12753,10 +12756,9 @@ create_bt_image_files_from_partclone_img() {
       echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
       exit 1
     fi
-    mkdir -p $ocsroot_btzone/$tgt_dir/${img_file} $ocsroot_btzone/$tgt_dir/${img_file}-mnt
-    cd $ocsroot_btzone/$tgt_dir/$img_file
-
     # Start to provide BT slice files.
+    # Use option: -T, --btfiles
+    # E.g. partclone.extfs -d -r -s ./sda1.img -o mntc/ -T
     if [ "$partclone_make_slice_opt" = "extract" ]; then
       # Method 1: Extract the slices from image directly for BT
       echo "Preparing image slice files for BT use: $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img" | tee --append ${OCS_LOGFILE}
@@ -12765,12 +12767,15 @@ create_bt_image_files_from_partclone_img() {
         done
       ) \
       | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
-      | LC_ALL=C partclone.${fs_} -bt $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -OBT $ocsroot_btzone/$tgt_dir/$img_file 
+      | LC_ALL=C partclone.${fs_} -d -r $PARTCLONE_RESTORE_OPT -s - -T -o $ocsroot_btzone/$tgt_dir/$img_file 
     elif [ "$partclone_make_slice_opt" = "fusecopy" ]; then
       ## Method 2: Use Partclone >= 0.3.5 to mount uncompressed image as BT slices.
       # Somehow it's still slow. Therefore this method copy files from fuse dir to disk
       # so that it's faster when restoring. However, it still takes time to copy...
       echo "Preparing uncompressed image for BT use: $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img" | tee --append ${OCS_LOGFILE}
+      mkdir -p $ocsroot_btzone/$tgt_dir/${img_file} $ocsroot_btzone/$tgt_dir/${img_file}-mnt
+      cd $ocsroot_btzone/$tgt_dir/$img_file
+
       img_size_sum="$(LC_ALL=C du -sb $target_d/${img_file_prefix}* | awk '{print $1}')"
       ( for img in $target_d/$img_file_prefix; do
           cat $img
@@ -12800,7 +12805,6 @@ create_bt_image_files_from_partclone_img() {
       exit 1
     fi
 
-    
     if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
       rc=0
     else
@@ -12860,10 +12864,13 @@ create_LVM_bt_image_files_from_partclone_img() {
           -z "$(ls -A "$ocsroot_btzone/$tgt_dir/$(to_filename $fn)" 2>/dev/null)" ]; then
      echo "Create the image files for BT if they do not exist..." | tee --append ${OCS_LOGFILE}
      create_bt_image_files_from_partclone_img $fn
-    else
-      if [ "$do_regen_BT_img" = "yes" ]; then
-        create_bt_image_files_from_partclone_img $fn
-      fi
+   elif [ "$do_regen_BT_img" = "yes" ]; then
+     create_bt_image_files_from_partclone_img $fn
+   else
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+     echo "Existing Clonezilla BT files match the source image. No need to regenerate..."
+     echo "BT slice files dir: $ocsroot_btzone/$tgt_dir/$(to_filename $partition)"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
    fi
   done < $LOGV_PARSE_CONF
 } # end of create_LVM_bt_image_files_from_partclone_img
