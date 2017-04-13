@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.6
+Version:	3.26.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Apr 13 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.7-drbl1
+  - Enable different mechanism for creating BT slices with partclone. This is
+    controlled by option partclone_make_slice_opt in drbl-ocs.conf.
+  - Exclude encrypted image when selecting image in ocs-live-feed-img.
+  - Add more outputs from ocs-live-feed-img and ocs-live-get-img in log file.
+
 * Tue Apr 11 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.6-drbl1
   - Add more checking in ocs-live-feed-img, including:
     the created ocs-client-run.sh should check if the pseudo image
