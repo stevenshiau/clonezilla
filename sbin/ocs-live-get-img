@@ -71,9 +71,16 @@ task_run_restoring() {
   fi
   echo "Multicast server is: $cast_srv" | tee --append ${OCS_LOGFILE}
   rm -f /tmp/ocs-client-run.sh | tee --append ${OCS_LOGFILE}
-  wget -P /tmp/ http://$cast_srv/ocs-client-run.sh | tee --append ${OCS_LOGFILE}
+  get_run_cmd="wget -P /tmp/ http://$cast_srv/ocs-client-run.sh"
+  echo "Running: $get_run_cmd"
+  eval $get_run_cmd | tee --append ${OCS_LOGFILE}
   if [ -e "/tmp/ocs-client-run.sh" ]; then
     chmod 755 /tmp/ocs-client-run.sh | tee --append ${OCS_LOGFILE}
+    echo "Running /tmp/ocs-client-run.sh" | tee --append ${OCS_LOGFILE}
+    echo "The content of /tmp/ocs-client-run.sh:" | tee --append ${OCS_LOGFILE}
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    cat /tmp/ocs-client-run.sh | tee --append ${OCS_LOGFILE}
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     /tmp/ocs-client-run.sh | tee --append ${OCS_LOGFILE}
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -89,6 +96,7 @@ task_run_restoring() {
 
 ocs_file="$0"
 ocs=`basename $ocs_file`
+OCS_LOGFILE="/var/log/${ocs}.log"
 #
 while [ $# -gt 0 ]; do
  case "$1" in
@@ -111,6 +119,39 @@ ask_and_load_lang_set
 
 # check DIA
 check_DIA_set_ESC $DIA
+
+mkdir -p $ocs_log_dir
+ocs_log_rotate $OCS_LOGFILE
+
+# Check if run on clonezilla live lite server
+if [ -e "/var/www/html/img-wo-fs.tar.xz" -a -e "/var/www/html/ocs-client-run.sh" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_client_program_is_run_on_lite_server" | tee --append ${OCS_LOGFILE}
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n "$msg_are_u_sure_u_want_to_continue (y/N) " | tee --append ${OCS_LOGFILE}
+  read continue_confirm_ans
+  case "$continue_confirm_ans" in
+       y|Y|[yY][eE][sS])
+          echo "$msg_let_me_ask_you_again."
+          echo -n "$msg_are_u_sure_u_want_to_continue (y/N) " | tee --append ${OCS_LOGFILE}
+          read confirm_ans_again
+          case "$confirm_ans_again" in
+          y|Y|[yY][eE][sS])
+             echo "$msg_ok_let_do_it" | tee --append ${OCS_LOGFILE}
+	     ;;
+          *)
+             echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+             copy_error_log
+             exit 1
+          esac
+             ;;
+       *)
+          echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+          # Saving mode, always copy error log to image dir.
+          copy_error_log
+          exit 1
+  esac
+fi
 
 #
 task_run_restoring
