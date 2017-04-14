@@ -5870,6 +5870,13 @@ udp_send_part_img() {
   # for the 2nd and other partition, we should shorten the preparation time
   [ -n "$mcast_wait_time" -a $ipart -gt 1 ] && udpcast_hold_opt1="--min-wait $PART_PREPARE_TIME" 
   [ -n "$mcast_max_wait_time" -a $ipart -gt 1 ] && udpcast_hold_opt3="--max-wait $PART_PREPARE_TIME" 
+  if [ -z "$eth_for_multicast" ]; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "No ethernet port was assigned for multicast packets!"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+     exit 1
+  fi
   udpcast_send_cmd="udp-sender $udp_sender_extra_opt $udpcast_hold_opt1 $udpcast_hold_opt2 $udpcast_hold_opt3 --interface $eth_for_multicast --nokbd --mcast-all-addr $MULTICAST_ALL_ADDR --portbase $port $TIME_TO_LIVE_OPT"
   if [ -f "$imagedir/$target_d/$img_file.000" -o \
        -n "$(ls $imagedir/$target_d/$img_file.aa* 2>/dev/null)" -o \
@@ -6023,7 +6030,8 @@ feed_bittorrent_restoreparts() {
     fi
     # Create the image files for BT if they do not exist.
     if [ ! -d "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" -o \
-	   -z "$(ls -A "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" 2>/dev/null)" ]; then
+	   "$(find "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" \
+	   -mindepth 1 -maxdepth 1 -print 2>/dev/nul | wc -l)" -eq 0 ]; then
       do_regen_BT_img="yes"  # Keep for later use in LVM
       echo "Create the image files for BT if they do not exist..."
       create_bt_image_files_from_partclone_img $partition
@@ -6085,11 +6093,13 @@ feed_bittorrent_restoreparts() {
    fi
   ) &
   # Keep the log. We have to wait like what mail_clonezilla_log_to_root does
-  (
-    sleep $time_to_pause_before_mail
-    time_tag="$(LC_ALL=C head -n 1 $ocs_log_dir/clonezilla-jobs.log | cut -d "," -f 1 | sed -r -e "s/[[:space:]]//g")"
-    cp -a $ocs_log_dir/clonezilla-jobs.log $ocs_log_dir/jobs-$time_tag.log
-  ) &
+  if [ -e "$ocs_log_dir/clonezilla-jobs.log" ]; then
+    (
+      sleep $time_to_pause_before_mail
+      time_tag="$(LC_ALL=C head -n 1 $ocs_log_dir/clonezilla-jobs.log | cut -d "," -f 1 | sed -r -e "s/[[:space:]]//g")"
+      cp -a $ocs_log_dir/clonezilla-jobs.log $ocs_log_dir/jobs-$time_tag.log
+    ) &
+  fi
 } # end of feed_bittorrent_restoreparts
 #
 do_bittorrent_restore() {
@@ -6720,7 +6730,7 @@ stop_ocs_service() {
     kill_ps_by_killall_9 udp-sender
 
     # Stop BT-related services
-    ocs-btsrv stop
+    ocs-btsrv -b stop
     
     # clean the tag
     rm -f $ocs_lock_dir/clonezilla.lock
@@ -9271,7 +9281,7 @@ get_bt_restore_mode_if_bittorrent() {
        [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
       fi
     fi
-} # end of get_multicast_restore_mode_if_mcast
+} # end of get_bt_restore_mode_if_bittorrent
 #
 add_runlevel_1_in_pxelinux_cfg_block() {
   local label="$1"
@@ -12768,6 +12778,7 @@ create_bt_image_files_from_partclone_img() {
       ) \
       | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
       | LC_ALL=C partclone.${fs_} -d -r $PARTCLONE_RESTORE_OPT -s - -T -o $ocsroot_btzone/$tgt_dir/$img_file 
+      retcodes=(${PIPESTATUS[@]})
     elif [ "$partclone_make_slice_opt" = "fusecopy" ]; then
       ## Method 2: Use Partclone >= 0.3.5 to mount uncompressed image as BT slices.
       # Somehow it's still slow. Therefore this method copy files from fuse dir to disk
@@ -12804,8 +12815,7 @@ create_bt_image_files_from_partclone_img() {
       copy_error_log
       exit 1
     fi
-
-    if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
+    if [ "${retcodes[1]}" -eq 0 -a "${retcodes[2]}" -eq 0 ]; then
       rc=0
     else
       rc=1
@@ -12861,7 +12871,8 @@ create_LVM_bt_image_files_from_partclone_img() {
      *[Ss][Ww][Aa][Pp]*) continue;; 
    esac
    if [ ! -d "$ocsroot_btzone/$tgt_dir/$(to_filename $fn)" -o \
-          -z "$(ls -A "$ocsroot_btzone/$tgt_dir/$(to_filename $fn)" 2>/dev/null)" ]; then
+          "$(find "$ocsroot_btzone/$tgt_dir/$(to_filename $fn)" \
+	  -mindepth 1 -maxdepth 1 -print 2>/dev/nul | wc -l)" -eq 0 ]; then
      echo "Create the image files for BT if they do not exist..." | tee --append ${OCS_LOGFILE}
      create_bt_image_files_from_partclone_img $fn
    elif [ "$do_regen_BT_img" = "yes" ]; then
