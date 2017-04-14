@@ -1,12 +1,13 @@
 #!/bin/bash
 # License: GPL 
 # Author: Steven Shiau <steven _at_ clonezilla org>
-# Description: Program to feed multicast packets for clients to restore.
+# Description: Program to feed multicast/bt packets for clients to restore.
 # What will be done in this program:
 # 1. Image repository has to be mounted first.
 # 2. Create a tarball about the image which contains all files in the image except file system image files.
 # 3. Provide full command for client to run. 
 # For 2 and 3, the files will be put in httpd server.
+# //NOTE// Bittorrent is still under development. Not enabled yet.
 
 #
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -30,14 +31,16 @@ restore_mbr="yes"
 restore_prebuild_mbr="no"
 rm_win_swap_hib="no"
 chk_img_restoreable_on_srv_def="yes"
+# Timeout max times for sleep 0.2 (default is 5 mins = 0.2*1500/60)
+timeout_max="1500"
 
 # Functions
 USAGE() {
-    echo "$ocs - To start feeding image for multicast mode in Clonezilla"
+    echo "$ocs - To start feeding image for multicast/bt mode in Clonezilla"
     echo "Usage:"
     echo "To run $ocs:"
     echo "$ocs [OPTION] MODE [IMAGE_NAME] [DEVICE]"
-    echo "This program is specially used in Clonezilla live to start feeding multicast packets for clients."
+    echo "This program is specially used in Clonezilla live to start feeding multicast/bt packets for clients."
     echo "Options:"
     USAGE_common_restore
     USAGE_common_restore_server
@@ -51,6 +54,7 @@ USAGE() {
     echo " -f, --nfs-restart        Restart nfs when start or stop $ocs (Default is to restart nfs)"
     echo " --mcast-iface  PORT      Specify the multicast seed ethernet port PORT (eth0, eth1, eth2...). Suppose clonezilla will try to find that for you, but in some case, you might want to specify that."
     echo " -x, --full-duplex         Use full-duplex network with udpcast in multicast mode (faster, but does not work with network hub, only works in switch.)."
+    echo " -md, --massive-deploy-mode Assign the mass deployment mode: broadcast, multicast, or bittorrent"
     echo
     echo "MODE is \"start\" or \"stop\""
     echo "IMAGE_NAME is the image dir name, not absolute path"
@@ -222,7 +226,7 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
             [ -z "$mcast_max_wait_time" ] && USAGE && exit 1
   	    # Client need to know the --max-time-to-wait so that when sleeping
   	    # between partitions restoring clone won't timeout.
-              OCS_OPT="$OCS_OPT --max-time-to-wait $mcast_max_wait_time"
+            OCS_OPT="$OCS_OPT --max-time-to-wait $mcast_max_wait_time"
   	    ;;
       -x|--full-duplex)
             udp_sender_extra_opt="$udp_sender_extra_opt --full-duplex"
@@ -343,6 +347,18 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
   	    chk_img_restoreable_mod_restore="no"
   	    OCS_OPT="$OCS_OPT -scr"
   	    shift; n_shift=$((n_shift+1));;
+      -md|--massive-deploy-mode)
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              massive_deploy_mode="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$massive_deploy_mode" ] && USAGE && exit 1
+	    # //NOTE// Do not pass -md option to OCS_OPT here.
+	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
+  	    # XXXXXX OCS_OPT="$OCS_OPT -md $massive_deploy_mode"
+  	    ;;
       -*)   echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
             exit 2 ;;
@@ -357,6 +373,7 @@ task_start_feed_img_for_mcast() {
   local OCS_OPT_PRE
   local interactive_mode="no"
   local rc_chkimg
+  local castmode
 
   [ -z "$ocs_restore_img_name" ] && ocs_restore_img_name="ask_user"
   [ -z "$ocs_restore_dev" ] && ocs_restore_dev="ask_user"
@@ -386,10 +403,7 @@ task_start_feed_img_for_mcast() {
     fi
   fi
 
-  # eth_for_multicast will be passed to function start_ocs_service
-  # When Clonezilla live runs as multicast feeding server, the uplink port is where the packets sending.
-  eth_for_multicast="$(LC_ALL=C get-all-nic-ip -u)" 
-
+  #
   if [ "$interactive_mode" = "yes" ]; then
     [ -z "$ocs_user_mode" ] && ask_if_beginner_or_expert_mode
   fi
@@ -484,6 +498,15 @@ task_start_feed_img_for_mcast() {
     fi
   fi
 
+  # When Clonezilla live runs as multicast feeding server, the uplink port is where the packets sending.
+  # No matter it's multicast, broadcast or bt, we use that ethernet port
+  if [ -n "$eth_for_multicast" ]; then
+    eth_for_deploy_packet="$eth_for_multicast"
+  else
+    eth_for_deploy_packet="$(LC_ALL=C get-all-nic-ip -u)" 
+  fi
+  mcast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_deploy_packet)"
+
   if [ "$interactive_mode" = "yes" ]; then
     # ask if want to set ocs extra param
     OCS_PARAM_TMP=`mktemp /tmp/ocs_param_tmp.XXXXXX`
@@ -500,25 +523,74 @@ task_start_feed_img_for_mcast() {
     chk_img_restoreable_on_srv="$chk_img_restoreable_on_srv_def"
   fi
 
-  # Force to make client won't check the image integrity since this is for multicast restoring.
-  OCS_OPT="$OCS_OPT -scr"
-  task="multicast_restore"
-  OCS_OPT="$OCS_OPT --mcast-port $MULTICAST_PORT"
-  if [ "$interactive_mode" = "yes" ]; then
-    if [ -z "$n_clients" ]; then
-      get_multicast_restore_mode_if_mcast
-      # Obtain mcast_wait_time, n_clients, mcast_max_wait_time (global variables) to pass to function start_ocs_service
+  # Enable bittorrent restoring when ocs-bttrack is available
+  if type ocs-bttrack &>/dev/null; then
+    bt_restore_msg_1="bittorrent"
+    bt_restore_msg_2="$(rep_whspc_w_udrsc "$msg_bittorent_restore")"
+  fi
+  # get the mode of multicast, broadcast or bittorrent
+  eval msg_choose_the_mode_to_restore_dev=\$msg_choose_the_mode_to_restore_${dev_type}
+  if [ -z "$massive_deploy_mode" ]; then
+    TMP=$(mktemp /tmp/menu.XXXXXX)
+    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+    $DIA \
+    --backtitle "$msg_nchc_title" \
+    --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+    --menu "$msg_choose_the_mode_to_restore_dev" 0 0 0 \
+    "multicast"       "$msg_multicast_restore" \
+    "broadcast"       "$msg_broadcast_restore" \
+    $bt_restore_msg_1 $bt_restore_msg_2 \
+    2> $TMP
+    massive_deploy_mode=$(cat $TMP)
+    [ -f "$TMP" ] && rm -f $TMP
+  fi
+  case "$massive_deploy_mode" in
+    multicast|broadcast) castmode="multicast";;
+             bittorrent) castmode="bt";;
+		      *) echo "$msg_program_stop!"
+			 exit 1
+			 ;;
+  esac
+  [ "$massive_deploy_mode" = "broadcast" ] && udp_sender_extra_opt="$udp_sender_extra_opt --broadcast"
+  OCS_OPT_PRE="$OCS_OPT_PRE -md $massive_deploy_mode"
+
+  if [ "$castmode" = "multicast" ]; then
+    # eth_for_multicast will be passed to function start_ocs_service
+    eth_for_multicast="$eth_for_deploy_packet" # passed to function start_ocs_service
+    # Force to make client won't check the image integrity since this is for multicast restoring.
+    OCS_OPT="$OCS_OPT -scr"
+    task="multicast_restore" # pass to function get_bt_restore_mode_if_bittorrent
+    OCS_OPT="$OCS_OPT --mcast-port $MULTICAST_PORT"
+    if [ "$interactive_mode" = "yes" ]; then
+      if [ -z "$n_clients" ]; then
+        get_multicast_restore_mode_if_mcast
+        # Obtain mcast_wait_time, n_clients, mcast_max_wait_time (global variables) to pass to function start_ocs_service
+      fi
     fi
-  fi
-  if [ -n "$n_clients" ]; then
-    mcast_client_no_opt="-n $n_clients"  # Used for start_ocs_service
-    OCS_OPT_PRE="$OCS_OPT_PRE --clients-to-wait $n_clients"  # For re-run prompt
-  fi
-  if [ -n "$mcast_wait_time" ]; then
-    OCS_OPT_PRE="$OCS_OPT_PRE --time-to-wait $mcast_wait_time"  # For re-run prompt
-  fi
-  if [ -n "$mcast_max_wait_time" ]; then
-    OCS_OPT_PRE="$OCS_OPT_PRE --max-time-to-wait $mcast_max_wait_time"  # For re-run prompt
+    if [ -n "$n_clients" ]; then
+      mcast_client_no_opt="-n $n_clients"  # Used for start_ocs_service
+      OCS_OPT_PRE="$OCS_OPT_PRE --clients-to-wait $n_clients"  # For re-run prompt
+    fi
+    if [ -n "$mcast_wait_time" ]; then
+      OCS_OPT_PRE="$OCS_OPT_PRE --time-to-wait $mcast_wait_time"  # For re-run prompt
+    fi
+    if [ -n "$mcast_max_wait_time" ]; then
+      OCS_OPT_PRE="$OCS_OPT_PRE --max-time-to-wait $mcast_max_wait_time"  # For re-run prompt
+    fi
+  elif [ "$castmode" = "bt" ]; then
+    # Force to make client won't check the image integrity since this is for multicast restoring.
+    OCS_OPT="$OCS_OPT -scr"
+    task="bt_restore" # pass to function get_bt_restore_mode_if_bittorrent
+    if [ "$interactive_mode" = "yes" ]; then
+      if [ -z "$n_clients" ]; then
+        get_bt_restore_mode_if_bittorrent
+        # Obtain n_clients (global variables) to pass to function start_ocs_service
+      fi
+    fi
+    if [ -n "$n_clients" ]; then
+      mcast_client_no_opt="-n $n_clients"  # Used for start_ocs_service
+      OCS_OPT_PRE="$OCS_OPT_PRE --clients-to-wait $n_clients"  # For re-run prompt
+    fi
   fi
 
   # Before really starting the feeding service, we can check if the image integrity is OK or not.
@@ -533,19 +605,32 @@ task_start_feed_img_for_mcast() {
     fi
   fi
 
-  # For multicast_restoredisk, the input device variable is $target_hd
-  # For multicast_restoreparts, the input device variable is $target_parts
-  start_cmd="start_ocs_service $mcast_client_no_opt -f -t \"multicast_$mcast_dev_action\" -o \"$target_dir $ocs_restore_dev\""
+  # For {multicast|bt}_restoredisk, the input device variable is $target_hd
+  # For {multicast|bt}_restoreparts, the input device variable is $target_parts
+  start_cmd="start_ocs_service $mcast_client_no_opt -f -t \"${castmode}_${mcast_dev_action}\" -o \"$target_dir $ocs_restore_dev\""
   echo "Running: $start_cmd"
   eval $start_cmd
-  while [ -z "$(LC_ALL=C ps -www --no-headers -C "udp-sender" -o pid,cmd)" ]; do
-    sleep 0.2
-  done
-  echo "Feeding status:" | tee --append ${OCS_LOGFILE}
-  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-  ps -www -C "cat" -C "udp-sender" -o pid,cmd | tee --append ${OCS_LOGFILE}
-  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-  echo "More udp-sender and cat comamnds (if available) will be spawned when the 1st one is done." | tee --append ${OCS_LOGFILE}
+
+  if [ "$castmode" = "multicast" ]; then
+    times=0
+    while [ -z "$(LC_ALL=C ps -www --no-headers -C "udp-sender" -o pid,cmd)" ]; do
+      sleep 0.2
+      times="$((times + 1))"
+      if [ "$times" -ge "$timeout_max" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "Timeout for waiting for udp-sender process..." | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+        exit 1
+      fi
+    done
+    echo "Feeding status:" | tee --append ${OCS_LOGFILE}
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    ps -www -C "cat" -C "udp-sender" -o pid,cmd | tee --append ${OCS_LOGFILE}
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    echo "More udp-sender and cat comamnds (if available) will be spawned when the 1st one is done." | tee --append ${OCS_LOGFILE}
+  fi
+
   # Prepare the commands for clients
   if ! systemctl status lighttpd >/dev/null 2>&1; then
     systemctl start lighttpd | tee --append ${OCS_LOGFILE}
@@ -559,6 +644,10 @@ task_start_feed_img_for_mcast() {
   echo "Packing the tarball containing no file system images: img-wo-fs.tar.xz..." | tee --append ${OCS_LOGFILE}
   img_no_fs_tmp="$(mktemp -d /tmp/img_no_fs.XXXXXX)"
   rsync -a --exclude=*-ptcl-img.* --exclude=*.ntfs-img.* --exclude=*.dd-img.* $imagedir/$target_dir/* $img_no_fs_tmp | tee --append ${OCS_LOGFILE}
+  if [ -d "$imagedir/btzone/$target_dir" ]; then
+    mkdir -p $img_no_fs_tmp/btzone/$target_dir
+    rsync -a $imagedir/btzone/$target_dir/*.torrent $img_no_fs_tmp/btzone | tee --append ${OCS_LOGFILE}
+  fi
   # TODO: partimage file name, or drop it?
   for ifile in $imagedir/$target_dir/*-ptcl-img.* \
 	       $imagedir/$target_dir/*.ntfs-img.* \
@@ -575,7 +664,6 @@ task_start_feed_img_for_mcast() {
     rm -rf "$img_no_fs_tmp" | tee --append ${OCS_LOGFILE}
   fi
   # Part 2: ocs-client-run.sh
-  mcast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_multicast)"
   cat <<-CLIENT_END > /var/www/html/ocs-client-run.sh
 #!/bin/bash
 DRBL_SCRIPT_PATH="\${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -597,9 +685,13 @@ if [ ! -e /tmp/img-wo-fs.tar.xz ]; then
 fi
 image="\$(mktemp -d /tmp/ocs-img.XXXXXX)"
 tar -xJf /tmp/img-wo-fs.tar.xz -C \$image
+if [ -d "\$image/btzone" ]; then
+  mkdir -p /tmp/btzone/\$(basename \$image)
+  mv \$image/btzone/*.torrent /tmp/btzone/\$(basename \$image)
+fi
 if [ -n "\$(ls -A \$image 2>/dev/null)" ]; then
   echo "Starting restoring..."
-  ocs-sr --ocsroot /tmp/ -l en_US.UTF-8 $OCS_OPT --max-time-to-wait $mcast_max_wait_time multicast_$mcast_dev_action "\$(basename \$image)" $ocs_restore_dev
+  ocs-sr --ocsroot /tmp/ -l en_US.UTF-8 $OCS_OPT ${castmode}_${mcast_dev_action} "\$(basename \$image)" $ocs_restore_dev
 else
   [ "\$BOOTUP" = "color" ] && \$SETCOLOR_FAILURE
   echo "Failed to find the correct pseudo image dir \$image"
@@ -641,6 +733,8 @@ CLIENT_END
 task_stop_feed_img_for_mcast() {
   # 1. Kill process
   kill_ps_by_killall_9 udp-sender | tee --append ${OCS_LOGFILE}
+  # Stop BT-related services
+  ocs-btsrv -b stop
   # 2. Remove the file for clients.
 } # task_stop_feed_img_for_mcast
 
@@ -651,6 +745,7 @@ task_stop_feed_img_for_mcast() {
 
 ocs_file="$0"
 ocs=`basename $ocs_file`
+OCS_LOGFILE="/var/log/${ocs}.log"
 
 parse_ocs_live_feed_img_cmd_options_with_dash $*
 shift ${n_shift}
@@ -687,6 +782,9 @@ if [ "$verbose" = "on" ]; then
   # The default output for udpcast stderr is surpressed, now turn it on
   udpcast_stderr="/dev/stderr"
 fi
+
+mkdir -p $ocs_log_dir
+ocs_log_rotate $OCS_LOGFILE
 
 case "$mode" in 
   start) task_start_feed_img_for_mcast;;
