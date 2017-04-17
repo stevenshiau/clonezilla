@@ -31,8 +31,16 @@ restore_mbr="yes"
 restore_prebuild_mbr="no"
 rm_win_swap_hib="no"
 chk_img_restoreable_on_srv_def="yes"
-# Timeout max times for sleep 0.2 (default is 5 mins = 0.2*1500/60)
-timeout_max="1500"
+# Timeout (secs) for wating udp-sender
+timeout_max="300"
+# Network settings for closed LAN
+ipadd_closed_lan="192.168.169.250"
+netmask_closed_lan="24"
+gwadd_closed_lan="192.168.169.254"
+dhcp_rang_start_closed_lan="192.168.169.101"
+dhcp_rang_end_closed_lan="192.168.169.200"
+# Since bittorrent is not ready yet, we force to assign the mode
+netenv_mode="To_upstream"
 
 # Functions
 USAGE() {
@@ -367,6 +375,35 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
   done
 } # end of parse_ocs_live_feed_img_cmd_options_with_dash
 #
+config_netcard() {
+  local status_done
+  # nic_dev_only is global variable
+  # Get the NIC device name for the only one device
+  # TODO: find a better way to find when there are multiple NICs?
+  nic_dev_only="$(get-nic-devs | head -n 1)"
+  ip address add $ipadd_closed_lan/$netmask_closed_lan dev ${nic_dev_only}
+  # Set the routing
+  ip route add default via $gwadd_closed_lan dev ${nic_dev_only}
+  echo "$msg_delimiter_star_line"
+  echo "Network settings for ${nic_dev_only}:"
+  ip address show ${nic_dev_only}
+} # end of config_netcard
+#
+get_lite_dhcpd_conf() {
+  local srv_cfg="$1"
+  if [ -e "$dnsmasq_cfg" ]; then
+    mv -f $dnsmasq_cfg ${dnsmasq_cfg}.orig
+  fi
+  cat <<-DNSMQSQ_END >> $dnsmasq_cfg 
+# Configured by Clonezilla live
+dhcp-range=${dhcp_rang_start_closed_lan},${dhcp_rang_end_closed_lan}
+DNSMQSQ_END
+  echo "$msg_delimiter_star_line"
+  echo "DHCP service settings in $dnsmasq_cfg:"
+  cat $dnsmasq_cfg
+  echo "$msg_delimiter_star_line"
+} # end of get_lite_dhcpd_conf
+#
 task_start_feed_img_for_mcast() {
   local MCAST_TMP ans_ mcast_dev_action
   local start_cmd
@@ -378,9 +415,62 @@ task_start_feed_img_for_mcast() {
   [ -z "$ocs_restore_img_name" ] && ocs_restore_img_name="ask_user"
   [ -z "$ocs_restore_dev" ] && ocs_restore_dev="ask_user"
 
-  # Even if it's local repository, we still have to configure network
-  # otherwise the udp-sender won't start.
-  network_config_if_necessary
+  # If network setting is not configured. Ask
+  configured_ip="$(get-all-nic-ip --all-ip-address)"
+  if [ -z "$configured_ip" ]; then
+    if [ -z "$netenv_mode" ]; then
+      TMP="$(mktemp /tmp/ocslivemode.XXXXXX)"
+      trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+      "Network environment" --menu "$msg_which_network_senario\n$msg_choose_mode:" \
+      0 0 0 $DIA_ESC \
+      "To_upstream"  "$msg_connect_to_upstream_network" \
+      "In_isolation" "$msg_in_isolated_environment" \
+      2> $TMP
+      netenv_mode="$(cat $TMP)"
+      echo "netenv_mode is $netenv_mode"
+      [ -f "$TMP" ] && rm -f $TMP
+      
+      case "$netenv_mode" in
+        "To_upstream") 
+         # Even if it's local repository, we still have to configure network
+         # otherwise the udp-sender won't start.
+         network_config_if_necessary
+           ;;
+        "In_isolation")
+           echo "In isolation environment. Now start dhcp service..." 
+           config_netcard
+           get_lite_dhcpd_conf $dnsmasq_cfg
+           service dnsmasq restart
+           echo -n "$msg_press_enter_to_continue"
+           read 
+           ;;
+        *) echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+           exit 0
+           ;;
+      esac
+    fi
+  else
+    # We have to check if it's in "To_upstream" or "In_isolation".
+    # By checking gateway we should be able to know that. However, if gatway is not allowed to ping?
+    uplink_ip="$(LC_ALL=C get-all-nic-ip -u)"
+    if [ "$uplink_ip" = "$gwadd_closed_lan" ]; then
+      # Gateway is what we assigned, maybe it's a coincidence. Ping it
+      echo "Testing if it's in isolated environment..."
+      if ping -c 5 $uplink_ip &>/dev/null; then
+        netenv_mode="To_upstream"
+	# Do nothing since network setting has been done.
+      else
+        netenv_mode="In_isolation"
+	# Still we have to configure dhcp service
+        get_lite_dhcpd_conf $dnsmasq_cfg
+        service dnsmasq restart
+      fi
+    else
+      # Gateway is NOT what we assigned. It must be To_upstream mode.
+      netenv_mode="To_upstream"
+    fi
+  fi
 
   if [ "$ocs_restore_img_name" = "ask_user" -a \
        "$ocs_restore_dev" = "ask_user" ]; then
@@ -422,6 +512,8 @@ task_start_feed_img_for_mcast() {
     2> $TMP
     mcast_dev_action=$(cat $TMP)
     [ -f "$TMP" ] && rm -f $TMP
+    # ocs_mode_prompt will be passed to the dialog about asking dev_type, OCS parameters...
+    ocs_mode_prompt="$mcast_dev_action"
     case "$mcast_dev_action" in
     "restoredisk")
       ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
@@ -503,7 +595,14 @@ task_start_feed_img_for_mcast() {
   if [ -n "$eth_for_multicast" ]; then
     eth_for_deploy_packet="$eth_for_multicast"
   else
-    eth_for_deploy_packet="$(LC_ALL=C get-all-nic-ip -u)" 
+    eth_for_deploy_packet="$(LC_ALL=C get-all-nic-ip -u)"
+  fi
+  if [ -z "$eth_for_deploy_packet" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE | tee --append ${OCS_LOGFILE}
+    echo "No network card was assigned for sending packets." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
+    echo "$msg_program_stop!"
+    exit 1
   fi
   mcast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_deploy_packet)"
 
@@ -529,6 +628,17 @@ task_start_feed_img_for_mcast() {
     bt_restore_msg_2="$(rep_whspc_w_udrsc "$msg_bittorent_restore")"
   fi
   # get the mode of multicast, broadcast or bittorrent
+  if [ "$netenv_mode" = "In_isolation" ]; then
+    massive_deploy_mode="bittorrent"
+    if [ "$interactive_mode" = "yes" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING | tee --append ${OCS_LOGFILE}
+      echo "Multicast and broadcasst mode need to access the multicast address: $MULTICAST_ALL_ADDR" | tee --append ${OCS_LOGFILE}
+      echo "Hence when network environment is In_isolation mode, only bittorrent restoring is available." | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
+      echo -n "$msg_press_enter_to_continue"
+      read 
+    fi
+  fi
   eval msg_choose_the_mode_to_restore_dev=\$msg_choose_the_mode_to_restore_${dev_type}
   if [ -z "$massive_deploy_mode" ]; then
     TMP=$(mktemp /tmp/menu.XXXXXX)
@@ -554,6 +664,8 @@ task_start_feed_img_for_mcast() {
   [ "$massive_deploy_mode" = "broadcast" ] && udp_sender_extra_opt="$udp_sender_extra_opt --broadcast"
   OCS_OPT_PRE="$OCS_OPT_PRE -md $massive_deploy_mode"
 
+  # ocs_mode_prompt will be passed to the dialog about asking mcast_wait_time, n_clients, mcast_max_wait_time
+  ocs_mode_prompt="$massive_deploy_mode"
   if [ "$castmode" = "multicast" ]; then
     # eth_for_multicast will be passed to function start_ocs_service
     eth_for_multicast="$eth_for_deploy_packet" # passed to function start_ocs_service
@@ -561,8 +673,9 @@ task_start_feed_img_for_mcast() {
     OCS_OPT="$OCS_OPT -scr"
     task="multicast_restore" # pass to function get_bt_restore_mode_if_bittorrent
     OCS_OPT="$OCS_OPT --mcast-port $MULTICAST_PORT"
+
     if [ "$interactive_mode" = "yes" ]; then
-      if [ -z "$n_clients" ]; then
+      if [ -z "$n_clients" -o "$mcast_wait_time" ]; then
         get_multicast_restore_mode_if_mcast
         # Obtain mcast_wait_time, n_clients, mcast_max_wait_time (global variables) to pass to function start_ocs_service
       fi
@@ -609,21 +722,33 @@ task_start_feed_img_for_mcast() {
   # For {multicast|bt}_restoreparts, the input device variable is $target_parts
   start_cmd="start_ocs_service $mcast_client_no_opt -f -t \"${castmode}_${mcast_dev_action}\" -o \"$target_dir $ocs_restore_dev\""
   echo "Running: $start_cmd"
-  eval $start_cmd
+  eval $start_cmd  # Do not put "| tee --append ${OCS_LOGFILE}". It will loop.
+  rc=${PIPESTATUS[0]}
+  if [ "$rc" -ne 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Faied to run $start_cmd" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    exit 1
+  fi
 
   if [ "$castmode" = "multicast" ]; then
-    times=0
+    echo -n "Waiting for udp-sender service to be started... "
+    time=$timeout_max
     while [ -z "$(LC_ALL=C ps -www --no-headers -C "udp-sender" -o pid,cmd)" ]; do
-      sleep 0.2
-      times="$((times + 1))"
-      if [ "$times" -ge "$timeout_max" ]; then
+      sleep 1
+      time="$((time - 1))"
+      if [ "$time" -le "0" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "Timeout for waiting for udp-sender process..." | tee --append ${OCS_LOGFILE}
+        echo -n "Timeout for waiting for udp-sender process..." | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
         exit 1
+      else
+        echo -n "$time "
       fi
     done
+    echo -e -n "Done!\n"
     echo "Feeding status:" | tee --append ${OCS_LOGFILE}
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     ps -www -C "cat" -C "udp-sender" -o pid,cmd | tee --append ${OCS_LOGFILE}
