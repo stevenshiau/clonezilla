@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.9
+Version:	3.26.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Apr 17 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.10-drbl1
+  - Set the ethernet card status to be up in "In_isolation" mode.
+
 * Mon Apr 17 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.9-drbl1
   - Add modes "To_upstream" and "In_isolation" for ocs-live-feed-img. Since
     bittorrent is not ready yet, "In_isolation" is disabled by default. 
