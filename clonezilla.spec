@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.14
+Version:	3.26.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Apr 18 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.15-drbl1
+  - Bug fixed: option '-um' should not be passed to ocs-sr in
+    ocs-live-feed-img.
+  - Bug fixed: NAT service failed to start due to wrong parameters in
+    ocs-live-feed-img.
+  - Only output the content ocs-client-run.sh to log in ocs-live-get-img.
+
 * Tue Apr 18 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.14-drbl1
   - Preset the user mode when run ocs-live-feed-img in ocs-sr menu.
 
