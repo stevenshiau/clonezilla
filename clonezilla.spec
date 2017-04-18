@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.13
+Version:	3.26.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Apr 18 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.14-drbl1
+  - Preset the user mode when run ocs-live-feed-img in ocs-sr menu.
+
 * Tue Apr 18 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.13-drbl1
   - Remove lite-client from ocs-sr interactive menu.
 
