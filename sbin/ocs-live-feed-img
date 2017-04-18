@@ -39,8 +39,6 @@ netmask_closed_lan="24"
 gwadd_closed_lan="192.168.169.254"
 dhcp_rang_start_closed_lan="192.168.169.101"
 dhcp_rang_end_closed_lan="192.168.169.200"
-# Since bittorrent is not ready yet, we force to assign the mode
-netenv_mode="To_upstream"
 
 # Functions
 USAGE() {
@@ -390,7 +388,7 @@ config_netcard() {
   ip address show ${nic_dev_only}
 } # end of config_netcard
 #
-get_lite_dhcpd_conf() {
+gen_lite_dhcpd_conf() {
   local srv_cfg="$1"
   if [ -e "$dnsmasq_cfg" ]; then
     mv -f $dnsmasq_cfg ${dnsmasq_cfg}.orig
@@ -403,7 +401,22 @@ DNSMQSQ_END
   echo "DHCP service settings in $dnsmasq_cfg:"
   cat $dnsmasq_cfg
   echo "$msg_delimiter_star_line"
-} # end of get_lite_dhcpd_conf
+} # end of gen_lite_dhcpd_conf
+#
+start_nat_service() {
+  local subnet
+  NAT_RULES_FOR_DEBIAN=/etc/default/ocs-live-lite-nat.rules
+  subnet="$(LC_ALL=C drbl-ipcalc $ipadd_closed_lan/$netmask_closed_lan)"
+  # Flush all rules first
+  iptables -F
+  iptables -t nat -F
+  iptables -t mangle -F
+  # Configure it 
+  iptables -t nat -A POSTROUTING -s ${subnet} -j MASQUERADE
+  iptables-save > $NAT_RULES_FOR_DEBIAN
+  # Enable IP forwarding
+  echo 1 > /proc/sys/net/ipv4/ip_forward
+} # end of start_nat_service
 #
 task_start_feed_img_for_mcast() {
   local MCAST_TMP ans_ mcast_dev_action
@@ -432,25 +445,26 @@ task_start_feed_img_for_mcast() {
       echo "netenv_mode is $netenv_mode"
       [ -f "$TMP" ] && rm -f $TMP
       
-      case "$netenv_mode" in
-        "To_upstream") 
-         # Even if it's local repository, we still have to configure network
-         # otherwise the udp-sender won't start.
-         network_config_if_necessary
-           ;;
-        "In_isolation")
-           echo "In isolation environment. Now start dhcp service..." 
-           config_netcard
-           get_lite_dhcpd_conf $dnsmasq_cfg
-           service dnsmasq restart
-           echo -n "$msg_press_enter_to_continue"
-           read 
-           ;;
-        *) echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
-           exit 0
-           ;;
-      esac
     fi
+    case "$netenv_mode" in
+      "To_upstream") 
+       # Even if it's local repository, we still have to configure network
+       # otherwise the udp-sender won't start.
+       network_config_if_necessary
+         ;;
+      "In_isolation")
+         echo "In isolation environment. Now start dhcp service..." 
+         config_netcard
+         gen_lite_dhcpd_conf $dnsmasq_cfg
+         service dnsmasq restart
+         start_nat_service
+         echo -n "$msg_press_enter_to_continue"
+         read 
+         ;;
+      *) echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+         exit 0
+         ;;
+    esac
   else
     # We have to check if it's in "To_upstream" or "In_isolation".
     # By checking gateway we should be able to know that. However, if gatway is not allowed to ping?
@@ -464,8 +478,9 @@ task_start_feed_img_for_mcast() {
       else
         netenv_mode="In_isolation"
 	# Still we have to configure dhcp service
-        get_lite_dhcpd_conf $dnsmasq_cfg
+        gen_lite_dhcpd_conf $dnsmasq_cfg
         service dnsmasq restart
+	start_nat_service
       fi
     else
       # Gateway is NOT what we assigned. It must be To_upstream mode.
@@ -629,17 +644,6 @@ task_start_feed_img_for_mcast() {
     bt_restore_msg_2="$(rep_whspc_w_udrsc "$msg_bittorent_restore")"
   fi
   # get the mode of multicast, broadcast or bittorrent
-  if [ "$netenv_mode" = "In_isolation" ]; then
-    massive_deploy_mode="bittorrent"
-    if [ "$interactive_mode" = "yes" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING | tee --append ${OCS_LOGFILE}
-      echo "Multicast and broadcasst mode need to access the multicast address: $MULTICAST_ALL_ADDR" | tee --append ${OCS_LOGFILE}
-      echo "Hence when network environment is In_isolation mode, only bittorrent restoring is available." | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
-      echo -n "$msg_press_enter_to_continue"
-      read 
-    fi
-  fi
   eval msg_choose_the_mode_to_restore_dev=\$msg_choose_the_mode_to_restore_${dev_type}
   if [ -z "$massive_deploy_mode" ]; then
     TMP=$(mktemp /tmp/menu.XXXXXX)
@@ -889,6 +893,7 @@ export TERM="$TERM"
 
 #
 check_if_root
+check_if_in_clonezilla_live
 ask_and_load_lang_set
 
 # check DIA
