@@ -37,8 +37,6 @@ timeout_max="300"
 ipadd_closed_lan="192.168.169.250"
 netmask_closed_lan="24"
 gwadd_closed_lan="192.168.169.254"
-dhcp_rang_start_closed_lan="192.168.169.101"
-dhcp_rang_end_closed_lan="192.168.169.200"
 
 # Functions
 USAGE() {
@@ -60,6 +58,7 @@ USAGE() {
     echo " -f, --nfs-restart        Restart nfs when start or stop $ocs (Default is to restart nfs)"
     echo " --mcast-iface  PORT      Specify the multicast seed ethernet port PORT (eth0, eth1, eth2...). Suppose clonezilla will try to find that for you, but in some case, you might want to specify that."
     echo " -x, --full-duplex         Use full-duplex network with udpcast in multicast mode (faster, but does not work with network hub, only works in switch.)."
+    echo " -nm, --netenv-mode         Assign the network environment: to-upstream, in-isolation"
     echo " -md, --massive-deploy-mode Assign the mass deployment mode: broadcast, multicast, or bittorrent"
     echo
     echo "MODE is \"start\" or \"stop\""
@@ -366,6 +365,18 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
 	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
   	    # XXXXXX OCS_OPT="$OCS_OPT -md $massive_deploy_mode"
   	    ;;
+      -nm|--netenv-mode)
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              netenv_mode="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$netenv_mode" ] && USAGE && exit 1
+	    # //NOTE// Do not pass -md option to OCS_OPT here.
+	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
+  	    # XXXXXX OCS_OPT="$OCS_OPT -nm $netenv_mode"
+  	    ;;
       -*)   echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
             exit 2 ;;
@@ -422,7 +433,7 @@ start_nat_service() {
 task_start_feed_img_for_cast() {
   local MCAST_TMP ans_ cast_dev_action
   local start_cmd
-  local OCS_OPT_PRE
+  local OCS_OPT_PRE ocs_opt_dia
   local interactive_mode="no"
   local rc_chkimg
   local castmode
@@ -431,63 +442,62 @@ task_start_feed_img_for_cast() {
   [ -z "$ocs_restore_dev" ] && ocs_restore_dev="ask_user"
 
   # If network setting is not configured. Ask
+  # TODO: What if multiple IP addresses?
   configured_ip="$(get-all-nic-ip --all-ip-address)"
-  if [ -z "$configured_ip" ]; then
-    if [ -z "$netenv_mode" ]; then
-      TMP="$(mktemp /tmp/ocslivemode.XXXXXX)"
-      trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-      $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
-      "Network environment" --menu "$msg_which_network_senario\n$msg_choose_mode:" \
-      0 0 0 $DIA_ESC \
-      "To_upstream"  "$msg_connect_to_upstream_network" \
-      "In_isolation" "$msg_in_isolated_environment" \
-      2> $TMP
-      netenv_mode="$(cat $TMP)"
-      echo "netenv_mode is $netenv_mode"
-      [ -f "$TMP" ] && rm -f $TMP
-      
-    fi
-    case "$netenv_mode" in
-      "To_upstream") 
-       # Even if it's local repository, we still have to configure network
-       # otherwise the udp-sender won't start.
-       network_config_if_necessary
-         ;;
-      "In_isolation")
-         echo "In isolation environment. Now start dhcp service..." 
-         config_netcard
-         gen_lite_dhcpd_conf $dnsmasq_cfg
-         service dnsmasq restart
-         start_nat_service
-         echo -n "$msg_press_enter_to_continue"
-         read 
-         ;;
-      *) echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
-         exit 0
-         ;;
-    esac
-  else
-    # We have to check if it's in "To_upstream" or "In_isolation".
-    # By checking gateway we should be able to know that. However, if gatway is not allowed to ping?
-    uplink_ip="$(LC_ALL=C get-all-nic-ip -g)"
-    if [ "$uplink_ip" = "$gwadd_closed_lan" ]; then
-      # Gateway is what we assigned, maybe it's a coincidence. Ping it
-      echo "Testing if it's in isolated environment..."
-      if ping -c 5 $uplink_ip &>/dev/null; then
-        netenv_mode="To_upstream"
-	# Do nothing since network setting has been done.
-      else
-        netenv_mode="In_isolation"
-	# Still we have to configure dhcp service
-        gen_lite_dhcpd_conf $dnsmasq_cfg
-        service dnsmasq restart
-	start_nat_service
-      fi
-    else
-      # Gateway is NOT what we assigned. It must be To_upstream mode.
-      netenv_mode="To_upstream"
-    fi
+  if [ -z "$netenv_mode" ]; then
+    TMP="$(mktemp /tmp/ocslivemode.XXXXXX)"
+    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    "Network environment" --menu "$msg_which_network_senario\n$msg_choose_mode:" \
+    0 0 0 $DIA_ESC \
+    "to-upstream"  "$msg_connect_to_upstream_network" \
+    "in-isolation" "$msg_in_isolated_environment" \
+    2> $TMP
+    netenv_mode="$(cat $TMP)"
+    echo "netenv_mode is $netenv_mode"
+    [ -f "$TMP" ] && rm -f $TMP
   fi
+  OCS_OPT_PRE="$OCS_OPT_PRE -nm $netenv_mode"
+  case "$netenv_mode" in
+    "to-upstream") 
+     # Even if it's local repository, we still have to configure network
+     # otherwise the udp-sender won't start.
+     network_config_if_necessary
+       ;;
+    "in-isolation")
+       if [ -z "$configured_ip" ]; then
+         config_netcard
+       fi
+       uplink_port="$(LC_ALL=C get-all-nic-ip -u)"
+       if [ -z "$uplink_port" ]; then
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE | tee -a ${OCS_LOGFILE}
+         echo "No default gateway was configured." | tee -a ${OCS_LOGFILE}
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee -a ${OCS_LOGFILE}
+         echo "$msg_program_stop!"
+         exit 1
+       fi
+       uplink_port_ip="$(LC_ALL=C drbl-get-ipadd $uplink_port)"
+       uplink_port_nm="$(LC_ALL=C drbl-get-netmask $uplink_port)"
+       if [ -z "$uplink_port_ip" -o -z "$uplink_port_nm" ]; then
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE | tee -a ${OCS_LOGFILE}
+         echo "No configured IP address or netmask was found in NIC $uplink_port." | tee -a ${OCS_LOGFILE}
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee -a ${OCS_LOGFILE}
+         echo "$msg_program_stop!"
+         exit 1
+       fi
+       dhcp_rang_start_closed_lan="$(LC_ALL=C drbl-ipcalc $uplink_port_ip $uplink_port_nm | awk -F' ' '/^HostMin:/ {print $2}')"
+       dhcp_rang_end_closed_lan="$(LC_ALL=C drbl-ipcalc $uplink_port_ip $uplink_port_nm | awk -F' ' '/^HostMax:/ {print $2}')"
+       echo "In isolation environment. Now start dhcp service..." 
+       gen_lite_dhcpd_conf $dnsmasq_cfg
+       service dnsmasq restart
+       start_nat_service
+       echo -n "$msg_press_enter_to_continue"
+       read 
+       ;;
+    *) echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
+       exit 0
+       ;;
+  esac
 
   if [ "$ocs_restore_img_name" = "ask_user" -a \
        "$ocs_restore_dev" = "ask_user" ]; then
@@ -629,10 +639,11 @@ task_start_feed_img_for_cast() {
     trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
     set_drbl_ocs_extra_param -s -p reboot restore $OCS_PARAM_TMP $dev_type
     # OCS_OPT_PRE is for ocs-live-feed-img, we have to convert to that for ocs-sr
-    OCS_OPT_PRE="$(cat $OCS_PARAM_TMP)"
-    OCS_OPT_PRE="$(echo $OCS_OPT_PRE)"  # Make it in one line
-    parse_ocs_live_feed_img_cmd_options_with_dash $OCS_OPT_PRE  # Obtain $OCS_OPT for ocs-sr
+    ocs_opt_dia="$(cat $OCS_PARAM_TMP)"
+    ocs_opt_dia="$(echo $ocs_opt_dia)"  # Make it in one line
+    parse_ocs_live_feed_img_cmd_options_with_dash $ocs_opt_dia # Obtain $OCS_OPT for ocs-sr
     [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
+    OCS_OPT_PRE="$OCS_OPT_PRE $ocs_opt_dia"
   fi
   # Load default settings if not assigned
   if [ -z "$chk_img_restoreable_on_srv" ]; then
