@@ -58,7 +58,7 @@ task_run_restoring() {
           0) # yes is chosen
              ask_="true";;
           1) # no is chosen
-             echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+             echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
              [ -f "$TMP" ] && rm -f $TMP
              exit 1;;
         esac
@@ -71,29 +71,77 @@ task_run_restoring() {
   fi
   if [ -z "$cast_srv" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "No Clonezilla live lite server was assigned or found!" | tee --append ${OCS_LOGFILE}
+    echo "No Clonezilla live lite server was assigned or found!" | tee -a ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
     exit 1
   fi
-  echo "Multicast server is: $cast_srv" | tee --append ${OCS_LOGFILE}
-  rm -f /tmp/ocs-client-run.sh | tee --append ${OCS_LOGFILE}
-  get_run_cmd="wget -P /tmp/ http://$cast_srv/ocs-client-run.sh"
-  echo "Running: $get_run_cmd"
-  eval $get_run_cmd | tee --append ${OCS_LOGFILE}
-  if [ -e "/tmp/ocs-client-run.sh" ]; then
-    chmod 755 /tmp/ocs-client-run.sh | tee --append ${OCS_LOGFILE}
-    echo "Running /tmp/ocs-client-run.sh" | tee --append ${OCS_LOGFILE}
-    echo "The content of /tmp/ocs-client-run.sh:" >> ${OCS_LOGFILE}
+  echo "Multicast server is: $cast_srv" | tee -a ${OCS_LOGFILE}
+  # Get info from server then restoring
+  # Part 1: get config file
+  rm -f /tmp/ocs-client-run.conf
+  get_run_conf="wget -P /tmp/ http://$cast_srv/ocs-client-run.conf"
+  echo "Running: $get_run_conf"
+  eval $get_run_conf | tee -a ${OCS_LOGFILE}
+  if [ -e "/tmp/ocs-client-run.conf" ]; then
+    echo "The content of /tmp/ocs-client-run.conf:" >> ${OCS_LOGFILE}
     echo $msg_delimiter_star_line >> ${OCS_LOGFILE}
-    cat /tmp/ocs-client-run.sh >> ${OCS_LOGFILE}
+    cat /tmp/ocs-client-run.conf >> ${OCS_LOGFILE}
     echo $msg_delimiter_star_line >> ${OCS_LOGFILE}
-    /tmp/ocs-client-run.sh | tee --append ${OCS_LOGFILE}
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$msg_failed_to_get_file_from_this_URL: http://$cast_srv/ocs-client-run.sh" | tee --append ${OCS_LOGFILE}
-    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    echo "$msg_failed_to_get_file_from_this_URL: http://$cast_srv/ocs-client-run.conf" | tee -a ${OCS_LOGFILE}
+    echo "$msg_program_stop." | tee -a ${OCS_LOGFILE}
     [ "$save_restore_error_log" = "yes" ] && copy_error_log
+  fi
+  # get pseudo_img and ocs_sr_opt
+  pseudo_img=""
+  ocs_sr_opt=""
+  . /tmp/ocs-client-run.conf
+  if [ -z "$pseudo_img" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No pseudo_img was assigned in /tmp/ocs-client-run.conf!" | tee -a ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
+    exit 1
+  fi
+  if [ -z "$ocs_sr_opt" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No ocs_sr_opt was assigned in /tmp/ocs-client-run.conf!" | tee -a ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
+    exit 1
+  fi
+
+  # Part 2: get pseudo image file
+  echo "Preparing the image info..." | tee -a ${OCS_LOGFILE}
+  rm -f /tmp/$pseudo_img | tee -a ${OCS_LOGFILE}
+  wget -P /tmp/ http://$cast_srv/$pseudo_img | tee -a ${OCS_LOGFILE}
+  if [ ! -e /tmp/$pseudo_img ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to retreive $pseudo_img from http://$cast_srv/." | tee -a ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
+    exit 1
+  fi
+  image="$(mktemp -d /tmp/ocs-img.XXXXXX)"
+  tar -xJf /tmp/$pseudo_img -C $image | tee -a ${OCS_LOGFILE}
+  if [ -d "$image/btzone" ]; then
+    mkdir -p /tmp/btzone/$(basename $image) | tee -a ${OCS_LOGFILE}
+    mv $image/btzone/*.torrent /tmp/btzone/$(basename $image) | tee -a ${OCS_LOGFILE}
+  fi
+  # Run restoring
+  # Before running, replace the new created image name
+  ocs_sr_opt="$(echo $ocs_sr_opt | sed -r -e "s/ocs_lite_pseudo_name/$(basename $image)/g")"
+  if [ -n "$(ls -A $image 2>/dev/null)" ]; then
+    echo "Starting restoring..." | tee -a ${OCS_LOGFILE}
+    ocs-sr $ocs_sr_opt
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to find the correct pseudo image dir $image" | tee -a ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
+    exit 1
   fi
 } # end of task_run_restoring
 
@@ -132,29 +180,29 @@ mkdir -p $ocs_log_dir
 ocs_log_rotate $OCS_LOGFILE
 
 # Check if run on clonezilla live lite server
-if [ -e "/var/www/html/img-wo-fs.tar.xz" -a -e "/var/www/html/ocs-client-run.sh" ]; then
+if [ -e "/var/www/html/img-wo-fs.tar.xz" -a -e "/var/www/html/ocs-client-run.conf" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "$msg_client_program_is_run_on_lite_server" | tee --append ${OCS_LOGFILE}
+  echo "$msg_client_program_is_run_on_lite_server" | tee -a ${OCS_LOGFILE}
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo -n "$msg_are_u_sure_u_want_to_continue (y/N) " | tee --append ${OCS_LOGFILE}
+  echo -n "$msg_are_u_sure_u_want_to_continue (y/N) " | tee -a ${OCS_LOGFILE}
   read continue_confirm_ans
   case "$continue_confirm_ans" in
        y|Y|[yY][eE][sS])
           echo "$msg_let_me_ask_you_again."
-          echo -n "$msg_are_u_sure_u_want_to_continue (y/N) " | tee --append ${OCS_LOGFILE}
+          echo -n "$msg_are_u_sure_u_want_to_continue (y/N) " | tee -a ${OCS_LOGFILE}
           read confirm_ans_again
           case "$confirm_ans_again" in
           y|Y|[yY][eE][sS])
-             echo "$msg_ok_let_do_it" | tee --append ${OCS_LOGFILE}
+             echo "$msg_ok_let_do_it" | tee -a ${OCS_LOGFILE}
 	     ;;
           *)
-             echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+             echo "$msg_program_stop." | tee -a ${OCS_LOGFILE}
              copy_error_log
              exit 1
           esac
              ;;
        *)
-          echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+          echo "$msg_program_stop." | tee -a ${OCS_LOGFILE}
           # Saving mode, always copy error log to image dir.
           copy_error_log
           exit 1
