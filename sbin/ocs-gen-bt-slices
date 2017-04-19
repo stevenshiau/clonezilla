@@ -1,0 +1,99 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to create the Clonezilla bittorrent slices files from existing Clonezilla image
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+#
+USAGE() {
+    echo "$ocs - To create the Clonezilla bittorrent slices files from existing Clonezilla image"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] IMAGE_NAME"
+    echo "Options:"
+    echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
+    echo "IMAGE_NAME is the image dir name, not absolute path"
+    echo "If \"ask_user\" is used as IMAGE_NAME or no IMAGE_NAME is specified, a dialog menu will be shown."
+    echo "Ex:"
+    echo "To create the Clonezilla bittorrent slices files from the image \"my-image\", which is located in $ocsroot/my-image, run"
+    echo "   $ocs my-image"
+    echo
+} # end of USAGE
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -or|--ocsroot)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             ocsroot="$1"
+             shift;
+           fi
+           [ -z "$ocsroot" ] && USAGE && exit 1
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+target_dir="$1"
+shift
+target_parts="$*"
+
+# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
+# otherwise setterm will complain.
+[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
+echo "Setting the TERM as $TERM"
+export TERM="$TERM"
+
+#
+check_if_root
+ask_and_load_lang_set
+# check DIA
+check_DIA_set_ESC $DIA
+
+# imagedir is a variable which ask_user related function need
+imagedir="$ocsroot"
+[ -z "$ocs_chk_img_name" ] && ocs_chk_img_name="ask_user"
+
+if [ -z "$target_dir" -o  "$target_dir" = "ask_user" ]; then
+  get_target_dir_name_when_checking_img_restorable # output: target_dir
+fi
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "$msg_the_image_to_be_cheked: $target_dir"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+if [ -z "$target_parts" ]; then
+  target_parts="$(get_parts_list_from_img $ocsroot/$target_dir)"
+fi
+check_input_target_image "$ocsroot/$target_dir"
+
+if is_ecryptfs_img $ocsroot/$target_dir; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$msg_convert_encrypted_img_not_supported"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  my_ocs_exit 1
+fi
+
+create_bittorrent_slices "$target_dir" "$target_parts"
+rc=$?
+my_ocs_exit $rc

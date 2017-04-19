@@ -5927,11 +5927,10 @@ feed_multicast_restoreparts() {
   # Set the initial value for ipart and port.
   ipart=1
   port=$MULTICAST_PORT
-  do_LVM_restore_feed="no"
+  part_is_lvm="no"
   for partition in $tgt_parts; do
     # hda1 -> hda
     hd_tmp="$(get_diskname $partition)"
-    part_is_lvm="no"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
     if [ -n "$(grep -Ew "$partition" $imagedir/$tgt_dir/lvm_vg_dev.list 2>/dev/null)" ]; then
       # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
@@ -5942,7 +5941,6 @@ feed_multicast_restoreparts() {
   done
   # We have to do restore LVM (PV/VG/LV) together, not follow every partition
   if [ "$part_is_lvm" = "yes" ]; then
-    do_LVM_restore_feed="yes"
     # LVM exists, feed images to restore PV/VG/LV.
     feed_LVM_multicast "$tgt_parts" $port
   fi
@@ -5998,15 +5996,6 @@ feed_bittorrent_restoreparts() {
   local track_max_client_opt
   # do_regen_BT_img is a global variable. It's the flag about regenerating the BT files
 
-  if [ ! -d $ocsroot_btzone/$tgt_dir ]; then
-    mkdir -p $ocsroot_btzone/$tgt_dir/
-    # Put the tag file into corresponding dir
-    # //NOTE// Copy will only happens when the dir is newly created. Otherwise it will overwrite the existing one.
-    if [ -e $imagedir/$tgt_dir/Info-img-id.txt ]; then
-      cp -a $imagedir/$tgt_dir/Info-img-id.txt $ocsroot_btzone/$tgt_dir/
-    fi
-  fi
-
   # prepare the mail client
   if type mutt &>/dev/null; then
     mail_client="mutt"
@@ -6015,48 +6004,16 @@ feed_bittorrent_restoreparts() {
   elif type mailx &>/dev/null; then
     mail_client="mailx"
   fi
-  do_LVM_restore_feed="no"
   pt_no_lvm=""
-  do_regen_BT_img="no" # //NOTE// do_regen_BT_img will never be changed to no if it's already yes once.
+  part_is_lvm="no"
   for partition in $tgt_parts; do
     # sda1 -> sda
     hd_tmp="$(get_diskname $partition)"
-    part_is_lvm="no"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
     if [ -n "$(grep -Ew "$partition" $imagedir/$tgt_dir/lvm_vg_dev.list 2>/dev/null)" ]; then
       # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
       part_is_lvm="yes"
       continue
-    fi
-    # Create the image files for BT if they do not exist.
-    if [ ! -d "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" -o \
-	   "$(find "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" \
-	   -mindepth 1 -maxdepth 1 -print 2>/dev/nul | wc -l)" -eq 0 ]; then
-      do_regen_BT_img="yes"  # Keep for later use in LVM
-      echo "Create the image files for BT if they do not exist..."
-      create_bt_image_files_from_partclone_img $partition
-    else
-      # Corresponding dir exists, but ID many not match
-      if [ -e "$imagedir/$tgt_dir/Info-img-id.txt" ]; then
-        . $imagedir/$tgt_dir/Info-img-id.txt
-        src_img_id="$IMG_ID"
-      fi
-      if [ -e "$ocsroot_btzone/$tgt_dir/Info-img-id.txt" ]; then
-        . $ocsroot_btzone/$tgt_dir/Info-img-id.txt
-        tgt_img_id="$IMG_ID"
-      fi
-      if [ "$src_img_id" != "$tgt_img_id" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "Found existing Clonezilla BT files, but image ID does not match! Regenerating..."
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        do_regen_BT_img="yes"  # Keep for later use in LVM
-        create_bt_image_files_from_partclone_img $partition
-      else
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "Existing Clonezilla BT files match the source image. No need to regenerate..."
-        echo "BT slice files dir: $ocsroot_btzone/$tgt_dir/$(to_filename $partition)"
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      fi
     fi
     pt_no_lvm="$pt_no_lvm $partition"
   done
@@ -6069,10 +6026,8 @@ feed_bittorrent_restoreparts() {
 
   # We have to do restore LVM (PV/VG/LV) together, not follow every partition
   if [ "$part_is_lvm" = "yes" ]; then
-    do_LVM_restore_feed="yes"
-    create_LVM_bt_image_files_from_partclone_img "$tgt_parts"
     # LVM exists, feed images to restore PV/VG/LV.
-    feed_LVM_bittorrent "$tgt_parts"
+    feed_bittorrent_LVM "$tgt_parts"
   fi
   # spawn a background program to wait and mail the clonezilla-jogs.log to root
   # if we can find mail/mutt program then we do it, otherwise skip.
@@ -6554,7 +6509,71 @@ restore_logv() {
   done
   exec 3<&-
 } # end of restore_logv
+#
+create_bittorrent_slices() {
+  local tgt_dir="$1"
+  local tgt_parts="$2" # e.g. sda1, sda2...
+  local pt_no_lvm
+  # do_regen_BT_img is a global variable. It's the flag about regenerating the BT files and will pass to create_LVM_bt_image_files_from_partclone_img
 
+  if [ ! -d $ocsroot_btzone/$tgt_dir ]; then
+    mkdir -p $ocsroot_btzone/$tgt_dir/
+    # Put the tag file into corresponding dir
+    # //NOTE// Copy will only happens when the dir is newly created. Otherwise it will overwrite the existing one.
+    if [ -e $imagedir/$tgt_dir/Info-img-id.txt ]; then
+      cp -a $imagedir/$tgt_dir/Info-img-id.txt $ocsroot_btzone/$tgt_dir/
+    fi
+  fi
+
+  pt_no_lvm=""
+  do_regen_BT_img="no" # //NOTE// do_regen_BT_img will never be changed to no if it's already yes once.
+  for partition in $tgt_parts; do
+    # sda1 -> sda
+    hd_tmp="$(get_diskname $partition)"
+    part_is_lvm="no"
+    # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
+    if [ -n "$(grep -Ew "$partition" $imagedir/$tgt_dir/lvm_vg_dev.list 2>/dev/null)" ]; then
+      # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
+      part_is_lvm="yes"
+      continue
+    fi
+    # Create the image files for BT if they do not exist.
+    if [ ! -d "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" -o \
+	   "$(find "$ocsroot_btzone/$tgt_dir/$(to_filename $partition)" \
+	   -mindepth 1 -maxdepth 1 -print 2>/dev/nul | wc -l)" -eq 0 ]; then
+      do_regen_BT_img="yes"  # Keep for later use in LVM
+      echo "Create the image files for BT if they do not exist..."
+      create_bt_image_files_from_partclone_img $partition
+    else
+      # Corresponding dir exists, but ID many not match
+      if [ -e "$imagedir/$tgt_dir/Info-img-id.txt" ]; then
+        . $imagedir/$tgt_dir/Info-img-id.txt
+        src_img_id="$IMG_ID"
+      fi
+      if [ -e "$ocsroot_btzone/$tgt_dir/Info-img-id.txt" ]; then
+        . $ocsroot_btzone/$tgt_dir/Info-img-id.txt
+        tgt_img_id="$IMG_ID"
+      fi
+      if [ "$src_img_id" != "$tgt_img_id" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Found existing Clonezilla BT files, but image ID does not match! Regenerating..."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        do_regen_BT_img="yes"  # Keep for later use in LVM
+        create_bt_image_files_from_partclone_img $partition
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Existing Clonezilla BT files match the source image. No need to regenerate..."
+        echo "BT slice files dir: $ocsroot_btzone/$tgt_dir/$(to_filename $partition)"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      fi
+    fi
+    pt_no_lvm="$pt_no_lvm $partition"
+  done
+  # We have to do restore LVM (PV/VG/LV) together, not follow every partition
+  if [ "$part_is_lvm" = "yes" ]; then
+    create_LVM_bt_image_files_from_partclone_img "$tgt_parts"
+  fi
+} # end of create_bittorrent_slices
 # Multicast feeding to Restore LVM: PV/VG/LV data
 # Part of these codes are from http://www.trickytools.com/php/clonesys.php
 # Thanks to Jerome Delamarche (jd@inodes-fr.com)
@@ -6619,7 +6638,7 @@ feed_LVM_multicast() {
 # Bittorrent feeding to Restore LVM: PV/VG/LV data
 # Part of these codes are from http://www.trickytools.com/php/clonesys.php
 # Thanks to Jerome Delamarche (jd@inodes-fr.com)
-feed_LVM_bittorrent() {
+feed_bittorrent_LVM() {
   # This is for LVM parts
   # imagedir, port and ipart are global variable
   local tgt_parts="$1"
@@ -6672,7 +6691,7 @@ feed_LVM_bittorrent() {
    echo "Running: $btl_cmd"
    eval $btl_cmd
   done < $LOGV_PARSE_CONF
-} # end of feed_LVM_bittorrent
+} # end of feed_bittorrent_LVM
 #
 check_target_hd() {
   local disk_file="$1"
@@ -7134,6 +7153,8 @@ start_ocs_service() {
         echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
         exit 1
       fi
+      echo "Running: ocs-gen-bt-slices \"$target_dir\" \"$target_parts\""
+      ocs-gen-bt-slices "$target_dir" "$target_parts"
       feed_bittorrent_restoreparts "$target_dir" "$target_parts"
       ;;
 
@@ -7146,6 +7167,8 @@ start_ocs_service() {
         echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
         exit 1
       fi
+      echo "Running: ocs-gen-bt-slices \"$target_dir\" \"$target_parts\""
+      ocs-gen-bt-slices "$target_dir" "$target_parts"
       feed_bittorrent_restoreparts "$target_dir" "$target_parts"
       ;;
 
@@ -12836,9 +12859,7 @@ create_LVM_bt_image_files_from_partclone_img() {
   # imagedir, port and ipart are global variable
   local tgt_parts="$1"
   local volg n
-  local btl_cmd
   local fn
-  local track_max_client_opt
   # do_regen_BT_img is a global variable.
   # Note! With a leading $imagedir before /$target_dir
   PV_PARSE_CONF="$imagedir/$target_dir/lvm_vg_dev.list"
