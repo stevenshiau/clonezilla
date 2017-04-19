@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.16
+Version:	3.26.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Apr 19 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.17-drbl1
+  - Always the network environment mode in ocs-live-feed-img.
+  - Add option -nm|--netenv-mode to ocs-live-feed-img.
+
 * Wed Apr 19 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.16-drbl1
   - Confine the command to run in the client, i.e., Program
     ocs-live-feed-img only provides parameters to clients
