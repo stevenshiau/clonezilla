@@ -133,6 +133,7 @@ USAGE() {
     USAGE_common_general
     dialog_like_prog_help_prompt
     echo " -x, --interactive     Interactive mode to save or restore."
+    echo " -os, --ocs-server SRV Assign the OCS server as SRV."
     echo
     echo "Example:"
     echo "   To save or restore image in client (Only that DRBL client will join, and its local partitions is NOT mounted). NOTE!!! You should run the command in DRBL client or you have to make sure the target device is NOT busy!."
@@ -546,6 +547,15 @@ parse_ocs_sr_cmd_options_with_dash() {
     --save-only)
 	    ocs_x_mode="save_only"
 	    shift; n_shift=$((n_shift+1));;
+    -os|--ocs-server)
+            shift; n_shift=$((n_shift+1)); 
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              ocs_server="$1"
+              shift; n_shift=$((n_shift+1)); 
+            fi
+            [ -z "$ocs_server" ] && USAGE && exit 1
+	    ;;
     -um|--user-mode)
             shift; n_shift=$((n_shift+1)); 
             # skip the -xx option, in case 
@@ -1454,6 +1464,8 @@ case "$ocs_sr_type" in
   "p2v-img") ocs-img-2-vdk ;;
   "1-2-mdisks") ocs-restore-mdisks -um $ocs_user_mode ;;
   "lite-server") ocs-live-feed-img -um $ocs_user_mode start
+	         postaction="true"
+		 save_ocs_sr_related_vars
                  echo -n "$msg_press_enter_to_continue "
                  read
 	         ;;
