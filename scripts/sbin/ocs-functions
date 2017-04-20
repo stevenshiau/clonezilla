@@ -6848,7 +6848,27 @@ stop_ocs_service() {
   fi
 
 } # end of stop_ocs_service
+#
+start_ocsmgrd_daemon() {
+  # always_restore a is global variable
+  # start the ocsmgrd daemon
+  # the $ocs_lock_dir/clonezilla.lock is a tag for ocs is running,
+  # after start/stop cloning, we will remove $ocs_lock_dir/clonezilla.lock
+  mkdir -p $ocs_lock_dir
+  touch $ocs_lock_dir/clonezilla.lock
+  #
+  if [ "$always_restore" = "yes" ]; then
+    # If it's always_restore, we do not generate client's PXE config when receiving job is done message from client.
+    mgrd_opt="--nopxecfg"
+  fi
 
+  # Before start the ocsmgrd, kill the stale one
+  kill_ps_by_killall_9 ocsmgrd
+    
+  ocsmgrd $mgrd_opt &
+  ocs_log_file="$(LC_ALL=C grep -F "joblogfile =>" `which ocsmgrd` | awk -F" " '{print $3}')"
+  echo "$msg_client_job_are_logged_in: $ocs_log_file"
+} # end of start_ocsmgrd_daemon
 #
 # start ocs services
 # parameter: 
@@ -6985,10 +7005,6 @@ start_ocs_service() {
     # Set the single user mode password if not setting for client...This will be safer..."
     set_clients_rc1_passwd $IP_LIST
     
-    # HOST_OPTION_MODIFY: 
-    # before start the ocsmgrd, kill the stale one
-    kill_ps_by_killall_9 ocsmgrd
-    
     # make client to boot in drbl mode with menu label specified.
     case "$task" in
       "saveparts")
@@ -7043,19 +7059,9 @@ start_ocs_service() {
            ;;
      esac
     fi
-    
-    # start the ocsmgrd daemon
-    # the $ocs_lock_dir/clonezilla.lock is a tag for ocs is running,
-    # after start/stop cloning, we will remove $ocs_lock_dir/clonezilla.lock
-    touch $ocs_lock_dir/clonezilla.lock
-    # UDPCAST MODIFY
-    if [ "$always_restore" = "yes" ]; then
-      # If it's always_restore, we do not generate client's PXE config when receiving job is done message from client.
-      mgrd_opt="--nopxecfg"
-    fi
-    ocsmgrd $mgrd_opt &
-    ocs_log_file="$(LC_ALL=C grep -F "joblogfile =>" `which ocsmgrd` | awk -F" " '{print $3}')"
-    echo "$msg_client_job_are_logged_in: $ocs_log_file"
+
+    start_ocsmgrd_daemon
+
     if [ -n "$(echo $task | grep -i "restore")" ]; then
       # if the mode restore, show the log prompt
       echo "$msg_client_sfdisk_log_are_in $OCS_LOGFILE"
@@ -7346,6 +7352,9 @@ prep_client_inittab_rc_srv() {
 # task_notify_job_is_done
 # ask for localboot next time
 task_notify_job_is_done() {
+  local check_if_spawned="yes"
+  local socket_cmd send_info
+  # ocs_server is global variable
   # Since now ocsmgrd has an option "--nopxecfg" (otherwise in Clonezilla live mode on Clonezilla SE, $always_restore won't be passed to client). No more skipping from clients.
   #if [ "$always_restore" = "yes" ]; then
   #   echo "It's in always-restore clonezilla mode!"
@@ -7355,17 +7364,32 @@ task_notify_job_is_done() {
   #   return 2
   #fi
 
-  # check if it's spawned by drbl-ocs.
-  is_spawned_by_drbl_ocs $ocs_ppid
-  rc=$?
-  if [ "$rc" -gt 0 ]; then
-    echo "This program is not started by Clonezilla server, so skip notifying it the job is done."
-    echo "Finished!"
-    return 2
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -s|--skip-check-if-spawned)
+          shift; check_if_spawned="no" ;;
+      -*) echo "${0}: ${1}: invalid option" | tee -a ${OCS_LOGFILE} >&2
+          USAGE | tee -a ${OCS_LOGFILE} >& 2
+          echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
+          [ "$save_restore_error_log" = "yes" ] && copy_error_log
+          exit 2 ;;
+      *)  break ;;
+    esac
+  done
+
+  if [ "$check_if_spawned" = "yes" ]; then
+    # check if it's spawned by drbl-ocs.
+    is_spawned_by_drbl_ocs $ocs_ppid
+    rc=$?
+    if [ "$rc" -gt 0 ]; then
+      echo "This program is not started by Clonezilla server, so skip notifying it the job is done." | tee -a ${OCS_LOGFILE}
+      echo "Finished!" | tee -a ${OCS_LOGFILE}
+      return 2
+    fi
   fi
 
   echo $msg_delimiter_star_line
-  echo -n "Notifying clonezilla server my job is done... "
+  echo -n "Notifying clonezilla server my job is done... " | tee -a ${OCS_LOGFILE}
   netdevices="$(get-nic-devs)"
   for device in $netdevices; do
     ip="$(drbl-get-ipadd $device)"
@@ -7377,16 +7401,28 @@ task_notify_job_is_done() {
     mac="$(drbl-get-macadd $device)"
     break
   done
+  if [ -z "$ocs_server" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No Clonezilla server was found! No idea where to send the restoring results." | tee --append ${OCS_LOGFILE}
+    echo "Skip notifying the sever." | tee --append ${OCS_LOGFILE}
+    return 1
+  fi
   # Found ip, ocs_server, mac, we can notify ocs server
   # To avoid all the clients notify at almost same time, we use random sleep before send info.
   time="$(get_random_time $NOTIFY_OCS_SERVER_TIME_LIMIT)"
   countdown $time
   echo
-  echo -n "Sending info \"$ip $mac $efi_os_label $efi_system_part_no $efi_sys_part_boot_file $report_msg\" to $ocs_server:$OCSMGRD_PORT... "
-  ocs-socket -m "$ip $mac $efi_os_label $efi_system_part_no $efi_sys_part_boot_file $report_msg" -h $ocs_server -p $OCSMGRD_PORT
-  echo "done!"
-  echo $msg_delimiter_star_line
-  echo "Finished!"
+  send_info="$ip $mac"
+  [ -n "$efi_os_label" ] && send_info="$send_info $efi_os_label"
+  [ -n "$efi_system_part_no" ] && send_info="$send_info $efi_system_part_no"
+  [ -n "$efi_sys_part_boot_file" ] && send_info="$send_info $efi_sys_part_boot_file"
+  send_info="$send_info $report_msg"
+  echo -n "Sending info: $send_info to $ocs_server:$OCSMGRD_PORT... " | tee -a ${OCS_LOGFILE}
+  socket_cmd="ocs-socket -m \"$send_info\" -h $ocs_server -p $OCSMGRD_PORT"
+  eval $socket_cmd | tee -a ${OCS_LOGFILE}
+  echo "done!" | tee -a ${OCS_LOGFILE}
+  echo $msg_delimiter_star_line | tee -a ${OCS_LOGFILE}
+  echo "Finished!" | tee -a ${OCS_LOGFILE}
 } # end of task_notify_job_is_done
 #
 show_warning_about_write_failed() {
@@ -9223,9 +9259,6 @@ do_select_in_client() {
   # Set the single user mode password if not setting for client...This will be safer..."
   set_clients_rc1_passwd $IP_LIST
 
-  # before start the ocsmgrd, kill the stale one
-  kill_ps_by_killall_9 ocsmgrd
-
   # If the mode is in always_restore, and PXE default menu is assigned to local (-y0), we will set local boot as default. Since the always_restore mode is only useful with local OS exists. But if in some scenario, such as production clone flow, maybe pxe_menu_default_mode=clone is useful, since a lot of hardisks will be replaced one by one.
   if [ "$always_restore" = "yes" ]; then
    case "$pxe_menu_default_mode" in
@@ -9240,20 +9273,9 @@ do_select_in_client() {
    esac
   fi
 
-  # start the ocsmgrd daemon
-  # the $ocs_lock_dir/clonezilla.lock is a tag for ocs is running,
-  # after start/stop cloning, we will remove $ocs_lock_dir/clonezilla.lock
-  touch $ocs_lock_dir/clonezilla.lock
-  # UDPCAST MODIFY
-  if [ "$always_restore" = "yes" ]; then
-    # If it's always_restore, we do not generate client's PXE config when receiving job is done message from client.
-    mgrd_opt="--nopxecfg"
-  fi
-  ocsmgrd $mgrd_opt &
-  ocs_log_file="$(LC_ALL=C grep -F "joblogfile =>" `which ocsmgrd` | awk -F" " '{print $3}')"
-  echo "$msg_client_job_are_logged_in: $ocs_log_file"
+  #
+  start_ocsmgrd_daemon
 } # end of do_select_in_client
-
 #
 prompt_to_turn_on_client() {
     local type=$1
@@ -9619,19 +9641,29 @@ is_spawned_by_drbl_ocs() {
       echo "No PID is assigned! Unable to decide that!"
       return 1
     fi
-    ocs_pproc="$(LC_ALL=C ps -eo pid,ucmd | grep -Ew "^[[:space:]]*$ppid_" | awk -F" " '{print $2}')"
+    ocs_pproc="$(LC_ALL=C ps -p $ppid_ -o comm=)"
+    # Obtain something like: ocs_pproc=ocs-live
+    # it might be truncated..., like:
+    # root@ocs-cli:~# ps -p 13136 -o comm=
+    # ocs-live-get-im -> should be ocs-live-get-img
+    # Therefore it's not accurate to use "-o comm=" to extract the command.
+    # Instead we will use "ps -C CMD -o pid=" to extract the pid of CMD when we know exactly the CMD is (like ocs-live, ocs-live-get-img)
+
     # Initialized rc value as 1
     rc=1
     # Systemd env in Fedora use "/etc/init.d/ocs-run start" to start up ocs-run, so no S[0-9][0-9], while ocs-live is for select-in-client mode, since it spawns command "clonezilla" then use "ocs-live" to run the real job.
     if [ -n "$(LC_ALL=C echo "$ocs_pproc" | grep -Ew "(S[0-9][0-9])*ocs-run$")" ]; then
       echo "$ocs_file was spawned by $ocs_pproc"
       rc=0
-    elif [ -n "$(LC_ALL=C echo "$ocs_pproc" | grep -Ew "ocs-live$")" ]; then
+    elif [ -n "$(LC_ALL=C ps -C "ocs-live" -o pid= | grep -Ew $ppid_)" ]; then
       # If we found it's ocs-live, we have to check if "ocs_opt" and "select_in_client" in /proc/cmdline
       if [ -n "$(LC_ALL=C grep -iEw "ocs_opt" /proc/cmdline | grep -Ew "select_in_client")" ]; then
         echo "$ocs_file was spawned by $ocs_pproc"
         rc=0
       fi
+    elif [ -n "$(LC_ALL=C ps -C "ocs-live-get-img" -o pid= | grep -Ew $ppid_)" ]; then
+      echo "$ocs_file was spawned by ocs-live-get-img"
+      rc=0
     fi
   fi
   return $rc
