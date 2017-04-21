@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.20
+Version:	3.26.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Apr 21 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.21-drbl1
+  - Use prepare-files-for-PXE-client, the better one, to put the network
+    booting files for clients of Clonezilla live.
+
 * Fri Apr 21 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.20-drbl1
   - Bug fixed: wrong command to create bootx64.efi in live hook when creating
     Clonezilla live.
