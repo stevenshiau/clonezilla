@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.19
+Version:	3.26.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Apr 21 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.20-drbl1
+  - Bug fixed: wrong command to create bootx64.efi in live hook when creating
+    Clonezilla live.
+
 * Fri Apr 21 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.19-drbl1
   - Use gen_dnsmasq_cfg to create the config file for dnsmasq
     in ocs-live-feed-img.
