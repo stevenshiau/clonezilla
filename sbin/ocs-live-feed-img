@@ -423,6 +423,83 @@ gen_lite_dhcpd_conf() {
   echo "$msg_delimiter_star_line"
 } # end of gen_lite_dhcpd_conf
 #
+gen_ocs_live_netboot_conf() {
+  local pxe_menu_to_hide pxe_menu_to_reveal
+  local grub_menu_to_hide grub_menu_to_reveal
+  PXE_CONF="$PXELINUX_DIR/default"
+  GRUB_CONF="$GRUB_EFINB_DIR/grub.cfg"
+  pxe_menu_to_hide="drbl clonezilla"
+  pxe_menu_to_reveal="Clonezilla-live local"
+  grub_menu_to_hide="drbl-client clonezilla-se-client"
+  grub_menu_to_reveal="clonezilla-live-client local-disk"
+  generate-pxe-menu
+  gen-grub-efi-nb-menu
+  # Add Clonezilla live
+  if [ -n "$LIVE_MEDIA" -a -d "$LIVE_MEDIA" ]; then
+    drbl-sl -e -b -n -p $LIVE_MEDIA
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to find root file system in $LIVE_MEDIA!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Unable to let PXE client boot Clonezilla live."
+    echo -n "$msg_press_enter_to_continue..."
+    read
+    return 1
+  fi
+  # Reveal and hide boot menu
+  for imenu in $pxe_menu_to_reveal; do
+    hide_reveal_pxe_img $imenu reveal $PXE_CONF
+  done
+  for imenu in $pxe_menu_to_hide; do
+    hide_reveal_pxe_img $imenu hide $PXE_CONF
+  done
+  for imenu in $grub_menu_to_reveal; do
+    hide_reveal_grub_efi_ent $imenu reveal $GRUB_CONF
+  done
+  for imenu in $grub_menu_to_hide; do
+    hide_reveal_grub_efi_ent $imenu hide $GRUB_CONF
+  done
+  set-default-pxe-img -i "Clonezilla-live" -c $PXE_CONF -l "Clonezilla live lite client: restore $target_dir"
+  set-default-grub-efi-img -i "clonezilla-live-client" -c $GRUB_CONF -l "Clonezilla live lite client: restore $target_dir"
+
+  # Add boot parameters: locales, kb, ocs-live-get-img $server
+  echo "Modifying keyboard-layouts, locales, ocs_daemonon, and ocs_prerun in $PXE_CONF if necessary..."
+  # Keymap should be the same with server. If not found use that assigned in drbl-ocs.conf.
+  if [ -e /etc/default/keyboard ]; then
+    # Debian based system. The content of vconsole.conf is like:
+    # ================
+    # XKBMODEL="pc105"
+    # XKBLAYOUT="us"
+    # XKBVARIANT=""
+    # XKBOPTIONS=""
+    # ================
+    . /etc/default/keyboard
+    client_kb_layout="$XKBLAYOUT"
+    client_kb_model="$XKBMODEL"
+    client_kb_variant="$XKBVARIANT"
+    client_kb_options="$XKBOPTIONS"
+  fi
+  if [ -z "$client_kb_layout" ]; then
+    # If no keybouard layout is found, set it as that
+    # is assigned in drbl-ocs.conf, force to update it.
+    client_kb_layout="$ocs_live_keymap_for_pxe_ocs_live"
+    # For the rest (model, variant or options they might be nothing.
+  fi
+  if [ -n "$client_kb_layout" ]; then
+    add_opt_in_pxelinux_cfg_block -n Clonezilla-live keyboard-layouts "$client_kb_layout"
+    add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" keyboard-layouts "$client_kb_layout"
+  fi
+  # locales should be forced to use that assigned from drbl-ocs.conf. Normally it should be "en_US.UTF-8". Check drbl-ocs.conf for more details.
+  if [ -n "$ocs_lang_for_pxe_ocs_live" ]; then
+    add_opt_in_pxelinux_cfg_block -n Clonezilla-live locales "$ocs_lang_for_pxe_ocs_live"
+    add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" locales "$ocs_lang_for_pxe_ocs_live"
+  fi
+  add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "ocs-live-get-img $cast_srv_ip"
+  add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "ocs-live-get-img $cast_srv_ip"
+  # Overwrite the default background photo
+  cp -a $DRBL_SCRIPT_PATH/drbl/image/ocswp.png $pxecfg_pd/drblwp.png
+} # end of gen_ocs_live_netboot_conf
+#
 start_nat_service() {
   local subnet
   NAT_RULES_FOR_DEBIAN=/etc/default/ocs-live-lite-nat.rules
@@ -772,9 +849,18 @@ task_start_feed_img_for_cast() {
     echo "More udp-sender and cat comamnds (if available) will be spawned when the 1st one is done." | tee -a ${OCS_LOGFILE}
   fi
 
-  # Prepare the commands for clients
+  # Prepare the config for clients
   if ! systemctl status lighttpd >/dev/null 2>&1; then
     systemctl start lighttpd | tee -a ${OCS_LOGFILE}
+  fi
+  # Prepare the PXE and uEFI network boot
+  if [ "$netenv_mode" = "in-isolation" ]; then
+    gen_ocs_live_netboot_conf
+    # Put filesystem.squashfs in http service root.
+    ln -fsv $LIVE_MEDIA/live/filesystem.squashfs /var/www/html/Clonezilla-live-filesystem.squashfs
+    # Change fetch protocol to http
+    add_opt_in_pxelinux_cfg_block -n Clonezilla-live fetch "http://$cast_srv_ip/Clonezilla-live-filesystem.squashfs"
+    add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" fetch "http://$cast_srv_ip/Clonezilla-live-filesystem.squashfs"
   fi
 
   echo $msg_delimiter_star_line
@@ -886,7 +972,7 @@ export TERM="$TERM"
 
 #
 check_if_root
-check_if_in_clonezilla_live
+check_if_in_clonezilla_live  # get $LIVE_MEDIA
 ask_and_load_lang_set
 prompt_for_lite_server
 
