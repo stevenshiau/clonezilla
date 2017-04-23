@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.24
+Version:	3.26.25
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Apr 23 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.25-drbl1
+  - Bug fixed: Make sure dnsmasq is started in order.
+  - Unless there is an existing image in /tmp otherwise honor the original
+    image name in ocs-live-get-img.
+
 * Sun Apr 23 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.24-drbl1
   - Make sure stop function kill all the processes in ocs-live-feed-img.
   - Update some prompts in ocs-live-feed-img.
