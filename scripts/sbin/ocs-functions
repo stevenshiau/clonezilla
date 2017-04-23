@@ -3812,6 +3812,10 @@ ask_time_or_clients_to_wait_for_mcast() {
   time_opt_tmp=0
   if [ -z "$mcast_cln_no" ]; then
     n_clients_tmp_default="$(get-client-ip-list 2>/dev/null | wc -l | sed -e "s/ //g")"
+    if [ "$n_clients_tmp_default" -eq 0 ]; then
+      # At least make it 1
+      n_clients_tmp_default=1
+    fi
   else
     n_clients_tmp_default="$mcast_cln_no"
   fi
@@ -3880,7 +3884,11 @@ ask_clients_to_wait_for_bittorrent() {
   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
   n_clients_tmp=0
   if [ -z "$bt_cln_no" ]; then
-    n_clients_tmp_default="$(get-client-ip-list | wc -l | sed -e "s/ //g")"
+    n_clients_tmp_default="$(get-client-ip-list 2>/dev/null | wc -l | sed -e "s/ //g")"
+    if [ "$n_clients_tmp_default" -eq 0 ]; then
+      # At least make it 1
+      n_clients_tmp_default=1
+    fi
   else
     n_clients_tmp_default="$bt_cln_no"
   fi
@@ -6725,12 +6733,37 @@ stop_ocs_service() {
   local to_gen_ssi_files="$1"
   local IP ihost
   local pxecfg grubcfg pxecfg_MAC grubcfg_MAC
+  # By default this function kills drbl-ocs, but it can also be used to kill ocs-live-feed-img
+  local main_prog_def="drbl-ocs"  
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -m|--main-program)
+           shift
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             main_prog="$1"
+             shift
+           fi
+           [ -z "$main_prog" ] && echo "-x is used, but no main_prog assigned." && exit 1
+           ;;
+      -*)  echo "${0}: ${1}: invalid option" | tee --append ${OCS_LOGFILE} >&2
+           echo "Unknown option in function kill_ps_by_kill_9" | tee --append ${OCS_LOGFILE} >& 2
+           echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+           [ "$save_restore_error_log" = "yes" ] && copy_error_log
+           exit 2 ;;
+      *)   break ;;
+    esac
+  done
+
+  [ -z "$main_prog" ] && main_prog="$main_prog_def"
+
   # check if "ocsmgrd" is running ?
   if [ ! -e "$ocs_lock_dir/clonezilla.lock" ]; then 
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "OCS is not started!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    exit 0
+    return 1
   fi
 
   # HOST_OPTION_MODIFY: 
@@ -6744,7 +6777,7 @@ stop_ocs_service() {
     #[ "$clean_client_all_ocs_related_srv" = "yes" ] && rm -f $RCX_ROOTDIR/rc[06].d/S05ocs-srv-reset
     
     # kill drbl-ocs, ocsmgrd and udpcast daemon
-    kill_ps_by_kill_9 drbl-ocs
+    kill_ps_by_kill_9 $main_prog
     kill_ps_by_killall_9 ocsmgrd
     kill_ps_by_killall_9 udp-sender
 
@@ -6758,8 +6791,6 @@ stop_ocs_service() {
     # restart nfs to make sure stalled NFS is cleaned.
     [ "$nfs_restart" != "no" ] && do_nfs_restart
   # fi
-
-  # HOST_OPTION_MODIFY: modified since we specify hosts.
 
   # When removing ocs_opt etc in pxelinux cfg, PXE_CONF is a global variable.
   if [ "$diskless_client_os" = "clonezilla-live" ]; then
@@ -6785,10 +6816,10 @@ stop_ocs_service() {
   # prepare the HOSTNAME-IP-MAC table
   OCS_TMP=`mktemp /tmp/ocs_clean_tmp.XXXXXX`
   trap "[ -f "$OCS_TMP" ] && rm -f $OCS_TMP" HUP INT QUIT TERM EXIT
-  parse_dhcpd_conf $OCS_TMP
+  parse_dhcpd_conf $OCS_TMP >/dev/null 2>&1
   # Note! We can not use "for ihost in $drblroot/*; do" since we have to create every pxelinux config for client. If we use that, it will fail in DRBL SSI and Clonezilla box.
   #for ihost in $drblroot/*; do
-  for IP in `get-client-ip-list`; do
+  for IP in `get-client-ip-list 2>/dev/null`; do
     ihost="$drblroot/$IP"
     # if the LIST_HOST is on, skip those IP not listed in the $IP_LIST
     if [ "$LIST_HOST" = "on" ]; then
@@ -6826,7 +6857,7 @@ stop_ocs_service() {
   # update the ssi image if it's in clonezilla box mode.
   # Loading the mode when drblpush, we need to know if it's clonezilla_box_mode
   # This only necessary in clonezilla server, since /etc/drbl/drbl_deploy.conf does not exist in client.
-  . /etc/drbl/drbl_deploy.conf
+  [ -e /etc/drbl/drbl_deploy.conf ] && . /etc/drbl/drbl_deploy.conf
 
   # To avoid, clientdir=node_root is missing.. we check here.
   # If it's clonezilla_box_mode, clean dhcpd leases, too.
@@ -8934,31 +8965,51 @@ check_boot_kernel_arg_cmdline() {
     exit 0
   fi
 }
-
+#
 kill_ps_by_kill_9() {
-    # kill drbl-ocs or ocs-sr process
-    # This is better than killall -9, more exactly
-    local prog="$1"
-    local pids
-    pids="$(LC_ALL=C ps -C "$prog" -o pid=)"
-    if [ -n "$pids" ]; then
-      for p in $pids; do
-        if [ "$p" != "$ocs_myself_id" ] && [ "$p" != "$ocs_myself_ppid" ]; then
-          kill -9 $p &> /dev/null
-        fi
-      done
-    fi
-}   
+  # kill drbl-ocs or ocs-sr process
+  # This is better than killall -9, more exactly
+  # ocs_myself_ppid is global variable, it will be excluded when killing
+  local prog="$1"
+  local pids exclude_pids
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -x|--exclude)
+           shift
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             exclude_pids="$1"
+             shift
+           fi
+           [ -z "$exclude_pids" ] && echo "-x is used, but no exclude_pids assigned." && exit 1
+           ;;
+      -*)  echo "${0}: ${1}: invalid option" | tee --append ${OCS_LOGFILE} >&2
+           echo "Unknown option in function kill_ps_by_kill_9" | tee --append ${OCS_LOGFILE} >& 2
+           echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+           [ "$save_restore_error_log" = "yes" ] && copy_error_log
+           exit 2 ;;
+      *)   break ;;
+    esac
+  done
+  pids="$(LC_ALL=C ps -C "$prog" -o pid=)"
+  if [ -n "$pids" ]; then
+    for p in $pids; do
+      [ -n "$(echo $exclude_pids | grep -Ew "$p")" ] && continue
+      if [ "$p" != "$ocs_myself_id" ] && [ "$p" != "$ocs_myself_ppid" ]; then
+        kill -9 $p &> /dev/null
+      fi
+    done
+  fi
+} # end of kill_ps_by_kill_9
 #
 kill_ps_by_killall_9() {
-    local prog="$1"
-    local pid=""
-    [ -z "$prog" ] && echo "prog to be killed is necessary! Abort!" && exit 1
-    # kill the prog daemon
-    pid=`ps -e | grep -Ew "$prog" | grep -v "grep"`
-    [ -n "$pid" ] && killall -9 $prog
-}   
-
+  local prog="$1"
+  local pid=""
+  [ -z "$prog" ] && echo "prog to be killed is necessary! Abort!" && exit 1
+  # kill the prog daemon
+  pid=`ps -e | grep -Ew "$prog" | grep -v "grep"`
+  [ -n "$pid" ] && killall -9 $prog
+} # end of kill_ps_by_killall_9
 #
 do_startdisk() {
     # target_image
