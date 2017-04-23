@@ -96,6 +96,7 @@ task_run_restoring() {
   fi
   # get pseudo_img and ocs_sr_opt
   pseudo_img=""
+  img_prefix=""
   ocs_sr_opt=""
   . /tmp/ocs-client-run.conf
   if [ -z "$pseudo_img" ]; then
@@ -112,6 +113,7 @@ task_run_restoring() {
     echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
     exit 1
   fi
+  [ -z "$img_prefix" ] && img_prefix="ocs-img"
 
   # Part 2: get pseudo image file
   echo "Preparing the image info..." | tee -a ${OCS_LOGFILE}
@@ -124,7 +126,13 @@ task_run_restoring() {
     echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
     exit 1
   fi
-  image="$(mktemp -d /tmp/ocs-img.XXXXXX)"
+  if [ -d "$/tmp/${img_prefix}" ]; then
+    # If image already exists in /tmp, create a random dir.
+    image="$(mktemp -d /tmp/${img_prefix}.XXXXXX)"
+  else
+    image="/tmp/${img_prefix}"
+    mkdir -p $image
+  fi
   tar -xJf /tmp/$pseudo_img -C $image | tee -a ${OCS_LOGFILE}
   if [ -d "$image/btzone" ]; then
     mkdir -p /tmp/btzone/$(basename $image) | tee -a ${OCS_LOGFILE}
