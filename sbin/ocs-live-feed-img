@@ -517,6 +517,8 @@ gen_ocs_live_netboot_conf() {
   add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "ocs-live-get-img $cast_srv_ip"
   # Overwrite the default background photo
   cp -a $DRBL_SCRIPT_PATH/image/ocswp.png $pxecfg_pd/drblwp.png
+  # Switch the menu title to Clonezilla
+  perl -pi -e "s|^MENU TITLE.*|MENU TITLE Clonezilla \(http://clonezilla.org\)|g" $PXELINUX_DIR/default
 } # end of gen_ocs_live_netboot_conf
 #
 start_nat_service() {
@@ -623,8 +625,6 @@ task_start_feed_img_for_cast() {
        dhcp_rang_end_closed_lan="$(LC_ALL=C drbl-ipcalc $uplink_port_ip $uplink_port_nm | awk -F' ' '/^HostMax:/ {print $2}')"
        echo "In isolation environment. Now start dhcp service..." 
        gen_lite_dhcpd_conf $dnsmasq_cfg
-       service dnsmasq restart
-       start_nat_service
        ;;
     *) echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
        exit 0
@@ -634,7 +634,7 @@ task_start_feed_img_for_cast() {
   MCAST_TMP=`mktemp /tmp/ocs_recovery_tmp.XXXXXX`
   trap "[ -f "$MCAST_TMP" ] && rm -f $MCAST_TMP" HUP INT QUIT TERM EXIT
 
-  if [ -n "$(pidof udp-sender)" ]; then
+  if [ ! -e "$ocs_lock_dir/clonezilla.lock" ]; then 
     task_stop_feed_img_for_cast
   fi
 
@@ -904,8 +904,10 @@ task_start_feed_img_for_cast() {
   if ! systemctl status lighttpd >/dev/null 2>&1; then
     systemctl start lighttpd | tee -a ${OCS_LOGFILE}
   fi
-  # Prepare the PXE and uEFI network boot
+  # Start the required services and prepare the PXE and uEFI network boot
   if [ "$netenv_mode" = "in-isolation" ]; then
+    service dnsmasq restart
+    start_nat_service
     gen_ocs_live_netboot_conf
     # Put filesystem.squashfs in http service root.
     ln -fsv $LIVE_MEDIA/live/filesystem.squashfs /var/www/html/Clonezilla-live-filesystem.squashfs
@@ -944,6 +946,7 @@ task_start_feed_img_for_cast() {
   # Part 2: ocs-client-run.conf
   cat <<-CLIENT_END > /var/www/html/ocs-client-run.conf
 pseudo_img="img-wo-fs.tar.xz"
+img_prefix="$target_dir"
 ocs_sr_opt="--ocsroot /tmp/ -l en_US.UTF-8 $OCS_OPT ${castmode}_${cast_dev_action} ocs_lite_pseudo_name $ocs_restore_dev"
 CLIENT_END
   if [ -e "/var/www/html/img-wo-fs.tar.xz" -a -e "/var/www/html/ocs-client-run.conf" ]; then
