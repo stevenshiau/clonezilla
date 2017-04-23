@@ -77,11 +77,30 @@ prompt_for_lite_server() {
   if [ "$interactive_mode" = "yes" ]; then
     echo "$msg_delimiter_star_line"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$ocs_live_lite_server_des"
+    echo "$msg_ocs_live_lite_server_des"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     confirm_continue_or_not_default_continue
   fi
 } # end of prompt_for_lite_server
+#
+ask_start_or_stop_mode() {
+  TMP="$(mktemp /tmp/ocsmode.XXXXXX)"
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+  "Clonezilla live Lite server" --menu "$msg_ocs_live_lite_server_des\n$msg_choose_mode:" \
+  0 0 0 $DIA_ESC \
+  "start"  "$msg_clonezilla_start" \
+  "stop"   "$msg_clonezilla_stop" \
+  "exit"   "$msg_exit. $msg_enter_cml" \
+  2> $TMP
+  mode="$(cat $TMP)"
+  [ -f "$TMP" ] && rm -f $TMP
+  if [ "$mode" = "exit" ]; then
+    exit 3
+  else
+    echo "Action is $mode"
+  fi
+} # end of ask_start_or_stop_mode
 #
 parse_ocs_live_feed_img_cmd_options_with_dash() { 
   n_shift=0
@@ -417,10 +436,10 @@ gen_lite_dhcpd_conf() {
     mv -f $dnsmasq_cfg ${dnsmasq_cfg}.orig
   fi
   gen_dnsmasq_cfg -r "${dhcp_rang_start_closed_lan},${dhcp_rang_end_closed_lan}" $dnsmasq_cfg
-  echo "$msg_delimiter_star_line"
-  echo "DHCP service settings in $dnsmasq_cfg:"
-  cat $dnsmasq_cfg
-  echo "$msg_delimiter_star_line"
+  echo "$msg_delimiter_star_line" >> ${OCS_LOGFILE}
+  echo "DHCP service settings in $dnsmasq_cfg:" >> ${OCS_LOGFILE}
+  cat $dnsmasq_cfg >> ${OCS_LOGFILE}
+  echo "$msg_delimiter_star_line" >> ${OCS_LOGFILE}
 } # end of gen_lite_dhcpd_conf
 #
 gen_ocs_live_netboot_conf() {
@@ -497,7 +516,7 @@ gen_ocs_live_netboot_conf() {
   add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "ocs-live-get-img $cast_srv_ip"
   add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "ocs-live-get-img $cast_srv_ip"
   # Overwrite the default background photo
-  cp -a $DRBL_SCRIPT_PATH/drbl/image/ocswp.png $pxecfg_pd/drblwp.png
+  cp -a $DRBL_SCRIPT_PATH/image/ocswp.png $pxecfg_pd/drblwp.png
 } # end of gen_ocs_live_netboot_conf
 #
 start_nat_service() {
@@ -514,6 +533,39 @@ start_nat_service() {
   # Enable IP forwarding
   echo 1 > /proc/sys/net/ipv4/ip_forward
 } # end of start_nat_service
+# 
+stop_nat_service() {
+  local ret
+  # Borrow from Debian
+  IPTABLES=iptables
+  IPV=${IPTABLES%tables} # ip for ipv4 | ip6 for ipv6
+  PROC_IPTABLES_NAMES=/proc/net/${IPV}_tables_names
+  # Flush firewall rules and delete chains.
+  [ -e "$PROC_IPTABLES_NAMES" ] || return 1
+
+  # Check if firewall is configured (has tables)
+  tables=`cat $PROC_IPTABLES_NAMES 2>/dev/null`
+  echo -n $"Flushing firewall rules: "
+  ret=0
+  # For all tables
+  for i in $tables; do
+      # Flush firewall rules.
+      $IPTABLES -t $i -F;
+      let ret+=$?;
+
+      # Delete firewall chains.
+      $IPTABLES -t $i -X;
+      let ret+=$?;
+
+      # Set counter to zero.
+      $IPTABLES -t $i -Z;
+      let ret+=$?;
+  done
+
+  [ $ret -eq 0 ] && echo "success" || echo "failure"
+  # Disable IP forwarding
+  echo 0 > /proc/sys/net/ipv4/ip_forward
+} # end of stop_nat_service
 #
 task_start_feed_img_for_cast() {
   local MCAST_TMP ans_ cast_dev_action
@@ -522,6 +574,7 @@ task_start_feed_img_for_cast() {
   local rc_chkimg
   local castmode
 
+  #prompt_for_lite_server
   # If network setting is not configured. Ask
   # TODO: What if multiple IP addresses?
   configured_ip="$(get-all-nic-ip --all-ip-address)"
@@ -572,8 +625,6 @@ task_start_feed_img_for_cast() {
        gen_lite_dhcpd_conf $dnsmasq_cfg
        service dnsmasq restart
        start_nat_service
-       echo -n "$msg_press_enter_to_continue"
-       read 
        ;;
     *) echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
        exit 0
@@ -908,7 +959,6 @@ CLIENT_END
   echo $msg_delimiter_star_line
 
   #
-  always_restore="yes" # always_restore will be passed to function start_ocsmgrd_daemon
   start_ocsmgrd_daemon
   echo $msg_delimiter_star_line
 
@@ -924,21 +974,28 @@ CLIENT_END
   fi
   echo $msg_delimiter_star_line
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+
+  if [ "$netenv_mode" = "in-isolation" ]; then
+    echo "$msg_turn_on_client_to_clone" 
+    echo "$msg_if_boot_from_locaL_media:"
+  fi
   echo "$msg_boot_client_with_same_version_clonezilla_live: $cast_srv_ip" | tee -a ${OCS_LOGFILE}
   echo "$msg_append_parameter_for_unattended_mode: locales=en_US.UTF-8 keyboard-layouts=us ocs_live_run=\"ocs-live-get-img $cast_srv_ip\"" | tee -a ${OCS_LOGFILE}
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
 } # end of task_start_feed_img_for_cast
-
+#
 task_stop_feed_img_for_cast() {
-  # 1. Kill process
-  kill_ps_by_killall_9 udp-sender | tee -a ${OCS_LOGFILE}
-  kill_ps_by_killall_9 ocsmgrd | tee -a ${OCS_LOGFILE}
-  # Stop BT-related services
-  ocs-btsrv -b stop
-  # 2. Remove the file for clients.
+  diskless_client_os="clonezilla-live"
+  PXE_CONF="$PXELINUX_DIR/default"
+  GRUB_CONF="$GRUB_EFINB_DIR/grub.cfg"
+  echo -n "Clean all the previous saved config file if they exist..."
+  clean_stale_node_pxe_cfg
+  clean_stale_node_grub_efi_cfg
+  service dnsmasq stop
+  stop_nat_service
+  stop_ocs_service -m $ocs no
 } # task_stop_feed_img_for_cast
-
 
 ####################
 ### Main program ###
@@ -946,6 +1003,8 @@ task_stop_feed_img_for_cast() {
 
 ocs_file="$0"
 ocs=`basename $ocs_file`
+# ocs_myself_id PID is important variable so that it won't be killed by kill_ps_by_kill_9 in stop_ocs_service
+ocs_myself_id="$$"
 OCS_LOGFILE="/var/log/${ocs}.log"
 
 parse_ocs_live_feed_img_cmd_options_with_dash $*
@@ -957,8 +1016,10 @@ shift
 ocs_restore_dev="$*"
 
 #
+[ -z "$mode" ] && mode="ask_user"
 [ -z "$ocs_restore_img_name" ] && ocs_restore_img_name="ask_user"
 [ -z "$ocs_restore_dev" ] && ocs_restore_dev="ask_user"
+
 if [ "$ocs_restore_img_name" = "ask_user" -a \
      "$ocs_restore_dev" = "ask_user" ]; then
    interactive_mode="yes"
@@ -974,10 +1035,14 @@ export TERM="$TERM"
 check_if_root
 check_if_in_clonezilla_live  # get $LIVE_MEDIA
 ask_and_load_lang_set
-prompt_for_lite_server
 
 # check DIA
 check_DIA_set_ESC $DIA
+
+#
+if [ "$mode" = "ask_user" ]; then
+  ask_start_or_stop_mode
+fi
 
 # Change to other mount point for extra harddisk
 # Note: functions get_existing_disk_image, get_existing_parts_image and get_existing_partitions_from_img will use $imagedir 
