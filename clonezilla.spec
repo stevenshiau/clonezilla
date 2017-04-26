@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.27
+Version:	3.26.28
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Apr 26 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.28-drbl1
+  - Add network configuration when in client interactive mode for ocs-onthefly. 
+
 * Wed Apr 26 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.27-drbl1
   - Add reserved "ask_user" for source IP and device for ocs-onthefly client
     mode.
