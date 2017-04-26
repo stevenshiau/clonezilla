@@ -1132,8 +1132,8 @@ ADVAN_PARAM_END
     [ -f "$src_dsk_chs" ] && cp -f $src_dsk_chs $tgt_dsk_chs
     [ -e "$tgt_pt_tmp" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_pt_tmp
     [ -e "$tgt_pt_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_pt_info
-    [ -e "$tgt_parted_info" ] replace_disk_name_in_file $source_hd $target_hd $tgt_parted_info
-    [ -e "$tgt_blkdev_info" ] replace_disk_name_in_file $source_hd $target_hd $tgt_blkdev_info
+    [ -e "$tgt_parted_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_parted_info
+    [ -e "$tgt_blkdev_info" ] && replace_disk_name_in_file $source_hd $target_hd $tgt_blkdev_info
     [ -f "$src_efi_nvram_data" ] && cp -f $src_efi_nvram_data $tgt_efi_nvram_data
 
     # Decide use_HD_CHS_from_EDD
@@ -2538,6 +2538,87 @@ save_ocs_onthefly_related_vars() {
   echo "postaction=\"$postaction\"" >> /var/lib/clonezilla/ocs-vars
   echo "ocs_onthefly_mode=\"$ocs_onthefly_mode\"" >> /var/lib/clonezilla/ocs-vars
 } # end of save_ocs_related_var
+#
+ask_ocs_onthefly_srv_ip() {
+  # Ask about ocs-onthefly server
+  local TMP="$(mktemp /tmp/ocs-client.XXXXXX)"
+  local srv_default ask_ ans_
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
+  ask_="true"
+  while [ "$ask_" = "true" ]; do
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    "Device cloning server" --inputbox "$msg_ip_address_or_FQDN_of_server: Device cloning server" \
+    0 0 $srv_default $DIA_ESC \
+    2> $TMP
+    SOURCE_IP="$(cat $TMP)"
+    if [ -z "$SOURCE_IP" ]; then
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+      --yesno "$msg_you_must_input_a_server\n$msg_do_u_want_to_do_it_again" 0 0
+      ans_="$?"
+      case "$ans_" in
+        0) # yes is chosen
+           ask_="true";;
+        1) # no is chosen
+           echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+           [ -f "$TMP" ] && rm -f $TMP
+           exit 1;;
+      esac
+    else
+      # Got the one we want
+      ask_="false"
+    fi
+  done
+  [ -f "$TMP" ] && rm -f $TMP
+  if [ -z "$SOURCE_IP" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No device cloning server was assigned or found!" | tee -a ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+    exit 1
+  fi
+  echo "Device cloning server is: $SOURCE_IP" | tee -a ${OCS_LOGFILE}
+} # end of ask_ocs_onthefly_srv_ip
+#
+ask_ocs_onthefly_dest_dev() {
+  local TMP dev_action ANS_TMP
+  # Ask restoring type first so that we can choose disk or parts.
+  TMP=$(mktemp /tmp/menu.XXXXXX)
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  $DIA \
+  --backtitle "$msg_nchc_title" \
+  --title "$msg_start_clonezilla_mode" \
+  --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
+  "restoredisk" "$msg_clonezilla_restore_disk" \
+  "restoreparts" "$msg_clonezilla_restore_parts" \
+  2> $TMP
+  dev_action=$(cat $TMP)
+  [ -f "$TMP" ] && rm -f $TMP
+
+  # choose the only dev we want
+  case "$dev_action" in
+   "restoredisk")
+      get_target_hd_name_from_local_machine "$msg_local_target_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
+      # check if the device exists
+      ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
+      trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+      check_if_input_device_exist $ANS_TMP $target_hd 
+      tgt_dev="$(cat $ANS_TMP | tr -d \")"
+      [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+      ;;
+   "restoreparts")
+      get_target_parts_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt
+      # check if the device exists
+      ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
+      trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+      check_if_input_device_exist $ANS_TMP $target_parts
+      # we have to remove " (comes with checklist in dialog) so that for loop
+      # will work (Specially for FC3/4...)
+      tgt_dev="$(cat $ANS_TMP | tr -d \")"
+      [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+      ;;
+  esac
+} # end of ask_ocs_onthefly_dest_dev
 
 ########################
 ##### MAIN PROGRAM #####
@@ -2635,7 +2716,21 @@ if [ -n "$STATUS" ]; then
   if [ "$STATUS" = "clone_server" ]; then
     [ -z "$src_dev" ] && clean_tmp_dirs && USAGE && exit 1
   elif [ "$STATUS" = "clone_client" ]; then
+    if [ "$SOURCE_IP" = "ask_user" ]; then
+      ask_ocs_onthefly_srv_ip
+    fi
+    if [ "$tgt_dev" = "ask_user" ]; then
+      ask_ocs_onthefly_dest_dev
+    fi
     [ -z "$tgt_dev" -o -z "$SOURCE_IP" ] && clean_tmp_dirs && USAGE && exit 1
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Source machine: $SOURCE_IP"
+    echo "Destination device on this machine: $tgt_dev"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    if [ "$batch_mode" = "off" ]; then
+      echo -n "$msg_press_enter_to_continue..."
+      read
+    fi
   fi
   #
   echo "$msg_delimiter_star_line"
