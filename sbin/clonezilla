@@ -33,6 +33,29 @@ USAGE() {
     echo "Ex. $0 -l en"
 }
 #
+ask_misc_util() {
+  local TMP="$(mktemp /tmp/ocsmisc.XXXXXX)"
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  
+  $DIA --backtitle "$msg_nchc_free_software_labs" \
+  --title "$msg_nchc_clonezilla" \
+  --menu "$msg_choose_mode:" \
+  0 0 0 $DIA_ESC \
+  "remote-clone" "$msg_remote_clone_client" \
+  "lite-client"  "$msg_lite_server_client" \
+  2> $TMP
+  ocs_util_type="$(cat $TMP)"
+  [ -f "$TMP" ] && rm -f $TMP
+  case "$ocs_util_type" in
+    remote-clone) ocs-onthefly -s ask_user -t ask_user;;
+     lite-client) ocs-live-get-img;;
+               *) echo "Unknown mode!"
+                  echo "$msg_program_stop!"
+		  exit 1
+		  ;;
+  esac
+} # end of ask_misc_util
+#
 ocs_interactive() {
   local TMP
   TMP="$(mktemp /tmp/ocsmenu.XXXXXX)"
@@ -45,6 +68,7 @@ ocs_interactive() {
     0 0 0 $DIA_ESC \
     "device-image"  "$msg_device_image_clone" \
     "device-device" "$msg_device_device_clone" \
+    "misc-utils"    "$msg_misc_utils" \
     2> $TMP
     ocs_live_type="$(cat $TMP)"
     [ -f "$TMP" ] && rm -f $TMP
@@ -61,7 +85,7 @@ ocs_interactive() {
     fi
   fi
   case "$ocs_live_type" in
-    "device-image"|"device-device") true;;
+    "device-image"|"device-device"|"misc-utils") true;;
     *) 
        echo "\"$ocs_live_type\" is an unknown or unsupported type! You have to specify a correct ocs_live_type (device-image or device-device)!"
        echo "$msg_program_stop!"
@@ -72,6 +96,7 @@ ocs_interactive() {
   case "$ocs_live_type" in
     device-image)  ocs-live -l $lang $postaction_opt $dev_img_opt;;
     device-device) ocs-onthefly -l $lang $postaction_opt -x;;
+    misc-utils)    ask_misc_util;;
   esac
 } # end of ocs_interactive
 
