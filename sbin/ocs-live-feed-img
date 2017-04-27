@@ -445,6 +445,7 @@ gen_lite_dhcpd_conf() {
 gen_ocs_live_netboot_conf() {
   local pxe_menu_to_hide pxe_menu_to_reveal
   local grub_menu_to_hide grub_menu_to_reveal
+  local squashfs_fmode
   PXE_CONF="$PXELINUX_DIR/default"
   GRUB_CONF="$GRUB_EFINB_DIR/grub.cfg"
   pxe_menu_to_hide="drbl clonezilla"
@@ -455,7 +456,16 @@ gen_ocs_live_netboot_conf() {
   gen-grub-efi-nb-menu
   # Add Clonezilla live
   if [ -n "$LIVE_MEDIA" -a -d "$LIVE_MEDIA" ]; then
-    drbl-sl -e -b -n -p $LIVE_MEDIA
+    # Check the file permission mode
+    squashfs_fmode="$(LC_ALL=C stat -c %a $LIVE_MEDIA/live/filesystem.squashfs | cut -c 3)"
+    if [ "$squashfs_fmode" -ge 4 ]; then
+      # Use link since it's readable for www-data
+      drbl-sl -e -b -n -p $LIVE_MEDIA
+    else
+      # Just copy the file to tftpboot root since it's not readable by www-data
+      drbl-sl -b -n -p $LIVE_MEDIA
+      chmod 644 $pxecfg_pd/Clonezilla-live-filesystem.squashfs
+    fi
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "Failed to find root file system in $LIVE_MEDIA!"
@@ -910,7 +920,12 @@ task_start_feed_img_for_cast() {
     start_nat_service
     gen_ocs_live_netboot_conf
     # Put filesystem.squashfs in http service root.
-    ln -fsv $LIVE_MEDIA/live/filesystem.squashfs /var/www/html/Clonezilla-live-filesystem.squashfs
+    if [ "$squashfs_fmode" -ge 4 ]; then
+      ln -fsv $LIVE_MEDIA/live/filesystem.squashfs /var/www/html/Clonezilla-live-filesystem.squashfs
+    else
+      # To save space, since $pxecfg_pd/Clonezilla-live-filesystem.squashfs exists, we link from it instead of the source one.
+      ln -fsv $pxecfg_pd/Clonezilla-live-filesystem.squashfs /var/www/html/Clonezilla-live-filesystem.squashfs
+    fi
     # Change fetch protocol to http
     add_opt_in_pxelinux_cfg_block -n Clonezilla-live fetch "http://$cast_srv_ip/Clonezilla-live-filesystem.squashfs"
     add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" fetch "http://$cast_srv_ip/Clonezilla-live-filesystem.squashfs"
