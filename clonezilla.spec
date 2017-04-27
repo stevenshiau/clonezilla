@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.29
+Version:	3.26.30
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Apr 27 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.30-drbl1
+  - Deal with the file permission of filesystem.squashfs for lighttpd
+    service. 
+    Thanks to Aaron Burling (aaron_burling _at_ lkstevens wednet edu)
+
 * Wed Apr 26 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.29-drbl1
   - Add support for creating Artful-based Clonezilla live.
 
