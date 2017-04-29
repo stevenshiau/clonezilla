@@ -1936,7 +1936,6 @@ USAGE() {
     echo "Option"
     echo "-b, -batch, --batch, --batch-mode   (DANGEROUS!) Run program in batch mode, i.e. without any prompt or wait for pressing enter key. //NOTE// You have to use '-batch' instead of '-b' when you want to use it in the boot parameters. Otherwise the program init on system will honor '-b', too."
     echo "-cmf, --chk-chksum-for-files-in-dev    Do the files checksum inspection for cloned files in destination devices."
-    echo "-e, --load-geometry  Force to use the saved CHS (cylinders, heads, sectors) when using sfdisk"
     echo "-e1, --change-geometry NTFS-BOOT-PARTITION  Force to change the CHS (cylinders, heads, sectors) value of NTFS boot partitoin after image is restored. NTFS-BOOT-PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the NTFS boot partition automatically)"
     echo "-e2, --load-geometry-from-edd  Force to use the CHS (cylinders, heads, sectors) from EDD (Enhanced Disk Device) when creating partition table by sfdisk"
     echo "-r, --resize-partition   Resize the file system size to fit the partition size in the destination disk. It is normally used when when a small partition image is restored to a larger partition."
@@ -2073,11 +2072,18 @@ get_onthefly_input_param() {
   # (3) partiiton to local partition
   # (4) partiiton to remote partition
 
-  if  [ "$show_local_menu_in_ocs_onthefly" != "no" ]; then
+  if  [ "$show_local_menu_in_ocs_onthefly" = "yes" ]; then
+    # Only menus for local cloning
     disk_to_local_disk_dia_des
     part_to_local_part_dia_des
-  fi
-  if  [ "$show_remote_menu_in_ocs_onthefly" != "no" ]; then
+  elif  [ "$show_remote_menu_in_ocs_onthefly" = "yes" ]; then
+    # Only menus for remote cloning
+    disk_to_remote_disk_dia_des
+    part_to_remote_part_dia_des
+  else
+    # Show all menus
+    disk_to_local_disk_dia_des
+    part_to_local_part_dia_des
     disk_to_remote_disk_dia_des
     part_to_remote_part_dia_des
   fi
@@ -2408,6 +2414,8 @@ parse_ocs_onthefly_cmd_options() {
       -fsck-src-part|--fsck-src-part|-fsck) shift; fsck_src_part_intr="yes";;
       -fsck-src-part-y|--fsck-src-part-y|-fsck-y) shift; fsck_src_part_auto="yes";;
       -cmf|--chk-chksum-for-files-in-dev) shift; chksum_for_files_in_dev="yes" ;;
+      -ro|--remote-clone-only) shift; show_remote_menu_in_ocs_onthefly="yes";;
+      -lo|--local-clone-only)  shift; show_local_menu_in_ocs_onthefly="yes";;
       -v|--verbose) shift; verbose="on" ;;
       -*)     echo "${0}: ${1}: invalid option" >&2
               USAGE >& 2
