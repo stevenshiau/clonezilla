@@ -584,7 +584,7 @@ task_start_feed_img_for_cast() {
   local start_cmd
   local OCS_OPT_PRE ocs_opt_dia
   local rc_chkimg
-  local castmode
+  local castmode start_cmd_pid
 
   #prompt_for_lite_server
   # If network setting is not configured. Ask
@@ -644,7 +644,7 @@ task_start_feed_img_for_cast() {
   MCAST_TMP=`mktemp /tmp/ocs_recovery_tmp.XXXXXX`
   trap "[ -f "$MCAST_TMP" ] && rm -f $MCAST_TMP" HUP INT QUIT TERM EXIT
 
-  if [ ! -e "$ocs_lock_dir/clonezilla.lock" ]; then 
+  if [ -e "$ocs_lock_dir/clonezilla.lock" ]; then 
     task_stop_feed_img_for_cast
   fi
 
@@ -877,14 +877,7 @@ task_start_feed_img_for_cast() {
   start_cmd="start_ocs_service $cast_client_no_opt -f -t \"${castmode}_${cast_dev_action}\" -o \"$target_dir $ocs_restore_dev\""
   echo "Running: $start_cmd"
   eval $start_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
-  rc=${PIPESTATUS[0]}
-  if [ "$rc" -ne 0 ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Faied to run $start_cmd" | tee -a ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
-    exit 1
-  fi
+  start_cmd_pid=$!
 
   if [ "$castmode" = "multicast" ]; then
     echo -n "Waiting for udp-sender service to be started... "
@@ -1005,6 +998,10 @@ CLIENT_END
   echo "$msg_append_parameter_for_unattended_mode: locales=en_US.UTF-8 keyboard-layouts=us ocs_live_run=\"ocs-live-get-img $cast_srv_ip\"" | tee -a ${OCS_LOGFILE}
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
+  # We have to wait for udp-sender to be finished so that when CJK locales uses jfbterm, udp-sender won't be terminated due to jfbterm is finished.
+  echo $msg_delimiter_star_line
+  echo -n "Now waiting for clients to connect..."
+  wait $start_cmd_pid
 } # end of task_start_feed_img_for_cast
 #
 task_stop_feed_img_for_cast() {
