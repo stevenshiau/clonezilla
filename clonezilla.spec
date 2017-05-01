@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.31
+Version:	3.26.32
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon May 01 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.32-drbl1
+  * Use nohup for ocsmgrd to avoid it's terminated when
+    jfbterm is finished.
+  * Bug fixed: stop service first when clonezilla.lock exists.
+    We have to wait for udp-sender to be finished so that when
+    CJK locales uses jfbterm, udp-sender won't be terminated
+    due to jfbterm is finished.
 * Sat Apr 29 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.31-drbl1
   * Arrange the main menu of Clonezilla live as: "device-image",
     "device-device", "remote-source", "remote-dest", "lite-server",
