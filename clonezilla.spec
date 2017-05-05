@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.35
+Version:	3.26.36
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri May 05 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.36-drbl1
+  * Bug fixed: wrong sequence to filter "dbg" kernel in
+    get_latest_kernel_ver_in_repository of ocs-functions.
+
 * Fri May 05 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.35-drbl1
   * Update function get_latest_kernel_ver_in_repository of ocs-functions
     to exclude "-dbg" kernel.
