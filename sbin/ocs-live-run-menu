@@ -118,17 +118,20 @@ if [ -e /var/lib/clonezilla/overwrite_proc_boot_param ]; then
   fi
 fi
 
-
 # Prepare image repository if ocs_repository is assigned.
-rc=""
-ocs-live-repository
-rc=$?
-if [ "$rc" -eq 1 ]; then
-  # Only when ocs-live-repository fails to mount repository in ocs-live-repository,
-  # this program will exit. If ocs_repositry is not assigned in /proc/cmdline,
-  # the exit code of ocs-live-repository is 9, not 1. This program will continue.
-  ocs-live-final-action
-  exit 1
+# Only when clonezilla lite server mode is not enabled. If it's enabled,
+# we won't deal with repository here and let ocs-live-feed-img to handle that.
+if [ -z "$ocs_litesrv_mode" ]; then
+  rc=""
+  ocs-live-repository
+  rc=$?
+  if [ "$rc" -eq 1 ]; then
+    # Only when ocs-live-repository fails to mount repository in ocs-live-repository,
+    # this program will exit. If ocs_repositry is not assigned in /proc/cmdline,
+    # the exit code of ocs-live-repository is 9, not 1. This program will continue.
+    ocs-live-final-action
+    exit 1
+  fi
 fi
 
 #
