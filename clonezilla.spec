@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.37
+Version:	3.26.38
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat May 06 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.38-drbl1
+  * Bug fixed: squashfs_fmode should be global variable in
+    ocs-live-feed-img.
+
 * Sat May 06 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.37-drbl1
   * Add parsing boot parameter "ocs_litesrv_mode" for lite server presetting.
     When clonezilla lite server mode is enabled, ocs-live-run-menu won't
