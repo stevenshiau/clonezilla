@@ -399,13 +399,13 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
             shift; n_shift=$((n_shift+1))
             # skip the -xx option, in case 
             if [ -z "$(echo $1 |grep ^-.)" ]; then
-              netenv_mode="$1"
+              ocs_litesrv_mode="$1"
               shift; n_shift=$((n_shift+1))
             fi
-            [ -z "$netenv_mode" ] && USAGE && exit 1
+            [ -z "$ocs_litesrv_mode" ] && USAGE && exit 1
 	    # //NOTE// Do not pass -md option to OCS_OPT here.
 	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
-  	    # XXXXXX OCS_OPT="$OCS_OPT -nm $netenv_mode"
+  	    # XXXXXX OCS_OPT="$OCS_OPT -nm $ocs_litesrv_mode"
   	    ;;
       -*)   echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
@@ -590,7 +590,7 @@ task_start_feed_img_for_cast() {
   # If network setting is not configured. Ask
   # TODO: What if multiple IP addresses?
   configured_ip="$(get-all-nic-ip --all-ip-address)"
-  if [ -z "$netenv_mode" ]; then
+  if [ -z "$ocs_litesrv_mode" ]; then
     TMP="$(mktemp /tmp/ocslivemode.XXXXXX)"
     trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
@@ -599,12 +599,12 @@ task_start_feed_img_for_cast() {
     "to-upstream"  "$msg_connect_to_upstream_network" \
     "in-isolation" "$msg_in_isolated_environment" \
     2> $TMP
-    netenv_mode="$(cat $TMP)"
-    echo "netenv_mode is $netenv_mode"
+    ocs_litesrv_mode="$(cat $TMP)"
+    echo "ocs_litesrv_mode is $ocs_litesrv_mode"
     [ -f "$TMP" ] && rm -f $TMP
   fi
-  OCS_OPT_PRE="$OCS_OPT_PRE -nm $netenv_mode"
-  case "$netenv_mode" in
+  OCS_OPT_PRE="$OCS_OPT_PRE -nm $ocs_litesrv_mode"
+  case "$ocs_litesrv_mode" in
     "to-upstream") 
      # Even if it's local repository, we still have to configure network
      # otherwise the udp-sender won't start.
@@ -648,6 +648,11 @@ task_start_feed_img_for_cast() {
     task_stop_feed_img_for_cast
   fi
 
+  # Deal with ocs_repository since it's not processed in ocs-live-run-menu when ocs_repository is shown in kernel boot parameters.
+  # ocs-live-repository directly parses /proc/cmdline, not reads variable from ocs-live.conf
+  if [ -n "$(grep -Ewo ocs_repository /proc/cmdline)" ]; then
+    ocs-live-repository
+  fi
   # When $ocsroot is not a mount point, and nothing lists under it, run prep-ocsroot
   if [ "$interactive_mode" = "yes" ]; then
     if ! mountpoint $ocsroot &>/dev/null; then
@@ -908,7 +913,7 @@ task_start_feed_img_for_cast() {
     systemctl start lighttpd | tee -a ${OCS_LOGFILE}
   fi
   # Start the required services and prepare the PXE and uEFI network boot
-  if [ "$netenv_mode" = "in-isolation" ]; then
+  if [ "$ocs_litesrv_mode" = "in-isolation" ]; then
     service dnsmasq restart
     start_nat_service
     gen_ocs_live_netboot_conf
@@ -970,7 +975,7 @@ CLIENT_END
   echo $msg_delimiter_star_line
 
   #
-  case "$netenv_mode" in
+  case "$ocs_litesrv_mode" in
     "to-upstream")  always_restore="yes" ;; # So that ocsmgrd won't update PXE/Grub NB config
     "in-isolation") always_restore="no" ;;  # So that ocsmgrd will update PXE/Grub NB confi
   esac
@@ -990,7 +995,7 @@ CLIENT_END
   echo $msg_delimiter_star_line
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
 
-  if [ "$netenv_mode" = "in-isolation" ]; then
+  if [ "$ocs_litesrv_mode" = "in-isolation" ]; then
     echo "$msg_turn_on_client_to_clone" 
     echo "$msg_if_boot_from_locaL_media:"
   fi
@@ -1002,6 +1007,7 @@ CLIENT_END
   echo $msg_delimiter_star_line
   echo -n "$msg_now_wait_for_client_to_connect"
   wait $start_cmd_pid
+  echo "$msg_Done"
 } # end of task_start_feed_img_for_cast
 #
 task_stop_feed_img_for_cast() {
