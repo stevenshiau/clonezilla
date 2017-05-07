@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.38
+Version:	3.26.39
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun May 06 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.39-drbl1
+  * Move the codes about making the ocsmgrd outputs won't be overwritten
+    by dialog to ocs-live-feed-img instead of clonezilla.
+
 * Sat May 06 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.38-drbl1
   * Bug fixed: squashfs_fmode should be global variable in
     ocs-live-feed-img.
