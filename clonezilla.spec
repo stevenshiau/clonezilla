@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.26.39
+Version:	3.27.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun May 06 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.1-drbl1
+  * Bug fixed: ocsmgrd command with pipe did not protected with nohup.
+    It failed when CJK language is used in Jfbterm.
+
 * Sun May 06 2017 Steven Shiau <steven _at_ nchc org tw> 3.26.39-drbl1
   * Move the codes about making the ocsmgrd outputs won't be overwritten
     by dialog to ocs-live-feed-img instead of clonezilla.
