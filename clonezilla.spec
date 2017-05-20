@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.27.2
+Version:	3.27.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat May 20 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.3-drbl1
+  * Bug fixed: select-in-client enters command line mode after job is done.
+    Ref: https://sourceforge.net/p/drbl/discussion/DRBL_for_Debian/thread/d7427aaa/
+    Thanks to Santiago Castro Olivares for reporting this.
+
 * Tue May 16 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.2-drbl1
   * Rotate log file ocsmgrd-notify.log instead of overwritting it.
   * Add more prompts to ocs-scan-disk.
