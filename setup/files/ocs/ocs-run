@@ -122,6 +122,12 @@ do_start_ocs_run() {
          ocs_opt="$(echo $ocs_opt | sed -e "s/select_in_client//g")"
          echo Now run: $verbose_run clonezilla $ocs_opt
          $verbose_run clonezilla $ocs_opt
+	 [ -e /var/lib/clonezilla/ocs-vars ] && . /var/lib/clonezilla/ocs-vars
+	 if [ -z "$postaction" ]; then
+	   run_post_cmd_when_clone_end choose
+         else
+	   run_post_cmd_when_clone_end $postaction
+         fi
          ;;
        *)
          echo Now run: $verbose_run ocs-sr $ocs_opt
@@ -139,6 +145,13 @@ do_start_ocs_run() {
           ocs_opt="$(echo $ocs_opt | sed -e "s/select_in_client//g")"
           echo Now run: $verbose_run clonezilla $ocs_opt
           $verbose_run clonezilla $ocs_opt
+	  [ -e /var/lib/clonezilla/ocs-vars ] && . /var/lib/clonezilla/ocs-vars
+	  if [ -z "$postaction" ]; then
+	    run_post_cmd_when_clone_end choose
+          else
+	    run_post_cmd_when_clone_end $postaction
+          fi
+	  run_post_cmd_when_clone_end choose
           ;;
         *)
           echo Now run: $verbose_run ocs-sr $ocs_opt
@@ -199,6 +212,9 @@ if [ "$debug_mode" = "on" ]; then
   verbose_run="bash -x"
   set -x
 fi
+
+#
+ask_and_load_lang_set en_US.UTF-8
 
 # A workaround to avoid upstart allowing rc-sysinit to start too early.
 # First we have to wait for udevd to be started since the local block device will be shown only when udevd is started. This is especially for the system using upstart >= 0.63, i.e. Ubuntu 9.10 or something similar
