@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.27.5
+Version:	3.27.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu May 25 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.6-drbl1
+  * Update toram mode as "live,syslinux" for ocs-live-boot-menu when
+    it's assigned as "live" because for Clonezilla live the config
+    file in syslinux dir and the vmlinuz and kernel in live dir
+    is required.
+
 * Thu May 25 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.5-drbl1
   * If DHCP service exists, by default ocs lite server just leases the IP
     address from DHCP server in ocs-live-feed-img.
