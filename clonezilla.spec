@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.27.6
+Version:	3.27.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu May 25 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.7-drbl1
+  * Make all toram mode as live in ocs-iso and ocs-live-dev.
+
 * Thu May 25 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.6-drbl1
   * Update toram mode as "live,syslinux" for ocs-live-boot-menu when
     it's assigned as "live" because for Clonezilla live the config
