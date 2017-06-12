@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.27.9
+Version:	3.27.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 12 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.10-drbl1
+  * Remove "set -e" in create-ocs-tmp-img to make it run
+    in non Debian-based OS.
+
 * Sun Jun 04 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.9-drbl1
   * Add loading module speakup_soft in initramfs. This is required for
     running program espeakup.
