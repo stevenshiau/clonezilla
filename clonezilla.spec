@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.27.11
+Version:	3.27.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.25.3, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.90, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.25.6, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.91, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jun 24 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.12-drbl1
+  * Add a mechanism to load module for accessibility (e.g, speakup_soft) instead
+    of hard coding it in initramfs. The mechanism is similar to that in Debian
+    Stretch installer.
+
 * Tue Jun 13 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.11-drbl1
   * Add SMB version selection when mounting CIFS. Thanks to Eric Nichols
     for asking this.
