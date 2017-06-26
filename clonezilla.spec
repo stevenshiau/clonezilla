@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.27.12
+Version:	3.27.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 26 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.13-drbl1
+  * Start espeak service when accessibility module is loaded.
+
 * Sat Jun 24 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.12-drbl1
   * Add a mechanism to load module for accessibility (e.g, speakup_soft) instead
     of hard coding it in initramfs. The mechanism is similar to that in Debian
