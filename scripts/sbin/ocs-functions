@@ -2002,7 +2002,7 @@ get_known_partition_proc_format() {
        part_type="$(echo $part_type)"
        if [ "$(echo $part_type | grep -Ei "swap")" ]; then
 	 swap_dev="$swap_dev $p"
-       elif [ "$(echo $part_type | grep -Ei "(extended|0x5|0xf)")" ]; then
+       elif [ "$(echo $part_type | grep -Eiw "(extended|0x5|0xf)")" ]; then
 	 extended_dev="$extended_dev $p"
        else
          # Not swap, not extended partition. It's data partition.
@@ -2054,7 +2054,7 @@ check_grub_partition() {
     p_type="$(LC_ALL=C ocs-get-part-info "$grub_p" type filesystem 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 ] && continue 
-    [ -n "$(echo $p_type | grep -Ei "(swap|extended|0x5|0xf)")" ] && continue
+    [ -n "$(echo $p_type | grep -Eiw "(swap|extended|0x5|0xf)")" ] && continue
     #
     hd_img="$(mktemp -d /tmp/hd_img.XXXXXX)"
     mount -o ro $grub_p $hd_img >/dev/null 2>&1
@@ -2132,7 +2132,7 @@ mount_root_partition_for_separate_boot_part() {
     p_type="$(LC_ALL=C ocs-get-part-info "$root_partition" type filesystem 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 ] && continue 
-    [ -n "$(echo $p_type | grep -Ei "(swap|extended|0x5|0xf)")" ] && continue
+    [ -n "$(echo $p_type | grep -Eiw "(swap|extended|0x5|0xf)")" ] && continue
     #
     mount $root_partition $hd_img >/dev/null 2>&1
     mrc=$?
@@ -4057,7 +4057,7 @@ get_disk_or_part_hardware_info() {
     # No more using "continue" in this function.
     # Because >= bash 4.4 raises it as a warning, and then continue won't be run.
     [ "$rc" -gt 0 ] && return 8
-    [ -n "$(echo $part_type | grep -Ei "(swap|extended|0x5|0xf)")" ] && return 8
+    [ -n "$(echo $part_type | grep -Eiw "(swap|extended|0x5|0xf)")" ] && return 8
     if [ "$flag_skip_lvm" = "yes" ]; then
       [ -n "$(echo "$part_type" | grep -Ei "LVM")" ] && return 8
     fi
@@ -4302,7 +4302,9 @@ get_input_dev_name() {
           # skip swap and extended partition
           FILE="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null)"
           rc=$?
-          [ "$rc" = "0" ] && case "$FILE" in *[Ss][Ww][Aa][Pp]*|*extended*|*0x5*|*0xf*) continue ;; esac
+          if [ "$rc" = "0" ]; then
+            [ -n "$(echo $FILE | grep -Eiw "(swap|extended|0x5|0xf)")" ] && continue
+          fi
 	  if [ "$skip_lvm" = "yes" ]; then
             [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
 	  fi
@@ -4361,7 +4363,9 @@ get_input_dev_name() {
        #FILE="$(LC_ALL=C file -Ls "/dev/$p")"
        FILE="$(LC_ALL=C ocs-get-part-info "/dev/$p" type filesystem 2>/dev/null)"
        rc=$?
-       [ "$rc" = "0" ] && case "$FILE" in *[Ss][Ww][Aa][Pp]*|*extended*|*0x5*|*0xf*) continue ;; esac
+       if [ "$rc" = "0" ]; then
+         [ -n "$(echo $FILE | grep -Eiw "(swap|extended|0x5|0xf)")" ] && continue
+       fi
        if [ "$skip_lvm" = "yes" ]; then
          [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
        fi
