@@ -34,6 +34,14 @@ enabled_EFI="true"
 live_boot_menu_opt_raw=""
 # To use image exists when creating recovery device (e.g. /dev/sdg1). the image might already exist (copied or created on the device before). For other mode, image is copied or linked in this program.
 use_existing_img_on_dev="no"
+# Batch mode for run Clonezilla live in restoring/recovery mode.
+ocs_live_batch="no"
+# Batch mode for running this program.
+batch_mode="no"
+custom_ocs=""
+normal_menu_with_insert_image="no"
+template_mode=""
+prefer_archive="zip"
 
 #
 prog="$(basename $0)"
@@ -68,6 +76,7 @@ USAGE() {
     echo "-u, --include-dir DIR   Include a dir in the target zip file."
     echo "-x, --extra-boot-param  EXTRA_PARAM  Assign extra boot parameter EXTRA_PARAM for clonezilla live kernel to read. These parameters are the same with that from live-boot or live-config. Ex. \"noeject\" can be use to not prompt to eject the CD on reboot."
     echo "-y, --syslinux-ver VER  Assign the syslinux version as VER. E.g. 6.02, 6.03-pre1"
+    echo "-z, --prefer-archive  PROG  Assign the archive program as PROG (tar or zip). Default program is $prefer_archive."
     echo "$prog will download a template Debian live CD for clonezilla iso file if ncecessary. You can also download it by yourself, and put it in the working directory when you run $prog. If you want to create that template iso file in Debian Etch, run create-debian-live."
     echo "NOTE! You have to prepare the target partition first, and the filesystem should be ready (FAT or ext2/3)."
     echo "Ex:"
@@ -105,16 +114,6 @@ clean_tmp_dir() {
 
 #
 check_if_root
-
-# Default settings:
-# Batch mode for run Clonezilla live in restoring/recovery mode.
-ocs_live_batch="no"
-# Batch mode for running this program.
-batch_mode="no"
-custom_ocs=""
-normal_menu_with_insert_image="no"
-template_mode=""
-prefer_archive="zip"
 
 # Parse command-line options
 while [ $# -gt 0 ]; do
@@ -280,6 +279,15 @@ while [ $# -gt 0 ]; do
               shift
             fi
 	    [ -z "$isolinux_ver" ] && USAGE && exit 1
+            ;;
+    -z|--prefer-archive)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+            	# skip the -xx option, in case 
+            	prefer_archive="$1"
+            	shift
+            fi
+            [ -z "$prefer_archive" ] && USAGE && exit 1
             ;;
     -*)     echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
