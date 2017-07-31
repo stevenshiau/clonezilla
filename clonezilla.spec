@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.27.14
+Version:	3.27.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jul 31 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.15-drbl1
+  * Add option -z|--prefer-archive to ocs-live-dev so that archive program can be assigned.
+    Thanks to Mircea Dan for providing the patch.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/278/
+
 * Sun Jul 23 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.14-drbl1
   * Bug fixed: matching codes for extended partitions. Thanks to Alan
     Rooks.
