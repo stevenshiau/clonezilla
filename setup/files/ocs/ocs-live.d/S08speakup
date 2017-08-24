@@ -9,8 +9,15 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # The following is borrowed from Debian Stretch installer.
 SYNTH=$(sed < /proc/cmdline -n -e 's/.*speakup\.synth=\([^ ]*\).*/\1/p')
 if [ -n "$SYNTH" ]; then
+	# Get and set the locale in /etc/default/espeak
+	espeak_voice="$(LC_ALL=C printenv LANG | awk -F"_" '{print $1}')"
+	if [ -n "$espeak_voice" ]; then
+	  perl -pi -e "s/^VOICE=.*/VOICE=$espeak_voice/g" /etc/default/espeakup
+	fi
+	echo "Running: modprobe speakup_$SYNTH"
 	modprobe speakup_$SYNTH
 	#debconf-set debian-installer/framebuffer false
 	#register-module -i speakup_$SYNTH
+	echo "Running: service espeakup start"
 	service espeakup start
 fi
