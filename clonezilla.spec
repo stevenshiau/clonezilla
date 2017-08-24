@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.27.17
+Version:	3.27.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Aug 24 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.18-drbl1
+  * Get the locale and set the VOICE in /etc/default/espeakup.
+
 * Thu Aug 10 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.17-drbl1
   * Speech synthesis is added the boot menu of Clonezilla live.
 
