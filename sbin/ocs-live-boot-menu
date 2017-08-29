@@ -33,6 +33,7 @@ background_mode="light"
 # By default toram_mode is only filesystem.squashfs (compact). The mode "live" is for copying the whole "live" directory, and the mode "all" is for whole files for the live system.
 TORAM_MODE_DEF="compact"
 enable_speech="no"
+beep_ascii=""
 
 #
 prog="$(basename $0)"
@@ -118,7 +119,7 @@ say **********************************************************************
 say $boot_menu_txt_say_pkg
 say $boot_menu_txt_say_org
 say $project_url
-say THIS SOFTWARE COMES WITH ABSOLUTELY NO WARRANTY! USE AT YOUR OWN RISK! 
+say THIS SOFTWARE COMES WITH ABSOLUTELY NO WARRANTY! USE AT YOUR OWN RISK!$beep_ascii
 say **********************************************************************
 
 # Allow client to edit the parameters
@@ -615,6 +616,17 @@ else
   set color_highlight=white/blue
 fi
 
+BOOT_MENU_END
+
+if [ "$enable_speech" = "yes" ]; then
+cat <<-BOOT_MENU_END >> $output_file
+insmod play
+play 960 440 1 0 4 440 1
+
+BOOT_MENU_END
+fi
+
+cat <<-BOOT_MENU_END >> $output_file
 # Since no network setting in the squashfs image, therefore if ip=, the network is disabled.
 
 menuentry "$output_title (Default settings$vga_default_prompt)"{
@@ -714,7 +726,7 @@ BOOT_MENU_END
 # speech synthesis
 if [ "$enable_speech" = "yes" ]; then
   cat <<-GRUB_END >> $output_file
-menuentry "$output_title (speech synthesis)"{
+menuentry --hotkey=s "$output_title (speech synthesis)"{
   search --set -f $kernel_file
   linux $kernel_file $boot_param $vga_default_mode ip= net.ifnames=0 $quiet_opt $splash_opt $vga_blacklist_opt speakup.synth=soft ---
   initrd $initrd_file
@@ -991,6 +1003,9 @@ output_dir="$2"
 [ -z "$bgimg_file" ] && bgimg_file="$BGIMG_FILE_DEF"
 [ -z "$version_no" ] && version_no="Unknown/customized"
 [ -z "$toram_mode" ] && toram_mode="$TORAM_MODE_DEF"
+if [ "$enable_speech" = "yes" ]; then
+  beep_ascii=""
+fi
 
 # 2016/03/30 Use $boot_param directly instead of $boot_param_toram_extra
 # 2014/01/10 No need to add "noeject" here. "toram" for live-boot will handle that.
