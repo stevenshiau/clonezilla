@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.27.19
+Version:	3.27.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Sep 5 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.20-drbl1
+  * Improve the mechanism for starting espeakup.
+
 * Tue Aug 29 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.19-drbl1
   * Add beep for syslinux/grub2 boot menu, and add hotkey key "-s"
     for grub2 boot menu.
