@@ -21,20 +21,10 @@ if [ -n "$SYNTH" ]; then
 	  perl -pi -e "s/^VOICE=.*/VOICE=$espeak_voice/g" /etc/default/espeakup
 	fi
 	sync;sync;sync
-	sleep 1
 	echo "Running: modprobe speakup_$SYNTH"
 	modprobe speakup_$SYNTH
-	while [ -z "$(lsmod | awk -F" " '{print $1}' | grep -Ew "speakup_$SYNTH")" ]; do
-          sleep 0.1
-          ocs_modprobe_timeout="$(( $ocs_modprobe_timeout - 1 ))"
-          if [ "$ocs_modprobe_timeout" -le 0 ]; then
-            echo "Timeout for modprobe speakup_$SYNTH."
-	    echo "Linux kernel module \"speakup_$SYNTH\" was NOT loaded successfully!"
-            break
-          fi
-	done
 	#debconf-set debian-installer/framebuffer false
 	#register-module -i speakup_$SYNTH
-	echo "Running: service espeakup start"
-	service espeakup start
+	echo "Running: systemctl start espeakup"
+	systemctl start espeakup
 fi
