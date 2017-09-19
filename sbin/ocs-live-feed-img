@@ -59,8 +59,9 @@ USAGE() {
     echo " -f, --nfs-restart        Restart nfs when start or stop $ocs (Default is to restart nfs)"
     echo " --mcast-iface  PORT      Specify the multicast seed ethernet port PORT (eth0, eth1, eth2...). Suppose clonezilla will try to find that for you, but in some case, you might want to specify that."
     echo " -x, --full-duplex        Use full-duplex network with udpcast in multicast mode (faster, but does not work with network hub, only works in switch.)."
-    echo " -dm, --dhcpd-mode        Assign the dhcp service mode: use-existing-dhcpd, start-new-dhcpd, auto-detect, no-dhcpd"
-    echo " -md, --massive-deploy-mode Assign the mass deployment mode: broadcast, multicast, or bittorrent"
+    echo " -dm, --dhcpd-mode  MODE  Assign the dhcp service mode: use-existing-dhcpd, start-new-dhcpd, auto-detect, no-dhcpd"
+    echo " -md, --massive-deploy-mode MODE   Assign the mass deployment mode: broadcast, multicast, or bittorrent"
+    echo " -cbm, --client-boot-mode MODE   Assign the client boot mode: netboot, local-boot-media, or both"
     echo
     echo "MODE is \"start\" or \"stop\""
     echo "IMAGE_NAME is the image dir name, not absolute path"
@@ -399,13 +400,25 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
             shift; n_shift=$((n_shift+1))
             # skip the -xx option, in case 
             if [ -z "$(echo $1 |grep ^-.)" ]; then
-              ocs_litesrv_mode="$1"
+              ocs_litesrv_netmode="$1"
               shift; n_shift=$((n_shift+1))
             fi
-            [ -z "$ocs_litesrv_mode" ] && USAGE && exit 1
+            [ -z "$ocs_litesrv_netmode" ] && USAGE && exit 1
 	    # //NOTE// Do not pass -md option to OCS_OPT here.
 	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
-  	    # XXXXXX OCS_OPT="$OCS_OPT -dm $ocs_litesrv_mode"
+  	    # XXXXXX OCS_OPT="$OCS_OPT -dm $ocs_litesrv_netmode"
+  	    ;;
+      -cbm|--client-boot-mode)
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              client_boot_mode="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$client_boot_mode" ] && USAGE && exit 1
+	    # //NOTE// Do not pass -cbm option to OCS_OPT here.
+	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
+  	    # XXXXXX OCS_OPT="$OCS_OPT -cbm $client_boot_mode"
   	    ;;
       -*)   echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
@@ -568,7 +581,7 @@ stop_nat_service() {
 } # end of stop_nat_service
 #
 task_start_feed_img_for_cast() {
-  local MCAST_TMP ans_ cast_dev_action ocs_litesrv_mode
+  local MCAST_TMP ans_ cast_dev_action
   local start_cmd
   local OCS_OPT_PRE ocs_opt_dia
   local rc_chkimg
@@ -593,41 +606,47 @@ task_start_feed_img_for_cast() {
     [ -f "$TMP" ] && rm -f $TMP
   fi
   OCS_OPT_PRE="$OCS_OPT_PRE -cbm $client_boot_mode"
-  ask_dhcpd=""
-  case "$client_boot_mode" in
-    "netboot")          ask_dhcpd="yes";;
-    "local-boot-media") ask_dhcpd="no";;
-    "both")             ask_dhcpd="yes";;
-  esac
-  # Ask if starts own dhcpd or using existing dhcpd
-  if [ "$ask_dhcpd" = "yes" ]; then
-    TMP="$(mktemp /tmp/ocslivemode.XXXXXX)"
-    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
-    "DHCP service" --menu "$msg_how_to_run_dhcpd\n$msg_choose_mode:" \
-    0 0 0 $DIA_ESC \
-    "auto-detect"         "$msg_auto_detect_dhcpd" \
-    "use-existing-dhcpd"  "$msg_use_existing_dhcpd" \
-    "start-new-dhcpd"     "$msg_start_new_dhcpd" \
-    2> $TMP
-    ocs_litesrv_mode="$(cat $TMP)"
-    echo "ocs_litesrv_mode is $ocs_litesrv_mode"
-    [ -f "$TMP" ] && rm -f $TMP
-  else
-    # ask_dhcpd is "no"
-    ocs_litesrv_mode="no-dhcpd"
+
+  # 
+  if [ -z "$ocs_litesrv_netmode" ]; then
+    ask_dhcpd=""
+    case "$client_boot_mode" in
+      "netboot")          ask_dhcpd="yes";;
+      "local-boot-media") ask_dhcpd="no";;
+      "both")             ask_dhcpd="yes";;
+    esac
+    # Ask if starts own dhcpd or using existing dhcpd
+    if [ "$ask_dhcpd" = "yes" ]; then
+      TMP="$(mktemp /tmp/ocslivemode.XXXXXX)"
+      trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+      "DHCP service" --menu "$msg_how_to_run_dhcpd\n$msg_choose_mode:" \
+      0 0 0 $DIA_ESC \
+      "auto-detect"         "$msg_auto_detect_dhcpd" \
+      "use-existing-dhcpd"  "$msg_use_existing_dhcpd" \
+      "start-new-dhcpd"     "$msg_start_new_dhcpd" \
+      2> $TMP
+      ocs_litesrv_netmode="$(cat $TMP)"
+      echo "ocs_litesrv_netmode is $ocs_litesrv_netmode"
+      [ -f "$TMP" ] && rm -f $TMP
+    else
+      # ask_dhcpd is "no"
+      ocs_litesrv_netmode="no-dhcpd"
+    fi
   fi
-  if [ "$ocs_litesrv_mode" = "auto-detect" ]; then
+  # 4 modes for ocs_litesrv_netmode: use-existing-dhcpd, start-new-dhcpd, auto-detect, no-dhcpd" -> where auto-detect will be decided as "use-existing-dhcpd" or "start-new-dhcpd" in the end.
+  OCS_OPT_PRE="$OCS_OPT_PRE -dm $ocs_litesrv_netmode"
+  if [ "$ocs_litesrv_netmode" = "auto-detect" ]; then
     # Detect if there is an existing DHCP service in LAN
     detect_dhcp_srv_in_lan  # Get use_existing_dhcp_srv and DHCPOFFER_eth
     case "$use_existing_dhcp_srv" in
       "yes") dhclient -v $DHCPOFFER_eth
-	     ocs_litesrv_mode="use-existing-dhcpd"
+	     ocs_litesrv_netmode="use-existing-dhcpd"
 	     ;;
-      "no")  ocs_litesrv_mode="start-new-dhcpd";;
+      "no")  ocs_litesrv_netmode="start-new-dhcpd";;
     esac
   fi
-  case "$ocs_litesrv_mode" in
+  case "$ocs_litesrv_netmode" in
     "no-dhcpd")
        # Even if no dhcpd, like local repository,
        # we still have to configure network
@@ -666,7 +685,7 @@ task_start_feed_img_for_cast() {
        echo "In isolation environment. Now start dhcp service..." 
        gen_lite_dhcpd_conf $dnsmasq_cfg
        ;;
-    *) echo "Unknown mode for ocs_litesrv_mode: $ocs_litesrv_mode"
+    *) echo "Unknown mode for ocs_litesrv_netmode: $ocs_litesrv_netmode"
        echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
        exit 0
        ;;
@@ -945,7 +964,7 @@ task_start_feed_img_for_cast() {
   fi
 
   # Prepare netboot required files and services
-  case "$ocs_litesrv_mode" in
+  case "$ocs_litesrv_netmode" in
    "use-existing-dhcpd"|"start-new-dhcpd") 
     # Check the file permission mode of squashfs, we need that for later use
     squashfs_fmode="$(LC_ALL=C stat -c %a $LIVE_MEDIA/live/filesystem.squashfs | cut -c 3)"
@@ -1012,7 +1031,7 @@ CLIENT_END
   echo $msg_delimiter_star_line
 
   #
-  case "$ocs_litesrv_mode" in
+  case "$ocs_litesrv_netmode" in
     "use-existing-dhcpd"|"start-new-dhcpd") always_restore="no" ;;  # So that ocsmgrd will update PXE/Grub NB confi
     "no-dhcpd")                             always_restore="yes" ;; # So that ocsmgrd won't update PXE/Grub NB config
   esac
@@ -1032,7 +1051,7 @@ CLIENT_END
   echo $msg_delimiter_star_line
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
 
-  case "$ocs_litesrv_mode" in
+  case "$ocs_litesrv_netmode" in
    "use-existing-dhcpd"|"start-new-dhcpd") 
     echo "$msg_turn_on_client_to_clone" 
     echo "$msg_if_boot_from_locaL_media:"
