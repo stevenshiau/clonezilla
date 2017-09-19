@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.27.20
+Version:	3.28.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.25.10, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.91, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.25.11, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.2.91, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,20 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Sep 19 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.1-drbl1
+  * Add an option -cbm to ocs-live-feed-img. Besides, remove boot parameter
+    ocs_litesrv_mode. It's better to assign that in the command line option
+    (-dm) when running ocs-live-feed-img, e.g.,
+    ocs-live-feed-img -cbm netboot -dm auto-detect -g auto -e1 auto -e2 -r
+    -x -j2 -sc0 -p reboot -md multicast --clients-to-wait 1 
+    --max-time-to-wait 300 start myimg sda
+  * Support using UUID and LABEL as image repository, i.e.,
+    local_dev for image repository can be assigned as:
+    dev:///LABEL|UUID|PARTLABEL|PARTUUID=uuid|label. E.g.,
+    ocs_repository="dev:///UUID=84b012cc-5a4c-41e2-bf20-620d028072cb"
+  * Simply the S08speakup. Remove those not-working commands
+    during booting, like sleep.
+
 * Tue Sep 5 2017 Steven Shiau <steven _at_ nchc org tw> 3.27.20-drbl1
   * Improve the mechanism for starting espeakup.
 
