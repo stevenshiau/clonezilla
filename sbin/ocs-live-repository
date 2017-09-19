@@ -9,13 +9,14 @@
 # scheme:[//[user:password@]host[:port]][/]path[?query][#fragment]
 # General URI in Clonezilla:
 # [dev|smb|ssh|nfs|nfs4|http|https]:[//[user:password@]host[:port]][/]path
-# local_dev:     dev:///dev/partition
+# local_dev:     dev:///dev/partition, dev:///LABEL|UUID|PARTLABEL|PARTUUID=uuid|label
 # nfs_server:    nfs|nfs4://host/path
 # samba_server:  smb://[domain;user:password@]host/path
 # ssh_server:    ssh://[user@]host[:port]/path  (No password can be assigned in URI)
 # webdav_server: http|https://host[:port]/path  (No username and password can be assigned in URI)
 # E.g.
 # ocs_repository="dev:///dev/sdf1"
+# ocs_repository="dev:///UUID=84b012cc-5a4c-41e2-bf20-620d028072cb"
 # ocs_repository="nfs://192.168.100.254/home/partimag/"
 # ocs_repository="nfs4://192.168.100.254/partimag/"
 # ocs_repository="smb://administrator:mypasswd@192.168.100.175/images/"
@@ -97,11 +98,13 @@ get_ocsroot_src_from_ocs_repository_if_assigned() {
 do_uri_mount_local_dev() {
   local rc
   target_part="$(drbl-uriparse "$ocs_repository" path)"
-  # Strip the leading "/dev/"
-  target_part="$(strip_heading_dev $target_part)"
-  # Browse?
+  # If it's LABEL=<label>, UUID=<uuid>, PARTLABEL=<label>, PARTUUID=<uuid>    
+  # The input format is like: ocs_repository="dev:///UUID=XYZ"
+  # we have to remove the leading "/"
+  target_part="$(echo $target_part | sed -r -e "s@^/(LABEL|UUID|PARTLABEL|PARTUUID)@\1@")"
+  # TODO: Browse
   prepare_mnt_point_ocsroot
-  ocsroot_mnt_cmd_local="LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt,nodiratime /dev/$target_part $ocsroot"
+  ocsroot_mnt_cmd_local="LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt,nodiratime $target_part $ocsroot"
   echo "Mounting local device by:"
   echo "$ocsroot_mnt_cmd_local"
   eval $ocsroot_mnt_cmd_local
