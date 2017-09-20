@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.28.1
+Version:	3.28.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,15 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Sep 20 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.2-drbl1
+  * Disable systemd-networkd-wait-online service. By default it will wait
+    for 2 mins, and it's useless for Clonezilla live since the user will
+    configure the networking later.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/
+         thread/9511d653/
+  * Add boot parameter ocs_netlink_timeout so that the network link
+    detection timeout can be assigned for ocs-live-netcfg.
+
 * Tue Sep 19 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.1-drbl1
   * Add an option -cbm to ocs-live-feed-img. Besides, remove boot parameter
     ocs_litesrv_mode. It's better to assign that in the command line option
