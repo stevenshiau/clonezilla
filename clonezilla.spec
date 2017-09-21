@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.28.3
+Version:	3.28.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 21 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.4-drbl1
+  * No prompt for removing eject in EFI machine when rebooting or poweroffing
+    since most of the case nowadays people use USB to boot the machine.
+
 * Thu Sep 21 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.3-drbl1
   * Add /EFI/centos/grubx64.efi to known_efi_boot_file_chklist in
     update-efi-nvram-boot-entry. Thanks to Fritzinger, Bernd
