@@ -1176,6 +1176,20 @@ is_partclone_image() {
   return $rc
 } # end of is_partclone_image
 #
+is_dd_image() {
+  local tgt_d="$1" img_f="$(to_filename $2)" rc=1
+  if [ -z "$tgt_d" -o -z "$img_f" ]; then
+    echo "You must assign tgt_d or img_f in function is_dd_image! Program terminated!"
+    exit 1
+  fi
+  if [ -e "$tgt_d/${img_f}.dd-img" -o \
+       -n "$(ls $tgt_d/${img_f}.dd-img.aa* 2>/dev/null)" ]; then
+    # The image is from dd
+    rc=0
+  fi
+  return $rc
+} # end of is_dd_image
+#
 save_part_by_partclone() {
   # partclone is preferred
   local fs_save partclone_img_info_tmp IP fs_p fs_pre comp_suf
@@ -5638,8 +5652,7 @@ do_unicast_stdin_restore() {
     # The saved image is from partclone
     clean_filesystem_header_in_partition $part
     unicast_restore_by_partclone
-  elif [ -f "$target_d/$img_file.dd-img" -o \
-	 -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
+  elif is_dd_image $target_d $img_file; then
     # The saved image is from dd
     clean_filesystem_header_in_partition $part
     unicast_restore_by_dd
@@ -5684,8 +5697,7 @@ do_multicast_udpcast_restore() {
     # The saved image is from partclone
     clean_filesystem_header_in_partition $part
     multicast_restore_by_partclone
-  elif [ -f "$target_d/$img_file.dd-img" -o \
-	 -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
+  elif is_dd_image $target_d $img_file; then
     # The saved image is from dd
     clean_filesystem_header_in_partition $part
     multicast_restore_by_dd
@@ -5902,8 +5914,7 @@ udp_send_part_img() {
   elif is_partclone_image $imagedir/$target_d $img_file; then
     # The saved image is from partclone
     multicast_feed_img_for_partclone
-  elif [ -f "$imagedir/$target_d/$img_file.dd-img" -o \
-	 -n "$(ls $imagedir/$target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
+  elif is_dd_image $imagedir/$target_d $img_file; then
     # The saved image is from dd
     multicast_feed_img_for_dd
   fi
@@ -12935,10 +12946,66 @@ create_bt_image_files_from_partclone_img() {
     else
       rc=1
     fi
-    # ===========================================
+  elif is_dd_image $ocsroot/$tgt_dir $img_file; then
+    # The saved image is from dd
+    # ====================================
+    if [ -n "$(ls $ocsroot/$tgt_dir/${img_file}.dd-img.aa* 2>/dev/null)" ]; then
+      # get_image_cat_zip_cmd $ocsroot/$tgt_dir/${img_file}.dd-img.aa
+      get_image_cat_zip_cmd `get_split_img_1st_chunk $ocsroot/$tgt_dir ${img_file}.dd-img`
+      # The files are split, like hda1.00, hda1.01, so we have to add "."
+      img_file_prefix="${img_file}.dd-img.*"
+    else
+      get_image_cat_zip_cmd $ocsroot/$tgt_dir/${img_file}.dd-img
+      # The file is NOT split, so the file name is just like "hda1" only, no "."
+      img_file_prefix="${img_file}.dd-img"
+    fi
+    
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    partclone_img_info_tmp="/var/log/partclone.log"
+    unzip_stdin_cmd_error="$(mktemp /tmp/unzip_stdin_cmd_error.XXXXXX)"
+    [ -f "$partclone_img_info_tmp" ] && rm -f $partclone_img_info_tmp
+    
+    start_time="$(date +%s%N)"
+    # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
+    cat <<_EOT_ >> ${OCS_LOGFILE}
+    ( for img in $ocsroot/$tgt_dir/$img_file_prefix; do
+        # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
+        [ -n "$(echo "$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
+        cat $img
+      done
+    ) \
+    | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
+    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -d --btfiles \
+      --buffer_size 10485760 -s - -o $ocsroot_btzone/$tgt_dir/$img_file
+_EOT_
+    ( for img in $ocsroot/$tgt_dir/$img_file_prefix; do
+        # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
+        [ -n "$(echo "$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
+        cat $img
+      done
+    ) \
+    | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
+    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -d --btfiles \
+      --buffer_size 10485760 -s - -o $ocsroot_btzone/$tgt_dir/$img_file
+    retcodes=(${PIPESTATUS[@]})
+    
+    if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
+      rc=0
+    else
+      rc=1
+    fi
+    
+    cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
+    if [ -s "$unzip_stdin_cmd_error" ]; then
+      cat "$unzip_stdin_cmd_error" | tee --append ${OCS_LOGFILE}
+    fi
+    rm -f $unzip_stdin_cmd_error
+    
+    end_time="$(date +%s%N)"
+    # ====================================
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Only the image saved by Partclone can be converted to bittorrent files." | tee --append ${OCS_LOGFILE}
+    echo "Only the image saved by Partclone or dd can be converted to bittorrent files." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
     copy_error_log
