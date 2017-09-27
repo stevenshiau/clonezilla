@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.28.5
+Version:	3.28.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Sep 27 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.6-drbl1
+  * Bug fixed: /EFI/centos/grubx64.efi order.
+    /EFI/centos/grubx64.efi should be before /EFI/Boot/bootx64.efi.
+    Thanks to Fritzinger, Bernd (Bernd.Fritzinger _at_ bruker com).
+
 * Tue Sep 26 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.5-drbl1
   * Add lite-server prompt in the command clonezilla
   * Use Partclone 0.3.8 to create dd slice files.
