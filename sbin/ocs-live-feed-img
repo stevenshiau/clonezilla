@@ -466,7 +466,16 @@ gen_ocs_live_netboot_conf() {
   grub_menu_to_hide="drbl-client clonezilla-se-client"
   grub_menu_to_reveal="clonezilla-live-client local-disk"
   generate-pxe-menu
+
+  # A workaround to fix the dnsmasq issue for uEFI network boot clients
+  # i.e., we have to assign the tftp server IP address in grub network boot loader.
+  # This is only necessary when dnsmasq is used to relay the DHCP request from clients to existing DHCP service
+  # Ref: http://lists.thekelleys.org.uk/pipermail/dnsmasq-discuss/2017q1/011124.html
+  case "$ocs_litesrv_netmode" in
+     "use-existing-dhcpd") drbl-gen-grub-efi-nb -t $cast_srv_ip ;;
+  esac
   gen-grub-efi-nb-menu
+
   # Add Clonezilla live in the boot menu and for netboot. Actually we will use http service instead of tftpd. However, just run drbl-sl to make things easier. Hence both files for netboot using tftpd and httpd will be ready.
   if [ "$squashfs_fmode" -ge 4 ]; then
     # Use link since it's readable for www-data account (default user for lighttpd)
