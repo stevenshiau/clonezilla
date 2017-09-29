@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.28.6
+Version:	3.28.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Sep 29 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.7-drbl1
+  * Add a workaround to make dnsmasq relay work for uEFI network boot clients.
+    i.e., we have to assign the tftp server IP address in grub network
+    boot loader. This is only necessary when dnsmasq is used to relay the
+    DHCP request from clients to existing DHCP service
+    Ref: http://lists.thekelleys.org.uk/pipermail/dnsmasq-discuss/2017q1/011124.html
+
 * Wed Sep 27 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.6-drbl1
   * Bug fixed: /EFI/centos/grubx64.efi order.
     /EFI/centos/grubx64.efi should be before /EFI/Boot/bootx64.efi.
