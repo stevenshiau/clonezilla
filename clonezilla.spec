@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.28.9
+Version:	3.28.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 12 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.10-drbl1
+  * Do not put "insmod vbe" in grub EFI boot menu. Module vbe is for legacy
+    bios.
+  * Revert to original ocs-gen-grub2-efi-bldr. Module vbe and pci are for
+    legacy BIOS, not for EFI.
+
 * Thu Oct 12 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.9-drbl1
   * Better mechanism to add grub2 modules pci and vbe for grub boot loader.
 
