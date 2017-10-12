@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.28.8
+Version:	3.28.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 12 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.9-drbl1
+  * Better mechanism to add grub2 modules pci and vbe for grub boot loader.
+
 * Thu Oct 12 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.8-drbl1
   * Add vbe as one of EFI required modules.
     Ref: https://sourceforge.net/p/clonezilla/bugs/240/
