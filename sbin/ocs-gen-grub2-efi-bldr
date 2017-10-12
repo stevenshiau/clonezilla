@@ -10,8 +10,6 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
 
 efi_required_mod="part_gpt part_msdos normal chain boot configfile linux appleldr minicmd multiboot iso9660 acpi efi_gop efi_uga elf loadbios loopback video_fb usb search $GRUB_FS_MOD_drbl_ocs fixvideo png gfxterm gfxterm_background gfxterm_menu echo videotest video reboot halt gfxmenu gettext serial progress test sleep tr play"
-# Modules from package grub-pc-bin (path: /usr/lib/grub/i386-pc/). We have to separate them from the modules in packages grub-efi-ia32 grub-efi-ia32-bin grub-efi-amd64 grub-efi-amd64-bin (path: /usr/lib/grub/$EFI_ARCH-efi/)
-extra_mod_from_pcbin="pci vbe"
 grub_required_files="/usr/share/grub/unicode.pf2"
 
 # Functions
@@ -68,11 +66,11 @@ fi
 grub_efi_dir="$(mktemp -d /tmp/grub-efi.XXXXXX)"
 # Clean stale grub*.deb
 rm -fv  /var/cache/apt/archives/grub-*.deb
-for i in grub-efi-ia32 grub-efi-ia32-bin grub-efi-amd64 grub-efi-amd64-bin grub-pc-bin; do
+for i in grub-efi-ia32 grub-efi-ia32-bin grub-efi-amd64 grub-efi-amd64-bin; do
   echo "Download $i from deb packages repository..."
   LC_ALL=C apt-get -d --reinstall -y install $i &>/dev/null
 done
-for i in /var/cache/apt/archives/grub-*.deb; do
+for i in /var/cache/apt/archives/grub-efi*.deb; do
   dpkg --extract $i $grub_efi_dir
 done
 # Prepare a grub.cfg so that the eltorito image could find it.
@@ -104,25 +102,12 @@ for i in i386 x86_64; do
   for im in $efi_required_mod; do
     if [ ! -e "$grub_efi_dir/usr/lib/grub/$EFI_ARCH-efi/${im}.mod" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Missing grub2 module ${im}.mod in arch $EFI_ARCH... Exluding ${im}.mod..."
+      echo "Missing grub2 module ${im}.mod... Exluding ${im}.mod..."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       efi_required_mod="$(echo $efi_required_mod | sed -r -e "s/$im //g")"
     fi
   done
-   # Process module from pc-bin package, the path is always i386-pc
-  for im in $extra_mod_from_pcbin; do
-   if [ ! -e $grub_efi_dir/usr/lib/grub/i386-pc/${im}.mod ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Missing grub2 module ${im}.mod in arch $EFI_ARCH... Exluding ${im}.mod..."
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      extra_mod_from_pcbin="$(echo $extra_mod_from_pcbin | sed -r -e "s/$im([[:space:]]+|$)//g")"
-   fi
-  done
-  for im in $extra_mod_from_pcbin; do
-    # The path is always i386-pc
-    cp -a $grub_efi_dir/usr/lib/grub/i386-pc/${im}.mod $grub_efi_dir/usr/lib/grub/$EFI_ARCH-efi/
-  done
-  grub-mkimage $grub_mkimg_compress_opt -O $EFI_ARCH-efi -d $grub_efi_dir/usr/lib/grub/$EFI_ARCH-efi/ -o $out_f --prefix=/EFI/boot/ -c $grub_efi_dir/grub_head.cfg $efi_required_mod $extra_mod_from_pcbin
+  grub-mkimage $grub_mkimg_compress_opt -O $EFI_ARCH-efi -d $grub_efi_dir/usr/lib/grub/$EFI_ARCH-efi/ -o $out_f --prefix=/EFI/boot/ -c $grub_efi_dir/grub_head.cfg $efi_required_mod
   rc=$?
   if [ "$rc" -gt 0 ]; then
     # When grub-mkimage fails, an empty output file will still be created. We'd better to clean it.
