@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.28.7
+Version:	3.28.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.25.11, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.8, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.25.14, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.8, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 12 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.8-drbl1
+  * Add vbe as one of EFI required modules.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/240/
+
 * Fri Sep 29 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.7-drbl1
   * Add a workaround to make dnsmasq relay work for uEFI network boot clients.
     i.e., we have to assign the tftp server IP address in grub network
