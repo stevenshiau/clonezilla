@@ -37,9 +37,6 @@ DEBIAN_ISO_ETC_PATH="http://free.nchc.org.tw/clonezilla-live/alternative/stable/
 mkiso_exclude_list_1="isolinux syslinux md5sum.txt doc live etc pkg ocs-live.d utils"
 mkiso_exclude_list_2="home"  # This should not be a duplicated count.
 mkiso_exclude_list="$mkiso_exclude_list_1 $mkiso_exclude_list_2"
-# Flag to put EFI booting image in iso
-enabled_EFI=""
-#
 live_boot_menu_opt_raw=""
 
 #
@@ -308,9 +305,9 @@ md5_file_url="$DEBIAN_ISO_ETC_PATH/$md5_file"
 ask_and_load_lang_set $specified_lang
 
 #
-if ! type genisoimage &>/dev/null; then
+if ! type xorriso &>/dev/null; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "Program genisoimage not found!"
+  echo "Program xorriso not found!"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "$msg_program_stop"
   exit 1
@@ -482,21 +479,11 @@ fi
 # Check if EFI boot could be supported.
 if [ ! -e "$DEBIAN_ISO_TMP/EFI/boot/bootx64.efi" ]; then
   # We only check bootx64.efi since bootx86.efi is optional.
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Warning! /EFI/boot/bootx64.efi was not found in template Clonezilla live!"
-  echo "The generated $target_iso will not support EFI boot!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "/EFI/boot/bootx64.efi was not found in template Clonezilla live!"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  sleep 5
-  enabled_EFI="false"
-elif [ -n "$(LC_ALL=C genisoimage --help 2>&1 | grep -E -- "-efi-boot")" ]; then
-  # Check if genisoimage support -efi-boot option
-  enabled_EFI="true"
-else
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Warning! Setting EFI boot image name is not supported in genisoimage!"
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  sleep 5
-  enabled_EFI="false"
+  echo "$msg_program_stop"
+  exit 1
 fi
 
 #
@@ -541,7 +528,6 @@ if [ "$template_mode" = "from-booting-live-media" ]; then
   # -r--r--r--  GPL
   # dr-xr-xr-x  .disk/
   # dr-xr-xr-x  EFI/
-  # dr-xr-xr-x  isolinux/
   # dr-xr-xr-x  live/
   # dr-xr-xr-x  syslinux/
   # dr-xr-xr-x  utils/
@@ -555,7 +541,7 @@ else
   # dr-xr-xr-x  2 root root 2.0K 2010-05-28 18:03 live/
   # -r--r--r--  1 root root 3.7K 2010-05-28 18:03 md5sum.txt
   # We only need dirs isolinux and live only
-  template_iso_size="$(LC_ALL=C du -Lmsc $DEBIAN_ISO_TMP/{isolinux,$sys_files_dir} | tail -n 1 | awk -F" " '{print $1}')"
+  template_iso_size="$(LC_ALL=C du -Lmsc $DEBIAN_ISO_TMP/{boot,EFI,isolinux,$sys_files_dir} | tail -n 1 | awk -F" " '{print $1}')"
 fi
 target_iso_size="$(($template_iso_size + $img_size_sum))"
 
@@ -897,70 +883,69 @@ fi
 # Remove the existing iso
 [ -e "$target_iso" ] && rm -f $target_iso
 
+# For Ubuntu uEFI secure boot signed grubx64.efi, it will search /boot/grub/grub.cfg instead of what we have (/EFI/boot/grub.cfg). Although we do not use Ubuntu as the underlaying OS, we still keep this for the future just in case.
+mkdir -p $ISOSYSLNX_TMP/boot/grub/
+
 # Build the EFI boot image. This is especially for iso file. Not for USB stick.
-efi_img_opt=""
-if [ "$enabled_EFI" = "true" ]; then
-  # The following codes are referred from Fedora anaconda's mk-images.efi
-  # http://fedorapeople.org/cgit/karsten/public_git/anaconda.git/plain/scripts/mk-images.efi
-  # Ref: https://fedoraproject.org/wiki/User:Pjones/BootableCDsForBIOSAndUEFI#New_UEFI.2FBIOS_hybrid_method
-  EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
-  EFI_BOOTTREE="$DEBIAN_ISO_TMP/EFI"
-  EFI_IMGTREE="$ISOSYSLNX_TMP/EFI/images"
-  EFI_IMG="$EFI_IMGTREE/efiboot.img"
-  mkdir -p $EFI_IMGTREE
-  rm -rf $ISOSYSLNX_TMP/.disk
-  rm -f $EFI_IMG
-  
-  BOOTDISKSIZE="$(LC_ALL=C du -kcs $EFI_BOOTTREE | tail -n1 | awk '{print $1}')"
-  BOOTDISKSIZE="$(LC_ALL=C echo "scale=0; $BOOTDISKSIZE * 1.03 / 1" | bc -l)"
-  echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
-  mkdosfs -n OCS-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
-  mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
-  mkdir -p $EFI_BOOTIMG_TMP/EFI/
-  if [ "$live_efi_boot_loader" = "grub" ]; then
-    # In this case, bootx64.efi is in $EFI_BOOTTREE/, but we should exclude the existing $EFI_BOOTTREE/images/efiboot.img
-    # However, when mkdosfs we do not exclude $EFI_BOOTTREE/images/efiboot.img, so the size might be counted. It's better to put efiboot.img not in /EFI/ in the future.
-    rsync -a --exclude images/ $EFI_BOOTTREE/* $EFI_BOOTIMG_TMP/EFI/
-  elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-    # In this case, bootx64.efi is copied in $ISOSYSLNX_TMP/EFI/, we should do something similar with ocs-gen-grub2-efi-bldr
-    rsync -a --exclude images/ $ISOSYSLNX_TMP/EFI/* $EFI_BOOTIMG_TMP/EFI/
-    # TODO similar to ocs-gen-grub2-efi-bldr, create a syslinux.cfg to include /syslinux/syslinux.cfg.
-  fi
-  umount $EFI_BOOTIMG_TMP
-  if [ -d "$EFI_BOOTIMG_TMP" -a -n \
-  	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
-    rm -rf $EFI_BOOTIMG_TMP
-  fi
-  
-  # Create an info file for grub2 to autodetect the cd root
-  # Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
-  mkdir $ISOSYSLNX_TMP/.disk
-  echo -n "[Clonezilla]" > $ISOSYSLNX_TMP/.disk/info
-  
-  efi_img_opt="-eltorito-alt-boot -efi-boot EFI/images/efiboot.img -no-emul-boot"
-  # For Ubuntu uEFI secure boot signed grubx64.efi, it will search /boot/grub/grub.cfg instead of what we have (/EFI/boot/grub.cfg). Although we do not use Ubuntu as the underlaying OS, we still keep this for the future just in case.
-  mkdir -p $ISOSYSLNX_TMP/boot/grub/
+# The following codes are referred from Fedora anaconda's mk-images.efi
+# http://fedorapeople.org/cgit/karsten/public_git/anaconda.git/plain/scripts/mk-images.efi
+# Ref: https://fedoraproject.org/wiki/User:Pjones/BootableCDsForBIOSAndUEFI#New_UEFI.2FBIOS_hybrid_method
+EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
+EFI_BOOTTREE="$DEBIAN_ISO_TMP/EFI"
+EFI_IMG="$ISOSYSLNX_TMP/boot/grub/efiboot.img"
+rm -rf $ISOSYSLNX_TMP/.disk
+rm -f $EFI_IMG
+
+BOOTDISKSIZE="$(LC_ALL=C du -kcs $EFI_BOOTTREE/boot/boot*.efi | tail -n1 | awk '{print $1}')"
+BOOTDISKSIZE="$(LC_ALL=C echo "scale=0; $BOOTDISKSIZE * 1.02 / 1" | bc -l)"
+echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
+mkdosfs -n OCS-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
+mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
+mkdir -p $EFI_BOOTIMG_TMP/EFI/
+if [ "$live_efi_boot_loader" = "grub" ]; then
+  # In this case, bootx64.efi is in $EFI_BOOTTREE/
+  mkdir -p $EFI_BOOTIMG_TMP/EFI/boot/
+  rsync -a $EFI_BOOTTREE/boot/boot*.efi $EFI_BOOTIMG_TMP/EFI/boot/
+elif [ "$live_efi_boot_loader" = "syslinux" ]; then
+  # In this case, bootx64.efi is copied in $ISOSYSLNX_TMP/EFI/, we should do something similar with ocs-gen-grub2-efi-bldr
+  rsync -a $ISOSYSLNX_TMP/EFI/* $EFI_BOOTIMG_TMP/EFI/
+  # TODO similar to ocs-gen-grub2-efi-bldr, create a syslinux.cfg to include /syslinux/syslinux.cfg.
+fi
+umount $EFI_BOOTIMG_TMP
+if [ -d "$EFI_BOOTIMG_TMP" -a -n \
+	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
+  rm -rf $EFI_BOOTIMG_TMP
+fi
+
+# Create an info file for grub2 to autodetect the cd root
+# Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
+mkdir $ISOSYSLNX_TMP/.disk
+echo -n "[Clonezilla]" > $ISOSYSLNX_TMP/.disk/info
+
+#
   cat <<-EFI_END > $ISOSYSLNX_TMP/boot/grub/grub.cfg
 # This file is for compatibility to Ubuntu Linux's uEFI secure boot. 
 # The real config file for grub is /EFI/boot/grub.cfg.
 configfile /EFI/boot/grub.cfg
 EFI_END
-  efi_img_graft_opt="/.disk/=$ISOSYSLNX_TMP/.disk /boot/=$ISOSYSLNX_TMP/boot/ "
-fi
+
+efi_img_graft_opt="/.disk/=$ISOSYSLNX_TMP/.disk /boot/=$ISOSYSLNX_TMP/boot/ "
 
 # Prepare the sort file for genisoimage.
 gen_iso_sort_file $ISOSYSLNX_TMP/syslinux/iso_sort.txt
 
-# make iso file
-genisoimage \
+# Make iso file
+xorriso \
+ -as mkisofs -R -r -J -joliet-long -l -cache-inodes -iso-level 3 \
+ -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -partition_offset 16 \
  -A "Clonezilla live CD" \
- -V "$iso_label_tag" \
  -publisher "DRBL/Clonezilla http://drbl.org http://clonezilla.org" \
- -f -r -hide-rr-moved -hide-joliet-trans-tbl -J -l $allow_limited_size_opt \
+ -V "$iso_label_tag" \
  -b syslinux/isolinux.bin -c syslinux/boot.cat \
  -no-emul-boot -boot-load-size 4 -boot-info-table \
+ -eltorito-alt-boot --efi-boot boot/grub/efiboot.img \
+ -isohybrid-gpt-basdat -isohybrid-apm-hfsplus \
  -sort $ISOSYSLNX_TMP/syslinux/iso_sort.txt \
- $efi_img_opt \
  $mkiso_exclude_opt \
  -graft-points \
   $sys_files_dir_graft_point \
@@ -1003,12 +988,6 @@ clean_tmp_dir
 
 # 
 if [ -e "$target_iso" ]; then
-  if type isohybrid &>/dev/null; then
-    # //NOTE// This is for Clonezilla live iso. It's different from that for template iso.
-    echo -n "Isohybriding $target_iso... "
-    isohybrid --uefi $target_iso
-    echo "done!"
-  fi
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "$msg_burn_clonezilla_img_iso: $target_iso"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
