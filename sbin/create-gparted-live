@@ -44,7 +44,6 @@ gddrescue ddrescueview zerofree efibootmgr libpam-systemd policykit-1 \
 calcoo init udftools $debian_pkgs_for_gparted $Xorg_pkgs $font_pkgs"
 categories_default="main"
 cpu_flavor_default="686"
-bootstrap_default="debootstrap"
 
 # The files in dir in $ocs_live_include_dir will be included to the live-hook-dir/. Here we need some functions in ocs/live-hook so we include files in that dir.
 ocs_live_include_dir="$DRBL_SCRIPT_PATH/setup/files/ocs/live-hook $DRBL_SCRIPT_PATH/setup/files/gparted/live-hook"
@@ -58,7 +57,7 @@ gparted_live_boot_bg_img="$DRBL_SCRIPT_PATH/setup/files/gparted/image/Gsplash.pn
 #
 vga_mode_gparted_live="normal"
 # This hook is for binary_local-hooks, not for chroot hook
-run_binary_hook_script="efi-binary-hook"
+run_binary_hook_script="gparted-efi-misc-binary-hook"
 # The option to create a corresponding source image.
 gen_source_tarball="no"
 # Flag to put EFI booting image in iso
@@ -78,7 +77,6 @@ USAGE() {
     echo "OPTION:"
     language_help_prompt_by_idx_no
     echo "-b, --branch [s|stable|t|testing|u|unstable|e|experimental]  Sepcify the DRBL branch to be used in Live CD. Default is stable."
-    echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (cdebootstrap or debootstrap). If not specified, $bootstrap_default will be used."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
     echo "-d, --debian-dist [stable|testing|unstable|jessie|strech|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
     echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 586, 686 or amd64. If it's not assigned, $cpu_flavor_default will be used."
@@ -600,15 +598,6 @@ while [ $# -gt 0 ]; do
             fi
 	    [ -z "$drbl_branch" ] && USAGE && exit 1
             ;;
-    -bt|--bootstrap)
-            shift
-            if [ -z "$(echo $1 |grep ^-.)" ]; then
-              # skip the -xx option, in case 
-              bootstrap="$1"
-              shift
-            fi
-	    [ -z "$bootstrap" ] && USAGE && exit 1
-            ;;
     -c|--categories)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -791,7 +780,6 @@ rm -rf debian-live/.stage/
 [ -z "$mirror_url" ] && mirror_url="$debian_mirror_url_def"
 [ -z "$mirror_security_url" ] && mirror_security_url="$debian_mirror_security_url_def"
 [ -z "$cpu_flavor" ] && cpu_flavor="$cpu_flavor_default"
-[ -z "$bootstrap" ] && bootstrap=$bootstrap_default
 
 # Append the extra packages
 [ -n "$extra_pkgs" ] && pkgs="$pkgs $extra_pkgs"
@@ -929,7 +917,7 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   # If we do not adding "--no-upgrade", then 
   # in /usr/lib/live/build/chroot_live-packages it will run
   # "apt-get install live-boot" then it will be upgraded.
-  $pref lb config --apt apt --apt-options "--yes --no-upgrade --allow-downgrades" --apt-recommends false --bootstrap $bootstrap
+  $pref lb config --apt apt --apt-options "--yes --no-upgrade --allow-downgrades" --apt-recommends false
   # From live-build 3.0~a59-1, no --volatile option.
   #$pref lb config --volatile false
   # We want "noswap", which only exists in live-initramfs
@@ -1005,10 +993,10 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   echo "$pkgs" > config/package-lists/gparted-packages.list.chroot
 
   # Put hook file to be run
-  cp $ocs_live_script_dir/${run_hook_script} config/hooks/${run_hook_script}.chroot
+  cp $ocs_live_script_dir/${run_hook_script} config/hooks/live/${run_hook_script}.chroot
 
   # Put hook file to be run in the binary_local-hooks
-  cp $ocs_live_script_dir/$run_binary_hook_script config/hooks/${run_binary_hook_script}.binary
+  cp $ocs_live_script_dir/$run_binary_hook_script config/hooks/live/${run_binary_hook_script}.binary
   
   # prepare drbl source list
   # //NOTE// Use drbl-repository.list instead of drbl-repository.list.chroot because 
