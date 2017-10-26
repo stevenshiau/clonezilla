@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.28.10
+Version:	3.29.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.25.14, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.8, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.25.15, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.8, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 26 2017 Steven Shiau <steven _at_ clonezilla org> 3.29.1-drbl1
+  * Make Clonezilla work for live-build v5 (version >= 201602xx)
+  * Use xorriso instead of genisoimage when creating Clonezilla live iso.
+    With this, no need to patch genisoimage to work with EFI booting, and no
+    need to run isohybrid for the created iso file.
+  * Add more grub modules in grub boot loader:
+    memdisk fat efinet tftp net
+
 * Thu Oct 12 2017 Steven Shiau <steven _at_ clonezilla org> 3.28.10-drbl1
   * Do not put "insmod vbe" in grub EFI boot menu. Module vbe is for legacy
     bios.
