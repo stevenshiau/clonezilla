@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.29.2
+Version:	3.29.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Oct 27 2017 Steven Shiau <steven _at_ clonezilla org> 3.29.3-drbl1
+  * Path for efiboot.img was not created first.
+
 * Fri Oct 27 2017 Steven Shiau <steven _at_ clonezilla org> 3.29.2-drbl1
   * Put efiboot.img in /boot/grub/ inside zip file.
     Slightly change the way to create efiboot.img for iso file.
