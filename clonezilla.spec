@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.29.1
+Version:	3.29.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Oct 27 2017 Steven Shiau <steven _at_ clonezilla org> 3.29.2-drbl1
+  * Put efiboot.img in /boot/grub/ inside zip file.
+    Slightly change the way to create efiboot.img for iso file.
+
 * Thu Oct 26 2017 Steven Shiau <steven _at_ clonezilla org> 3.29.1-drbl1
   * Make Clonezilla work for live-build v5 (version >= 201602xx)
   * Use xorriso instead of genisoimage when creating Clonezilla live iso.
