@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.29.3
+Version:	3.29.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 30 2017 Steven Shiau <steven _at_ clonezilla org> 3.29.4-drbl1
+  * Use xorriso instead of genisoimage when creating DRBL/GParted live iso.
+    With this, no need to patch genisoimage to work with EFI booting, and no
+    need to run isohybrid for the created iso file.
+  * Remove option --bootstrap from create-drbl-live-by-pkg
+    since live-build does not support it anymore.
+
 * Fri Oct 27 2017 Steven Shiau <steven _at_ clonezilla org> 3.29.3-drbl1
   * Path for efiboot.img was not created first.
 
