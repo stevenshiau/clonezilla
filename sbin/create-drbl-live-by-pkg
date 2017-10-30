@@ -25,7 +25,6 @@ live_branch_default="unstable"
 # Ref: http://live.debian.net/manual/stable/html/live-manual.en.html#346
 de_type_default="task-xfce-desktop"
 cpu_flavor_default="586"
-bootstrap_default="debootstrap"
 categories_default="main"
 
 # Common applications for all the version
@@ -61,7 +60,6 @@ USAGE() {
    echo "OPTION:"
    echo "-a, --initsystem [sysvinit|systemd]   Specify the init system for live system. Default is systemd"
    echo "-b, --branch [s|stable|t|testing|u|unstable|e|experimental]  Specify the DRBL branch to be used in Live CD. Default is stable."
-   echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (cdebootstrap or debootstrap). If not specified, $bootstrap_default will be used."
    echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
    echo "-d, --debian-dist [stable|testing|unstable|etch|lenny|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
    echo "-e, --drbl-live-branch [s|stable|t|testing|u|unstable|e|experimental]  specifies the DRBL live branch to be used in Live CD. Default is stable."
@@ -99,15 +97,6 @@ while [ $# -gt 0 ]; do
               shift
             fi
 	    [ -z "$drbl_branch" ] && USAGE && exit 1
-            ;;
-    -bt|--bootstrap)
-            shift
-            if [ -z "$(echo $1 |grep ^-.)" ]; then
-              # skip the -xx option, in case 
-              bootstrap="$1"
-              shift
-            fi
-	    [ -z "$bootstrap" ] && USAGE && exit 1
             ;;
     -c|--categories)
             shift
@@ -249,7 +238,6 @@ done
 [ -z "$mirror_url" ] && mirror_url="$debian_mirror_url_def"
 [ -z "$mirror_security_url" ] && mirror_security_url="$debian_mirror_security_url_def"
 [ -z "$cpu_flavor" ] && cpu_flavor="$cpu_flavor_default"
-[ -z "$bootstrap" ] && bootstrap=$bootstrap_default
 if [ -n "$live_extra_boot_param" ]; then 
   live_extra_boot_param_1="-x"
   live_extra_boot_param_2="$live_extra_boot_param"
@@ -259,4 +247,4 @@ fi
 [ -z "$live_initsystem" ] && live_initsystem=$live_initsystem_def
 
 eval pkgs=\$pkgs_for_${de_type//-/_}
-time create-drbl-live -l en -a $live_initsystem --bootstrap $bootstrap -c "$categories" -d $debian_dist -p $de_type -k "$pkgs $extra_pkgs" -b $drbl_branch -f $cpu_flavor -g $DRBL_REPOSITORY_URL -m $mirror_url -s $mirror_security_url -e $live_branch $gen_source_tarball_opt $live_extra_boot_param_1 "$live_extra_boot_param_2" $live_kernel_opt $ver_no_opt $isolinux_ver_opt
+time create-drbl-live -l en -a $live_initsystem -c "$categories" -d $debian_dist -p $de_type -k "$pkgs $extra_pkgs" -b $drbl_branch -f $cpu_flavor -g $DRBL_REPOSITORY_URL -m $mirror_url -s $mirror_security_url -e $live_branch $gen_source_tarball_opt $live_extra_boot_param_1 "$live_extra_boot_param_2" $live_kernel_opt $ver_no_opt $isolinux_ver_opt
