@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.29.5
+Version:	3.29.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Nov 14 2017 Steven Shiau <steven _at_ clonezilla org> 3.29.6-drbl1
+  * Bug fixed: create-gparted-live failed to create GParted iso.
+
 * Wed Nov 01 2017 Steven Shiau <steven _at_ clonezilla org> 3.29.5-drbl1
   * Update lh_ver_required and debootstrap_ver_required for live-build 5 and
     bionic in drbl-ocs.conf.
