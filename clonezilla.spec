@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.29.8
+Version:	3.29.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Nov 22 2017 Steven Shiau <steven _at_ clonezilla org> 3.29.9-drbl1
+  * Do not remove vmlinuz-* or initrd-* when in arch is arm64 since
+    binary_syslinux of live-build is not run. Just rename them as vmlinuz
+    and initrd.
+  * Make Clonezilla depends on isolinux.
+
 * Mon Nov 20 2017 Steven Shiau <steven _at_ clonezilla org> 3.29.8-drbl1
   * Initial support arm64 for create-debian-live and ocs-gen-grub2-efi-bldr.
 
