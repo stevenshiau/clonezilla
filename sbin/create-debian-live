@@ -110,14 +110,19 @@ build_it() {
   $pref lb config --apt-source-archives true
   #$pref lb config --tasksel none
   
-  if [ "$debian_dist" = "lenny" ]; then
-    # Force to use iso instead of iso-hybrid. Since the syslinux in lenny comes without isohybrid program.
-    $pref lb config --binary-images iso
-  else
-    # Enable iso-hybrid for version >= squeeze
-    # //NOTE// This is for template iso only, not for Clonezilla live iso.
-    $pref lb config --binary-images iso-hybrid
-  fi
+  #
+  case "$cpu_flavor" in
+    686*|586*|486*|amd64) 
+           # Default bootloaders in live-build is syslinux,grub-efi (for i386/amd64)
+           # No need to run "$pref lb config --bootloaders syslinux,grub-efi"
+           # //NOTE// This option "--binary-images" is for template iso only, not for Clonezilla live iso.
+           $pref lb config --binary-images iso-hybrid
+	   ;;
+    arm64) 
+           $pref lb config --bootloaders grub-efi
+           $pref lb config --binary-images iso
+	   ;;
+  esac
   
   # This decide_live_kernel_related_pkgs_from_debian function will output "kernel_related_pkgs" and "export MKSQUASHFS_OPTIONS"
   decide_live_kernel_related_pkgs_from_debian
@@ -402,8 +407,8 @@ if [ "$debian_dist" = "squeeze" -o \
   # pkgs="$(LC_ALL=C echo $pkgs | sed -r -e "s/grub[[:space:]]+/grub-legacy /")"
   # Since with squeeze or sid, we can use uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
   case "$os_arch" in
-    686*|586*|486*|amd64) pkgs="$pkgs v86d";
-    arm86) true;
+    686*|586*|486*|amd64) pkgs="$pkgs v86d";;
+    arm86) true;;
   esac
 fi
 # Adding libc6-i386 for AMD64 arch. This will allow 32-bit program to run on AMD64 arch.
