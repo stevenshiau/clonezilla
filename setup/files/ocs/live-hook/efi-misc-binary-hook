@@ -40,7 +40,17 @@ fi
 
 # Part II: misc
 # Clean the duplicated vmlinuz-* and initrd-*, we just want vmlinuz and initrd so that the iso file can be smaller.
-rm -f live/vmlinuz-* live/initrd.img-*
+# For arm64, binary_syslinux of live-build is not run, so there is no hard link (ln) for vmlinuz-* to vmlinuz, and initrd-* to initrd.
+# For i386/amd64, binary_syslinux of live-build is run, so there are two files, i.e., ln vmlinuz-4.10.0-38-generic vmlinuz -> so vmlinuz-4.10.0-38-generic and vmlinuz
+vmlinuz_no="$(LC_ALL=C find live/ -iname "vmlinuz*" -print 2>/dev/null | wc -l)"
+if [ "$vmlinuz_no" -ge 2 ]; then
+  # Keep vmlinuz and initrd only.
+  rm -f live/vmlinuz-* live/initrd.img-*
+elif [ "$vmlinuz_no" -eq 1 ]; then
+  # Rename them as vmlinuz and initrd.img
+  mv live/vmlinuz-* live/vmlinuz
+  mv live/initrd.img-* live/initrd.img
+fi
 
 ### THE END ###
 # DO NOT PUT ANY SCRIPT AFTHER THIS!!!
