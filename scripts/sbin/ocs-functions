@@ -700,7 +700,7 @@ get_image_cat_zip_cmd() {
  
   img_comp_format="" 
   # (1)
-  comp_prog_ref="$(echo "$imgf" | grep -Eo -- ".ptcl-img.(gz|bz2|lzo|lzma|xz|lzip|lrz|uncomp)?")"
+  comp_prog_ref="$(echo "$imgf" | grep -Eo -- ".ptcl-img.(gz|bz2|lzo|lzma|xz|lzip|lrz|lz4|uncomp)?")"
   cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)" 
   cat_prog=""
   zip_stdin_cmd=""
@@ -749,6 +749,10 @@ get_image_cat_zip_cmd() {
       lzo)    cat_prog="lzop -dc"
               zip_stdin_cmd="lzop -c"
               unzip_stdin_cmd="lzop -dc"
+              ;;
+      lz4)    cat_prog="lz4 -dc"
+              zip_stdin_cmd="lz4 -c"
+              unzip_stdin_cmd="lz4 -dc"
               ;;
       lzma)   cat_prog="lzcat"
               zip_stdin_cmd="lzma -c $extra_lzma_opt"
@@ -809,7 +813,7 @@ get_image_cat_zip_cmd() {
       [ "$save_restore_error_log" = "yes" ] && copy_error_log
       exit 1
     fi
-    if [ -n "$(file -Ls $imgf | grep -i "gzip compressed data")" ]; then
+    if [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "gzip compressed data")" ]; then
       # Ex: hdb1.000: gzip compressed data, from Unix
       # Actually zcat is identical to gunzip -c
       if [ "$cpu_no" -gt 1 ] && \
@@ -823,7 +827,7 @@ get_image_cat_zip_cmd() {
         zip_stdin_cmd="gzip -c $extra_gzip_opt"
         unzip_stdin_cmd="gunzip -c"
       fi
-    elif [ -n "$(file -Ls $imgf | grep -i "bzip2 compressed data")" ]; then
+    elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "bzip2 compressed data")" ]; then
       # Ex: hdb1.000: bzip2 compressed data, block size = 900k
       # Actually bzcat is identical to bzip2 -dc or bunzip2 -c
       if [ "$cpu_no" -gt 1 -a "$use_parallel_decompression" = "yes" ]; then
@@ -845,12 +849,17 @@ get_image_cat_zip_cmd() {
         zip_stdin_cmd="bzip2 -c"
         unzip_stdin_cmd="bunzip2 -c"
       fi
-    elif [ -n "$(file -Ls $imgf | grep -i "lzop compressed data")" ]; then
+    elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "lzop compressed data")" ]; then
       # Ex: hdb1.ntfs-img: lzop compressed data - version 1.010, LZO1X-1, os: Unix
       cat_prog="lzop -dc"
       zip_stdin_cmd="lzop -c"
       unzip_stdin_cmd="lzop -dc"
-    elif [ -n "$(file -Ls $imgf | grep -i "lzip compressed data")" ]; then
+    elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "lz4 compressed data")" ]; then
+      # Ex: hdb1.ntfs-img: lzop compressed data - version 1.010, LZO1X-1, os: Unix
+      cat_prog="lz4 -dc"
+      zip_stdin_cmd="lz4 -c"
+      unzip_stdin_cmd="lz4 -dc"
+    elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "lzip compressed data")" ]; then
       # Ex: sda1.ntfs-img.aa: lzip compressed data - version 1, os: Unix
       if [ "$cpu_no" -gt 1 ] && \
          [ "$use_parallel_decompression" = "yes" ] && \
@@ -863,7 +872,7 @@ get_image_cat_zip_cmd() {
         zip_stdin_cmd="lzip -c $extra_lzip_opt"
         unzip_stdin_cmd="lzip -d -c"
       fi
-    elif [ -n "$(file -Ls $imgf | grep -i "LRZIP compressed data")" ]; then
+    elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "LRZIP compressed data")" ]; then
       # Although lrzip uses "-p value      Set processor count to override number of threads" to assign the CPU number, however, from the manual of lrzip:
       # -p value
       # Set  the  number  of  processor count to determine the number of
@@ -877,7 +886,7 @@ get_image_cat_zip_cmd() {
       cat_prog="lrzip -q -d -o -" 
       zip_stdin_cmd="lrzip -q - $extra_lzip_opt"
       unzip_stdin_cmd="lrzip -q -d -o -"
-    elif [ -n "$(file -Ls $imgf | grep -i "XZ compressed data")" ]; then
+    elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "XZ compressed data")" ]; then
       # Ex: sda1.ntfs-ptcl-img.xz.aa: XZ compressed data
       if [ "$cpu_no" -gt 1 ] && \
          [ "$use_parallel_decompression" = "yes" ] && \
@@ -890,7 +899,7 @@ get_image_cat_zip_cmd() {
         zip_stdin_cmd="xz -c $extra_xz_opt"
         unzip_stdin_cmd="unxz -c"
       fi
-    elif [ -n "$(file -Ls $imgf | grep -i "PartImage file .* not compressed")" ]; then
+    elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "PartImage file .* not compressed")" ]; then
       # Ex: hdb1.000: PartImage file version 0.6.1 volume 0 type reiserfs-3.6 device /dev/hdb1, original filename hdb1, not compressed
       cat_prog="cat"
       zip_stdin_cmd="cat"
@@ -940,6 +949,7 @@ ocs-get-comp-suffix() {
     gzip*|pigz*|gunzip*|zcat*)              suffix="gz";;
     bzip2*|pbzip2*|lbzip2*|bzcat*|bunzip2*) suffix="bz2";;
     lzop*)                                  suffix="lzo";;
+    lz4*)                                   suffix="lz4";;
     lzma*|lzcat*|unlzma*)                   suffix="lzma";;
     xz*|pixz*|xzcat*|pxz*|unxz*)            suffix="xz";;
     lzip*|plzip*)                           suffix="lzip";;
@@ -9449,7 +9459,7 @@ check_ocs_input_params(){
     IMG_CLONE_CMP="gzip -c $extra_gzip_opt"
   fi
   
-  more_compress_progs="lzma xz pixz lzip plzip lrzip"
+  more_compress_progs="lzma xz pixz lzip plzip lrzip lz4"
   for i in $more_compress_progs; do
     eval iz=\$i
     # lrzip uses "-q -", the rest use "-c"
@@ -9583,7 +9593,8 @@ USAGE_common_save(){
     echo " -z5p, --smp-xz-compress  Compress using parallel xz when saving: slow but smallest image file, faster decompression than bzip2."
     echo " -z6, --lzip-compress     Compress using lzip when saving: slow but smallest image file, faster decompression than bzip2."
     echo " -z6p, --smp-lzip-compress  Compress using parallel lzip when saving: slow but smallest image file, faster decompression than bzip2."
-    echo " -z7, --lrzip-compress     Compress using lrzip when saving."
+    echo " -z7, --lrzip-compress    Compress using lrzip when saving."
+    echo " -z8, --lz4-compress      Compress using lz4 when saving."
 } # end of USAGE_common_save
 #
 USAGE_reserved_word_for_save() {
