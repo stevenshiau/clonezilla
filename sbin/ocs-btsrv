@@ -34,7 +34,7 @@ USAGE() {
     echo "-m, --max-client-no NO       Assign the client number as NO. When this number of clients finishes downloading, BT tracker will exit so that client will stop, too."
     echo "-p, --bt-srv-ip  IP          Assign the IP address for using in tracker's URL. If not assigned, the IP address detected on the machine will be used"
     echo "-r, --bt-root DIR            Use DIR as the working dir. It's preceded to the files downloaded. Default value is \"$ocsroot_btzone\""
-    echo "-t, --bt-client PROG         Use PROG instead of ctorrent as the bittorrent client program. Available PROG: ctorrent, lftp, btdownloadheadless, aria2c"
+    echo "-t, --bt-client PROG         Use PROG instead of ctorrent as the bittorrent client program. Available PROG: ezio, ctorrent, lftp, btdownloadheadless, aria2c"
     echo "IMAGE is the image name under \"$ocsroot_btzone\""
     echo "DEV* is the device name"
     echo "Ex:"
@@ -108,7 +108,7 @@ start_bt_srv() {
     # Prepare port no
     get_available_bt_port # Obtain port_b
 
-    idir="$img_dir/$(to_filename $ipt)"
+    idir="$img_dir/$(to_filename $ipt)" # e.g. xenial-x64-20161104/sda1
     # idir_name is the name for log usage
     idir_name="${img_dir}:$(to_filename $ipt)"
     # Part 1: create metainfo file (.torrent)
@@ -166,11 +166,16 @@ start_bt_srv() {
     ct_pid_log="$btlog_dir/${idir_name}-torrent.pid"
     if [ "$bt_client" = "lftp" ]; then
       cmd_start_seeding="lftp -c torrent -O $(dirname $ocsroot_btzone/${idir}) $ocsroot_btzone/${idir}.torrent"
+    elif [ "$bt_client" = "ezio" ]; then
+      get_ezio_prog  # get the variable ezio_prog
+      # //NOTE// The working dir is the parent dir.
+      # E.g., ezio -U -f /home/partimag/btzone/xenial-x64-20161104/sda1.torrrent /home/partimag/btzone/xenial-x64-20161104
+      cmd_start_seeding="$ezio_prog -U -f $ezio_seeder_extra_opt $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$(dirname ${idir}) &"
     elif [ "$bt_client" = "btdownloadheadless" ]; then
       cmd_start_seeding="btdownloadheadless --saveas $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent &"
     elif [ "$bt_client" = "aria2c" ]; then
       # //NOTE// The working dir is the parent dir.
-      cmd_start_seeding="aria2c -D --seed-ratio=0.0 --enable-dht6=false --enable-dht=false --bt-seed-unverified $aria2c_extra_opt -d $ocsroot_btzone/"$(dirname ${idir})" $ocsroot_btzone/${idir}.torrent"
+      cmd_start_seeding="aria2c -D --seed-ratio=0.0 --enable-dht6=false --enable-dht=false --bt-seed-unverified $aria2c_extra_opt -d $ocsroot_btzone/$(dirname ${idir}) $ocsroot_btzone/${idir}.torrent"
     else
       # Check the option -M of ctorrent, if it only allows 20-1000, modify it as "-M 20" from "-M 4", for example.
       # DRBL patched ctorrent allows -M to be 4-1000, otherwise it must be within 20-1000.
