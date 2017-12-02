@@ -6080,12 +6080,22 @@ feed_bittorrent_restoreparts() {
   fi
 } # end of feed_bittorrent_restoreparts
 #
+get_ezio_prog(){
+  # ezio_prog is global variable.
+  # Find if ezio or ezio-static
+  if type ezio &>/dev/null; then
+    ezio_prog="ezio"
+  else
+    ezio_prog="ezio-static"
+  fi
+} # end of get_ezio_prog
+#
 do_bittorrent_restore() {
   local target_d="$1"
   local part_img_dir="$(to_filename $2)"
   local part="$3"  # part is like /dev/sda1
   local start_time end_time image_name_ split_by dd_report_sig_pid part_size hdtmp pt_type
-  local btimg_name ezio_prog btc_cmd
+  local btimg_name btc_cmd
   # if the report_msg is empty, put the initial one: image_name_
   image_name_="$(basename $target_d)"
   [ -z "$report_msg" ] && report_msg="Bittorrent restored $image_name_,"
@@ -6106,11 +6116,7 @@ do_bittorrent_restore() {
   clean_filesystem_header_in_partition $part
   parse_cmdline_option -c /proc/cmdline "ezio_opt"
   # Find if ezio or ezio-static
-  if type ezio &>/dev/null; then
-    ezio_prog="ezio"
-  else
-    ezio_prog="ezio-static"
-  fi
+  get_ezio_prog  # get the variable ezio_prog
   # Squeeze multiple spaces to one only
   btc_cmd="$(echo $ezio_prog $ezio_opt $ocsroot_btzone/$btimg_name/${part_img_dir}.torrent $part | sed -r -e "s|[[:space:]]+| |g")"
   echo "Running: $btc_cmd"
@@ -10136,7 +10142,7 @@ get_live_boot_param() {
   # ---------------------------
   # "boot_param", "quiet_opt" and "splash_opt" are global variables
   local iso_tmp="$1"
-  local cand_files="syslinux.cfg isolinux.cfg live.cfg menu.cfg"
+  local cand_files="syslinux.cfg isolinux.cfg grub.cfg live.cfg menu.cfg"
   local bparam_chk_list boot_opt union_opt username_opt hostname_opt live_config_opt live_components_opt tmp_var next_step
   [ -z "$iso_tmp" ] && echo "No path for iso mount point! Exit!" && exit 1
   echo "Trying to find the boot params from template live cd..."
@@ -10596,37 +10602,23 @@ fsck_partition() {
   esac
 } # end of fsck_partition
 #
-decide_live_kernel_related_pkgs_from_debian() {
-  # This function is for create-debian-live, create-gparted-live, and create-drbl-live, not for create-ubuntu-live.
-  # debian_dist and kernel_related_pkgs are global variables
-  # This function will output "kernel_related_pkgs" and "export MKSQUASHFS_OPTIONS"
-  if [ "$debian_dist" = "squeeze" ]; then
-    # squeeze uses kernel 2.6.30 from Aug/20/2009, so no more squashfs-modules. From kernel 2.6.31, aufs is builtin, so no more aufs-modules.
-    if [ -n "${live_kernel_ver}" ]; then
-      kernel_related_pkgs="linux-image-${live_kernel_ver}"
-    else
-      kernel_related_pkgs="linux-image-2.6"
-    fi
-    # exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
-    export MKSQUASHFS_OPTIONS="-b 1024k -e boot"
-  elif [ "$debian_dist" = "sid" -o "$debian_dist" = "wheezy" ]; then
-    # For sid with kernel 2.6.31, aufs is builtin in linux-image. Therefore no more aufs-modules
-    if [ -n "${live_kernel_ver}" ]; then
-      kernel_related_pkgs="linux-image-${live_kernel_ver}"
-    else
-      kernel_related_pkgs="linux-image"
-    fi
-    # exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
-    # "-comp xz -Xbcj x86" can be used when the CONFIG_SQUASHFS_XZ is on in kernel.
-    # For "-Xbcj x86", refer to: http://kerneltrap.org/mailarchive/linux-fsdevel/2010/12/9/6887823
-    # //NOTE// "-e boot" must be the last option if you want to append more.
-    export MKSQUASHFS_OPTIONS="-b 1024k -comp xz -Xbcj x86 -e boot"  
-  else
-    echo "This distribution \"$debian_dist\" is not supported!"
-    echo "Program terminated!"
-    exit 1
-  fi
-} # end of decide_live_kernel_related_pkgs_from_debian
+decide_MKSQUASHFS_OPTIONS() {
+  # This function will output "export MKSQUASHFS_OPTIONS"
+  local sq_comp_opt
+  # exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
+  # "-comp xz -Xbcj x86" can be used when the CONFIG_SQUASHFS_XZ is on in kernel.
+  # For "-Xbcj x86", refer to: http://kerneltrap.org/mailarchive/linux-fsdevel/2010/12/9/6887823
+  # //NOTE// "-e boot" must be the last option if you want to append more.
+  # live-build v5 has default to use "-comp xz", however, if we use "-Xbcj x86", the order must be: "-comp xz -Xbcj x86"
+  case "$(LC_ALL=C uname -m)" in
+     aarch64) 
+	     # ARM64 seems not working for "-Xbcj arm", so keep it blank.
+             sq_comp_opt="-comp xz";;
+     *)    
+             sq_comp_opt="-comp xz -Xbcj x86";;
+  esac
+  export MKSQUASHFS_OPTIONS="-b 1024k $sq_comp_opt -e boot"  
+} # end of decide_MKSQUASHFS_OPTIONS
 #
 get_live_autologin_account(){
   # This function is only for used in Clonezilla live.
