@@ -32,6 +32,7 @@ run_hook_script="ocs-live-hook"
 run_binary_hook_script="efi-misc-binary-hook"
 # The option to create a corresponding source image.
 gen_source_tarball="no"
+kernel_pkg=""
 
 #
 check_if_root
@@ -117,6 +118,8 @@ build_it() {
            # No need to run "$pref lb config --bootloaders syslinux,grub-efi"
            # //NOTE// This option "--binary-images" is for template iso only, not for Clonezilla live iso.
            $pref lb config --binary-images iso-hybrid
+	   # Add those x86 only packages
+	   pkgs="$pkgs $PKG_FROM_DBN_WHICH_OCS_LIVE_NEED_X86_ONLY"
 	   ;;
     arm64) 
            $pref lb config --bootloaders grub-efi
@@ -124,10 +127,10 @@ build_it() {
 	   ;;
   esac
   
-  # This decide_live_kernel_related_pkgs_from_debian function will output "kernel_related_pkgs" and "export MKSQUASHFS_OPTIONS"
-  decide_live_kernel_related_pkgs_from_debian
+  # This decide_MKSQUASHFS_OPTIONS function will output "export MKSQUASHFS_OPTIONS"
+  decide_MKSQUASHFS_OPTIONS
   $pref lb config --distribution $debian_dist --parent-distribution $debian_dist
-  $pref lb config --linux-packages "$kernel_related_pkgs"
+  $pref lb config --linux-packages "${kernel_pkg}"
   
   # We force to use the specific CPU kernel.
   $pref lb config --linux-flavours $cpu_flavor
@@ -135,8 +138,8 @@ build_it() {
   # For OS arch, we can build amd64 Debian on i386 Debian or vice versus.
   case "$cpu_flavor" in
     686*|586*|486*) os_arch="i386";;
-    amd64) os_arch="amd64";;
-    arm64) os_arch="arm64";;
+    amd64)          os_arch="amd64";;
+    arm64)          os_arch="arm64";;
   esac
   $pref lb config --architectures $os_arch
   $pref lb config --initsystem systemd
@@ -344,6 +347,13 @@ rm -rf debian-live/.stage/
 # Append the extra packages
 [ -n "$extra_pkgs" ] && pkgs="$pkgs $extra_pkgs"
 
+# Kernel package
+if [ -n "$live_kernel_ver" ]; then
+  kernel_pkg="linux-image-${live_kernel_ver}"
+else
+  kernel_pkg="linux-image"
+fi
+
 # If version_no is not assigned, use date (Ex. 20070409)
 [ -z "$version_no" ] && version_no="$(date +%Y%m%d)"
 target_iso="debian-live-for-ocs-${version_no}.iso"
@@ -406,7 +416,7 @@ if [ "$debian_dist" = "squeeze" -o \
   # 2011/Dec/03 Since most of GNU/Linux distributions now use grub2, no more force to use grub-legacy, and we have backup plan by putting grub1 deb package in the live system. 
   # pkgs="$(LC_ALL=C echo $pkgs | sed -r -e "s/grub[[:space:]]+/grub-legacy /")"
   # Since with squeeze or sid, we can use uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
-  case "$os_arch" in
+  case "$cpu_flavor" in
     686*|586*|486*|amd64) pkgs="$pkgs v86d";;
     arm86) true;;
   esac

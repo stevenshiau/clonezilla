@@ -60,6 +60,7 @@ vga_mode_gparted_live="normal"
 run_binary_hook_script="gparted-efi-misc-binary-hook"
 # The option to create a corresponding source image.
 gen_source_tarball="no"
+kernel_pkg=""
 
 #
 check_if_root
@@ -771,6 +772,13 @@ rm -rf debian-live/.stage/
 # Append the extra packages
 [ -n "$extra_pkgs" ] && pkgs="$pkgs $extra_pkgs"
 
+# Kernel package
+if [ -n "$live_kernel_ver" ]; then
+  kernel_pkg="linux-image-${live_kernel_ver}"
+else
+  kernel_pkg="linux-image"
+fi
+
 echo "The packages to be included in this live CD:"
 echo "$msg_delimiter_star_line"
 echo "$pkgs"
@@ -932,10 +940,10 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
     $pref lb config --binary-images iso-hybrid
   fi
 
-  # This decide_live_kernel_related_pkgs_from_debian function will output "kernel_related_pkgs" and "export MKSQUASHFS_OPTIONS"
-  decide_live_kernel_related_pkgs_from_debian
+  # This decide_MKSQUASHFS_OPTIONS function will output "export MKSQUASHFS_OPTIONS"
+  decide_MKSQUASHFS_OPTIONS
   $pref lb config --distribution $debian_dist --parent-distribution $debian_dist
-  $pref lb config --linux-packages "$kernel_related_pkgs"
+  $pref lb config --linux-packages "${kernel_pkg}"
 
   # We force to use the specific CPU kernel.
   $pref lb config --linux-flavours $cpu_flavor

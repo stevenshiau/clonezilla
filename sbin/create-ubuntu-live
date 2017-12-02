@@ -34,6 +34,8 @@ run_hook_script="ocs-live-hook"
 run_binary_hook_script="efi-misc-binary-hook"
 # The option to create a corresponding source image.
 gen_source_tarball="no"
+kernel_pkg=""
+kernel_extra_pkg=""
 
 #
 check_if_root
@@ -50,7 +52,7 @@ USAGE() {
     echo "-b, --branch [s|stable|t|testing|u|unstable|e|experimental]  Specify the DRBL branch to be used in Live CD. Default is stable."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main universe', default is \'$categories_default\' if not specified."
     echo "-d, --debian-dist [xenial|zesty|artful|bionic]  Assign Ubuntu dist, the default is $DEBIAN_DIST_DEF if not assigned."
-    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 386 or amd64. If it's not assigned, $cpu_flavor_default will be used."
+    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 386, amd64 or arm64. If it's not assigned, $cpu_flavor_default will be used."
     echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
     echo "-k, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
@@ -83,7 +85,11 @@ build_it(){
   #$pref lb config --mirror-chroot-volatile "none"
   
   #
-  pkgs="$pkgs genisoimage v86d"
+  # Since with squeeze or sid, we can use uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
+  case "$cpu_flavor" in
+    386|amd64) pkgs="$pkgs v86d";;
+    arm86) true;;
+  esac
   # Adding libc6-i386 for AMD64 arch. This will allow 32-bit program to run on AMD64 arch.
   if [ "$cpu_flavor" = "amd64" ]; then
     pkgs="$pkgs libc6-i386"
@@ -100,12 +106,6 @@ build_it(){
   $pref lb config --bootappend-live-failsafe "boot=live union=overlay config memtest noapic noapm nodma nomce nolapic nomodeset nosmp nosplash vga=normal"
   $pref lb config --linux-flavours generic
   
-  # get the latest kernel ver "release_kernel_ver"
-  get_latest_kernel_ver_in_repository
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "The kernel version in this live CD will be: $release_kernel_ver"
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  
   # Due to a bug, we have to include some essential packages otherwise it will failed in debian_type=minimal. The size difference between minimal and standard for intrepid is about 8 MB. Ref: https://bugs.launchpad.net/ubuntu/+source/cdebootstrap/+bug/189474
   if [ "$debian_type" = "minimal" -o  "$debian_type" = "minbase" ]; then
     DEBOOTSTRAP_OPTIONS="$DEBOOTSTRAP_OPTIONS --include=ubuntu-keyring,gnupg,initramfs-tools"
@@ -117,9 +117,6 @@ build_it(){
   	"$debian_dist" = "artful" -o \
   	"$debian_dist" = "bionic" \
      ]; then
-    # For Uubntu 12.10+, linux-image has spilt as linux-image and linux-image-extra
-    # Ref: https://lists.ubuntu.com/archives/kernel-team/2012-May/020448.html
-    pkgs="$pkgs linux-image-extra-${release_kernel_ver}"
     # From live-build 3.0~a58-1, no --bootstrap-flavour option. We use debootstrap options now.
     # $pref lb config --bootstrap-flavour $debian_type 
     $pref lb config --debootstrap-options="${DEBOOTSTRAP_OPTIONS} --variant=$debian_type"
@@ -133,14 +130,14 @@ build_it(){
     # Disable the firmware packages automatically inclusion
     $pref lb config --firmware-binary false --firmware-chroot false
     $pref lb config --security true
-    # ///NOTE/// From intrepid with kernel 2.6.26-4 or later, linux-ubuntu-modules no more exists, and aufs is builtin in linux-image (not as a module)
+
+    # This decide_MKSQUASHFS_OPTIONS function will output "export MKSQUASHFS_OPTIONS"
+    decide_MKSQUASHFS_OPTIONS
     $pref lb config --distribution $debian_dist --parent-distribution $debian_dist
-    $pref lb config --linux-packages "linux-image-$release_kernel_ver"
-    # Exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
-    # //NOTE// "-e boot" must be the last option if you want to append more.
-    # "-comp xz -Xbcj x86" is used since the CONFIG_SQUASHFS_XZ is on in kernel of natty.
-    # For "-Xbcj x86", refer to: http://kerneltrap.org/mailarchive/linux-fsdevel/2010/12/9/6887823
-    export MKSQUASHFS_OPTIONS="-b 1024k -comp xz -Xbcj x86 -e boot"  
+    $pref lb config --linux-packages "${kernel_pkg}"
+    # For Uubntu 12.10+, linux-image has spilt as linux-image and linux-image-extra
+    # Ref: https://lists.ubuntu.com/archives/kernel-team/2012-May/020448.html
+    pkgs="$pkgs ${kernel_extra_pkg}"
   else
     echo "This distribution \"$debian_dist\" is not supported!"
     echo "Program terminated!"
@@ -152,8 +149,9 @@ build_it(){
   
   # For OS arch, we can build amd64 Ubuntu on i386 Ubuntu or vice versus.
   case "$cpu_flavor" in
-    386) os_arch="i386";;
+    386)   os_arch="i386";;
     amd64) os_arch="amd64";;
+    arm64) os_arch="arm64";;
   esac
   $pref lb config --architecture $os_arch
   
@@ -176,9 +174,22 @@ build_it(){
   # Disable the firmware included automatically. It will be too large. We will do that in hook.
   $pref lb config --firmware-binary false --firmware-chroot false
   
-  # Enable isohybrid
-  # //NOTE// This is for template iso only, not for Clonezilla live iso.
-  $pref lb config --binary-images iso-hybrid
+  #
+  case "$cpu_flavor" in
+    386|amd64) 
+           # Default bootloaders in live-build is syslinux,grub-efi (for i386/amd64)
+           # No need to run "$pref lb config --bootloaders syslinux,grub-efi"
+           # //NOTE// This option "--binary-images" is for template iso only, not for Clonezilla live iso.
+           $pref lb config --binary-images iso-hybrid
+	   # Add those x86 only packages
+	   pkgs="$pkgs $PKG_FROM_DBN_WHICH_OCS_LIVE_NEED_X86_ONLY"
+	   ;;
+    arm64) 
+           $pref lb config --bootloaders grub-efi
+           $pref lb config --binary-images iso
+	   ;;
+  esac
+  
   
   # Disable the firmware packages automatically inclusion
   $pref lb config --firmware-binary false --firmware-chroot false
@@ -396,6 +407,15 @@ rm -rf $workdir/.stage/
 
 # Append the extra packages
 [ -n "$extra_pkgs" ] && pkgs="$pkgs $extra_pkgs"
+
+# Kernel package
+if [ -n "$live_kernel_ver" ]; then
+  kernel_pkg="linux-image-${live_kernel_ver}"
+  kernel_extra_pkg="linux-image-extra-${live_kernel_ver}"
+else
+  kernel_pkg="linux-image"
+  kernel_extra_pkg="linux-image-extra"
+fi
 
 # If version_no is not assigned, use date (Ex. 20070409)
 [ -z "$version_no" ] && version_no="$(date +%Y%m%d)"
