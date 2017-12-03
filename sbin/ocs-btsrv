@@ -21,6 +21,8 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Flag to brutally kill the related service
 brutal_kill="no"
 # BT_PORT_INIT, p_length_ctorrent, p_length_mktorrent, ocsroot_btzone, btlog_dir are loaded from drbl-ocs.conf.
+# Log file to keep the status of ezio seeding.
+ezio_seeding_log="/var/log/ezio-seeding.log"
 
 # Functions
 USAGE() {
@@ -74,7 +76,9 @@ get_idir_name() {
 } # end of get_idir_name
 #
 start_bt_srv() {
-  local ipt
+  local ipt idir idir_name
+  local cpu_no cmd_make_metainfo cmd_update_metainfo
+  local existing_ip existing_port
   if [ -z "$img_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "No image dir was assigned!"
@@ -132,13 +136,24 @@ start_bt_srv() {
       # Maybe server IP address is changed. If so, regenerate it.
       # E.g. ...:announce35:http://192.168.22.250:6969/announce7:...
       existing_ip="$(LC_ALL=C strings $ocsroot_btzone/${idir}.torrent | grep -Eo ":announce[[:digit:]]+:http://[[:digit:]\.:]+.*announce[[:digit:]]+:" | awk -F":" '{print $4}' | sed -r -e "s|\/\/||g")"
+      existing_port="$(LC_ALL=C strings $ocsroot_btzone/${idir}.torrent | grep -Eo ":announce[[:digit:]]+:http://[[:digit:]\.:]+.*announce[[:digit:]]+:" | awk -F":" '{print $5}' | awk -F"/" '{print $1}')"
       if [ "${existing_ip}" != "${btsrv_ip}" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "Regenerating metainfo due to existing tracker \"${existing_ip}\" in $ocsroot_btzone/${idir}.torrent is different from detected one:\"${btsrv_ip}\"..."
+        #echo "Regenerating metainfo due to existing tracker \"${existing_ip}\" in $ocsroot_btzone/${idir}.torrent is different from detected one:\"${btsrv_ip}\"..."
+        #[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	#rm -f $ocsroot_btzone/${idir}.torrent
+        #echo "$cmd_make_metainfo"
+        #eval $cmd_make_metainfo
+
+	# Updating URL using transmission-edit
+	# d8:announce34:http://192.168.7.254:6969/announce7:comment14:For_Clonezilla10:... ->
+	# d8:announce34:http://10.0.1.254:6969/announce7:comment14:For_Clonezilla10:...
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Updating metainfo due to existing tracker \"${existing_ip}\" in $ocsroot_btzone/${idir}.torrent is different from detected one:\"${btsrv_ip}\"..."
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	rm -f $ocsroot_btzone/${idir}.torrent
-        echo "$cmd_make_metainfo"
-        eval $cmd_make_metainfo
+	cmd_update_metainfo="transmission-edit -r http://${existing_ip}:${existing_port}/announce http://${btsrv_ip}:$port_b/announce $ocsroot_btzone/${idir}.torrent"
+	echo "$cmd_update_metainfo"
+	eval $cmd_update_metainfo
       fi
     fi
 
@@ -170,7 +185,10 @@ start_bt_srv() {
       get_ezio_prog  # get the variable ezio_prog
       # //NOTE// The working dir is the parent dir.
       # E.g., ezio -U -f /home/partimag/btzone/xenial-x64-20161104/sda1.torrrent /home/partimag/btzone/xenial-x64-20161104
-      cmd_start_seeding="$ezio_prog -U -f $ezio_seeder_extra_opt $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$(dirname ${idir}) &"
+      cmd_start_seeding="$ezio_prog -U -f $ezio_seeder_extra_opt $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$(dirname ${idir}) >$ezio_seeding_log 2>&1 &"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "$ezio_prog status output will be in \"$ezio_seeding_log\". Use \"tail -f $ezio_seeding_log\" to check the status."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     elif [ "$bt_client" = "btdownloadheadless" ]; then
       cmd_start_seeding="btdownloadheadless --saveas $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent &"
     elif [ "$bt_client" = "aria2c" ]; then
@@ -227,7 +245,7 @@ stop_bt_srv() {
 
   # All
   if [ "$brutal_kill" = "no" ]; then
-    echo "Stop service: ocs-bttrack and ctorrent/lftp/btdownloadheadless/aria2c if available..."
+    echo "Stop service: ocs-bttrack and ezio/ctorrent/lftp/btdownloadheadless/aria2c if available..."
     for i in $id_file; do
       [ ! -e "$i" ] && continue
       all_pid="$all_pid $(cat $i)"
@@ -245,8 +263,10 @@ stop_bt_srv() {
       echo "No pid was found... Do nothing."
     fi
   else
-    echo "Brutally kill service ocs-bttrack and ctorrent/lftp/btdownloadheadless/aria2c if available..."
+    echo "Brutally kill service ocs-bttrack and ezio/ctorrent/lftp/btdownloadheadless/aria2c if available..."
     pkill -9 ocs-bttrack
+    pkill -9 ezio
+    pkill -9 ezio-static
     pkill -9 ctorrent
     pkill -9 lftp
     pkill -9 btdownloadheadless
@@ -350,7 +370,7 @@ parts="$(echo $parts | sed -r -e "s|/dev/||g")"  # partition name, e.g. sda1, sd
 ask_and_load_lang_set
 
 case "$action" in
-   start)  start_bt_srv ;;
+   start)  start_bt_srv;;
     stop)  stop_bt_srv;;
   status)  show_status;;
        *)  USAGE; exit 1;;
