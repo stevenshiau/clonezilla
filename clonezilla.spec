@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.5
+Version:	3.30.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 04 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.6-drbl1
+  * Fix typos in create-debian-live.
+
 * Mon Dec 04 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.5-drbl1
   * Use variable PKG_FROM_DBN_WHICH_OCS_LIVE_NEED_ARM64_ONLY so that
     grub-efi-arm64-bin will be added in live system when running
