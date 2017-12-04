@@ -22,7 +22,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 brutal_kill="no"
 # BT_PORT_INIT, p_length_ctorrent, p_length_mktorrent, ocsroot_btzone, btlog_dir are loaded from drbl-ocs.conf.
 # Log file to keep the status of ezio seeding.
-ezio_seeding_log="/var/log/ezio-seeding.log"
+ezio_seeding_log="/var/log/ezio-seeding"
 
 # Functions
 USAGE() {
@@ -76,7 +76,7 @@ get_idir_name() {
 } # end of get_idir_name
 #
 start_bt_srv() {
-  local ipt idir idir_name
+  local ipt idir idir_name ezio_log_idir
   local cpu_no cmd_make_metainfo cmd_update_metainfo
   local existing_ip existing_port
   if [ -z "$img_dir" ]; then
@@ -114,11 +114,9 @@ start_bt_srv() {
 
     idir="$img_dir/$(to_filename $ipt)" # e.g. xenial-x64-20161104/sda1
     # idir_name is the name for log usage
-    idir_name="${img_dir}:$(to_filename $ipt)"
+    get_idir_name $idir # Obtian $idir_name
     # Part 1: create metainfo file (.torrent)
     echo $msg_delimiter_star_line
-    get_idir_name $idir # Obtian $idir_name
-    #rm -fv $ocsroot_btzone/${idir}.torrent
     # Set the variable cmd_make_metainfo
     if [ "$metainfo_creator" = "ctorrent" ]; then
       cmd_make_metainfo="ctorrent -t -p -c For_Clonezilla -l ${p_length_ctorrent} -u http://${btsrv_ip}:$port_b/announce -s $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
@@ -183,11 +181,12 @@ start_bt_srv() {
       cmd_start_seeding="lftp -c torrent -O $(dirname $ocsroot_btzone/${idir}) $ocsroot_btzone/${idir}.torrent"
     elif [ "$bt_client" = "ezio" ]; then
       get_ezio_prog  # get the variable ezio_prog
-      # //NOTE// The working dir is the parent dir.
+      # //NOTE// The working dir for ezio is the working dir as torrent file
       # E.g., ezio -U -f /home/partimag/btzone/xenial-x64-20161104/sda1.torrrent /home/partimag/btzone/xenial-x64-20161104
-      cmd_start_seeding="$ezio_prog -U -f $ezio_seeder_extra_opt $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$(dirname ${idir}) >$ezio_seeding_log 2>&1 &"
+      ezio_log_idir="${ezio_seeding_log}-${idir_name}.log"
+      cmd_start_seeding="$ezio_prog -U -f $ezio_seeder_extra_opt $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$(dirname ${idir}) >$ezio_log_idir 2>&1 &"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "$ezio_prog status output will be in \"$ezio_seeding_log\". Use \"tail -f $ezio_seeding_log\" to check the status."
+      echo "$ezio_prog seeding status output for ${idir}.torrent will be in \"$ezio_log_idir\". Use \"tail -f $ezio_log_idir\" to check the status."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     elif [ "$bt_client" = "btdownloadheadless" ]; then
       cmd_start_seeding="btdownloadheadless --saveas $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent &"
@@ -230,14 +229,14 @@ start_bt_srv() {
 #
 stop_bt_srv() {
   local id_file=""
-  local all_pid rc kill_cmd
+  local all_pid rc kill_cmd ipt idir_name
   case "$img_dir" in 
      "all"|"") id_file="$btlog_dir/*.pid";;
             *)
   	       for ipt in $parts; do
 		 idir="$img_dir/$(to_filename $ipt)"
                  # idir_name is the name for log usage
-		 idir_name="${img_dir}:$(to_filename $ipt)"
+                 get_idir_name $ipt # Obtian $idir_name
                  id_file="$btlog_dir/${idir_name}-tracker.pid $btlog_dir/${idir_name}-torrent.pid"
                done
 	       ;;
