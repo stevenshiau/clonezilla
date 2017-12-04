@@ -635,7 +635,7 @@ download_grub_1_2_deb_for_later_use() {
   # First we decide the grub 1 package name. Since in Debian Sid, grub1 is grub-legacy, while in ubuntu 9.10, grub1 is grub.
   if [ -n "$(LC_ALL=C apt-cache show grub-legacy | grep -iE "^Version:")" ]; then
    grub1_pkg_name="grub-legacy"
-  else
+  elif [ -n "$(LC_ALL=C apt-cache show grub | grep -iE "^Version:")" ]; then
    grub1_pkg_name="grub"
   fi
   # If grub-common exists, download it, too.
@@ -643,19 +643,21 @@ download_grub_1_2_deb_for_later_use() {
     grub_common_pkg="grub-common"
   fi
   apt-get clean
-  LC_ALL=C apt-get -d --reinstall -y install ${grub1_pkg_name} $grub_common_pkg
-  # E.g.: Filename: pool/main/g/grub/grub-legacy_0.97-59_i386.deb
-  # full_grub1_pkg_name="$(LC_ALL=C apt-cache show grub-legacy | grep -iE "^Filename:" | awk -F":" '{print $2}' | xargs basename)"
-  mkdir -p $dest_dir/pkg/grub/grub1/
-  mv /var/cache/apt/archives/grub*.deb $dest_dir/pkg/grub/grub1/
-  rm -f $dest_dir/pkg/grub/grub1-pkgs-list.txt
-  for i in $dest_dir/pkg/grub/grub1/grub*.deb; do
-   pkg_name=""
-   if [ -f "$i" ]; then
-     pkg_name="$(LC_ALL=C dpkg --info $i | grep -E "^ Package:" | awk -F":" '{print $2}' | sed -r -e "s/^[[:space:]]*//g")"
-     echo "$pkg_name: $(basename $i)" >> $dest_dir/pkg/grub/grub1-pkgs-list.txt
-   fi
-  done
+  if [ -n "${grub1_pkg_name}" -a -n "${grub_common_pkg}" ]; then
+    LC_ALL=C apt-get -d --reinstall -y install ${grub1_pkg_name} ${grub_common_pkg}
+    # E.g.: Filename: pool/main/g/grub/grub-legacy_0.97-59_i386.deb
+    # full_grub1_pkg_name="$(LC_ALL=C apt-cache show grub-legacy | grep -iE "^Filename:" | awk -F":" '{print $2}' | xargs basename)"
+    mkdir -p $dest_dir/pkg/grub/grub1/
+    mv /var/cache/apt/archives/grub*.deb $dest_dir/pkg/grub/grub1/
+    rm -f $dest_dir/pkg/grub/grub1-pkgs-list.txt
+    for i in $dest_dir/pkg/grub/grub1/grub*.deb; do
+     pkg_name=""
+     if [ -f "$i" ]; then
+       pkg_name="$(LC_ALL=C dpkg --info $i | grep -E "^ Package:" | awk -F":" '{print $2}' | sed -r -e "s/^[[:space:]]*//g")"
+       echo "$pkg_name: $(basename $i)" >> $dest_dir/pkg/grub/grub1-pkgs-list.txt
+     fi
+    done
+  fi
 
   # Grub 2
   # If grub-common and grub-pc-bin exist, download them, too.
@@ -667,18 +669,20 @@ download_grub_1_2_deb_for_later_use() {
   fi
   # grub2 package name is grub-pc for debian sid and ubuntu 9.10.
   apt-get clean
-  # //NOTE// grub-common is also required by grub2
-  LC_ALL=C apt-get -d --reinstall -y install grub-pc $grub2_common_pkg $grub_pc_bin $grub_common_pkg
-  mkdir -p $dest_dir/pkg/grub/grub2/
-  mv /var/cache/apt/archives/grub*.deb $dest_dir/pkg/grub/grub2/
-  rm -f $dest_dir/pkg/grub/grub2-pkgs-list.txt
-  for i in $dest_dir/pkg/grub/grub2/grub*.deb; do
-   pkg_name=""
-   if [ -f "$i" ]; then 
-     pkg_name="$(LC_ALL=C dpkg --info $i | grep -E "^ Package:" | awk -F":" '{print $2}' | sed -r -e "s/^[[:space:]]*//g")"
-     echo "$pkg_name: $(basename $i)" >> $dest_dir/pkg/grub/grub2-pkgs-list.txt
-   fi
-  done
+  if [ -n "${grub_pc_bin}" -a -n "${grub2_common_pkg}" -a -n "${grub_common_pkg}" ]; then
+    # //NOTE// grub-common is also required by grub2
+    LC_ALL=C apt-get -d --reinstall -y install grub-pc $grub2_common_pkg $grub_pc_bin $grub_common_pkg
+    mkdir -p $dest_dir/pkg/grub/grub2/
+    mv /var/cache/apt/archives/grub*.deb $dest_dir/pkg/grub/grub2/
+    rm -f $dest_dir/pkg/grub/grub2-pkgs-list.txt
+    for i in $dest_dir/pkg/grub/grub2/grub*.deb; do
+     pkg_name=""
+     if [ -f "$i" ]; then 
+       pkg_name="$(LC_ALL=C dpkg --info $i | grep -E "^ Package:" | awk -F":" '{print $2}' | sed -r -e "s/^[[:space:]]*//g")"
+       echo "$pkg_name: $(basename $i)" >> $dest_dir/pkg/grub/grub2-pkgs-list.txt
+     fi
+    done
+  fi
 } # end of download_grub_1_2_deb_for_later_use
 #
 assing_default_dns_server() {
