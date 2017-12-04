@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.3
+Version:	3.30.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,15 +37,18 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-* Sun Dec 02 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.3-drbl1
+* Mon Dec 04 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.4-drbl1
+  * Improve the ezio seeding log file name.
+
+* Sun Dec 03 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.3-drbl1
   * Redirect the output of ezio to /var/log/ezio-seeding.log.
   * Use transmission-edit to update the BT server's IP address instead of
     regenerating it. Thanks to Date Huang for sharing this idea.
 
-* Sun Dec 02 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.2-drbl1
+* Sun Dec 03 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.2-drbl1
   * Add new compression format: lz4 (-z8).
 
-* Sun Dec 02 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.1-drbl1
+* Sun Dec 03 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.1-drbl1
   * Add support for creating ARM64 live system for Clonezilla live
     (create-debian-live and create-ubuntu-live only).
   * Add using ezio as seeder in BT (ocs-btsrv). This should have better
