@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.7
+Version:	3.30.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Dec 05 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.8-drbl1
+  * Bug fixed: ocs-iso did not include dir live for ARM64.
+
 * Mon Dec 04 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.7-drbl1
   * Do not download grub-pc or grub1 deb in the hook function for ARM64
     arch when creating Clonezilla live.
