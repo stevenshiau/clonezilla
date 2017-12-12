@@ -112,7 +112,8 @@ Check_Package(){
 
 # Print all hisk and partition info
 Print_Allpartition_Info(){
-	local hd_list=$@
+	local dev_list=$@
+	local idev
 
 	[ $# -eq 0 ] && [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo "Damn...., no hardisk ?? System aborted !!" \
 	&& [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL && exit;
@@ -123,21 +124,21 @@ Print_Allpartition_Info(){
 	PARTIDCOUNT=0
 	i=0;j=0;k=0;
 
-  for hd in $hd_list; do
-    partedhdinfo=`LC_ALL=C parted /dev/$hd p`;
+  for idev in $dev_list; do
+    partedhdinfo=`LC_ALL=C parted -s /dev/$idev print`;
     #Str="/^[0-9]+/ && !/(extended.+(lba)*)$|(linux-swap)/";
     Str="/^[[:space:]]*[0-9]+/ && /(fat12|fat16|fat32|vfat)|(ntfs)/";
 
-    if [ "`echo -n $hd | wc -m`" = "4" ]; then 
-      part_infos=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$hd\\t\"\$2\"\t\"\$3\"\t\"\$4; }"  );
+    if is_partition "$idev"; then 
+      part_infos=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$idev\\t\"\$2\"\t\"\$3\"\t\"\$4; }"  );
     else
-      part_infos=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$hd\"\$0; }"  );
+      part_infos=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$idev\"\$0; }"  );
     fi 
     
-    if [ "`echo -n $hd | wc -m`" = "4" ]; then 
-      partdev=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$hd\"; }"  );
+    if is_partition "$idev"; then 
+      partdev=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$idev\"; }"  );
     else
-      partdev=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$hd\"\$1; }"  );
+      partdev=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$idev\"\$1; }"  );
     fi 
 
 	i=0
@@ -194,7 +195,7 @@ Print_Allpartition_Info(){
 	done
 
 	if [ $j -gt 0 ]; then 
-	    echo "[/dev/$hd]"
+	    echo "[/dev/$idev]"
 	    echo "======================================================"
 	    echo "$part_infos"
 	    echo "======================================================"
