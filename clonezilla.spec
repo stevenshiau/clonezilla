@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.8
+Version:	3.30.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Dec 06 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.9-drbl1
+  * Better mechanism to detect partition or disk in ocs-chnthn-functions.
+    Ref: https://github.com/stevenshiau/clonezilla/issues/30
+
 * Tue Dec 05 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.8-drbl1
   * Bug fixed: ocs-iso did not include dir live for ARM64.
 
