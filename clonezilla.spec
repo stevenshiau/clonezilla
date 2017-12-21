@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.9
+Version:	3.30.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Dec 21 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.10-drbl1
+  * Force to run inform_kernel_partition_table_changed in the function
+    restore_hidden_data_after_MBR of ocs-functions.
+
 * Wed Dec 06 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.9-drbl1
   * Better mechanism to detect partition or disk in ocs-chnthn-functions.
     Ref: https://github.com/stevenshiau/clonezilla/issues/30
