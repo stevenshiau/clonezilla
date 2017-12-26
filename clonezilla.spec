@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.10
+Version:	3.30.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.26.3, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.26.5, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Dec 26 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.11-drbl1
+  * Bug fixed: ocs-chnthn now supports modifying Win10 hostname.
+    Thanks to František Griga for reporting this issue.
+    Ref: https://sourceforge.net/p/clonezilla/support-requests/100/
+  * Package drbl-chntpw is no more used, and use reged from package chntpw
+    now in Debian or Ubuntu system.
+  * Switch lz4 option to be "-1" instead of "-3" in drbl-ocs.conf.
+
 * Thu Dec 21 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.10-drbl1
   * Force to run inform_kernel_partition_table_changed in the function
     restore_hidden_data_after_MBR of ocs-functions.
