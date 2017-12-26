@@ -306,6 +306,22 @@ SYNC_DRBL_winroll_config(){
 	return
 }
 #
+decide_regeditor() {
+  if type reged >/dev/null 2>&1; then
+    # Use the one from chntpw package. For those distributions come with chntpw package (debian, ubuntu, fedora...)
+    regeditor="reged"
+  elif type drbl-reged >/dev/null 2>&1; then
+    # Package created by DRBL project. For those distributions come with no chntpw package (centos, opensuse...)
+    regeditor="drbl-reged"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Registry editor \"reged\" or \"drbl-reged\" not found!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated!" 
+    return 1
+  fi
+} # end of decide_regeditor() {
+#
 Get_hostname_related_key() {
   local hive_file="$*"
   # rhostname and rcomputername are global variables
@@ -350,11 +366,11 @@ Modify_Win_Reg() {
   if [ "$verbose" = "on" ]; then
     echo "Dumping registry data from $hive_f..."
   fi
-  reged -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\$var_serv\\Tcpip\\Parameters $reg_tmp >/dev/null
+  $regeditor -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\$var_serv\\Tcpip\\Parameters $reg_tmp >/dev/null
   if [ -z "$(grep -Ei "^\"HostName\"=" $reg_tmp)" ]; then
     # Older Windows, try "services" instead of "Services"
     var_serv="services"  # Switch to older windows hive path
-    reged -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\$var_serv\\Tcpip\\Parameters $reg_tmp >/dev/null
+    $regeditor -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\$var_serv\\Tcpip\\Parameters $reg_tmp >/dev/null
     if [ -z "$(grep -Ei "^\"HostName\"=" $reg_tmp)" ]; then
       echo "No key HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\$var_serv\\Tcpip\\Parameters in hive file $hive_f."
       echo "Skip processing $hive_f!"
@@ -381,10 +397,10 @@ $win_reg_ver_line
 "$rhostname"="$new_winhn"
 "NV $rhostname"="$new_winhn"
 EOF_REG
-    reged -C -I $hive_f HKEY_LOCAL_MACHINE\\SYSTEM $reg_tmp >/dev/null
+    $regeditor -C -I $hive_f HKEY_LOCAL_MACHINE\\SYSTEM $reg_tmp >/dev/null
     # 3. dump to check
     rm -f $reg_tmp
-    reged -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\$var_serv\\Tcpip\\Parameters $reg_tmp >/dev/null
+    $regeditor -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\$var_serv\\Tcpip\\Parameters $reg_tmp >/dev/null
     if [ "$verbose" = "on" ]; then
       echo "The result in registry file $hive_f for key HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\$var_serv\\Tcpip\\Parameters:"
       grep -Ewi "HostName" $reg_tmp
@@ -410,7 +426,7 @@ EOF_REG
   if [ "$verbose" = "on" ]; then
     echo "Dumping registry data from $hive_f..."
   fi
-  reged -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Control\\ComputerName\\ComputerName $reg_tmp >/dev/null
+  $regeditor -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Control\\ComputerName\\ComputerName $reg_tmp >/dev/null
   # Check if the reg is dumped successfully. The return code for reged is useless.
   if [ -n "$(grep -Ei "^\"ComputerName\"=" $reg_tmp)" ]; then
     # 2. Modify key: ComputerName
@@ -429,10 +445,10 @@ $win_reg_ver_line
 [HKEY_LOCAL_MACHINE\SYSTEM\ControlSet001\Control\ComputerName\ComputerName]
 "$rcomputername"="$new_winhn"
 EOF_REG
-    reged -C -I $hive_f HKEY_LOCAL_MACHINE\\SYSTEM $reg_tmp >/dev/null
+    $regeditor -C -I $hive_f HKEY_LOCAL_MACHINE\\SYSTEM $reg_tmp >/dev/null
     # 3. dump to check
     rm -f $reg_tmp
-    reged -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Control\\ComputerName\\ComputerName $reg_tmp >/dev/null
+    $regeditor -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Control\\ComputerName\\ComputerName $reg_tmp >/dev/null
     if [ "$verbose" = "on" ]; then
       echo "The result in registry file $hive_f for key HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Control\\ComputerName\\ComputerName:"
       grep -Ew "ComputerName" $reg_tmp
@@ -464,7 +480,7 @@ Show_Win_Hostname_in_Reg() {
   if [ "$verbose" = "on" ]; then
     echo "Dumping registry data from $hive_f..."
   fi
-  reged -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Services\\Tcpip\\Parameters $reg_tmp >/dev/null
+  $regeditor -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Services\\Tcpip\\Parameters $reg_tmp >/dev/null
   echo $msg_delimiter_star_line
   echo "The hostname in registry file $hive_f for key HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Services\\Tcpip\\Parameters:"
   grep -Ewi "HostName" $reg_tmp
@@ -474,8 +490,8 @@ Show_Win_Hostname_in_Reg() {
   if [ "$verbose" = "on" ]; then
     echo "Dumping registry data from $hive_f..."
   fi
-  reged -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Control\\ComputerName\\ComputerName $reg_tmp >/dev/null
-  reged -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Control\\ComputerName\\ComputerName $reg_tmp >/dev/null
+  $regeditor -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Control\\ComputerName\\ComputerName $reg_tmp >/dev/null
+  $regeditor -x $hive_f HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Control\\ComputerName\\ComputerName $reg_tmp >/dev/null
   echo "The ComputerName in registry file $hive_f for key HKEY_LOCAL_MACHINE\\SYSTEM ControlSet001\\Control\\ComputerName\\ComputerName:"
   grep -Ew "ComputerName" $reg_tmp
   echo $msg_delimiter_star_line
