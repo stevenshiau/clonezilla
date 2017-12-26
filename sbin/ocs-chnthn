@@ -55,7 +55,7 @@ declare WIN_HN="non-assign"
 declare ACTIVE_MODE="interact"
 
 declare NTFSMOUNTPROG="ntfs-3g ntfsmount "			# check needed execute progarm
-declare EXECPROG="drbl-chntpw"			# check needed execute progarm
+declare EXECPROG="reged"			# check needed execute progarm
 declare DEFAULT_WIN_ROOT="WINDOWS WINNT"			# windows root directory
 declare WIN_SYSTEM_SAM="system32/config/system"		# System-specific part (HKEY_LOCAL_MACHINE\System)
 declare WIN_SOFTWARE_SAM="system32/config/software"	# Software-Specific part (HKEY_LOCAL_MACHINE\SOFTWARE)
@@ -74,6 +74,8 @@ declare -a PART_WIN_SYSTEM_SAM
 declare -a PART_WIN_SOFTWARE_SAM
 declare -i PARTIDCOUNT
 declare -i i j k
+declare verbose="off"
+declare mode="modify"
 
 [ $# -eq 0 ] && Usage && exit 1;
 while [ $# -gt 0 ]; do
@@ -105,6 +107,12 @@ while [ $# -gt 0 ]; do
 		-S|--no_sync_config)
 				shift; IF_SYNC_WINROLL_CONFIG=0;
 		;;
+		-o|--verbose)
+				shift; verbose=on;
+		;;
+		-s|--show-hostname)
+				shift; mode=show;
+		;;
 		-V|-R|--readme )
 				README
 				PrintFooter
@@ -131,6 +139,7 @@ while [ $# -gt 0 ]; do
 done
 
 check_if_root
+ask_and_load_lang_set
 Check_Package $EXECPROG
 Select_ntfsmount_prog $NTFSMOUNTPROG
 Perpare_Env	# check fuse for kernel
@@ -190,29 +199,11 @@ do
 done
 
 # Design hostname by $WIN_HN
-gen_hn_stream "$HN_FORMAT_PREFIX" "$HN_FORMAT_VARI"
+if [ "$mode" = "modify" ]; then
+  gen_hn_stream "$HN_FORMAT_PREFIX" "$HN_FORMAT_VARI"
+fi
 
 [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo -e "** Use hostname => $WIN_HN" && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
-
-# Generate a script for editing win register
-
-cat >$tmWinRegScript << EOF
-cd \ControlSet001\Services\Tcpip\Parameters
-ed Hostname
-$WIN_HN
-cd \ControlSet001\services\Tcpip\Parameters
-ed Hostname
-$WIN_HN
-ed NV Hostname
-$WIN_HN
-cd \ControlSet001\Control\ComputerName\ComputerName
-ed ComputerName
-$WIN_HN
-h 1
-cd \Microsoft\Windows NT\CurrentVersion\Winlogon
-ed DefaultDomainName
-$WIN_HN
-EOF
 
 cp -f "$tmWinRegScript" "/tmp/.ocs-chnthn.log"
 
@@ -235,19 +226,16 @@ do
 	sleep 2
 	df $tmpmount
 
-	#find_registry_realname "$tmpmount/${PART_WINROOT_ARR[$id]}" "$WIN_SYSTEM_SAM" "$WIN_SOFTWARE_SAM"
-
-	#[ -z "$REAL_WIN_SYSTEM_SAM" ] && echo "No WIN_SYSTEM_SAM file:$WIN_SYSTEM_SAM" && exit 1;
-	#[ -z "$REAL_WIN_SOFTWARE_SAM" ] && echo "No WIN_SOFTWARE_SAM file:$WIN_SOFTWARE_SAM" && exit 1;
-
 	if [ -w "${PART_WIN_SYSTEM_SAM[$id]}" -a -w "${PART_WIN_SOFTWARE_SAM[$k]}" ]; then
-		[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING 
-		echo -e "\nExecute command:"
-		[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL;
-		echo "drbl-chntpw -f $tmWinRegScript $REAL_WIN_SYSTEM_SAM  $REAL_WIN_SOFTWARE_SAM" ;
-
-		# Real to edit windows register
-		drbl-chntpw -f $tmWinRegScript "$REAL_WIN_SYSTEM_SAM" "$REAL_WIN_SOFTWARE_SAM" &>/dev/null
+		case "$mode" in
+			modify)
+                          Modify_Win_Reg "$REAL_WIN_SYSTEM_SAM" "$WIN_HN"
+                          Modify_Win_Reg "$REAL_WIN_SOFTWARE_SAM" "$WIN_HN"
+			  ;;
+	                show)
+                          Show_Win_Hostname_in_Reg "$REAL_WIN_SYSTEM_SAM"
+			  ;;
+		esac
 
 		[ "$IF_SYNC_WINROLL_CONFIG" = 1 ]  && SYNC_DRBL_winroll_config;
 
@@ -264,5 +252,5 @@ rm -rf /tmp/ocs-chnthn-*
 
 # Print program footer
 PrintFooter
-echo "Bye !!" ;
+echo "Program finished." ;
 exit 0
