@@ -701,7 +701,7 @@ get_image_cat_zip_cmd() {
  
   img_comp_format="" 
   # (1)
-  comp_prog_ref="$(echo "$imgf" | grep -Eo -- ".ptcl-img.(gz|bz2|lzo|lzma|xz|lzip|lrz|lz4|uncomp)?")"
+  comp_prog_ref="$(echo "$imgf" | grep -Eo -- ".ptcl-img.(gz|bz2|lzo|lzma|xz|lzip|lrz|lz4|zst|uncomp)?")"
   cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)" 
   cat_prog=""
   zip_stdin_cmd=""
@@ -800,6 +800,19 @@ get_image_cat_zip_cmd() {
               zip_stdin_cmd="lrzip -q - $extra_lzip_opt"
               unzip_stdin_cmd="lrzip -q -d -o -"
               ;;
+      zst)    
+              if [ "$cpu_no" -gt 1 ] && \
+                 [ "$use_parallel_decompression" = "yes" ] && \
+                 type pzstd &>/dev/null; then
+                cat_prog="pzstd -dc"
+                zip_stdin_cmd="pzstd -c"
+                unzip_stdin_cmd="pzstd -dc"
+              else
+                cat_prog="zstd -dc"
+                zip_stdin_cmd="zstd -c"
+                unzip_stdin_cmd="zstd -dc"
+              fi
+              ;;
     esac
   fi
   # img_comp_format is global variable for later reference use.
@@ -860,6 +873,19 @@ get_image_cat_zip_cmd() {
       cat_prog="lz4 -dc"
       zip_stdin_cmd="lz4 -c"
       unzip_stdin_cmd="lz4 -dc"
+    elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "Zstandard compressed data")" ]; then
+      # Ex: hdb1.ntfs-img: lzop compressed data - version 1.010, LZO1X-1, os: Unix
+      if [ "$cpu_no" -gt 1 ] && \
+         [ "$use_parallel_decompression" = "yes" ] && \
+         type pzstd &>/dev/null; then
+         cat_prog="pzstd -dc"
+         zip_stdin_cmd="pzstd -c"
+         unzip_stdin_cmd="pzstd -dc"
+      else
+         cat_prog="zstd -dc"
+         zip_stdin_cmd="zstd -c"
+         unzip_stdin_cmd="zstd -dc"
+      fi
     elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "lzip compressed data")" ]; then
       # Ex: sda1.ntfs-img.aa: lzip compressed data - version 1, os: Unix
       if [ "$cpu_no" -gt 1 ] && \
@@ -955,6 +981,7 @@ ocs-get-comp-suffix() {
     xz*|pixz*|xzcat*|pxz*|unxz*)            suffix="xz";;
     lzip*|plzip*)                           suffix="lzip";;
     lrzip*)                                 suffix="lrz";;
+    zstd*|pzstd*)                           suffix="zst";;
   esac
   if [ -n "$suffix" ]; then
     echo "$suffix"
@@ -9460,7 +9487,7 @@ check_ocs_input_params(){
     IMG_CLONE_CMP="gzip -c $extra_gzip_opt"
   fi
   
-  more_compress_progs="lzma xz pixz lzip plzip lrzip lz4"
+  more_compress_progs="lzma xz pixz lzip plzip lrzip lz4 zstd pzstd"
   for i in $more_compress_progs; do
     eval iz=\$i
     # lrzip uses "-q -", the rest use "-c"
@@ -9596,6 +9623,8 @@ USAGE_common_save(){
     echo " -z6p, --smp-lzip-compress  Compress using parallel lzip when saving: slow but smallest image file, faster decompression than bzip2."
     echo " -z7, --lrzip-compress    Compress using lrzip when saving."
     echo " -z8, --lz4-compress      Compress using lz4 when saving."
+    echo " -z9, --zstd-compress     Compress using zstd when saving."
+    echo " -z9p, --pzstd-compress   Compress using pzstd when saving."
 } # end of USAGE_common_save
 #
 USAGE_reserved_word_for_save() {
