@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.13
+Version:	3.30.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Dec 28 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.14-drbl1
+  * Add support ARM64 serial console ttyAMA0 autologin.
+    Systemd service start-ocs-live.service should wait for ttyAMA0-3 to be
+    started.
+
 * Thu Dec 28 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.13-drbl1
   * Add support for lz4mt (-z8p).
 
