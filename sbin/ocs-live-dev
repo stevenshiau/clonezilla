@@ -960,18 +960,18 @@ mkdir -p $USB_TMP/boot/grub/
 rm -rf $USB_TMP/.disk
 rm -f $EFI_IMG
 
-BOOTDISKSIZE="$(LC_ALL=C du -bcs $EFI_BOOTTREE/boot/boot*.efi | tail -n1 | awk '{print $1}')"
+BOOTDISKSIZE="$(LC_ALL=C du -bcs $EFI_BOOTTREE/boot/*.efi | tail -n1 | awk '{print $1}')"
 BOOTDISKSIZE="$(LC_ALL=C echo "scale=0; ($BOOTDISKSIZE / 1024 + 55) / 32 * 32" | bc -l)"
 echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
 mkdosfs -n OCS-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
 mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
 mkdir -p $EFI_BOOTIMG_TMP/EFI/boot/
 if [ "$live_efi_boot_loader" = "grub" ]; then
-  # In this case, bootx64.efi is in $EFI_BOOTTREE/
-  rsync -a $EFI_BOOTTREE/boot/boot*.efi $EFI_BOOTIMG_TMP/EFI/boot/
+  # In this case, bootx64.efi (and grubx64.efi for secure boot) is in $EFI_BOOTTREE/
+  rsync -a $EFI_BOOTTREE/boot/*.efi $EFI_BOOTIMG_TMP/EFI/boot/
 elif [ "$live_efi_boot_loader" = "syslinux" ]; then
   # In this case, bootx64.efi is copied in $USB_TMP/EFI/, we should do something similar with ocs-gen-grub2-efi-bldr
-  rsync -a $USB_TMP/boot/boot*.efi $EFI_BOOTIMG_TMP/EFI/boot/
+  rsync -a $USB_TMP/boot/*.efi $EFI_BOOTIMG_TMP/EFI/boot/
   # TODO similar to ocs-gen-grub2-efi-bldr, create a syslinux.cfg to include /syslinux/syslinux.cfg.
 fi
 umount $EFI_BOOTIMG_TMP
