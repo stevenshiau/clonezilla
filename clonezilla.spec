@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.14
+Version:	3.30.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -12,7 +12,7 @@ Requires:	bash, perl, drbl >= 2.26.7, partimage >= 0.6.7, psmisc, udpcast, partc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
-For more info, check http://clonezilla.org, http://clonezilla.nchc.org.tw.
+For more info, check http://clonezilla.org.
 
 %prep
 %setup -q -n clonezilla-%{version}
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Dec 29 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.15-drbl1
+  * Bug fixed: fail to use secure boot loader for Ubuntu based Clonezilla
+    live.
+
 * Thu Dec 28 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.14-drbl1
   * Add support ARM64 serial console ttyAMA0 autologin.
     Systemd service start-ocs-live.service should wait for ttyAMA0-3 to be
