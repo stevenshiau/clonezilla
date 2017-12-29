@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.15
+Version:	3.30.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Dec 29 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.16-drbl1
+  * Bug fixed: efiboot.img did not work secure boot.
+
 * Fri Dec 29 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.15-drbl1
   * Bug fixed: fail to use secure boot loader for Ubuntu based Clonezilla
     live.
