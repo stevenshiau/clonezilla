@@ -122,6 +122,8 @@ USAGE() {
     echo " Options for saving:"
     USAGE_common_save
     echo " -i, --image-size SIZE    Set the split image file volume size SIZE (MB). When $ocs is run with -x, the default SIZE is set as $VOL_LIMIT_IN_INTERACTIVE, if without -x, we will not split it."
+    echo " -pe, --passwd-ecryptfs PASSWD  Set the password to encrypt the image. Use with option \"-enc\" when saving, or restoring when the image is encrypted. //NOTE// This is not a safe way to use it because the password is shown in the command line or system processes."
+    echo " -pfe, --passwd-file-ecryptfs FILE  Set the password to encrypt the image in the FILE. Use with option -enc, or restoring when the image is encrypted. The file contains the password to encrypt the image. Its format is like: passphrase_passwd=YOURPASSWORD."
     USAGE_reserved_word_for_save
     echo
     echo " Options for restoring:"
@@ -305,6 +307,24 @@ parse_ocs_sr_cmd_options_with_dash() {
     -senc|--skip-enc-ocs-img)
             encrypt_ocs_img="no"
 	    shift; n_shift=$((n_shift+1));;
+    -pe|--passwd-ecryptfs)
+            shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              passwd_ecryptfs=$1
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$passwd_ecryptfs" ] && USAGE && exit 1
+            ;;
+    -pfe|--passwd-file-ecryptfs)
+            shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              passwd_file_ecryptfs=$1
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$passwd_file_ecryptfs" ] && USAGE && exit 1
+            ;;
     -m|--module)
             shift; n_shift=$((n_shift+1))
             if [ -z "$(echo $1 |grep ^-.)" ]; then
