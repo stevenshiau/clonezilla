@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.17
+Version:	3.30.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 01 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.18-drbl1
+  * Make the function for ocs-chnthn work for device name like
+    /dev/nvme0n1p1. This change should really fix the issue reported here:
+    https://github.com/stevenshiau/clonezilla/issues/30
+
 * Sat Dec 30 2017 Steven Shiau <steven _at_ clonezilla org> 3.30.17-drbl1
   * Add options -pe and -pfe of ocs-sr.
     This allows user to enter password in the command options although
