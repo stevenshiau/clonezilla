@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.18
+Version:	3.30.19
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 01 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.19-drbl1
+  * Bug fixed: duplicated hostname modification selections for multiple disks.
+
 * Mon Jan 01 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.18-drbl1
   * Make the function for ocs-chnthn work for device name like
     /dev/nvme0n1p1. This change should really fix the issue reported here:
