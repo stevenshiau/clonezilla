@@ -112,41 +112,60 @@ Check_Package(){
 #
 # Print all hisk and partition info
 Print_Allpartition_Info(){
-	local dev_list=$@
-	local idev
+  local dev_list=$@
+  local idev
+  local target_parts target_extended_parts part_fs
+  
+  [ "$#" -eq 0 ] && [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo "No hard drive? Aborted!" \
+  && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL && exit;
+  
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING; echo '** Searching local file system in hard drive...'; [ "$BOOTUP" = "color" ] \
+  && $SETCOLOR_NORMAL;
+  
+  PARTIDCOUNT=0
+  i=0;j=0;k=0;
 
-	[ $# -eq 0 ] && [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo "Damn...., no hardisk ?? System aborted !!" \
-	&& [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL && exit;
-
-	[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING; echo '** Searching local file system in hard drive...'; [ "$BOOTUP" = "color" ] \
-	&& $SETCOLOR_NORMAL;
-    
-	PARTIDCOUNT=0
-	i=0;j=0;k=0;
-
+  target_parts=""
   for idev in $dev_list; do
-    partedhdinfo=`LC_ALL=C parted -s /dev/$idev print`;
-    #Str="/^[0-9]+/ && !/(extended.+(lba)*)$|(linux-swap)/";
-    Str="/^[[:space:]]*[0-9]+/ && /(fat12|fat16|fat32|vfat)|(ntfs)/";
-
     if is_partition "$idev"; then 
-      part_infos=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$idev\\t\"\$2\"\t\"\$3\"\t\"\$4; }"  );
+      target_parts="$idev"
     else
-      part_infos=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$idev\"\$0; }"  );
-    fi 
+      # Hard drive
+      echo "Searching for data/extended partition(s) for modifying hostname..." | tee --append $OCS_LOGFILE
+      part_rec_f="$(mktemp /tmp/part_rec_f.XXXXXX)"
+      get_known_partition_proc_format $idev all $part_rec_f
+      target_parts="$target_parts $(awk -F":" '/^data_dev:/ || /^extended_dev:/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
+    fi
+    # Strip the single white space which should be nothing.
+    target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
+    if [ -n "$target_parts" ]; then
+      echo "Available partitions to be modified for hostname: $target_parts" | tee --append $OCS_LOGFILE
+    fi
+
+    #partedhdinfo=`LC_ALL=C parted -s /dev/$idev print`
+    #Str="/^[[:space:]]*[0-9]+/ && /(fat12|fat16|fat32|vfat)|(ntfs)/"
+    #if is_partition "$idev"; then 
+    #  part_infos=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$idev\\t\"\$2\"\t\"\$3\"\t\"\$4; }"  )
+    #else
+    #  part_infos=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$idev\"\$0; }"  )
+    #fi 
     
-    if is_partition "$idev"; then 
-      partdev=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$idev\"; }"  );
-    else
-      partdev=$( echo "$partedhdinfo" | LC_ALL=C awk "$Str { print \"/dev/$idev\"\$1; }"  );
-    fi 
+    # partdev is the partition for fat or ntfs, its format is like: /dev/sda1 or /dev/nvme0n1p1
+    echo -n "Finding devices containing MS Windows hostname... "
+    for im in $target_parts; do
+      part_fs="$(ocs-get-part-info $im filesystem)"
+      case "$part_fs" in
+        fat12|fat16|fat32|vfat|ntfs) partdev="$partdev /dev/$im";;
+      esac
+    done
 
-	i=0
+    i=0
     for part in $partdev; do
-		i=$i+1;
-		partfs=$()
-		tmp_PARTDEVARR[$i]=$part
-		tmp_PARTFSARR[$i]=$(ocs-get-part-info $part filesystem)
+        echo -n "Partition $part... "
+	i=$i+1;
+	partfs=$()
+	tmp_PARTDEVARR[$i]=$part
+	tmp_PARTFSARR[$i]=$(ocs-get-part-info $part filesystem)
 
 	df $part  | grep $part &> /dev/null
 	# Unmount the mounted file system first.
@@ -160,53 +179,55 @@ Print_Allpartition_Info(){
     done
     tmp_PARTIDCOUNT=$i;
 
-	# check if include windows root]
-	j=0		# Sum the number of total disks
-	for (( i=1; i<=$tmp_PARTIDCOUNT; i=i+1)); do
-		dev_winroot='';
-		#dev_winroot=$(check_if_winroot "${tmp_PARTDEVARR[$i]}" "${tmp_PARTFSARR[$i]}")
-	
-		if [ "${tmp_PARTFSARR[$i]}"  = "ntfs" ] ; then
-			$NTFSMOUNTPROG ${tmp_PARTDEVARR[$i]} $tmpmount
-		elif [ -n "(echo "${tmp_PARTFSARR[$i]}" | grep -iE "fat")" ] ; then
-			mount -t auto ${tmp_PARTDEVARR[$i]} $tmpmount
-		else
-			echo "No support filesystem '$tmpfs' on $tmpdev !! "
-			return;
-		fi
-		#echo "mount $tmpdev $tmpmount... "
+    # check if include windows root]
+    j=0		# Sum the number of total disks
+    for (( i=1; i<=$tmp_PARTIDCOUNT; i=i+1)); do
+    	dev_winroot='';
+    	#dev_winroot=$(check_if_winroot "${tmp_PARTDEVARR[$i]}" "${tmp_PARTFSARR[$i]}")
+    
+    	if [ "${tmp_PARTFSARR[$i]}"  = "ntfs" ] ; then
+    		$NTFSMOUNTPROG ${tmp_PARTDEVARR[$i]} $tmpmount
+    	elif [ -n "(echo "${tmp_PARTFSARR[$i]}" | grep -iE "fat")" ] ; then
+    		mount -t auto ${tmp_PARTDEVARR[$i]} $tmpmount
+    	else
+    		echo "No support filesystem '$tmpfs' on $tmpdev !! "
+    		return;
+    	fi
+    	#echo "mount $tmpdev $tmpmount... "
 
-		for test_root in $DEFAULT_WIN_ROOT ; do
-			_tmp_winroot=$(cd $tmpmount; ls -d */ | grep -i $test_root)
-			[ -z "$_tmp_winroot" ] && break
-			find_registry_realname "$tmpmount/$_tmp_winroot" "$WIN_SYSTEM_SAM" "$WIN_SOFTWARE_SAM"
-			if [ -n "$REAL_WIN_SYSTEM_SAM" ] && [ -n "$REAL_WIN_SOFTWARE_SAM" ] ; then	
-				j=$j+1;
-				k=$k+1;
-				PART_DEV_ARR[$k]=${tmp_PARTDEVARR[$i]};
-				PART_FS_ARR[$k]=${tmp_PARTFSARR[$i]};
-				PART_WINROOT_ARR[$k]=$_tmp_winroot
-				PART_WIN_SYSTEM_SAM[$k]=$REAL_WIN_SYSTEM_SAM
-				PART_WIN_SOFTWARE_SAM[$k]=$REAL_WIN_SOFTWARE_SAM
+    	for test_root in $DEFAULT_WIN_ROOT ; do
+    		_tmp_winroot=$(cd $tmpmount; ls -d */ | grep -i $test_root)
+    		[ -z "$_tmp_winroot" ] && break
+    		find_registry_realname "$tmpmount/$_tmp_winroot" "$WIN_SYSTEM_SAM" "$WIN_SOFTWARE_SAM"
+    		if [ -n "$REAL_WIN_SYSTEM_SAM" ] && [ -n "$REAL_WIN_SOFTWARE_SAM" ] ; then	
+    			j=$j+1;
+    			k=$k+1;
+    			PART_DEV_ARR[$k]=${tmp_PARTDEVARR[$i]};
+    			PART_FS_ARR[$k]=${tmp_PARTFSARR[$i]};
+    			PART_WINROOT_ARR[$k]=$_tmp_winroot
+    			PART_WIN_SYSTEM_SAM[$k]=$REAL_WIN_SYSTEM_SAM
+    			PART_WIN_SOFTWARE_SAM[$k]=$REAL_WIN_SOFTWARE_SAM
 
-			fi
-		done
-		umount $tmpmount
-	done
+    		fi
+    	done
+    	umount $tmpmount
+    done
 
-	if [ $j -gt 0 ]; then 
-	    echo "[/dev/$idev]"
-	    echo "======================================================"
-	    echo "$part_infos"
-	    echo "======================================================"
-	fi
-  done;
+    #if [ $j -gt 0 ]; then 
+    #    echo "[/dev/$idev]"
+    #    echo "======================================================"
+    #    echo "$part_infos"
+    #    echo "======================================================"
+    #fi
+    echo
+    echo "======================================================"
+  done
 
-	PARTIDCOUNT=$k;
+  PARTIDCOUNT=$k
   
-	[ $PARTIDCOUNT -eq 0 ] && [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo "No available partition, aborted!" \
-	&& [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL && exit 1;
-	return 0;
+  [ $PARTIDCOUNT -eq 0 ] && [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING && echo "No available partition, aborted!" \
+  && [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL && exit 1
+  return 0;
 }
 
 gen_hn_stream() {
