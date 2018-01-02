@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.20
+Version:	3.30.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jan 02 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.21-drbl1
+  * Bug fixed: add -z9 selection in ocs-cvtimg-comp.
+
 * Tue Jan 02 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.20-drbl1
   * Replace all words "M$" by MS. 
 
