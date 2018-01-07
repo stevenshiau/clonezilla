@@ -1710,12 +1710,33 @@ check_input_hd() {
         exit 1
       fi
     done
-}
+} # end of check_input_hd
+#
 check_input_partition() {
-    local tgt_parts="$*"
+    local tgt_parts hd_fs
+    # Flag to treat disk with file system as partition
+    local allow_disk_with_fs="no"
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -a)  shift; allow_disk_with_fs="yes" ;;
+        -*)  echo "${0}: ${1}: invalid option"
+             echo "$msg_program_stop"
+             [ "$save_restore_error_log" = "yes" ] && copy_error_log
+             exit 2 ;;
+        *)   break ;;
+      esac
+    done
+    tgt_parts="$*"
     [ -z "$tgt_parts" ] && echo "No device selected!" && exit 1
     for ipart in $tgt_parts; do
       if ! is_partition "$ipart"; then
+        if [ "$allow_disk_with_fs" = "yes" ]; then
+          hd_fs="$(LC_ALL=C ocs-get-part-info "/dev/$ipart" filesystem 2>/dev/null)"
+	  if [ -n "$hd_fs" ]; then
+            # Disk block device with file system. Allow it.
+            continue
+	  fi
+	fi
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
         echo "\"$ipart\" is an unknown partition device. $msg_program_stop." | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -1727,7 +1748,7 @@ check_input_partition() {
         exit 1
       fi
     done
-}
+} # end of check_input_partition
 #
 check_specify_hd_exists() {
   # the parameter is like hda, sda...
@@ -4215,6 +4236,10 @@ get_disk_or_part_hardware_info() {
       else
          dsize="Unknown_size_"
       fi
+      # File system. It might be disk block device with file system
+      part_fst="$(LC_ALL=C ocs-get-part-info /dev/$p filesystem)"
+      # Append it
+      [ -n "$part_fst" ] && dsize="${dsize}${part_fst}_"
       # Serial #
       #serialno="$(LC_ALL=C cat $lshw_disk_info | grep -A3 -Ewi "logical name: /dev/$p" | grep -i "serial: " | awk -F":" '{print $2}' | sed -e "s/ //g")"
       get_disk_serial_no $p
@@ -4271,6 +4296,7 @@ get_not_busy_disks_or_parts() {
     # XXX part_list="$(LC_ALL=C awk '/[hsv]d[a-z][0-9]+($| )/ { print $4; }' $partition_table | sort)"
     # To overcome the sorting problem, we use "-V" option. //NOTE// This won't work for older sort... e.g. the one in RHEL4?
     part_list="$(get_part_list $partition_table)"
+    dsk_list="$(get_disk_list $partition_table)"
     echo "Excluding busy partition or disk..."
     # Convert by uuid to traditional list in /proc/mounts so it's easier for us to exclude.
     # The format of /proc/mounts with uuid is like:
@@ -4291,7 +4317,10 @@ get_not_busy_disks_or_parts() {
        cat /proc/mounts > $mounted_table
     fi
 
-    for ipart in $part_list; do
+    # Two cases:
+    # (1) Remove busy partitions (hence those busy disks, like sda1 busy, so sda is busy, too)
+    # (2) Remove busy disks (disk as block device contains file system, e.g. /dev/sdc is formated with ext4)
+    for ipart in $part_list $dsk_list; do
       if grep -qEw "^/dev/$ipart" $mounted_table; then
         # hda1 -> hda
         hdtmp="$(get_diskname $ipart)"
@@ -4328,12 +4357,7 @@ get_input_dev_name() {
     # shows the result. 
     # There is nothing in the screen when function is called if we just 
     # use echo the result to stdout.
-    ANS_TMP="$1"
-    local dev_type="$2"
-    local selection="$3"
-    local skip_lvm="$4"
-    local msg_choose_dev_to_what="$5"
-    local dev_to_be_exclude="$6"
+    local dev_type selection skip_lvm msg_choose_dev_to_what dev_to_be_exclude
     local dev_list=""
     local HARDDEVS=""
     local target_dev=""
@@ -4342,7 +4366,27 @@ get_input_dev_name() {
     local height
     local part_list hdtmp msg_not_mounted_dev_found TMP FILE dsk_ DEV_MODEL_EXT dsize ans_ rc_g
     local ASK_INPUT=1   # init value 1 means we have to ask
+    # Flag to include disk as partition, which means /dev/sda, for example, could contain file system.
+    # This will only use for mounting that as image repository.
+    local inc_disk_as_part="no" 
+    local hd_fs dev_list_kept
 
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -d)  shift; inc_disk_as_part="yes" ;;
+        -*)  echo "${0}: ${1}: invalid option"
+             echo "$msg_program_stop"
+             [ "$save_restore_error_log" = "yes" ] && copy_error_log
+             exit 2 ;;
+        *)   break ;;
+      esac
+    done
+    ANS_TMP="$1"
+    dev_type="$2"
+    selection="$3"
+    skip_lvm="$4"
+    msg_choose_dev_to_what="$5"
+    dev_to_be_exclude="$6"
     [ -z "$dev_type" ] && echo "You must specify the type get be entered!!! $msg_program_stop!" && exit 1
     [ -z "$selection" -o "$selection" = "default" ] && selection="checklist"
     [ -z "$skip_lvm" -o "$skip_lvm" = "default" ] && skip_lvm="no"
@@ -4365,6 +4409,20 @@ get_input_dev_name() {
         # when input partitions, not only one selection
 	[ -z "$msg_choose_dev_to_what" ] && msg_choose_dev_to_what="$msg_choose_parts_to_save $msg_linux_parts_MS_mapping $msg_press_space_to_mark_selection"
 	msg_not_mounted_dev_found="$msg_no_umounted_parts_found"
+	hd_with_fs_list=""
+        if [ "$inc_disk_as_part" = "yes" ]; then
+          # Keep the dev_list to avoid being overwritten by get_not_busy_disks_or_parts
+	  dev_list_kept="$dev_list"
+          get_not_busy_disks_or_parts harddisk "" "$dev_to_be_exclude"  # we will get dev_list
+	  for ih in $dev_list; do
+            hd_fs="$(LC_ALL=C ocs-get-part-info "/dev/$ih" filesystem 2>/dev/null)"
+	    # If file system exists, append it
+	    if [ -n "$hd_fs" ]; then
+	      hd_with_fs_list="$hd_with_fs_list $ih"
+            fi
+          done
+	  dev_list="$dev_list_kept $hd_with_fs_list"
+        fi
 	echo -n "Finding partitions"
         for p in $dev_list; do
           echo -n "."
