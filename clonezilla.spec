@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.21
+Version:	3.30.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jan 07 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.22-drbl1
+  * Make prep-ocsroot can use disk block device (e.g., /dev/sdc) as image repository.
+    Thanks to Riksoft for requesting this.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/288/
+
 * Tue Jan 02 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.21-drbl1
   * Bug fixed: add -z9 selection in ocs-cvtimg-comp.
 
@@ -993,7 +998,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 * Sat Jun 25 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.29-drbl1
 - Add fuse.cloudfuse in the messages of prep-ocsroot.
-- Provide an option to mount image repsitory again when failing in ocs-live-repositry. "ask_user" can be used as the Samba domain and account in the URI so that user can input their own names.  Thanks to Aaron Burling (aaron_burling _at_ lkstevens wednet edu) for these ideas.
+- Provide an option to mount image repsitory again when failing in ocs-live-repository. "ask_user" can be used as the Samba domain and account in the URI so that user can input their own names.  Thanks to Aaron Burling (aaron_burling _at_ lkstevens wednet edu) for these ideas.
 
 * Tue Jun 21 2016 Steven Shiau <steven _at_ nchc org tw> 3.21.28-drbl1
 - Bug fixed: failed to get all partitions for multiple disks which was introduced in clonezilla 3.21.26.
