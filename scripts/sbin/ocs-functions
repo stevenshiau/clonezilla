@@ -10771,7 +10771,6 @@ check_image_if_restorable() {
           fi
           if [ -z "$img_nm" ]; then
             echo "-i is used, but no img_nm assigned." | tee --append ${OCS_LOGFILE}
-            echo "$img_nm" | tee --append ${OCS_LOGFILE}
             [ "$save_restore_error_log" = "yes" ] && copy_error_log
             exit 1
           fi
@@ -13205,3 +13204,156 @@ save_ocs_sr_related_vars() {
   echo "postaction=\"$postaction\"" >> /var/lib/clonezilla/ocs-vars
   echo "ocs_sr_mode=\"$ocs_sr_mode\"" >> /var/lib/clonezilla/ocs-vars
 } # end of save_ocs_sr_related_vars
+#
+ask_nic_dev() {
+  # chosen_nics is a global variable
+  local dia_type req_nic_no dia_prompt nic_tmp
+  local nic_no dia_def_status NETDEVICES count hw_scan_tmp DEVICELIST dev_model link_status hwaddr DEVICELIST read_cache
+  local enable_channel_bonding="no"
+  # link_max_cache_sec is from drbl-ocs.conf
+  # The file name prefix for link status file. It will be used like /tmp/linked-status.eth0
+  local link_status_cache_pref="/tmp/linked-status"
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -e|--enable-channel-bonding)
+           enable_channel_bonding="yes"
+           shift;;
+      -*)  echo "${0}: ${1}: invalid option in ask_nic_dev." | tee --append ${OCS_LOGFILE} >&2
+           echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+           [ "$save_restore_error_log" = "yes" ] && copy_error_log
+           exit 2 ;;
+       *)  break ;;
+    esac
+  done
+
+  dia_prompt="$1"
+  dia_type="$2"
+  req_nic_no="$3"
+  nic_tmp="$(mktemp /tmp/netbonding.XXXXXX)"
+  trap "[ -f "$nic_tmp" ] && rm -f $nic_tmp" HUP INT QUIT TERM EXIT
+  
+  case "$dia_type" in
+    menu)      dia_def_status="";;
+    checklist) dia_def_status="on";;
+  esac
+
+  NETDEVICES="$(cat /proc/net/dev | awk -F: '/eth.*:|tr.*:|wlan.*:|en.*:/{print $1}' | sort)"
+  # make it in a single line
+  NETDEVICES="$(echo $NETDEVICES)"
+
+  nic_no="$(echo $NETDEVICES | wc -w)"
+  if [ "$nic_no" -lt "$req_nic_no" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "The requested NIC number is: $req_nic_no, while the NIC number on this system is: $nic_no"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    my_ocs_exit 1
+  fi
+  # Check if it makes sense when channel bonding is enabled
+  if [ "$enable_channel_bonding" = "yes" ]; then
+    if [ "$nic_no" -lt 2 ]; then
+      echo "Disable channnel bonding since there is only one NIC found."
+      enable_channel_bonding="no"
+    fi
+  fi
+  
+  if [ -z "$NETDEVICES" ]; then
+    $DIA --msgbox "$msg_no_nic_is_found" 0 0
+    if [ -n "$nic_tmp" ]; then
+      rm -f "$nic_tmp"
+    fi
+    exit 1
+  else
+    # We have to up the network card first so that ethtool can detect if it's linked or not.
+    echo -n "Try to up "
+    for DEVICE in $NETDEVICES; do
+      if [ -z "$(drbl-get-ipadd $DEVICE)" ]; then
+        echo -n "$DEVICE... "
+	ip link set $DEVICE up
+      fi
+    done
+    echo
+  fi
+  
+  count="$(echo "$NETDEVICES" | wc -w)"
+  
+  if [ "$count" -gt 1 ]; then
+    hw_scan_tmp="$(mktemp /tmp/hw_scan.XXXXXX)"
+    time_now="$(LC_ALL=C date +%s)"
+    # Read the cached linked status from file.
+    if type lshw &>/dev/null; then
+      echo -n "Collecting the info of network devices... "
+      lshw -businfo -class network 2>/dev/null > $hw_scan_tmp
+      echo "done!"
+    fi
+    DEVICELIST=""
+    dev_model=""
+    for DEVICE in $NETDEVICES; do
+      dev_model="$(LC_ALL=C grep -Ew "$DEVICE" $hw_scan_tmp | sed -e "s/^.*$DEVICE[[:space:]]*network[[:space:]]*//g" | sed -e "s/ /_/g")"
+      [ -z "$dev_model" ] && dev_model="Unknown_NIC"
+      # only first 26 characters.
+      dev_model="${dev_model:0:25}.."
+      link_status=""
+      read_cache=""
+      if [ -e "${link_status_cache_pref}.${DEVICE}" ]; then
+        time_status_file="$(LC_ALL=C stat -c %Z "${link_status_cache_pref}.${DEVICE}")"
+	if [ "$((time_now - time_status_file))" -le "$link_max_cache_sec" ]; then
+         read_cache="yes"
+        fi
+      fi
+      if [ "$read_cache" = "yes" ]; then
+        echo "Reading link status from cache file ${link_status_cache_pref}.${DEVICE}..."
+        . ${link_status_cache_pref}.${DEVICE}
+      else
+        echo -n "Getting the linking status of $DEVICE. Timeout in $ocs_netlink_timeout secs."
+        TIMEOUT="$ocs_netlink_timeout"
+        while [ "$link_status" = "no" -o -z "$link_status" ]; do
+          sleep 1
+          link_status="$(LC_ALL=C ethtool $DEVICE | grep -i "Link detected:" | cut -d":" -f2 | sed -e "s/ //g")"
+          TIMEOUT="$(( $TIMEOUT - 1 ))"
+          if [ "$TIMEOUT" -le 0 ]; then
+            echo
+            echo -n "Timeout when finding linking status of $DEVICE."
+    	sleep 2
+            break
+          else
+            echo -n "."
+          fi
+        done
+        if [ "$link_status" = "yes" ]; then
+          echo " Found status \"linked\"."
+        else
+          echo " Status \"not linked\" or \"unknown\"."
+        fi
+        if [ -z "$link_status" ]; then
+          link_status="Unknown"     
+        fi
+	echo "link_status=\"${link_status}\"" > ${link_status_cache_pref}.${DEVICE}
+      fi
+      hwaddr="$(drbl-get-macadd $DEVICE)"
+      DEVICELIST="$DEVICELIST ${DEVICE} $(rep_whspc_w_udrsc "$msg_link_detected"):${link_status}(${dev_model}|${hwaddr}) $dia_def_status"
+    done
+    rm -f "$nic_tmp"
+    [ -f "$hw_scan_tmp" -a -n "$hw_scan_tmp" ] && rm -f $hw_scan_tmp
+
+    if [ "$enable_channel_bonding" = "yes" ]; then
+      DEVICELIST="$DEVICELIST bond0 $(rep_whspc_w_udrsc "$msg_use_channel_bonding") $dia_def_status"
+    fi
+
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    "$msg_nchc_clonezilla" --${dia_type} "$dia_prompt" 0 0 0 $DEVICELIST 2>"$nic_tmp"
+    # Force to strip the unnecessary quotation ', this is specially for dialog (from cdialog) in Mandriva and same reason to strip the unnecessary double quotation ", this is sepcially for dialog in OpenSuSE 11.1. Otherwise it will cause -p reboot become (containing space) '-p reboot', which is wrong option in dcs.
+    LC_ALL=C perl -pi -e "s/\'//g" $nic_tmp
+    LC_ALL=C perl -pi -e "s/\"//g" $nic_tmp
+    chosen_nics="$(cat $nic_tmp)"
+  else
+    # Only 1 NIC, just use it.
+    # Remove additional spaces
+    chosen_nics="$(echo $NETDEVICES)"
+  fi
+  
+  if [ -n "$nic_tmp" ]; then
+    rm -f "$nic_tmp"
+  fi
+} # end of ask_nic_dev

@@ -340,7 +340,8 @@ while [ $# -gt 0 ]; do
     *)      break ;;
   esac
 done
-#
+DV="$*"
+
 #
 ask_and_load_lang_set $specified_lang
 
@@ -357,83 +358,33 @@ check_DIA_set_ESC $DIA
 TMP="$(mktemp /tmp/netmenu.XXXXXX)"
 trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
 
-NETDEVICES="$(cat /proc/net/dev | awk -F: '/eth.*:|tr.*:|wlan.*:|en.*:/{print $1}' | sort)"
-# make it in a single line
-NETDEVICES="$(echo $NETDEVICES)"
-
-if [ -n "$skip_nic_dv" ]; then
-  for i in $skip_nic_dv; do
-    # remove those we do not want to config.
-    NETDEVICES="$(echo $NETDEVICES | sed -e "s/\<$i\>//g")"
-  done
-fi
-
-if [ -z "$NETDEVICES" ]; then
-  $DIA --msgbox "$msg_no_nic_is_found" 0 0
-  bailout
+if [ -z "$DV" ]; then
+  ask_nic_dev -e "$msg_choose_nic?" menu 1 # Obtain $chosen_nics
+  DV="$chosen_nics"
 else
-  # We have to up the network card first so that ethtool can detect if it's linked or not.
-  echo -n "Try to up "
-  for DEVICE in $NETDEVICES; do
-    if [ -z "$(drbl-get-ipadd $DEVICE)" ]; then
-      echo -n "$DEVICE... "
-      ifconfig $DEVICE 0.0.0.0
-    fi
-  done
-  echo
-fi
-
-count="$(echo "$NETDEVICES" | wc -w)"
-
-if [ "$count" -gt 1 ]; then
-  hw_scan_tmp="$(mktemp /tmp/hw_scan.XXXXXX)"
-  if type lshw &>/dev/null; then
-    echo -n "Collecting the info of network devices... "
-    lshw -businfo -class network 2>/dev/null > $hw_scan_tmp
-    echo "done!"
+  nic_no="$(echo $DV | wc -w)"
+  if [ "$nic_no" -ne 1 ]; then
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+     echo "You can only configure one network interface card each time."
+     echo "The chosen device: $DV"
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     echo "$msg_program_stop!"
+     my_ocs_exit 1
   fi
-  DEVICELIST=""
-  dev_model=""
-  link_status=""
-  for DEVICE in $NETDEVICES; do
-    dev_model="$(LC_ALL=C grep -Ew "$DEVICE" $hw_scan_tmp | sed -e "s/^.*$DEVICE[[:space:]]*network[[:space:]]*//g" | sed -e "s/ /_/g")"
-    [ -z "$dev_model" ] && dev_model="Unknown_NIC"
-    # only first 26 characters.
-    dev_model="${dev_model:0:25}.."
-    echo -n "Getting the linking status of $DEVICE. Timeout in $ocs_netlink_timeout secs."
-    TIMEOUT="$ocs_netlink_timeout"
-    link_status=""
-    while [ "$link_status" = "no" -o -z "$link_status" ]; do
-      sleep 1
-      link_status="$(LC_ALL=C ethtool $DEVICE | grep -i "Link detected:" | cut -d":" -f2 | sed -e "s/ //g")"
-      TIMEOUT="$(( $TIMEOUT - 1 ))"
-      if [ "$TIMEOUT" -le 0 ]; then
-        echo
-        echo -n "Timeout when finding linking status of $DEVICE."
-	sleep 2
-        break
-      else
-        echo -n "."
-      fi
-    done
-    if [ "$link_status" = "yes" ]; then
-      echo " Found status \"linked\"."
-    else
-      echo " Status \"not linked\" or \"unknown\"."
-    fi
-    if [ -z "$link_status" ]; then
-      link_status="Unknown"     
-    fi
-    hwaddr="$(drbl-get-macadd $DEVICE)"
-    DEVICELIST="$DEVICELIST ${DEVICE} $(rep_whspc_w_udrsc "$msg_link_detected"):${link_status}(${dev_model}|${hwaddr})"
-  done
-  rm -f "$TMP"
-  [ -f "$hw_scan_tmp" -a -n "$hw_scan_tmp" ] && rm -f $hw_scan_tmp
-  $DIA --menu "$msg_choose_nic ?" 0 0 0 $DEVICELIST 2>"$TMP" || bailout
-  read DV <"$TMP" ; rm -f "$TMP"
-else
-  # Remove additional spaces
-  DV="$(echo $NETDEVICES)"
+fi
+
+# Check input NIC
+if [ -z "$DV" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No network interface card was assigned."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  my_ocs_exit 1
+fi
+
+# TODO: Check if $DV exists
+if [ "$DV" = "bond0" ]; then
+  ocs-live-nicbonding
 fi
 
 #
