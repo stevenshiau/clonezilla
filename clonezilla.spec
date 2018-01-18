@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.23
+Version:	3.30.24
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jan 18 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.24-drbl1
+  * It's not good to run screen with ocs-scan-disk in speech synthesis mode.
+    Thanks to Eigeldinger Simon (simon.eigeldinger _at_ hohenems at) for
+    reporting that.
+
 * Tue Jan 09 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.23-drbl1
   * Add channel bonding option in ocs-live-netcfg.
     Thanks to  panther_1 for requesting this.
