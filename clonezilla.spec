@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.24
+Version:	3.30.25
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.26.13, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1
+Requires:	bash, perl, drbl >= 2.26.15, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 13 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.25-drbl1
+  * Bug fixed: cnvt-ocs-dev failed to convert EBR (like sda2-ebr).
+    Thanks to killuaDK for reporting this.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/b851e095
+
 * Thu Jan 18 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.24-drbl1
   * It's not good to run screen with ocs-scan-disk in speech synthesis mode.
     Thanks to Eigeldinger Simon (simon.eigeldinger _at_ hohenems at) for
