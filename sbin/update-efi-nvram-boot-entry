@@ -26,8 +26,11 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # 2. Put /EFI/Boot/bootx64.efi as the last one. Hence when appending new one, put it before /EFI/Boot/bootx64.efi.
 known_efi_boot_file_chklist="/EFI/centos/grubx64.efi /EFI/debian/grubx64.efi \
 /EFI/ubuntu/grubx64.efi /EFI/fedora/shim.efi /EFI/fedora/grubx64.efi \
-/EFI/redhat/grub.efi /EFI/opensuse/grubx64.efi \
-/EFI/Microsoft/Boot/bootmgfw.efi /EFI/Boot/bootx64.efi"
+/EFI/redhat/grub.efi /EFI/redhat/grubx64.efi /EFI/opensuse/grubx64.efi \
+/EFI/Microsoft/Boot/bootmgfw.efi /EFI/Boot/bootx64.efi \
+/EFI/centos/grubaa64.efi /EFI/debian/grubaa64.efi /EFI/ubuntu/grubaa64.efi \
+/EFI/fedora/grubaa64.efi /EFI/redhat/grubaa64.efi /EFI/opensuse/grubaa64.efi \
+/EFI/Boot/bootaa64.efi"
 # For the unknown full path file to EFI boot file list, which we will find the full path:
 unknown_efi_boot_file_chklist="bootx64.efi grubx64.efi grub.efi"
 # Default label name
@@ -230,6 +233,20 @@ find_efi_boot_loader_file() {
   # /EFI/Microsoft/Boot/memtest.efi
   # /EFI/Boot/bootx64.efi <-- This is the one we want.
 
+  # For ARM64 device:
+  # root@debian:~# efibootmgr -v
+  # BootCurrent: 0004
+  # Timeout: 3 seconds
+  # BootOrder: 0007,0000,0001,0002,0003,0004,0005,0006
+  # Boot0000* EFI Misc Device       VenHw(f9b94ae2-8ba6-409b-9d56-b9b417f53cb3)
+  # Boot0001* EFI Misc Device 1     VenHw(8047db4b-7e9c-4c0c-8ebc-dfbbaacace8f)
+  # Boot0002* EFI Misc Device 2     PciRoot(0x0)/Pci(0x1,0x0)
+  # Boot0003* EFI Misc Device 3     PciRoot(0x0)/Pci(0x2,0x0)
+  # Boot0004* EFI Misc Device 4     PciRoot(0x0)/Pci(0x3,0x0)
+  # Boot0005* EFI Network   VenHw(837dca9e-e874-4d82-b29a-23fe0e23d1e2,003e000a00000000)/MAC(525400123456,1)
+  # Boot0006* EFI Internal Shell    MemoryMapped(11,0x13f7c2000,0x13fbc3c3f)/FvFile(7c04a583-9e3e-4f1c-ad65-e05268d0b4d1)
+  # Boot0007* Debian ARM64          HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
+   
   local efi_sys_part_="$1"
   local mnt_pnt
 
@@ -376,6 +393,7 @@ ask_and_load_lang_set $specified_lang
 if [ -n "$full_path_to_efi_file" -a \
      -e "$full_path_to_efi_file" ]; then
   label="$(get_efi_hd_boot_entry_info $full_path_to_efi_file label)"
+  [ -z "$label" ] && label="$label_def"
 elif [ -n "$label_assigned" ]; then
   label="$label_assigned"
 else
