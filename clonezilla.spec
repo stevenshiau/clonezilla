@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.25
+Version:	3.30.26
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 20 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.26-drbl1
+  * Add known ARM64 efi boot files in update-efi-nvram-boot-entry.
+
 * Tue Feb 13 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.25-drbl1
   * Bug fixed: cnvt-ocs-dev failed to convert EBR (like sda2-ebr).
     Thanks to killuaDK for reporting this.
