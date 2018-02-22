@@ -27,12 +27,12 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 known_efi_boot_file_chklist="/EFI/centos/grubx64.efi /EFI/debian/grubx64.efi \
 /EFI/ubuntu/grubx64.efi /EFI/fedora/shim.efi /EFI/fedora/grubx64.efi \
 /EFI/redhat/grub.efi /EFI/redhat/grubx64.efi /EFI/opensuse/grubx64.efi \
-/EFI/Microsoft/Boot/bootmgfw.efi /EFI/Boot/bootx64.efi \
+/EFI/Microsoft/Boot/bootmgfw.efi \
 /EFI/centos/grubaa64.efi /EFI/debian/grubaa64.efi /EFI/ubuntu/grubaa64.efi \
 /EFI/fedora/grubaa64.efi /EFI/redhat/grubaa64.efi /EFI/opensuse/grubaa64.efi \
-/EFI/Boot/bootaa64.efi"
+/EFI/Boot/bootx64.efi /EFI/Boot/bootaa64.efi"
 # For the unknown full path file to EFI boot file list, which we will find the full path:
-unknown_efi_boot_file_chklist="bootx64.efi grubx64.efi grub.efi"
+unknown_efi_boot_file_chklist="bootx64.efi bootaa64.efi grubx64.efi grubaa64.efi grub.efi"
 # Default label name
 label_def="OS on hard drive"
 # The log file later other program can refer
@@ -393,7 +393,16 @@ ask_and_load_lang_set $specified_lang
 if [ -n "$full_path_to_efi_file" -a \
      -e "$full_path_to_efi_file" ]; then
   label="$(get_efi_hd_boot_entry_info $full_path_to_efi_file label)"
-  [ -z "$label" ] && label="$label_def"
+  if [ -z "$label" ]; then
+    # Try to extract from boot file
+    label="$(get_efi_hd_boot_entry_info $full_path_to_efi_file boot_file)"
+    # boot_file will be like: \EFI\debian\grubaa64.efi -> Extract debian
+    label="$(echo "$label" | awk -F'\' '{print $3}')"
+    if [ -z "$label" -o "$label" = "Boot" ]; then
+      # If still not found, or like /EFI/Boot/bootx64.efi, use default label.
+      label="$label_def"
+    fi
+  fi
 elif [ -n "$label_assigned" ]; then
   label="$label_assigned"
 else
