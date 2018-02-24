@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.27
+Version:	3.30.28
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Feb 24 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.28-drbl1
+  * Update get_efi_hd_boot_entry_info in ocs-functions. Make it work for
+    some cases with more characters before keyword "HD".
+
 * Thu Feb 22 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.27-drbl1
   * Improve function get_efi_hd_boot_entry_info of ocs-functions so it
     covers more cases to get the correct boot_file, e.g., some characters
