@@ -594,7 +594,7 @@ task_start_feed_img_for_cast() {
   local start_cmd
   local OCS_OPT_PRE ocs_opt_dia
   local rc_chkimg
-  local castmode start_cmd_pid
+  local castmode choose_term input_key
 
   #prompt_for_lite_server
   # If network setting is not configured. Ask
@@ -941,7 +941,6 @@ task_start_feed_img_for_cast() {
   start_cmd="start_ocs_service $cast_client_no_opt -f -t \"${castmode}_${cast_dev_action}\" -o \"$target_dir $ocs_restore_dev\""
   echo "Running: $start_cmd"
   eval $start_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
-  start_cmd_pid=$!
 
   if [ "$castmode" = "multicast" ]; then
     echo -n "Waiting for udp-sender service to be started... "
@@ -1070,11 +1069,24 @@ CLIENT_END
   echo "$msg_append_parameter_for_unattended_mode: locales=en_US.UTF-8 keyboard-layouts=us ocs_live_run=\"ocs-live-get-img $cast_srv_ip\"" | tee -a ${OCS_LOGFILE}
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
-  # We have to wait for udp-sender to be finished so that when CJK locales uses jfbterm, udp-sender won't be terminated due to jfbterm is finished.
+  # We have to wait for udp-sender/ezio to finish so that when CJK locales uses jfbterm, udp-sender/ezio won't be terminated due to jfbterm is finished.
   echo $msg_delimiter_star_line
-  echo -n "$msg_now_wait_for_client_to_connect"
-  wait $start_cmd_pid
-  echo "$msg_Done"
+  choose_term="no"
+  while [ "$choose_term" = "no" ]; do
+    echo "$msg_now_wait_for_client_to_connect"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_do_all_clients_finish_jobs"
+    echo "$msg_it_might_stop_required_restoring_service"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo -n "[y/N] "
+    read input_key
+    case "$input_key" in
+     y|Y) ocs_prompt_mode="cmd"
+          confirm_continue_or_not_default_quit -d "$msg_it_might_stop_required_restoring_service"
+          choose_term="yes"
+          ;;
+    esac
+  done
   # Make the ocsmgrd outputs won't be overwritten by dialog.
   postaction="true"
   save_ocs_sr_related_vars
