@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.31
+Version:	3.30.32
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Mar 15 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.32-drbl1
+  * Use "dpkg -l" instead of "dpkg -L" to query package in ocs-live-hook
+    so that it can accept wildcard in the package name.
+
 * Wed Mar 14 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.31-drbl1
   * Force to remove unused linux kernels in hook for clonezilla live:
     linux-image-*-(aws|gcp|lowlatency|azure|kvm). 
