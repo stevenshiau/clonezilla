@@ -1,0 +1,353 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to convert Clonezilla live iso to ONIE self extract boot file
+# This program is modified from what Luca Boccassi has patched to Debian live
+# https://salsa.debian.org/live-team/live-build/merge_requests/4
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+KERNEL_ARGS_DEF='boot=live nopersistent noeject dhcp fromiso=/conf/live.iso live-media=ram ocs_live_run=ocs-live-general live-getty'
+KERNEL='vmlinuz'
+INITRD='initrd.img'
+
+# functions
+USAGE() {
+    echo "$ocs - To convert live iso to ONIE image"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] ISO_FILE"
+    echo "Options:"
+    echo "-o, --onie-kernel-cmdline  PARAM    Specify additional options that the ONIE system should use when kexec'ing the final image"
+    echo "-v, --verbose   Turn on verbose message."
+    echo "Ex:"
+    echo "To convert the Clonezilla live \"clonezilla-live-2.5.5-40-amd64.iso\" to ONIE image, run"
+    echo "   $ocs clonezilla-live-2.5.5-40-amd64.iso"
+    echo
+} # end of USAGE
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -o|--onie-kernel-cmdline)
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             ONIE_KERNEL_CMDLINE="$1"
+             shift;
+           fi
+           [ -z "$ONIE_KERNEL_CMDLINE" ] && USAGE && exit 1
+           ;;
+   -v|--verbose)
+	   verbose="on"; shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+#
+check_if_root
+ask_and_load_lang_set
+
+#
+IMAGE="$1"
+if [ -z "$IMAGE" ]; then
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+   echo "Clonezilla live iso file was not assigned!"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   echo "$msg_program_stop!"
+   exit 1
+fi
+
+if [ ! -e "$IMAGE" ]; then
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+   echo "File $IMAGE not found!"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   echo "$msg_program_stop!"
+   exit 1
+fi
+
+if [ -z "$(LC_ALL=C file -Lsk $IMAGE | grep -i "ISO 9660 CD-ROM filesystem data")" ] && \
+   [ -z "$(LC_ALL=C file -Lsk $IMAGE | grep -i "x86 boot sector")" -a -z "$(echo $IMAGE | grep -iE "\.iso")" ] && \
+   [ -z "$(LC_ALL=C file -Lsk $IMAGE | grep -i "DOS/MBR boot sector")" -a -z "$(echo $IMAGE | grep -iE "\.iso")" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$IMAGE is not an ISO 9660 CD-ROM filesystem data file!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+#
+KERNEL_ARGS="${KERNEL_ARGS_DEF} ${ONIE_KERNEL_CMDLINE}"
+
+echo "Begin building onie binary..."
+# TODO: check required program?
+required_exec="cpio sha1sum gzip xzcat xz bzcat bzip2 rsync"
+
+### Based on onie cookbits script...
+### https://github.com/opencomputeproject/onie/blob/master/contrib/debian-iso/cook-bits.sh
+
+CURDIR=`pwd`
+ONIE_TMPD="$(mktemp -d `pwd`/onie-tmp.XXXXXX)"
+
+### Adds needed helper script
+## Based on https://github.com/opencomputeproject/onie/blob/master/contrib/debian-iso/sharch_body.sh
+cat > $ONIE_TMPD/sharch_body.sh << EOF
+#!/bin/sh
+
+#
+#  Copyright (C) 2015 Curt Brune <curt@cumulusnetworks.com>
+#
+#  SPDX-License-Identifier:     GPL-2.0
+#
+
+#
+#  Shell archive template
+#
+#  Strings of the form %%VAR%% are replaced during construction.
+#
+
+echo -n "Verifying image checksum ..."
+sha1=\$(sed -e '1,/^exit_marker$/d' "\$0" | sha1sum | awk '{ print \$1 }')
+
+payload_sha1=%%IMAGE_SHA1%%
+
+if [ "\$sha1" != "\$payload_sha1" ] ; then
+    echo
+    echo "ERROR: Unable to verify archive checksum"
+    echo "Expected: \$payload_sha1"
+    echo "Found   : \$sha1"
+    exit 1
+fi
+
+echo " OK."
+
+tmp_dir=
+clean_up() {
+    if [ "\$(id -u)" = "0" ] ; then
+        umount \$tmp_dir > /dev/null 2>&1
+    fi
+    rm -rf \$tmp_dir
+    exit \$1
+}
+
+# Untar and launch install script in a tmpfs
+cur_wd=\$(pwd)
+archive_path=\$(realpath "\$0")
+tmp_dir=\$(mktemp -d)
+if [ "\$(id -u)" = "0" ] ; then
+    mount -t tmpfs tmpfs-installer \$tmp_dir || clean_up 1
+fi
+cd \$tmp_dir
+echo -n "Preparing image archive ..."
+sed -e '1,/^exit_marker\$/d' \$archive_path | tar xf - || clean_up 1
+echo " OK."
+cd \$cur_wd
+
+extract=no
+args=":x"
+while getopts "\$args" a ; do
+    case \$a in
+        x)
+            extract=yes
+            ;;
+        *)
+        ;;
+    esac
+done
+
+if [ "\$extract" = "yes" ] ; then
+    # stop here
+    echo "Image extracted to: \$tmp_dir"
+    if [ "\$(id -u)" = "0" ] ; then
+        echo "To un-mount the tmpfs when finished type:  umount \$tmp_dir"
+    fi
+    exit 0
+fi
+
+\$tmp_dir/installer/install.sh "\$@"
+rc="\$?"
+
+clean_up \$rc
+
+exit_marker
+EOF
+
+OUT=${ONIE_TMPD}/output
+mkdir -p $OUT
+
+WORKDIR="${ONIE_TMPD}/work"
+EXTRACTDIR="$WORKDIR/extract"
+INSTALLDIR="$WORKDIR/installer"
+
+output_file="${OUT}/$(basename ${IMAGE})-ONIE.bin"
+
+[ "$verbose" = "on" ] && echo "Creating $output_file:"
+
+# prepare workspace
+[ -d $EXTRACTDIR ] && chmod +w -R $EXTRACTDIR
+mkdir -p $EXTRACTDIR
+mkdir -p $INSTALLDIR
+
+# Get the contents of iso file
+mount -o loop $IMAGE ${EXTRACTDIR}
+rc=$?
+trap "[ -d "${EXTRACTDIR}" ] && umount ${EXTRACTDIR} &>/dev/null" HUP INT QUIT TERM EXIT
+if [ "$rc" -gt 0 ]; then
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+   echo "Failed to mount $IMAGE!"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   echo "$msg_program_stop!"
+   exit 1
+fi
+
+echo "Uncompresing $EXTRACTDIR/live/initrd.img... "
+## pack ISO into initrd
+# create initrd working dir
+INITDIR=${WORKDIR}/initrd-extract
+mkdir -p ${INITDIR}
+cd ${INITDIR}
+# extract current initrd
+case $(file --brief --mime --dereference $EXTRACTDIR/live/initrd.img | \
+		sed "s/application\/\(.*\);.*/\1/") in
+	gzip)
+		UNCOMPRESS="zcat"
+		COMPRESS="gzip"
+		;;
+	x-xz)
+		UNCOMPRESS="xzcat -T0 -v"
+		COMPRESS="xz -T0 -v --check=crc32"
+		;;
+	x-bzip2)
+		UNCOMPRESS="bzcat"
+		COMPRESS="bzip2"
+		;;
+	x-lzma)
+		UNCOMPRESS="lzcat --suffix \"\""
+		COMPRESS="lzma"
+		;;
+	octet-stream)
+		UNCOMPRESS="cat"
+		COMPRESS="cat"
+		;;
+	*)
+		echo "ERROR: Unable to detect initrd compression format."
+		exit 1
+		;;
+esac
+
+$UNCOMPRESS $EXTRACTDIR/live/initrd.img | cpio -d -i -m
+echo "Copying inputed iso into initrd... "
+# copy inputed iso into initrd
+rsync -a --info=progress2 "${CURDIR}/${IMAGE}" ./conf/live.iso
+
+echo "Repacking inputed iso into initrd... "
+# repack
+find . | cpio -o -H newc | $COMPRESS > ${WORKDIR}/initrd.img
+# cd back into root dir
+cd ${ONIE_TMPD}
+
+IN_KERNEL=$EXTRACTDIR/live/$KERNEL
+[ -r $IN_KERNEL ] || {
+    echo "ERROR: Unable to find kernel in ISO: $IN_KERNEL"
+    exit 1
+}
+IN_INITRD=$WORKDIR/$INITRD
+[ -r $IN_INITRD ] || {
+    echo "ERROR: Unable to find initrd in ISO: $IN_INITRD"
+    exit 1
+}
+
+cp -r $IN_KERNEL $IN_INITRD $INSTALLDIR
+
+# Create custom install.sh script
+touch $INSTALLDIR/install.sh
+chmod +x $INSTALLDIR/install.sh
+
+(cat <<EOF
+#!/bin/sh
+
+cd \$(dirname \$0)
+
+# remove old partitions
+for p in \$(seq 3 9) ; do
+  sgdisk -d \$p /dev/vda > /dev/null 2&>1
+done
+
+# bonk out on errors
+set -e
+
+echo "auto-detecting console..."
+tty=\$(cat /sys/class/tty/console/active 2>/dev/null | awk 'END {print \$NF}')
+speed=\$(stty -F /dev/\$tty speed 2>/dev/null)
+bits=\$(stty -F /dev/\$tty -a 2>/dev/null | grep -o cs[5-8])
+bits=\$(echo \$bits | grep -o [5-8])
+
+con=''
+if [ -n "\$speed" ]; then
+    con="console=\$tty,\${speed}n\${bits}"
+else
+    con="console=\$tty"
+fi
+
+echo "using \$con"
+
+kcmd_console=\$(cat /proc/cmdline | grep -o 'console=.* ')
+kcmd_console=\$(echo \$kcmd_console | cut -d' ' -f2) # remove tty0
+
+if [ \${kcmd_console}x != \${con}x ]; then
+    echo "WARNING: Detected console does not match boot console: \$kcmd_console != \$con"
+fi
+
+echo "Loading new kernel ..."
+echo "kexec --load --initrd=$INITRD --append=\"$KERNEL_ARGS \$con\" $KERNEL"
+kexec --load --initrd=$INITRD --append="$KERNEL_ARGS \$con" $KERNEL
+kexec --exec
+
+EOF
+) >> $INSTALLDIR/install.sh
+
+# Repackage $INSTALLDIR into a self-extracting installer image
+sharch="$WORKDIR/sharch.tar"
+echo "Creating $sharch... "
+tar -C $WORKDIR -cvf $sharch installer || {
+    echo "Error: Problems creating $sharch archive"
+    exit 1
+}
+
+[ -f "$sharch" ] || {
+    echo "Error: $sharch not found"
+    exit 1
+}
+echo "Generating sha1sum... "
+sha1=$(cat $sharch | sha1sum | awk '{print $1}')
+
+cp $ONIE_TMPD/sharch_body.sh $output_file || {
+    echo "Error: Problems copying sharch_body.sh"
+    exit 1
+}
+
+# Replace variables in the sharch template
+sed -i -e "s/%%IMAGE_SHA1%%/$sha1/" $output_file
+echo "Insert tarball \"$sharch\" in output file... "
+cat $sharch >> $output_file
+mv $output_file ${CURDIR}
+umount ${EXTRACTDIR}
+if [ -d "$ONIE_TMPD" -a -n "$(echo $ONIE_TMPD | grep -E "onie-tmp")" ]; then
+  rm -rf $ONIE_TMPD
+fi
+echo " Done."
+echo "ONIE image \"$(basename ${IMAGE})-ONIE.bin\" created."
