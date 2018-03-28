@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.33
+Version:	3.30.34
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Mar 28 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.34-drbl1
+  * Add ocs-iso-2-onie which can be used to turn Clonezilla iso to ONIE
+    image. It's based on the what Luca Boccassi has patched to Debian live
+    Ref: https://salsa.debian.org/live-team/live-build/merge_requests/4
+
 * Sun Mar 18 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.33-drbl1
   * Remove package consolekit from DRBL live. It does not exist in Debian
     Sid anymore.
