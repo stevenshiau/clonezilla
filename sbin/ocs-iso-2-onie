@@ -12,13 +12,14 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
 # Settings
+# live-media=ram is not really required. Only for _no_ block device after booting into ONIE rescue mode in /sys/block/. That's very rare.
 KERNEL_ARGS_DEF='boot=live nopersistent noeject dhcp fromiso=/conf/live.iso live-media=ram ocs_live_run=ocs-live-general live-getty'
 KERNEL='vmlinuz'
 INITRD='initrd.img'
 
 # functions
 USAGE() {
-    echo "$ocs - To convert live iso to ONIE image"
+    echo "$ocs - To convert live iso to ONIE self extract boot file"
     echo "Usage:"
     echo "To run $ocs:"
     echo "$ocs [OPTION] ISO_FILE"
@@ -26,8 +27,8 @@ USAGE() {
     echo "-o, --onie-kernel-cmdline  PARAM    Specify additional options that the ONIE system should use when kexec'ing the final image"
     echo "-v, --verbose   Turn on verbose message."
     echo "Ex:"
-    echo "To convert the Clonezilla live \"clonezilla-live-2.5.5-40-amd64.iso\" to ONIE image, run"
-    echo "   $ocs clonezilla-live-2.5.5-40-amd64.iso"
+    echo "To convert the Clonezilla live \"clonezilla-live-2.5.6-1-amd64.iso\" to ONIE self extract boot file, run"
+    echo "   $ocs clonezilla-live-2.5.6-1-amd64.iso"
     echo
 } # end of USAGE
 
@@ -193,7 +194,16 @@ WORKDIR="${ONIE_TMPD}/work"
 EXTRACTDIR="$WORKDIR/extract"
 INSTALLDIR="$WORKDIR/installer"
 
-output_file="${OUT}/$(basename ${IMAGE})-ONIE.bin"
+output_fbase="$(basename ${IMAGE})-onie.bin"
+output_file="${OUT}/${output_fbase}"
+
+# Backup the original file
+if [ -e "${CURDIR}/${output_fbase}" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Backup original file as \"${CURDIR}/${output_fbase}.orig\""
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  mv -f ${CURDIR}/${output_fbase} ${CURDIR}/${output_fbase}.orig
+fi
 
 [ "$verbose" = "on" ] && echo "Creating $output_file:"
 
@@ -323,7 +333,10 @@ EOF
 # Repackage $INSTALLDIR into a self-extracting installer image
 sharch="$WORKDIR/sharch.tar"
 echo "Creating $sharch... "
-tar -C $WORKDIR -cvf $sharch installer || {
+if [ "$verbose" = "on" ]; then
+ tar_vopt="-v"
+fi
+tar -C $WORKDIR -cf $tar_vopt $sharch installer || {
     echo "Error: Problems creating $sharch archive"
     exit 1
 }
@@ -332,6 +345,7 @@ tar -C $WORKDIR -cvf $sharch installer || {
     echo "Error: $sharch not found"
     exit 1
 }
+
 echo "Generating sha1sum... "
 sha1=$(cat $sharch | sha1sum | awk '{print $1}')
 
@@ -342,12 +356,32 @@ cp $ONIE_TMPD/sharch_body.sh $output_file || {
 
 # Replace variables in the sharch template
 sed -i -e "s/%%IMAGE_SHA1%%/$sha1/" $output_file
-echo "Insert tarball \"$sharch\" in output file... "
+echo -n "Insert tarball \"$sharch\" in output file... "
 cat $sharch >> $output_file
-mv $output_file ${CURDIR}
+echo "Done."
+
+if [ -e "${output_file}" ]; then
+  # Put the results in working dir
+  mv ${output_file} ${CURDIR}
+  if [ -e "${CURDIR}/${output_fbase}" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+    echo "ONIE self extract boot file \"${output_fbase}\" created."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  ret_code=0
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Failed to create ONIE self extract boot file \"${output_fbase}\"."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  ret_code=1
+fi
+
+# Clean
 umount ${EXTRACTDIR}
 if [ -d "$ONIE_TMPD" -a -n "$(echo $ONIE_TMPD | grep -E "onie-tmp")" ]; then
+  echo -n "Cleaning the temp working dir... "
   rm -rf $ONIE_TMPD
+  echo "done!"
 fi
-echo " Done."
-echo "ONIE image \"$(basename ${IMAGE})-ONIE.bin\" created."
+exit $ret_code
