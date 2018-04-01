@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.35
+Version:	3.30.36
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Apr 02 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.36-drbl1
+  * Skip removing old partitions in the ONIE install.sh. No need for
+    Clonezilla live.
+    Add PATH to install.sh for ONIE.
+
 * Thu Mar 29 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.35-drbl1
   * Rewrite part of the codes of ocs-iso-2-onie. Make output messages better
     and easier to read.
