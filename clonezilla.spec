@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.37
+Version:	3.30.38
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Apr 16 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.38-drbl1
+  * Bug fixed: get-latest-ocs-live-ver failed to get the latest version
+    number of Clonezilla live from Sourceforge website.
+
 * Thu Apr 12 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.37-drbl1
   * Increase the buffer size of EFI BOOTDISKSIZE.
 
