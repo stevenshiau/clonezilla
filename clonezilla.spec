@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.30.40
+Version:	3.30.41
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue May 22 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.41-drbl1
+  * Append "-C" option to partclone when option -icds is enabled in
+    restoreparts mode.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Help/thread/3a21b5f4
+
 * Fri May 18 2018 Steven Shiau <steven _at_ clonezilla org> 3.30.40-drbl1
   * New a variable ocs_live_exclude_kernels in drbl-ocs.conf so that
     it's easier to use get_latest_kernel_ver_in_repository function
