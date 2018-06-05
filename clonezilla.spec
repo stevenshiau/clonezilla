@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.31.1
+Version:	3.31.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jun 06 2018 Steven Shiau <steven _at_ clonezilla org> 3.31.2-drbl1
+  * Bug fixed: it's /run/live/medium/, not /run/live/medium/live.
+    Add /run/live/medium/ in live_media_path_chklist of drbl-ocs.conf
+    since 1:20180328 live-boot uses /run/live instead of /lib/live/mount
+
 * Mon Jun 04 2018 Steven Shiau <steven _at_ clonezilla org> 3.31.1-drbl1
   * Add /run/live/medium/live in live_media_path_chklist of drbl-ocs.conf
     since 1:20180328 live-boot uses /run/live instead of /lib/live/mount
