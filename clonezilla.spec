@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.31.5
+Version:	3.31.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Aug 18 2018 Steven Shiau <steven _at_ clonezilla org> 3.31.6-drbl1
+  * Output download status for grub-efi related files in
+    efi-misc-binary-hook.
+
 * Sat Aug 11 2018 Steven Shiau <steven _at_ clonezilla org> 3.31.5-drbl1
   * A workaround to make Ubuntu resolv.conf work for Ubuntu >= 18.04, only
     for live system.
