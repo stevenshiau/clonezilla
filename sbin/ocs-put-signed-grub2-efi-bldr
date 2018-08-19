@@ -101,16 +101,23 @@ if [ -n "$chroot" ]; then
   fi
   # Run in chroot environment
   grub_efi_tmp_exe="$chroot/tmp/grub-efi-exe.sh"
+  dns_chroot="$(drbl-get-dnsserver | awk -F"," '{print $1}')"
+  [ -z "$dns_chroot" ] && dns_chroot="$dns_default"
+  echo "dns_chroot: $dns_chroot"
   # create a script to be run in chroot
 cat <<-EFI_END > $grub_efi_tmp_exe
 #!/bin/bash
-echo "nameserver $dns_default" > /etc/resolv.conf
+echo "nameserver $dns_chroot" > /etc/resolv.conf
 for i in $required_packages; do
   echo "Download \$i from deb packages repository..."
   LC_ALL=C apt-get -d --reinstall -y install \$i
 done
 EFI_END
   chmod 755 $grub_efi_tmp_exe
+  echo "The content of $grub_efi_tmp_exe:"
+  echo "========================================"
+  cat $grub_efi_tmp_exe
+  echo "========================================"
   chroot $chroot /tmp/grub-efi-exe.sh
   rm -f $grub_efi_tmp_exe
 else
