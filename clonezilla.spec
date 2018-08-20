@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.31.6
+Version:	3.31.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.27.5, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.27.7, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,16 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Aug 20 2018 Steven Shiau <steven _at_ clonezilla org> 3.31.8-drbl1
+  * Temporarily disable dislocker-find in ocs-get-part-info due to some
+    issues: (1) It's broken in Debian Sid: https://bugs.debian.org/906430
+    (2) https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/e1264596
+
+* Sun Aug 19 2018 Steven Shiau <steven _at_ clonezilla org> 3.31.7-drbl1
+  * Detect DNS instead of hard coding in ocs-put-signed-grub2-efi-bldr.
+  * Wrong path for the log about running ocs-put-signed-grub2-efi-bldr
+    in efi-misc-binary-hook
+
 * Sat Aug 18 2018 Steven Shiau <steven _at_ clonezilla org> 3.31.6-drbl1
   * Output download status for grub-efi related files in
     efi-misc-binary-hook.
