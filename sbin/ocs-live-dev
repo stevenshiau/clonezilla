@@ -657,20 +657,24 @@ fi
 echo -n "Preparing the system files to working dir... This might take a few minutes... "
 # //NOTE// Not all the files in $DEBIAN_ISO_TMP/ will be copied. Only the required files. Otherwise other existing files on the USB flash drive will be copied.
 # Instead of copying files, we use link to save time and space
-  case "$img_cp_type" in
-    copy) echo "Copying dir $DEBIAN_ISO_TMP/$sys_files_dir to $USB_TMP/"
-          rsync -a $DEBIAN_ISO_TMP/$sys_files_dir $USB_TMP/
-          ;;
-    link) echo "Linking files from $DEBIAN_ISO_TMP/$sys_files_dir/ to $USB_TMP/$sys_files_dir..."
-          mkdir -p $USB_TMP/$sys_files_dir 
-          ( cd $USB_TMP/$sys_files_dir
-            for i in $DEBIAN_ISO_TMP/$sys_files_dir/*; do
-             [ ! -e "$i" ] && continue 
-             ln -fs $i "$(basename $i)"
-            done
-          )
-          ;;
-  esac
+case "$img_cp_type" in
+  copy) echo "Copying dir $DEBIAN_ISO_TMP/$sys_files_dir to $USB_TMP/"
+        rsync -a $DEBIAN_ISO_TMP/$sys_files_dir $USB_TMP/
+        ;;
+  link) echo "Linking files from $DEBIAN_ISO_TMP/$sys_files_dir/ to $USB_TMP/$sys_files_dir..."
+        mkdir -p $USB_TMP/$sys_files_dir 
+        ( cd $USB_TMP/$sys_files_dir
+          for i in $DEBIAN_ISO_TMP/$sys_files_dir/*; do
+           [ ! -e "$i" ] && continue 
+           ln -fs $i "$(basename $i)"
+          done
+        )
+        ;;
+esac
+# More dir or files. Dirs need to be modified or small files, just copy them.
+rsync -a $DEBIAN_ISO_TMP/boot $DEBIAN_ISO_TMP/.disk $USB_TMP/
+# Remove unnecessary files in $USB_TMP/boot/
+rm -rf $USB_TMP/boot/grub/{live-theme,loopback.cfg,grub.cfg,splash.png}
 echo "done!"
 
 cp -af $DRBL_SCRIPT_PATH/doc/GPL $USB_TMP/
@@ -699,7 +703,7 @@ if [ "$live_efi_boot_loader" = "grub" ]; then
   if [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootia32.efi" -o -e "$DEBIAN_ISO_TMP/EFI/boot/bootx64.efi" -o \
        -e "$DEBIAN_ISO_TMP/EFI/boot/bootaa64.efi" ]; then
     cp -af $DEBIAN_ISO_TMP/EFI $USB_TMP/
-    cp -af $ocs_logo_grub2_img_png $USB_TMP/EFI/boot/
+    cp -af $ocs_logo_grub2_img_png $USB_TMP/boot/grub/
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Warning! Missing /EFI/boot/bootia32.efi, /EFI/boot/bootx64.efi or /EFI/boot/bootaa64.efi in the template iso!"
@@ -711,7 +715,7 @@ elif [ "$live_efi_boot_loader" = "syslinux" ]; then
    cp -af $pxelinux_binsrc_dir/efi64/syslinux.efi $USB_TMP/EFI/boot/bootx64.efi 
    cp -af $pxelinux_binsrc_dir/efi64/ldlinux.e64 $USB_TMP/EFI/boot/
    cp -af $pxelinux_binsrc_dir/efi64/*.c32 $USB_TMP/EFI/boot/
-   cp -af $ocs_logo_grub2_img_png $USB_TMP/EFI/boot/
+   cp -af $ocs_logo_grub2_img_png $USB_TMP/boot/grub/
 fi
 # $USB_TMP/EFI and its sub dirs might be not in the mode of 755 since they are copied from the files from iso. We chmod to 755 so that it's easier to remove them by "rm -rf" when it's not used anymore.
 # This especially for zip file, not iso file, because iso file won't only mount it, not unzip it.
@@ -948,49 +952,6 @@ else
   quiet_switch=""
 fi
 
-# //NOTE//
-# Build the EFI boot image. This is especially for iso file. Not for USB stick. However, here we still prepare the file so that later it's easier to use genisoimage to create the EFI-enabled iso.
-# The following codes are referred from Fedora anaconda's mk-images.efi
-# http://fedorapeople.org/cgit/karsten/public_git/anaconda.git/plain/scripts/mk-images.efi
-# Ref: https://fedoraproject.org/wiki/User:Pjones/BootableCDsForBIOSAndUEFI#New_UEFI.2FBIOS_hybrid_method
-EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
-EFI_BOOTTREE="$DEBIAN_ISO_TMP/EFI"
-EFI_IMG="$USB_TMP/boot/grub/efiboot.img"
-mkdir -p $USB_TMP/boot/grub/
-rm -rf $USB_TMP/.disk
-rm -f $EFI_IMG
-
-BOOTDISKSIZE="$(LC_ALL=C du -bcs $EFI_BOOTTREE/boot/*.efi | tail -n1 | awk '{print $1}')"
-BOOTDISKSIZE="$(LC_ALL=C echo "scale=0; ($BOOTDISKSIZE / 1024 + 120) / 32 * 32" | bc -l)"
-echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
-mkdosfs -n OCS-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
-mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
-mkdir -p $EFI_BOOTIMG_TMP/EFI/boot/
-if [ "$live_efi_boot_loader" = "grub" ]; then
-  # In this case, bootx64.efi (and grubx64.efi for secure boot) is in $EFI_BOOTTREE/
-  rsync -a $EFI_BOOTTREE/boot/*.efi $EFI_BOOTIMG_TMP/EFI/boot/
-elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-  # In this case, bootx64.efi is copied in $USB_TMP/EFI/, we should do something similar with ocs-gen-grub2-efi-bldr
-  rsync -a $USB_TMP/boot/*.efi $EFI_BOOTIMG_TMP/EFI/boot/
-  # TODO similar to ocs-gen-grub2-efi-bldr, create a syslinux.cfg to include /syslinux/syslinux.cfg.
-fi
-umount $EFI_BOOTIMG_TMP
-if [ -d "$EFI_BOOTIMG_TMP" -a -n \
-	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
-  rm -rf $EFI_BOOTIMG_TMP
-fi
-
-# Create an info file for grub2 to autodetect the cd root
-# Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
-mkdir $USB_TMP/.disk
-echo -n "[Clonezilla]" > $USB_TMP/.disk/info
-
-cat <<-EFI_END > $USB_TMP/boot/grub/grub.cfg
-# This file is for compatibility to Ubuntu Linux's uEFI secure boot. 
-# The real config file for grub is /EFI/boot/grub.cfg.
-configfile /EFI/boot/grub.cfg
-EFI_END
-
 # Prepare the sort file for xorriso. Although we do not use xorriso here, however, we'd like the file created by ocs-live-dev is the same with that of ocs-iso. So it's easier to convert zip file to iso file.
 # Therefore we still put the file iso_sort.txt here.
 if [ -d "$USB_TMP/syslinux/" -o -d "$USB_TMP/isolinux/" ]; then
@@ -1018,10 +979,10 @@ if [ -n "$ocs_image" ]; then
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
     if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" -o -e "$USB_TMP/EFI/boot/bootaa64.efi" ]; then
-      ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/EFI/boot/
+      ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for EFI machine" syslinux $USB_TMP/EFI/boot/
+    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for EFI machine" syslinux $USB_TMP/boot/grub/
   fi
 else
   # No image is included
@@ -1036,10 +997,10 @@ else
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
     if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" -o -e "$USB_TMP/EFI/boot/bootaa64.efi" ]; then
-      ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/EFI/boot
+      ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for EFI machine" syslinux $USB_TMP/EFI/boot/
+    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for EFI machine" syslinux $USB_TMP/boot/grub/
   fi
 fi
 
