@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.31.8
+Version:	3.32.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Aug 24 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.1-drbl1
+  * Let live-build 20180618 handle uEFI boot, so
+    ocs-put-signed-grub2-efi-bldr and ocs-gen-grub2-efi-bldr are deprecated.
+    The changes:
+    1. /boot/grub/efiboot.img is /boot/grub/efi.img now.
+    2. /EFI/boot/grub.cfg is moved to /boot/grub/grub.cfg now.
+
 * Mon Aug 20 2018 Steven Shiau <steven _at_ clonezilla org> 3.31.8-drbl1
   * Temporarily disable dislocker-find in ocs-get-part-info due to some
     issues: (1) It's broken in Debian Sid: https://bugs.debian.org/906430
