@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.1
+Version:	3.32.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Aug 27 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.2-drbl1
+  * Typoes in ocs-onthefly fixed. Thanks to ProBackup-nl.
+    Ref: https://github.com/stevenshiau/clonezilla/pull/40/
+
 * Fri Aug 24 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.1-drbl1
   * Let live-build 20180618 handle uEFI boot, so
     ocs-put-signed-grub2-efi-bldr and ocs-gen-grub2-efi-bldr are deprecated.
