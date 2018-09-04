@@ -37,7 +37,7 @@ timeout_max="300"
 ipadd_closed_lan="192.168.169.250"
 netmask_closed_lan="24"
 gwadd_closed_lan="192.168.169.254"
-interactive_mode="no"
+ocs_sr_mode=""
 
 # Functions
 USAGE() {
@@ -75,7 +75,7 @@ USAGE() {
 } # end of USAGE
 #
 prompt_for_lite_server() {
-  if [ "$interactive_mode" = "yes" ]; then
+  if [ "$ocs_sr_mode" = "interactive" ]; then
     echo "$msg_delimiter_star_line"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_ocs_live_lite_server_des"
@@ -593,7 +593,7 @@ task_start_feed_img_for_cast() {
   local MCAST_TMP ans_ cast_dev_action
   local start_cmd
   local OCS_OPT_PRE ocs_opt_dia
-  local rc_chkimg
+  local rc_chkimg rc_final
   local castmode choose_term input_key
 
   #prompt_for_lite_server
@@ -713,7 +713,7 @@ task_start_feed_img_for_cast() {
     ocs-live-repository
   fi
   # When $ocsroot is not a mount point, and nothing lists under it, run prep-ocsroot
-  if [ "$interactive_mode" = "yes" ]; then
+  if [ "$ocs_sr_mode" = "interactive" ]; then
     if ! mountpoint $ocsroot &>/dev/null; then
       if [ -z "$(ls -d $ocsroot/*/ 2>/dev/null)" ]; then
         prep-ocsroot
@@ -722,7 +722,7 @@ task_start_feed_img_for_cast() {
   fi
 
   #
-  if [ "$interactive_mode" = "yes" ]; then
+  if [ "$ocs_sr_mode" = "interactive" ]; then
     [ -z "$ocs_user_mode" ] && ask_if_beginner_or_expert_mode
   fi
 
@@ -834,7 +834,7 @@ task_start_feed_img_for_cast() {
   fi
   cast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_deploy_packet)"
 
-  if [ "$interactive_mode" = "yes" ]; then
+  if [ "$ocs_sr_mode" = "interactive" ]; then
     # ask if want to set ocs extra param
     OCS_PARAM_TMP=`mktemp /tmp/ocs_param_tmp.XXXXXX`
     trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
@@ -892,7 +892,7 @@ task_start_feed_img_for_cast() {
     task="multicast_restore" # pass to function get_bt_restore_mode_if_bittorrent
     OCS_OPT="$OCS_OPT --mcast-port $MULTICAST_PORT"
 
-    if [ "$interactive_mode" = "yes" ]; then
+    if [ "$ocs_sr_mode" = "interactive" ]; then
       if [ -z "$n_clients" -o "$mcast_wait_time" ]; then
         get_multicast_restore_mode_if_mcast
         # Obtain mcast_wait_time, n_clients, mcast_max_wait_time (global variables) to pass to function start_ocs_service
@@ -912,7 +912,7 @@ task_start_feed_img_for_cast() {
     # Force to make client won't check the image integrity since this is for multicast restoring.
     OCS_OPT="$OCS_OPT -scr"
     task="bt_restore" # pass to function get_bt_restore_mode_if_bittorrent
-    if [ "$interactive_mode" = "yes" ]; then
+    if [ "$ocs_sr_mode" = "interactive" ]; then
       if [ -z "$n_clients" ]; then
         get_bt_restore_mode_if_bittorrent
         # Obtain n_clients (global variables) to pass to function start_ocs_service
@@ -1047,7 +1047,7 @@ CLIENT_END
   echo $msg_delimiter_star_line
 
   # Only in interactive mode we will show the command to run it again. For non-interactive mode, $OCS_OPT_PRE is not collected so the command is not complete.
-  if [ "$interactive_mode" = "yes" ]; then
+  if [ "$ocs_sr_mode" = "interactive" ]; then
     run_again_fname="/tmp/ocs-live-feed-img-`date +%F-%H-%M`"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
     echo PS. $msg_run_drbl_ocs_again_cmd | tee -a ${OCS_LOGFILE}
@@ -1084,12 +1084,14 @@ CLIENT_END
      y|Y) ocs_prompt_mode="cmd"
           confirm_continue_or_not_default_quit -d "$msg_it_might_stop_required_restoring_service"
           choose_term="yes"
+	  rc_final="0"
           ;;
     esac
   done
-  # Make the ocsmgrd outputs won't be overwritten by dialog.
-  postaction="true"
+  # The ocsmgrd outputs will be put in /var/log/clonezilla/ocsmgrd*.log. Therefore no need to force postaction=true. Here make it nothing so that user can choose the postaction later.
+  postaction=""
   save_ocs_sr_related_vars
+  return $rc_final
 } # end of task_start_feed_img_for_cast
 #
 task_stop_feed_img_for_cast() {
@@ -1103,6 +1105,7 @@ task_stop_feed_img_for_cast() {
   service lighttpd stop
   stop_nat_service
   stop_ocs_service -m $ocs no
+  return 0
 } # task_stop_feed_img_for_cast
 
 ####################
@@ -1130,7 +1133,7 @@ ocs_restore_dev="$*"
 
 if [ "$ocs_restore_img_name" = "ask_user" -a \
      "$ocs_restore_dev" = "ask_user" ]; then
-   interactive_mode="yes"
+   ocs_sr_mode="interactive"
 fi
 
 # Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
@@ -1180,8 +1183,14 @@ fi
 mkdir -p $ocs_log_dir
 ocs_log_rotate $OCS_LOGFILE
 
+rc=""
 case "$mode" in 
-  start) task_start_feed_img_for_cast;;
-   stop) task_stop_feed_img_for_cast;;
-      *) USAGE;;
+  start) task_start_feed_img_for_cast
+	 rc=$? ;;
+   stop) task_stop_feed_img_for_cast
+	 rc=$? ;;
+      *) USAGE
+	 rc=1 ;;
 esac
+
+exit $rc
