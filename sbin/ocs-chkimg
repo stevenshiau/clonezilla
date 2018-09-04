@@ -609,7 +609,10 @@ ask_and_load_lang_set
 
 # imagedir is a variable which ask_user related function need
 imagedir="$ocsroot"
-[ -z "$ocs_chk_img_name" ] && ocs_chk_img_name="ask_user"
+if [ -z "$ocs_chk_img_name" ]; then
+  ocs_chk_img_name="ask_user"
+  ocs_sr_mode="interactive"
+fi
 # if "$ocs_chk_dev" is nothing, we check all the partitions.
 
 #
@@ -620,8 +623,14 @@ fi
 
 log_line_start="$(LC_ALL=C wc -l $OCS_LOGFILE | cut -d" " -f1)"
 
+# Clean the previous saved env so if ocs-onthefly is cancelled, won't read the previous env and reboot/poweroff.
+rm -f /var/lib/clonezilla/ocs-vars
+
 task_checkimage "$ocs_chk_img_name" "$ocs_chk_dev"
 rc=$?
+
+# Save the mode
+save_ocs_sr_related_vars
 
 log_line_start="$((log_line_start + 1))"
 # Output the log summary.
