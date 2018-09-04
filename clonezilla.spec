@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.2
+Version:	3.32.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Sep 04 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.3-drbl1
+  * Show postrun dialog after ocs-live-feed-img is run.
+  * Program ocs-chkimg should keep the ocs_sr_mode in
+    /var/lib/clonezilla/ocs-vars so that ocs-live-run-menu
+    can read it. This can avoid dialog be run
+    without waiting for user to press enter. Thanks to Grant Chapman
+    (grantdchapman _at_ gmail com) for reporting this issue.
+
 * Mon Aug 27 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.2-drbl1
   * Typoes in ocs-onthefly fixed. Thanks to ProBackup-nl.
     Ref: https://github.com/stevenshiau/clonezilla/pull/40/
