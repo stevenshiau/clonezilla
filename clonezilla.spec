@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.3
+Version:	3.32.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.27.7, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.28.4, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,20 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Sep 25 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.4-drbl1
+  * In addition to massive-deployment mode, the interactive-client mode was
+    added so that lite server can provide the ability to enter interactive
+    mode of Clonezilla live in the clients.
+  * Add boot parameter secure_boot_client so that the mechanism of
+    secure boot for uEFI client can be enabled with a boot parameters.
+    The secure boot mechanism for clients is not complete, because there are
+    two limits for signed shim and grub:
+    (1) Shim and grub does not honor the proxy offer packet.
+        Ref: https://lists.gnu.org/archive/html/grub-devel/2016-04/msg00051.html
+             http://lists.thekelleys.org.uk/pipermail/dnsmasq-discuss/2017q1/011347.html
+    (2) grub lacks the ability to autoload grub2's config file when
+    netbooting. Ref: https://bugzilla.redhat.com/show_bug.cgi?id=873406
+
 * Tue Sep 04 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.3-drbl1
   * Show postrun dialog after ocs-live-feed-img is run.
   * Program ocs-chkimg should keep the ocs_sr_mode in
