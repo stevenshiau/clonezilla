@@ -470,11 +470,18 @@ gen_ocs_live_netboot_conf() {
   # A workaround to fix the dnsmasq issue for uEFI network boot clients (actually grub should be patched)
   # i.e., we have to assign the tftp server IP address in grub network boot loader.
   # This is only necessary when dnsmasq is used to relay the DHCP request from clients to existing DHCP service
+  # Now this only works for non-secure-boot clients.
   # Ref: http://lists.thekelleys.org.uk/pipermail/dnsmasq-discuss/2017q1/011124.html
   #      https://lists.gnu.org/archive/html/grub-devel/2016-04/msg00051.html
-  case "$ocs_litesrv_netmode" in
-     "use-existing-dhcpd") drbl-gen-grub-efi-nb -t $cast_srv_ip ;;
-  esac
+  if [ "$secure_boot_client" = "no" ]; then
+    case "$ocs_litesrv_netmode" in
+      "use-existing-dhcpd") drbl-gen-grub-efi-nb -t $cast_srv_ip ;;
+    esac
+  else
+    # Secure boot for clients is enabled, so force to use the signed shim and grub.
+    drbl-gen-grub-efi-nb -s
+  fi
+
   gen-grub-efi-nb-menu
 
   # Add Clonezilla live in the boot menu and for netboot. Actually we will use http service instead of tftpd. However, just run drbl-sl to make things easier. Hence both files for netboot using tftpd and httpd will be ready.
@@ -499,8 +506,15 @@ gen_ocs_live_netboot_conf() {
   for imenu in $grub_menu_to_hide; do
     hide_reveal_grub_efi_ent $imenu hide $GRUB_CONF
   done
-  set-default-pxe-img -i "Clonezilla-live" -c $PXE_CONF -l "Clonezilla live lite client: restore $target_dir"
-  set-default-grub-efi-img -i "clonezilla-live-client" -c $GRUB_CONF -l "Clonezilla live lite client: restore $target_dir"
+  if [ -n "$target_dir" ]; then
+    # massive-deployment mode
+    set-default-pxe-img -i "Clonezilla-live" -c $PXE_CONF -l "Clonezilla live lite client: restore $target_dir"
+    set-default-grub-efi-img -i "clonezilla-live-client" -c $GRUB_CONF -l "Clonezilla live lite client: restore $target_dir"
+  else
+    # interactive-client mode
+    set-default-pxe-img -i "Clonezilla-live" -c $PXE_CONF
+    set-default-grub-efi-img -i "clonezilla-live-client" -c $GRUB_CONF
+  fi
 
   # Add boot parameters: locales, kb, ocs-live-get-img $server
   echo "Modifying keyboard-layouts, locales, ocs_daemonon, and ocs_prerun in $PXE_CONF if necessary..."
@@ -534,8 +548,10 @@ gen_ocs_live_netboot_conf() {
     add_opt_in_pxelinux_cfg_block -n Clonezilla-live locales "$ocs_lang_for_pxe_ocs_live"
     add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" locales "$ocs_lang_for_pxe_ocs_live"
   fi
-  add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "ocs-live-get-img $cast_srv_ip"
-  add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "ocs-live-get-img $cast_srv_ip"
+  if [ "$ls_client_mode"  = "massive-deployment" ]; then
+    add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "ocs-live-get-img $cast_srv_ip"
+    add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "ocs-live-get-img $cast_srv_ip"
+  fi
   # Overwrite the default background photo
   cp -a $DRBL_SCRIPT_PATH/image/ocswp.png $pxecfg_pd/drblwp.png
   # Switch the menu title to Clonezilla
@@ -617,6 +633,20 @@ task_start_feed_img_for_cast() {
   fi
   OCS_OPT_PRE="$OCS_OPT_PRE -cbm $client_boot_mode"
 
+  # If secure boot is enabled for clients, then set ocs_litesrv_netmode as start-new-dhcpd
+  # This limit can be lifted in the future when shim and grub honor the proxy mode of dnsmasq.
+  # Ref: https://lists.gnu.org/archive/html/grub-devel/2016-04/msg00051.html
+  #      http://lists.thekelleys.org.uk/pipermail/dnsmasq-discuss/2017q1/011347.html
+  if [ "$secure_boot_client" = "yes" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING | tee --append ${OCS_LOGFILE}
+    echo "$msg_secure_boot_for_clients_is_enabled" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
+    ocs_litesrv_netmode="start-new-dhcpd"
+    if [ "$ocs_batch_mode" != "on" ]; then
+      echo -n "$msg_press_enter_to_continue..."
+      read
+    fi
+  fi
   # 
   if [ -z "$ocs_litesrv_netmode" ]; then
     ask_dhcpd=""
@@ -727,246 +757,340 @@ task_start_feed_img_for_cast() {
     [ -z "$ocs_user_mode" ] && ask_if_beginner_or_expert_mode
   fi
 
-  # Ask image name first (disk or parts image)
-  # Image name
-  if [ "$ocs_restore_img_name" = "ask_user" ]; then
-    TMP=$(mktemp /tmp/menu.XXXXXX)
-    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-    $DIA \
-    --backtitle "$msg_nchc_title" \
-    --title "$msg_start_clonezilla_mode" \
-    --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
-    "restoredisk" "$msg_clonezilla_restore_disk" \
-    "restoreparts" "$msg_clonezilla_restore_parts" \
-    2> $TMP
-    cast_dev_action=$(cat $TMP)
-    [ -f "$TMP" ] && rm -f $TMP
-    # ocs_mode_prompt will be passed to the dialog about asking dev_type, OCS parameters...
-    ocs_mode_prompt="$cast_dev_action"
-    case "$cast_dev_action" in
-    "restoredisk")
-      ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
-      trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-      get_existing_disk_image $ANS_TMP rest-unenc
-      # the return name will be only one image name.
-      target_dir="$(cat $ANS_TMP)"
-      [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
-      dev_type="disk"
-      ;;
-    "restoreparts")
-      ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
-      trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-      get_existing_parts_image $ANS_TMP rest-unenc
-      # the return name will be only one image name.
-      target_dir="$(cat $ANS_TMP)"
-      [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
-      dev_type="parts"
-      ;;
-    esac
-    ocs_restore_img_name="$target_dir"  # Keep it for later use in run_again prompt
-  else
-    target_dir="$ocs_restore_img_name"
-  fi
-  check_input_target_image "$ocsroot/$target_dir"
-
-  # Get target device
-  if [ -z "$ocs_restore_dev" -o \
-          "$ocs_restore_dev" = "ask_user" ]; then
-    # choose the only dev we want
-    case "$dev_type" in
-     "disk")
-        ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
-        trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-	get_existing_disks_from_img $ANS_TMP $imagedir/$target_dir
-        # we have to remove " (comes with checklist in dialog) so that for loop
-        # will work (Specially for FC3/4...)
-        target_hd="$(cat $ANS_TMP | tr -d \")"
-        ocs_restore_dev="$target_hd" # keep it for later use in run_again prompt
-        [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
-        ;;
-     "parts")
-        ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
-        trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-	get_existing_partitions_from_img $ANS_TMP $imagedir/$target_dir no restore
-        # we have to remove " (comes with checklist in dialog) so that for loop
-        # will work (Specially for FC3/4...)
-        target_parts="$(cat $ANS_TMP | tr -d \")"
-        ocs_restore_dev="$target_parts" # keep it for later use in run_again prompt
-        [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
-        ;;
-    esac
-  else
-    if [ -n "$dev_type" ]; then
-      # In interactive mode, we know $dev_type is.
-      case "$dev_type" in
-        "disk") target_hd="$ocs_restore_dev";;
-        "parts") target_parts="$ocs_restore_dev";;
-      esac
-    else
-      # When not in interactive mode, we have no idea what $dev_type is.
-      # However, we can tell from $ocs_restore_dev, e.g. sda -> disk, sda1 -> parts
-      # cast_dev_action is required for function start_ocs_service
-      # while target_hd or target_parts is required for function 
-      # multicast_restoredisk and multicast_restoreparts (hence for start_ocs_service)
-      first_ele="$(echo $ocs_restore_dev | awk -F" " '{print $1}')"
-      if is_whole_disk $first_ele; then
-        cast_dev_action="restoredisk"
-        target_hd="$ocs_restore_dev"
-      else
-        cast_dev_action="restoreparts"
-        target_parts="$ocs_restore_dev"
-      fi
-    fi
-  fi
-
-  # When Clonezilla live runs as multicast feeding server, the uplink port is where the packets sending.
-  # No matter it's multicast, broadcast or bt, we use that ethernet port
-  if [ -n "$eth_for_multicast" ]; then
-    eth_for_deploy_packet="$eth_for_multicast"
-  else
-    eth_for_deploy_packet="$(LC_ALL=C get-all-nic-ip -u)"
-  fi
-  if [ -z "$eth_for_deploy_packet" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE | tee -a ${OCS_LOGFILE}
-    echo "No network card was assigned for sending packets." | tee -a ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee -a ${OCS_LOGFILE}
+  # Ask if restoring or clonezilla live diskless service
+  TMP=$(mktemp /tmp/menu.XXXXXX)
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  $DIA \
+  --backtitle "$msg_nchc_title" \
+  --title "$msg_start_clonezilla_mode" \
+  --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
+  "massive-deployment" "$msg_clonezilla_massive_deployment" \
+  "interactive-client" "$msg_netboot_interactive_client" \
+  2> $TMP
+  ls_client_mode=$(cat $TMP)
+  [ -f "$TMP" ] && rm -f $TMP
+  if [ -z "$ls_client_mode" ]; then
     echo "$msg_program_stop!"
     exit 1
   fi
-  cast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_deploy_packet)"
 
-  if [ "$ocs_sr_mode" = "interactive" ]; then
-    # ask if want to set ocs extra param
-    OCS_PARAM_TMP=`mktemp /tmp/ocs_param_tmp.XXXXXX`
-    trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
-    set_drbl_ocs_extra_param -s -p reboot restore $OCS_PARAM_TMP $dev_type
-    # OCS_OPT_PRE is for ocs-live-feed-img, we have to convert to that for ocs-sr
-    ocs_opt_dia="$(cat $OCS_PARAM_TMP)"
-    ocs_opt_dia="$(echo $ocs_opt_dia)"  # Make it in one line
-    parse_ocs_live_feed_img_cmd_options_with_dash $ocs_opt_dia # Obtain $OCS_OPT for ocs-sr
-    [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
-    OCS_OPT_PRE="$OCS_OPT_PRE $ocs_opt_dia"
-  fi
-  # Load default settings if not assigned
-  if [ -z "$chk_img_restoreable_on_srv" ]; then
-    chk_img_restoreable_on_srv="$chk_img_restoreable_on_srv_def"
-  fi
-
-  # Enable bittorrent restoring when ocs-bttrack is available
-  if type ocs-bttrack &>/dev/null; then
-    bt_restore_msg_1="bittorrent"
-    bt_restore_msg_2="$(rep_whspc_w_udrsc "$msg_bittorent_restore")"
-  fi
-  # get the mode of multicast, broadcast or bittorrent
-  eval msg_choose_the_mode_to_restore_dev=\$msg_choose_the_mode_to_restore_${dev_type}
-  if [ -z "$massive_deploy_mode" ]; then
-    TMP=$(mktemp /tmp/menu.XXXXXX)
-    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-    $DIA \
-    --backtitle "$msg_nchc_title" \
-    --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-    --menu "$msg_choose_the_mode_to_restore_dev" 0 0 0 \
-    "multicast"       "$msg_multicast_restore" \
-    "broadcast"       "$msg_broadcast_restore" \
-    $bt_restore_msg_1 $bt_restore_msg_2 \
-    2> $TMP
-    massive_deploy_mode=$(cat $TMP)
-    [ -f "$TMP" ] && rm -f $TMP
-  fi
-  case "$massive_deploy_mode" in
-    multicast|broadcast) castmode="multicast";;
-             bittorrent) castmode="bt";;
-		      *) echo "$msg_program_stop!"
-			 exit 1
-			 ;;
-  esac
-  [ "$massive_deploy_mode" = "broadcast" ] && udp_sender_extra_opt="$udp_sender_extra_opt --broadcast"
-  OCS_OPT_PRE="$OCS_OPT_PRE -md $massive_deploy_mode"
-
-  # ocs_mode_prompt will be passed to the dialog about asking mcast_wait_time, n_clients, mcast_max_wait_time
-  ocs_mode_prompt="$massive_deploy_mode"
-  if [ "$castmode" = "multicast" ]; then
-    # eth_for_multicast will be passed to function start_ocs_service
-    eth_for_multicast="$eth_for_deploy_packet" # passed to function start_ocs_service
-    # Force to make client won't check the image integrity since this is for multicast restoring.
-    OCS_OPT="$OCS_OPT -scr"
-    task="multicast_restore" # pass to function get_bt_restore_mode_if_bittorrent
-    OCS_OPT="$OCS_OPT --mcast-port $MULTICAST_PORT"
-
-    if [ "$ocs_sr_mode" = "interactive" ]; then
-      if [ -z "$n_clients" -o "$mcast_wait_time" ]; then
-        get_multicast_restore_mode_if_mcast
-        # Obtain mcast_wait_time, n_clients, mcast_max_wait_time (global variables) to pass to function start_ocs_service
+  # Clean stale files to avoid accidentally using them.
+  rm -f /var/www/html/ocs-client-run.conf /var/www/html/img-wo-fs.tar.xz | tee -a ${OCS_LOGFILE}
+  if [ "$ls_client_mode"  = "massive-deployment" ]; then
+    # Ask image name first (disk or parts image)
+    # Image name
+    if [ "$ocs_restore_img_name" = "ask_user" ]; then
+      TMP=$(mktemp /tmp/menu.XXXXXX)
+      trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+      $DIA \
+      --backtitle "$msg_nchc_title" \
+      --title "$msg_start_clonezilla_mode" \
+      --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
+      "restoredisk" "$msg_clonezilla_restore_disk" \
+      "restoreparts" "$msg_clonezilla_restore_parts" \
+      2> $TMP
+      cast_dev_action=$(cat $TMP)
+      [ -f "$TMP" ] && rm -f $TMP
+      # ocs_mode_prompt will be passed to the dialog about asking dev_type, OCS parameters...
+      ocs_mode_prompt="$cast_dev_action"
+      case "$cast_dev_action" in
+      "restoredisk")
+        ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+        trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+        get_existing_disk_image $ANS_TMP rest-unenc
+        # the return name will be only one image name.
+        target_dir="$(cat $ANS_TMP)"
+        [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
+        dev_type="disk"
+        ;;
+      "restoreparts")
+        ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+        trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+        get_existing_parts_image $ANS_TMP rest-unenc
+        # the return name will be only one image name.
+        target_dir="$(cat $ANS_TMP)"
+        [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
+        dev_type="parts"
+        ;;
+      *)
+        echo "Unknown mode for cast_dev_action: $cast_dev_action"
+        echo "$msg_program_stop!"
+        exit 1
+        ;;
+      esac
+      ocs_restore_img_name="$target_dir"  # Keep it for later use in run_again prompt
+    else
+      target_dir="$ocs_restore_img_name"
+    fi
+    check_input_target_image "$ocsroot/$target_dir"
+  
+    # Get target device
+    if [ -z "$ocs_restore_dev" -o \
+            "$ocs_restore_dev" = "ask_user" ]; then
+      # choose the only dev we want
+      case "$dev_type" in
+       "disk")
+          ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+          trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+  	get_existing_disks_from_img $ANS_TMP $imagedir/$target_dir
+          # we have to remove " (comes with checklist in dialog) so that for loop
+          # will work (Specially for FC3/4...)
+          target_hd="$(cat $ANS_TMP | tr -d \")"
+          ocs_restore_dev="$target_hd" # keep it for later use in run_again prompt
+          [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+          ;;
+       "parts")
+          ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+          trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+  	get_existing_partitions_from_img $ANS_TMP $imagedir/$target_dir no restore
+          # we have to remove " (comes with checklist in dialog) so that for loop
+          # will work (Specially for FC3/4...)
+          target_parts="$(cat $ANS_TMP | tr -d \")"
+          ocs_restore_dev="$target_parts" # keep it for later use in run_again prompt
+          [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+          ;;
+       *)
+         echo "Unknown dev_type in $0: $dev_type"
+         echo "$msg_program_stop!"
+         exit 1
+         ;;
+      esac
+    else
+      if [ -n "$dev_type" ]; then
+        # In interactive mode, we know $dev_type is.
+        case "$dev_type" in
+          "disk") target_hd="$ocs_restore_dev";;
+          "parts") target_parts="$ocs_restore_dev";;
+        esac
+      else
+        # When not in interactive mode, we have no idea what $dev_type is.
+        # However, we can tell from $ocs_restore_dev, e.g. sda -> disk, sda1 -> parts
+        # cast_dev_action is required for function start_ocs_service
+        # while target_hd or target_parts is required for function 
+        # multicast_restoredisk and multicast_restoreparts (hence for start_ocs_service)
+        first_ele="$(echo $ocs_restore_dev | awk -F" " '{print $1}')"
+        if is_whole_disk $first_ele; then
+          cast_dev_action="restoredisk"
+          target_hd="$ocs_restore_dev"
+        else
+          cast_dev_action="restoreparts"
+          target_parts="$ocs_restore_dev"
+        fi
       fi
     fi
-    if [ -n "$n_clients" ]; then
-      cast_client_no_opt="-n $n_clients"  # Used for start_ocs_service
-      OCS_OPT_PRE="$OCS_OPT_PRE --clients-to-wait $n_clients"  # For re-run prompt
+  
+    # When Clonezilla live runs as multicast feeding server, the uplink port is where the packets sending.
+    # No matter it's multicast, broadcast or bt, we use that ethernet port
+    if [ -n "$eth_for_multicast" ]; then
+      eth_for_deploy_packet="$eth_for_multicast"
+    else
+      eth_for_deploy_packet="$(LC_ALL=C get-all-nic-ip -u)"
     fi
-    if [ -n "$mcast_wait_time" ]; then
-      OCS_OPT_PRE="$OCS_OPT_PRE --time-to-wait $mcast_wait_time"  # For re-run prompt
-    fi
-    if [ -n "$mcast_max_wait_time" ]; then
-      OCS_OPT_PRE="$OCS_OPT_PRE --max-time-to-wait $mcast_max_wait_time"  # For re-run prompt
-    fi
-  elif [ "$castmode" = "bt" ]; then
-    # Force to make client won't check the image integrity since this is for multicast restoring.
-    OCS_OPT="$OCS_OPT -scr"
-    task="bt_restore" # pass to function get_bt_restore_mode_if_bittorrent
-    if [ "$ocs_sr_mode" = "interactive" ]; then
-      if [ -z "$n_clients" ]; then
-        get_bt_restore_mode_if_bittorrent
-        # Obtain n_clients (global variables) to pass to function start_ocs_service
-      fi
-    fi
-    if [ -n "$n_clients" ]; then
-      cast_client_no_opt="-n $n_clients"  # Used for start_ocs_service
-      OCS_OPT_PRE="$OCS_OPT_PRE --clients-to-wait $n_clients"  # For re-run prompt
-    fi
-  fi
-
-  # Before really starting the feeding service, we can check if the image integrity is OK or not.
-  # If the image is checked on the server, then we force to skip image checking on the clients when restoring.
-  if [ -d "$imagedir/$target_dir" -a "$chk_img_restoreable_on_srv" = "yes" ]; then
-    echo $msg_delimiter_star_line
-    check_image_if_restorable -i "$target_dir" "$imagedir"
-    rc_chkimg="$?"
-    if [ "$rc_chkimg" -ne 0 ]; then
+    if [ -z "$eth_for_deploy_packet" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE | tee -a ${OCS_LOGFILE}
+      echo "No network card was assigned for sending packets." | tee -a ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee -a ${OCS_LOGFILE}
       echo "$msg_program_stop!"
       exit 1
     fi
-  fi
-
-  # For {multicast|bt}_restoredisk, the input device variable is $target_hd
-  # For {multicast|bt}_restoreparts, the input device variable is $target_parts
-  start_cmd="start_ocs_service $cast_client_no_opt -f -t \"${castmode}_${cast_dev_action}\" -o \"$target_dir $ocs_restore_dev\""
-  echo "Running: $start_cmd"
-  eval $start_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
-
-  if [ "$castmode" = "multicast" ]; then
-    echo -n "Waiting for udp-sender service to be started... "
-    time=$timeout_max
-    while [ -z "$(LC_ALL=C ps -www --no-headers -C "udp-sender" -o pid,cmd)" ]; do
-      sleep 1
-      time="$((time - 1))"
-      if [ "$time" -le "0" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo -n "Timeout for waiting for udp-sender process..." | tee -a ${OCS_LOGFILE}
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
-        exit 1
-      else
-        echo -n "$time "
+    cast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_deploy_packet)"
+  
+    if [ "$ocs_sr_mode" = "interactive" ]; then
+      # ask if want to set ocs extra param
+      OCS_PARAM_TMP=`mktemp /tmp/ocs_param_tmp.XXXXXX`
+      trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
+      set_drbl_ocs_extra_param -s -p reboot restore $OCS_PARAM_TMP $dev_type
+      # OCS_OPT_PRE is for ocs-live-feed-img, we have to convert to that for ocs-sr
+      ocs_opt_dia="$(cat $OCS_PARAM_TMP)"
+      ocs_opt_dia="$(echo $ocs_opt_dia)"  # Make it in one line
+      parse_ocs_live_feed_img_cmd_options_with_dash $ocs_opt_dia # Obtain $OCS_OPT for ocs-sr
+      [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
+      OCS_OPT_PRE="$OCS_OPT_PRE $ocs_opt_dia"
+    fi
+    # Load default settings if not assigned
+    if [ -z "$chk_img_restoreable_on_srv" ]; then
+      chk_img_restoreable_on_srv="$chk_img_restoreable_on_srv_def"
+    fi
+  
+    # Enable bittorrent restoring when ocs-bttrack is available
+    if type ocs-bttrack &>/dev/null; then
+      bt_restore_msg_1="bittorrent"
+      bt_restore_msg_2="$(rep_whspc_w_udrsc "$msg_bittorent_restore")"
+    fi
+    # get the mode of multicast, broadcast or bittorrent
+    eval msg_choose_the_mode_to_restore_dev=\$msg_choose_the_mode_to_restore_${dev_type}
+    if [ -z "$massive_deploy_mode" ]; then
+      TMP=$(mktemp /tmp/menu.XXXXXX)
+      trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+      $DIA \
+      --backtitle "$msg_nchc_title" \
+      --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+      --menu "$msg_choose_the_mode_to_restore_dev" 0 0 0 \
+      "multicast"       "$msg_multicast_restore" \
+      "broadcast"       "$msg_broadcast_restore" \
+      $bt_restore_msg_1 $bt_restore_msg_2 \
+      2> $TMP
+      massive_deploy_mode=$(cat $TMP)
+      [ -f "$TMP" ] && rm -f $TMP
+    fi
+    case "$massive_deploy_mode" in
+      multicast|broadcast) castmode="multicast";;
+               bittorrent) castmode="bt";;
+  		      *) echo "$msg_program_stop!"
+  			 exit 1
+  			 ;;
+    esac
+    [ "$massive_deploy_mode" = "broadcast" ] && udp_sender_extra_opt="$udp_sender_extra_opt --broadcast"
+    OCS_OPT_PRE="$OCS_OPT_PRE -md $massive_deploy_mode"
+  
+    # ocs_mode_prompt will be passed to the dialog about asking mcast_wait_time, n_clients, mcast_max_wait_time
+    ocs_mode_prompt="$massive_deploy_mode"
+    if [ "$castmode" = "multicast" ]; then
+      # eth_for_multicast will be passed to function start_ocs_service
+      eth_for_multicast="$eth_for_deploy_packet" # passed to function start_ocs_service
+      # Force to make client won't check the image integrity since this is for multicast restoring.
+      OCS_OPT="$OCS_OPT -scr"
+      task="multicast_restore" # pass to function get_bt_restore_mode_if_bittorrent
+      OCS_OPT="$OCS_OPT --mcast-port $MULTICAST_PORT"
+  
+      if [ "$ocs_sr_mode" = "interactive" ]; then
+        if [ -z "$n_clients" -o "$mcast_wait_time" ]; then
+          get_multicast_restore_mode_if_mcast
+          # Obtain mcast_wait_time, n_clients, mcast_max_wait_time (global variables) to pass to function start_ocs_service
+        fi
       fi
+      if [ -n "$n_clients" ]; then
+        cast_client_no_opt="-n $n_clients"  # Used for start_ocs_service
+        OCS_OPT_PRE="$OCS_OPT_PRE --clients-to-wait $n_clients"  # For re-run prompt
+      fi
+      if [ -n "$mcast_wait_time" ]; then
+        OCS_OPT_PRE="$OCS_OPT_PRE --time-to-wait $mcast_wait_time"  # For re-run prompt
+      fi
+      if [ -n "$mcast_max_wait_time" ]; then
+        OCS_OPT_PRE="$OCS_OPT_PRE --max-time-to-wait $mcast_max_wait_time"  # For re-run prompt
+      fi
+    elif [ "$castmode" = "bt" ]; then
+      # Force to make client won't check the image integrity since this is for multicast restoring.
+      OCS_OPT="$OCS_OPT -scr"
+      task="bt_restore" # pass to function get_bt_restore_mode_if_bittorrent
+      if [ "$ocs_sr_mode" = "interactive" ]; then
+        if [ -z "$n_clients" ]; then
+          get_bt_restore_mode_if_bittorrent
+          # Obtain n_clients (global variables) to pass to function start_ocs_service
+        fi
+      fi
+      if [ -n "$n_clients" ]; then
+        cast_client_no_opt="-n $n_clients"  # Used for start_ocs_service
+        OCS_OPT_PRE="$OCS_OPT_PRE --clients-to-wait $n_clients"  # For re-run prompt
+      fi
+    fi
+  
+    # Before really starting the feeding service, we can check if the image integrity is OK or not.
+    # If the image is checked on the server, then we force to skip image checking on the clients when restoring.
+    if [ -d "$imagedir/$target_dir" -a "$chk_img_restoreable_on_srv" = "yes" ]; then
+      echo $msg_delimiter_star_line
+      check_image_if_restorable -i "$target_dir" "$imagedir"
+      rc_chkimg="$?"
+      if [ "$rc_chkimg" -ne 0 ]; then
+        echo "$msg_program_stop!"
+        exit 1
+      fi
+    fi
+  
+    # For {multicast|bt}_restoredisk, the input device variable is $target_hd
+    # For {multicast|bt}_restoreparts, the input device variable is $target_parts
+    start_cmd="start_ocs_service $cast_client_no_opt -f -t \"${castmode}_${cast_dev_action}\" -o \"$target_dir $ocs_restore_dev\""
+    echo "Running: $start_cmd"
+    eval $start_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
+  
+    if [ "$castmode" = "multicast" ]; then
+      echo -n "Waiting for udp-sender service to be started... "
+      time=$timeout_max
+      while [ -z "$(LC_ALL=C ps -www --no-headers -C "udp-sender" -o pid,cmd)" ]; do
+        sleep 1
+        time="$((time - 1))"
+        if [ "$time" -le "0" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo -n "Timeout for waiting for udp-sender process..." | tee -a ${OCS_LOGFILE}
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+          exit 1
+        else
+          echo -n "$time "
+        fi
+      done
+      echo -e -n "Done!\n"
+      echo "Feeding status:" | tee -a ${OCS_LOGFILE}
+      echo $msg_delimiter_star_line | tee -a ${OCS_LOGFILE}
+      ps -www -C "cat" -C "udp-sender" -o pid,cmd | tee -a ${OCS_LOGFILE}
+      echo $msg_delimiter_star_line | tee -a ${OCS_LOGFILE}
+      echo "More udp-sender and cat comamnds (if available) will be spawned when the 1st one is done." | tee -a ${OCS_LOGFILE}
+    fi
+  
+    # Prepare image for clients
+    echo $msg_delimiter_star_line
+    # Two parts: img-wo-fs.tar.xz and ocs-client-run.conf
+    # Part 1: img-wo-fs.tar.xz
+    echo "Preparing files for clients to download in /var/www/html/: ocs-client-run.conf, img-wo-fs.tar.xz" | tee -a ${OCS_LOGFILE}
+    echo "Packing the tarball containing no file system images: img-wo-fs.tar.xz..." | tee -a ${OCS_LOGFILE}
+    img_no_fs_tmp="$(mktemp -d /tmp/img_no_fs.XXXXXX)"
+    rsync -a --exclude=*-ptcl-img.* --exclude=*.ntfs-img.* --exclude=*.dd-img.* $imagedir/$target_dir/* $img_no_fs_tmp | tee -a ${OCS_LOGFILE}
+    if [ -d "$imagedir/btzone/$target_dir" ]; then
+      mkdir -p $img_no_fs_tmp/btzone/$target_dir
+      rsync -a $imagedir/btzone/$target_dir/*.torrent $img_no_fs_tmp/btzone | tee -a ${OCS_LOGFILE}
+    fi
+    # TODO: partimage file name, or drop it?
+    for ifile in $imagedir/$target_dir/*-ptcl-img.* \
+  	       $imagedir/$target_dir/*.ntfs-img.* \
+  	       $imagedir/$target_dir/*.dd-img.*; do
+      [ ! -e "$ifile" ] && continue  
+      fn="$(basename $ifile)"
+      touch $img_no_fs_tmp/$fn
     done
-    echo -e -n "Done!\n"
-    echo "Feeding status:" | tee -a ${OCS_LOGFILE}
-    echo $msg_delimiter_star_line | tee -a ${OCS_LOGFILE}
-    ps -www -C "cat" -C "udp-sender" -o pid,cmd | tee -a ${OCS_LOGFILE}
-    echo $msg_delimiter_star_line | tee -a ${OCS_LOGFILE}
-    echo "More udp-sender and cat comamnds (if available) will be spawned when the 1st one is done." | tee -a ${OCS_LOGFILE}
+    ( cd $img_no_fs_tmp
+      tar -cJf /var/www/html/img-wo-fs.tar.xz *
+    )
+    if [ -d "$img_no_fs_tmp" -a \
+         -n "$(echo $img_no_fs_tmp | grep -i "img_no_fs")" ]; then
+      rm -rf "$img_no_fs_tmp" | tee -a ${OCS_LOGFILE}
+    fi
+    # Part 2: ocs-client-run.conf
+    cat <<-CLIENT_END > /var/www/html/ocs-client-run.conf
+pseudo_img="img-wo-fs.tar.xz"
+img_prefix="$target_dir"
+ocs_sr_opt="--ocsroot /tmp/ -l en_US.UTF-8 $OCS_OPT ${castmode}_${cast_dev_action} ocs_lite_pseudo_name $ocs_restore_dev"
+CLIENT_END
+    if [ -e "/var/www/html/img-wo-fs.tar.xz" -a -e "/var/www/html/ocs-client-run.conf" ]; then
+      echo "Files /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.conf created successfully:" | tee -a ${OCS_LOGFILE}
+      ls -lv /var/www/html/img-wo-fs.tar.xz /var/www/html/ocs-client-run.conf | tee -a ${OCS_LOGFILE}
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Failed to create /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.conf." | tee -a ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+      exit 1
+    fi
+    echo $msg_delimiter_star_line
+  
+    #
+    case "$ocs_litesrv_netmode" in
+      "use-existing-dhcpd"|"start-new-dhcpd") always_restore="no" ;;  # So that ocsmgrd will update PXE/Grub NB confi
+      "no-dhcpd")                             always_restore="yes" ;; # So that ocsmgrd won't update PXE/Grub NB config
+    esac
+    start_ocsmgrd_daemon
+    echo $msg_delimiter_star_line
+  elif [ "$ls_client_mode"  = "interactive-client" ]; then
+    # Interactive mode for clients.
+    echo "Starting network booting mechanism for clients to enter Clonezilla live interactive mode..."
+    # cast_srv_ip is required for generating uEFI netboot, a workaround for tftp to fix the dnsmasq issue for uEFI network boot clients. Check "drbl-gen-grub-efi-nb -t $cast_srv_ip" in function gen_ocs_live_netboot_conf
+    eth_for_deploy_packet="$(LC_ALL=C get-all-nic-ip -u)"
+    cast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_deploy_packet)"
+  else
+    echo "Unknown mode for ls_client_mode: $ls_client_mode"
+    echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
+    exit 1
   fi
-
+  
   # Prepare the config for clients
   if ! systemctl status lighttpd >/dev/null 2>&1; then
     systemctl start lighttpd | tee -a ${OCS_LOGFILE}
@@ -993,59 +1117,6 @@ task_start_feed_img_for_cast() {
     add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" fetch "http://$cast_srv_ip/Clonezilla-live-filesystem.squashfs"
    ;;
   esac
-
-  echo $msg_delimiter_star_line
-  # Two parts: img-wo-fs.tar.xz and ocs-client-run.conf
-  # Part 1: img-wo-fs.tar.xz
-  rm -f /var/www/html/ocs-client-run.conf /var/www/html/img-wo-fs.tar.xz | tee -a ${OCS_LOGFILE}
-  echo "Preparing files for clients to download in /var/www/html/: ocs-client-run.conf, img-wo-fs.tar.xz" | tee -a ${OCS_LOGFILE}
-  echo "Packing the tarball containing no file system images: img-wo-fs.tar.xz..." | tee -a ${OCS_LOGFILE}
-  img_no_fs_tmp="$(mktemp -d /tmp/img_no_fs.XXXXXX)"
-  rsync -a --exclude=*-ptcl-img.* --exclude=*.ntfs-img.* --exclude=*.dd-img.* $imagedir/$target_dir/* $img_no_fs_tmp | tee -a ${OCS_LOGFILE}
-  if [ -d "$imagedir/btzone/$target_dir" ]; then
-    mkdir -p $img_no_fs_tmp/btzone/$target_dir
-    rsync -a $imagedir/btzone/$target_dir/*.torrent $img_no_fs_tmp/btzone | tee -a ${OCS_LOGFILE}
-  fi
-  # TODO: partimage file name, or drop it?
-  for ifile in $imagedir/$target_dir/*-ptcl-img.* \
-	       $imagedir/$target_dir/*.ntfs-img.* \
-	       $imagedir/$target_dir/*.dd-img.*; do
-    [ ! -e "$ifile" ] && continue  
-    fn="$(basename $ifile)"
-    touch $img_no_fs_tmp/$fn
-  done
-  ( cd $img_no_fs_tmp
-    tar -cJf /var/www/html/img-wo-fs.tar.xz *
-  )
-  if [ -d "$img_no_fs_tmp" -a \
-       -n "$(echo $img_no_fs_tmp | grep -i "img_no_fs")" ]; then
-    rm -rf "$img_no_fs_tmp" | tee -a ${OCS_LOGFILE}
-  fi
-  # Part 2: ocs-client-run.conf
-  cat <<-CLIENT_END > /var/www/html/ocs-client-run.conf
-pseudo_img="img-wo-fs.tar.xz"
-img_prefix="$target_dir"
-ocs_sr_opt="--ocsroot /tmp/ -l en_US.UTF-8 $OCS_OPT ${castmode}_${cast_dev_action} ocs_lite_pseudo_name $ocs_restore_dev"
-CLIENT_END
-  if [ -e "/var/www/html/img-wo-fs.tar.xz" -a -e "/var/www/html/ocs-client-run.conf" ]; then
-    echo "Files /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.conf created successfully:" | tee -a ${OCS_LOGFILE}
-    ls -lv /var/www/html/img-wo-fs.tar.xz /var/www/html/ocs-client-run.conf | tee -a ${OCS_LOGFILE}
-  else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Failed to create /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.conf." | tee -a ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
-    exit 1
-  fi
-  echo $msg_delimiter_star_line
-
-  #
-  case "$ocs_litesrv_netmode" in
-    "use-existing-dhcpd"|"start-new-dhcpd") always_restore="no" ;;  # So that ocsmgrd will update PXE/Grub NB confi
-    "no-dhcpd")                             always_restore="yes" ;; # So that ocsmgrd won't update PXE/Grub NB config
-  esac
-  start_ocsmgrd_daemon
-  echo $msg_delimiter_star_line
 
   # Only in interactive mode we will show the command to run it again. For non-interactive mode, $OCS_OPT_PRE is not collected so the command is not complete.
   if [ "$ocs_sr_mode" = "interactive" ]; then
