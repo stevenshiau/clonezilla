@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.4
+Version:	3.32.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.28.4, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.28.6, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Sep 29 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.5-drbl1
+  * Keep locales for the name without ".UTF-8", e.g., keep locales for
+    both en_US.UTF-8 and en_US when running localepurge as Clonezilla live
+    is created.
+
 * Tue Sep 25 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.4-drbl1
   * In addition to massive-deployment mode, the interactive-client mode was
     added so that lite server can provide the ability to enter interactive
