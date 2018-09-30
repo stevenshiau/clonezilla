@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.5
+Version:	3.32.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-* Sun Sep 29 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.5-drbl1
+* Sun Sep 30 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.6-drbl1
+  * Merge variables locale_to_keep_for_X and locale_to_keep_for_no_X as
+    locale_to_keep in live-hook of clonezilla live.
+
+* Sat Sep 29 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.5-drbl1
   * Keep locales for the name without ".UTF-8", e.g., keep locales for
     both en_US.UTF-8 and en_US when running localepurge as Clonezilla live
     is created.
