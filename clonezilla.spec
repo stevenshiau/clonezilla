@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.6
+Version:	3.32.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Oct 10 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.7-drbl1
+  * Disable network-manager by default in DRBL/Clonezilla live. This can
+    avoid it automatically starts dhclient, and later conflicts with
+    ocs-live-netcfg.
+
 * Sun Sep 30 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.6-drbl1
   * Merge variables locale_to_keep_for_X and locale_to_keep_for_no_X as
     locale_to_keep in live-hook of clonezilla live.
