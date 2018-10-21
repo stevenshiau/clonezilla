@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.7
+Version:	3.32.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Oct 21 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.8-drbl1
+  * Bug fixed: remove "-i" from fatresize options in ocs-resize-part.
+    Thanks to MaDaTyGo for reporting this.
+    Ref: https://github.com/stevenshiau/clonezilla/issues/41
+
 * Wed Oct 10 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.7-drbl1
   * Disable network-manager by default in DRBL/Clonezilla live. This can
     avoid it automatically starts dhclient, and later conflicts with
