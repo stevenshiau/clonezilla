@@ -1251,7 +1251,12 @@ local_partition_to_partiton_clone() {
   elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
     # Ex: partclone.reiserfs -b -s /dev/hda3 -O /dev/hdc1
     echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
-    cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_ONTHEFLY_OPT -L $partclone_log -b -s $src_p -O $tgt_p"
+    if [ "$pt_fs" != "dd" ]; then
+      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_ONTHEFLY_OPT -L $partclone_log -b -s $src_p -O $tgt_p"
+    else
+      # Some parameters for partclone.dd are not required. Here "-b" is not provided by partclone.dd when run in dev to dev
+      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_ONTHEFLY_OPT -L $partclone_log -s $src_p -O $tgt_p"
+    fi
     echo "Run partclone: $cmd_partclone" | tee --append ${OCS_LOGFILE}
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     ret=$?
@@ -1287,7 +1292,7 @@ local_dev_clone() {
           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
 	  echo "No file system was found in /dev/$src_dev!" | tee --append $OCS_LOGFILE
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-          local_partition_to_partiton_clone unknown /dev/$src_dev /dev/$tgt_dev
+          local_partition_to_partiton_clone dd /dev/$src_dev /dev/$tgt_dev
 	  # Unknown file system, no way to mount to inspect the checksum. Skip it here.
        else
           local_partition_to_partiton_clone $part_fs /dev/$src_dev /dev/$tgt_dev
@@ -1316,7 +1321,7 @@ local_dev_clone() {
             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
             echo "No file system was found in /dev/$src_part!" | tee --append $OCS_LOGFILE
             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-            local_partition_to_partiton_clone unknown /dev/$src_part /dev/$target_part
+            local_partition_to_partiton_clone dd /dev/$src_part /dev/$target_part
 	    # Unknown file system, no way to mount to inspect the checksum. Skip it here.
          else
             local_partition_to_partiton_clone $part_fs /dev/$src_part /dev/$target_part
@@ -1346,8 +1351,14 @@ feed_dev_in_server() {
   elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
     # Ex: partclone.reiserfs -c -s /dev/hda3 -o -
     echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
-    cmd_partclone="partclone.${pt_fs} -L $partclone_log -c -s $src_p -o - 2>/dev/null | \
-    $filter_comp | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &"
+    if [ "$pt_fs" != "dd" ]; then
+      cmd_partclone="partclone.${pt_fs} -L $partclone_log -c -s $src_p -o - 2>/dev/null | \
+      $filter_comp | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &"
+    else
+      # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
+      cmd_partclone="partclone.${pt_fs} -L $partclone_log -s $src_p -o - 2>/dev/null | \
+      $filter_comp | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &"
+    fi
     echo "Run partclone: $cmd_partclone" | tee --append ${OCS_LOGFILE}
     LC_ALL=C eval "((${cmd_partclone}) && exit \${PIPESTATUS[0]})"
     ret=$?
@@ -1411,8 +1422,14 @@ receive_partition_from_server_then_write() {
   elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
     # Ex: partclone.reiserfs -s - -o /dev/hdc1
     echo "Using partclone.${pt_fs} to clone..." | tee --append $OCS_LOGFILE 
-    cmd_partclone="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT | $filter_decomp | \
-    partclone.${pt_fs} $PARTCLONE_RESTORE_ONTHEFLY_OPT -L $partclone_log -s - -r -o $tgt_p"
+    if [ "${pt_fs}" != "dd" ]; then
+      cmd_partclone="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT | $filter_decomp | \
+      partclone.${pt_fs} $PARTCLONE_RESTORE_ONTHEFLY_OPT -L $partclone_log -s - -r -o $tgt_p"
+    else
+      # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when restoring
+      cmd_partclone="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT | $filter_decomp | \
+      partclone.${pt_fs} $PARTCLONE_RESTORE_ONTHEFLY_OPT -L $partclone_log -s -  -o $tgt_p"
+    fi
     echo "Run partclone: $cmd_partclone" | tee --append ${OCS_LOGFILE}
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     ret=$?

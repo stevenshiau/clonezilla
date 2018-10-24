@@ -43,9 +43,21 @@ USAGE() {
 img_check_by_partclone() {
   local file_ fs_ partclone_img_info_tmp file_basename rc
   # First, we find the filesystem 
+  # $target_d, $img_file are globle variables
   file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
   file_basename="$(basename ${file_})"
   if [ -n "${file_}" ]; then
+    if [ -e "$target_d/$img_file.dd-img" -o \
+	 -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" -o \
+	 -n "$(ls $target_d/$img_file.dd-ptcl-img.* 2>/dev/null)" ]; then
+      if [ "$dd_checking_method" = "no-check" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Image was saved by dd or partclone.dd. No need or no way to check the file system integrity: $img_file" | tee --append ${OCS_LOGFILE}
+        sleep 1
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        return 0
+      fi
+    fi
     if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
       # new format, image file is like: sda1.ext4-ptcl-img.gz, sda1.ext4-ptcl-img.gz.aa
       fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-ptcl-img.*//g")"
@@ -150,11 +162,12 @@ do_partition_or_lv_img_check() {
       echo "$msg_this_part_in_the_img_is_ok: $img_file" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
     fi
-  elif [ -f "$target_d/$img_file.dd-img" -o \
-	 -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
+  elif [ -e "$target_d/$img_file.dd-img" -o \
+	 -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" -o \
+	 -n "$(ls $target_d/$img_file.dd-ptcl-img.* 2>/dev/null)" ]; then
     if [ "$dd_checking_method" = "no-check" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Image was saved by dd. No need to check the file system integrity: $img_file" | tee --append ${OCS_LOGFILE}
+      echo "Image was saved by dd or partclone.dd. No need or no way to check the file system integrity: $img_file" | tee --append ${OCS_LOGFILE}
       sleep 1
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       rc=0
@@ -516,7 +529,7 @@ task_checkimage() {
     hd_tmp="$(get_diskname $partition)"
     part_is_lvm="no"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
-    if [ -e $PV_PARSE_CONF ]; then
+    if [ -e "$PV_PARSE_CONF" ]; then
       for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
         if [ "$partition" = "$(get_master_dev_of_multipath $i)" ]; then
           part_is_lvm="yes"

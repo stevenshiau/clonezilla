@@ -877,6 +877,10 @@ get_image_cat_zip_cmd() {
       cat_prog="lzop -dc"
       zip_stdin_cmd="lzop -c"
       unzip_stdin_cmd="lzop -dc"
+    elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "lzma compressed data")" ]; then
+      cat_prog="lzcat"
+      zip_stdin_cmd="lzma -c $extra_lzma_opt"
+      unzip_stdin_cmd="unlzma -c"
     elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "lz4 compressed data")" ]; then
       # Ex: hdb1.ntfs-img: lzop compressed data - version 1.010, LZO1X-1, os: Unix
       if [ "$cpu_no" -gt 1 ] && \
@@ -1303,7 +1307,12 @@ save_part_by_partclone() {
   split_error="$(mktemp /tmp/split_error.XXXXXX)"
   trap "[ -f "$TMP" ] && rm -f $split_error" HUP INT QUIT TERM EXIT
 
-  cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -c -s $source_dev --output - | $compress_prog_opt"
+  if [ "$fs_p" != "dd" ]; then
+    cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -c -s $source_dev --output - | $compress_prog_opt"
+  else
+    # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
+    cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
+  fi
   case "$VOL_LIMIT" in
     [1-9]*)
        # $tgt_dir/${tgt_file}.${fs_pre}-img. is prefix, the last "." is necessary make the output file is like hda1.${fs_pre}-img.aa, hda1.${fs_pre}-img.ab. We do not add -d to make it like hda1.${fs_pre}-img.00, hda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (hda1.${fs_pre}-img.000, hda1.${fs_pre}-img.001)
@@ -1648,7 +1657,8 @@ image_save() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   if [ "$FORCE_TO_USE_DD" = "yes" ]; then
     # case (0): force to use dd
-    save_part_by_dd
+    # save_part_by_dd
+    save_part_by_partclone dd
   elif [ "$USE_NTFSCLONE" = "yes" -a "$part_fs" = "ntfs" ]; then
     # case (1): ntfsclone is preferred
     save_part_by_ntfsclone
@@ -1660,7 +1670,8 @@ image_save() {
     save_part_by_partimage
   else
     # case (4): not supported filesystem, the last choice is to use dd to dump.
-    save_part_by_dd
+    # save_part_by_dd
+    save_part_by_partclone dd
   fi
   rc=$?
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
@@ -5263,7 +5274,7 @@ unicast_restore_by_ntfsclone() {
 #
 unicast_restore_by_partclone() {
   local file_ fs_ partclone_img_info_tmp file_basename
-  local unzip_stdin_cmd_error
+  local unzip_stdin_cmd_error cmd_partclone_rest
   local -a retcodes='()'
   # First, we find the filesystem 
   file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
@@ -5335,6 +5346,12 @@ unicast_restore_by_partclone() {
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
 
   start_time="$(date +%s%N)"
+  if [ "$fs_" != "dd" ]; then
+    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part"
+  else
+    # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when restoring
+    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -o $part"
+  fi
   # partclone_hfsp does not put any header, so just cat them
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
 cat <<_EOT_ >> ${OCS_LOGFILE}
@@ -5343,14 +5360,14 @@ cat <<_EOT_ >> ${OCS_LOGFILE}
     done
   ) \
   | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
-  | LC_ALL=C partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
+  | LC_ALL=C $cmd_partclone_rest
 _EOT_
   ( for img in $target_d/$img_file_prefix; do
       cat $img
     done
   ) \
   | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
-  | LC_ALL=C partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
+  | LC_ALL=C $cmd_partclone_rest
   retcodes=(${PIPESTATUS[@]})
 
   if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
