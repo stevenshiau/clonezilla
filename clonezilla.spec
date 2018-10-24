@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.8
+Version:	3.32.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,15 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Oct 24 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.9-drbl1
+  * Make unknown fs as "dd", and the image name for partition like:
+    sda3.dd-img.aa is now a legacy. It's replaced by
+    sda3.dd-ptcl-img.lzma.aa.
+    Rewrite the same mechanism in ocs-onthefly.
+  * Bug fixed: Failed to detect lzma compression for the partition image
+    file $pt.dd-img.aa. Thanks to Phil P.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/307/
+
 * Sun Oct 21 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.8-drbl1
   * Bug fixed: remove "-i" from fatresize options in ocs-resize-part.
     Thanks to MaDaTyGo for reporting this.
