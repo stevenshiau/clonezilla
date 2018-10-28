@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.10
+Version:	3.32.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Oct 28 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.11-drbl1
+  * Bug fixed: remove the extra "-r" option in partclone.dd
+    for multicast restoring.
+
 * Sun Oct 28 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.10-drbl1
   * Bug fixed: failed to create correct files for BT mechanism when the file
     system is in dd mode. This bug was introduced when ".dd-ptcl-img." file
