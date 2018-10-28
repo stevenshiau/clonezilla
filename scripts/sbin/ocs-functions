@@ -5603,7 +5603,7 @@ multicast_restore_by_ntfsclone() {
 } # end of multicast_restore_by_ntfsclone
 #
 multicast_restore_by_partclone() {
-  local file_ fs_ partclone_img_info_tmp IP file_basename
+  local file_ fs_ partclone_img_info_tmp IP file_basename cmd_partclone_rest
   # First, we find the filesystem 
   # Image files are like: sda2.hfsp-img.aa  sda2.hfsp-img.ab  sda2.hfsp-img.ac
   file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
@@ -5656,12 +5656,18 @@ multicast_restore_by_partclone() {
 
   start_time="$(date +%s%N)"
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
+  if [ "${fs_}" != "dd" ]; then
+    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part"
+  else
+    # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when restoring
+    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -o $part"
+  fi
 cat <<_EOT_ >> ${OCS_LOGFILE}
   $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
-  LC_ALL=C partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
+  LC_ALL=C $cmd_partclone_rest
 _EOT_
   $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
-  LC_ALL=C partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part
+  LC_ALL=C $cmd_partclone_rest
   rc="$?"
   end_time="$(date +%s%N)"
   # sync_and_active_exec_files
