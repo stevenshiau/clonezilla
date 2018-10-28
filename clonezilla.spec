@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.9
+Version:	3.32.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Oct 28 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.10-drbl1
+  * Bug fixed: failed to create correct files for BT mechanism when the file
+    system is in dd mode. This bug was introduced when ".dd-ptcl-img." file
+    format was added.
+  * Stop using "--allowed_dir" for ocs-bttrack in ocs-btsrv. This makes
+    starting tracker very slow when there are huge number of files in the
+    dir.
+
 * Wed Oct 24 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.9-drbl1
   * Make unknown fs as "dd", and the image name for partition like:
     sda3.dd-img.aa is now a legacy. It's replaced by
