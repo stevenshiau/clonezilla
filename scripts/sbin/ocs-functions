@@ -12985,7 +12985,7 @@ create_bt_image_files_from_partclone_img() {
   local idev="$1"  # e.g. sda1, vg001/lv001
   local target_d   # e.g. /home/partimag/my-img
   local img_file   # e.g. sda1, vg001-lv001 (use for something like sda1.ext4-ptcl-img.gz.aa)
-  local file_ unzip_stdin_cmd_error img_size_sum
+  local file_ unzip_stdin_cmd_error img_size_sum img_file_prefix cmd_partclone_extract
   unzip_stdin_cmd_error="$(mktemp /tmp/unzip_stdin_cmd_error.XXXXXX)"
   if [ -z "$idev" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -13004,6 +13004,10 @@ create_bt_image_files_from_partclone_img() {
       if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
         # new format, image file is like: sda1.ext4-ptcl-img.gz, sda1.ext4-ptcl-img.gz.aa
         fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-ptcl-img.*//g")"
+      else
+        # old format, image file is like: sda2.hfsp-img.aa  sda2.hfsp-img.ab  sda2.hfsp-img.ac
+	# Or sda3.dd-img.aa.
+        fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-img.*//g")"
       fi
     fi
     if [ -z "${fs_}" ]; then
@@ -13028,6 +13032,20 @@ create_bt_image_files_from_partclone_img() {
         # The file is NOT split, so the file name is just like "sda1.ext4-ptcl-img.gz" only, no "."
         img_file_prefix="${file_basename}"
       fi
+    else
+      # Old format
+      # The split suffix length for old format is only 2, so we do not have to consider >=3 (*.aaa or more).
+      if [ -f "$target_d/$img_file.${fs_}-img.aa" ]; then
+        # Old format with image split
+        get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img.aa
+        # The files are split, like hda1.00, hda1.01, so we have to add "."
+        img_file_prefix="$img_file.${fs_}-img.*"
+      else
+        # Old format with image not split
+        get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img
+        # The file is NOT split, so the file name is just like "hda1" only, no "."
+        img_file_prefix="$img_file.${fs_}-img"
+      fi
     fi
     if [ -z "$unzip_stdin_cmd" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -13041,13 +13059,19 @@ create_bt_image_files_from_partclone_img() {
     # E.g. partclone.extfs -d -r -s ./sda1.img -o mntc/ -T
     if [ "$partclone_make_slice_opt" = "extract" ]; then
       # Method 1: Extract the slices from image directly for BT
+      if [ "$fs_" != "dd" ]; then
+        cmd_partclone_extract="partclone.${fs_} -d -r $PARTCLONE_RESTORE_OPT -s - -T -o $ocsroot_btzone/$tgt_dir/$img_file"
+      else
+        # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when extracting 
+        cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT -s - --btfiles --buffer_size 10485760 -o $ocsroot_btzone/$tgt_dir/$img_file"
+      fi
       echo "Preparing image slice files for BT use: $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img" | tee --append ${OCS_LOGFILE}
       ( for img in $target_d/$img_file_prefix; do
           cat $img
         done
       ) \
       | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
-      | LC_ALL=C partclone.${fs_} -d -r $PARTCLONE_RESTORE_OPT -s - -T -o $ocsroot_btzone/$tgt_dir/$img_file 
+      | LC_ALL=C $cmd_partclone_extract
       retcodes=(${PIPESTATUS[@]})
     elif [ "$partclone_make_slice_opt" = "fusecopy" ]; then
       ## Method 2: Use Partclone >= 0.3.5 to mount uncompressed image as BT slices.
