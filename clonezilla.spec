@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.11
+Version:	3.32.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Oct 30 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.12-drbl1
+  * Set buffer size of BT slices as 16 MB. Thanks to Date Huang.
+    Ref: https://gitlab.com/stevenshiau/clonezilla/merge_requests/38
+
 * Sun Oct 28 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.11-drbl1
   * Bug fixed: remove the extra "-r" option in partclone.dd
     for multicast restoring.
