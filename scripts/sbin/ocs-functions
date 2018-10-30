@@ -13066,10 +13066,10 @@ create_bt_image_files_from_partclone_img() {
     if [ "$partclone_make_slice_opt" = "extract" ]; then
       # Method 1: Extract the slices from image directly for BT
       if [ "$fs_" != "dd" ]; then
-        cmd_partclone_extract="partclone.${fs_} -d -r $PARTCLONE_RESTORE_OPT -s - -T -o $ocsroot_btzone/$tgt_dir/$img_file"
+        cmd_partclone_extract="partclone.${fs_} -d -r $PARTCLONE_RESTORE_OPT -s - -T --buffer_size 16777216 -o $ocsroot_btzone/$tgt_dir/$img_file"
       else
         # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when extracting 
-        cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT -s - --btfiles --buffer_size 10485760 -o $ocsroot_btzone/$tgt_dir/$img_file"
+        cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT -s - --btfiles --buffer_size 16777216 -o $ocsroot_btzone/$tgt_dir/$img_file"
       fi
       echo "Preparing image slice files for BT use: $ocsroot_btzone/$tgt_dir/${img_file}/" | tee --append ${OCS_LOGFILE}
       ( for img in $target_d/$img_file_prefix; do
@@ -13150,7 +13150,7 @@ create_bt_image_files_from_partclone_img() {
     ) \
     | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
     | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -d --btfiles \
-      --buffer_size 10485760 -s - -o $ocsroot_btzone/$tgt_dir/$img_file
+      --buffer_size 16777216 -s - -o $ocsroot_btzone/$tgt_dir/$img_file
 _EOT_
     ( for img in $ocsroot/$tgt_dir/$img_file_prefix; do
         # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
@@ -13160,7 +13160,7 @@ _EOT_
     ) \
     | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
     | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -d --btfiles \
-      --buffer_size 10485760 -s - -o $ocsroot_btzone/$tgt_dir/$img_file
+      --buffer_size 16777216 -s - -o $ocsroot_btzone/$tgt_dir/$img_file
     retcodes=(${PIPESTATUS[@]})
     
     if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
