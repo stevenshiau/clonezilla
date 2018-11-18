@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.12
+Version:	3.32.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Nov 18 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.13-drbl1
+  * Bug fixed: return code for checksum was wrong.
+    Thanks to Korver.Kirk (Kirk.Korver _at_ IGT com) for reporting this.
+    Ref: https://sourceforge.net/p/clonezilla/mailman/message/36454003/
+
 * Tue Oct 30 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.12-drbl1
   * Set buffer size of BT slices as 16 MB. Thanks to Date Huang.
     Ref: https://gitlab.com/stevenshiau/clonezilla/merge_requests/38
