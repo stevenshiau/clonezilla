@@ -489,7 +489,7 @@ create_partition_table_in_target(){
       # try to see if the partition table exists in the target 
       #if [ -n "$(LC_ALL=C fdisk -l /dev/$target_hd 2>/dev/null | grep -E "/dev/[sh]d[a-z][0-9]+")" ] ; then
       gen_proc_partitions_map_file
-      if [ -n "$(LC_ALL=C grep -Eo "$target_hd[[:digit:]]+" $partition_table)" ]; then
+      if [ -n "$(LC_ALL=C grep -Eo "${target_hd}p?[[:digit:]]+" $partition_table)" ]; then
         partition_table_exist_in_target="yes"
       else
         partition_table_exist_in_target="no"
@@ -512,7 +512,7 @@ create_partition_table_in_target(){
     if [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then 
       # try to see if the partition table exists in the target 
       gen_proc_partitions_map_file
-      if [ -z "$(LC_ALL=C grep -Eo "$target_hd[[:digit:]]+" $partition_table)" ]; then
+      if [ -z "$(LC_ALL=C grep -Eo "${target_hd}p?[[:digit:]]+" $partition_table)" ]; then
         # No any partition found!
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
         echo "No partition table exists in /dev/$target_hd, and you choose not to create partition table in /dev/$target_hd! We can not go on without partition table in /dev/$target_hd!!!"
@@ -1110,6 +1110,7 @@ ADVAN_PARAM_END
 
     # swap partition info
     for iswap in $hd_tgt_tmp/swappt-*.info; do
+      [ ! -e "$iswap" ] && continue
       # $hd_tgt_tmp/swappt-${partition}.info
       s_swpname="${iswap#/dev/*}"
       if [ "$target_hd" != "$source_hd" ]; then
