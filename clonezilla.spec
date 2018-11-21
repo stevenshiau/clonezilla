@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.13
+Version:	3.32.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.28.6, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.28.9, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Nov 21 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.14-drbl1
+  * Add support for creating Ubuntu 19.04 live system. 
+    The mechanism to add non-free firmwares was broken due to Ubuntu 19.04
+    start using UsrMerge, and it was fixed in this release.
+
 * Sun Nov 18 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.13-drbl1
   * Bug fixed: return code for checksum was wrong.
     Thanks to Korver.Kirk (Kirk.Korver _at_ IGT com) for reporting this.
