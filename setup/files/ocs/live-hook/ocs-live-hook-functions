@@ -776,9 +776,11 @@ get_non_free_net_firmware_for_ubuntu() {
   nic_firmware_udeb="$(LC_ALL=C xzcat $tmp_wd/Packages.xz | sed -ne 's/^Filename: //p' | grep -Ew "nic-firmware_.")"
   # result like: pool/main/l/linux-firmware/nic-firmware_1.78_all.udeb
   wget -P $tmp_wd $mirror_url/$nic_firmware_udeb
-  echo "Extracting non-free firmware and puting it in Clonezilla live..."
-  mkdir -p $target_dir
-  dpkg-deb --extract $tmp_wd/$(basename $nic_firmware_udeb) $target_dir
+  echo "Install non-free firmware about NICs in Clonezilla live..."
+  # //NOTE// Do not run something like: dpkg-deb --extract $tmp_wd/$(basename $nic_firmware_udeb) $target_dir
+  # It will overwrite the dir permissions. E.g., if /lib/ is a link file, it will be removed and be created as dir.
+  # This will break the usrmerge system (Ubuntu >= 19.04).
+  dpkg -i $tmp_wd/$(basename $nic_firmware_udeb) 
 
   # Find the license doc and put it. They are from linux-firmware.
   apt-get -d --reinstall install linux-firmware
