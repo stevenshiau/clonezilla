@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.14
+Version:	3.32.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Dec 02 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.15-drbl1
+  * Add an option (-r) for create-debian-live and create-ubuntu-live to use
+    RAMFS as live-build working dir.
+
 * Wed Nov 21 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.14-drbl1
   * Add support for creating Ubuntu 19.04 live system. 
     The mechanism to add non-free firmwares was broken due to Ubuntu 19.04
