@@ -22,6 +22,10 @@ DEBIAN_DIST_DEF="wheezy"
 pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DRBL_FOR_CLONEZILLA_LIVE"
 categories_default="main"
 cpu_flavor_default="586"
+workdir="debian-live"
+# RAM as the working dir. Speed up the live system creation, but need RAM space.
+use_ramfs="no"
+ramfs_size_def="5368709120"  # Unit: bytes. Use for mount -t tmpfs if use_ramfs=yes
 
 # The files in dir $ocs_live_script_dir/ will be copied to the dir /live-hook-dir in dir chroot. The file "ocs-live-hook" is in $ocs_live_script_dir
 # We put some files in dir ocs_minimal_hook/ to do some jobs, like clean unnecessary files, set locales...
@@ -49,6 +53,7 @@ USAGE() {
     echo "-b, --branch [s|stable|t|testing|u|unstable|e|experimental]  Specify the DRBL branch to be used in Live CD. Default is stable."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
     echo "-d, --debian-dist [stable|testing|unstable|lenny|squeeze|wheezy|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
+    echo "-e, --ramfs-size  SIZE  Use SIZE (bytes) as the size of RAM for working dir. Default is $ramfs_size_def."
     echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 586, 686, amd64 or arm64. If it's not assigned, $cpu_flavor_default will be used."
     echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
@@ -56,6 +61,7 @@ USAGE() {
     echo "-l, --drbl-live-branch [s|stable|t|testing|u|unstable|e|experimental]  specifies the DRBL live branch to be used in Live CD. Default is stable."
     echo "-p, --use-backports Include backports in the repository."
     echo "-m, --mirror-url URL  Assign the Debian repository URL instead of default one $debian_mirror_url_def. "
+    echo "-r, --enable-ramfs    Use RAM as the working dir. This will need $ramfs_size_def bytes RAM space by default."
     echo "-s, --mirror-security-url URL  Assign the Debian security repository URL instead of default one $debian_mirror_security_url_def."
     echo "-o, --create-source-tarball  Create a corresponding source image to the binary image.  By default such an source image will not be created since this would require to download quite a few source packages."
     echo "-v, --verbose   Run live build in verbose mode"
@@ -63,8 +69,21 @@ USAGE() {
 }
 #
 build_it() {
-  mkdir debian-live
-  cd debian-live
+  mkdir ${workdir}
+  if [ "$use_ramfs" = "yes" ]; then
+    ramfs_cmd="mount -t tmpfs -o "size=${ramfs_size}" tmpfs ${workdir}"
+    eval $ramfs_cmd
+    rc_ram="$?"
+    if [ "$rc_ram" -ne 0 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Failed to mount RAM as working dir by this command:"
+      echo "$ramfs_cmd"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      exit 1
+    fi
+  fi
+  cd ${workdir}
   
   $pref lb config --archive-areas "$categories"
   # It's important to make the url for --parent-mirror-binary is different from that of --parent-mirror-chroot so that in /usr/lib/live/build/chroot_archives the "lb config --cache-packages false" and "lb config --apt-indices false" can work and those /var/cache/apt/{pkgcache.bin,srcpkgcache.bin} and those /var/lib/apt/lists/{*_Packages,*Release*,*_Sources} won't be cached.
@@ -307,6 +326,18 @@ while [ $# -gt 0 ]; do
     -o|--create-source-tarball)
 	    gen_source_tarball="yes"
             shift ;;
+    -r|--enable-ramfs)
+	    use_ramfs="yes"
+            shift ;;
+    -e|--ramfs-size)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ramfs_size="$1"
+              shift
+            fi
+	    [ -z "$ramfs_size" ] && USAGE && exit 1
+            ;;
     -s|--mirror-security-url)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -326,6 +357,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+[ -z "$ramfs_size" ] && ramfs_size="$ramfs_size_def"
+if [ "$use_ramfs" = "yes" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Using RAM disk with size $ramfs_size bytes for live build working dir."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+fi
+
 if ! type lb &>/dev/null; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "This script only works in Debian Etch or later!"
@@ -334,9 +372,10 @@ if ! type lb &>/dev/null; then
   exit 1
 fi
 
+ask_and_load_lang_set en_US.UTF-8
 create_live_required_debian_based_prompt
 
-rm -rf debian-live/.stage/
+rm -rf ${workdir}/.stage/
 
 # Apply default settings if not assigned
 [ -z "$debian_dist" ] && debian_dist="$DEBIAN_DIST_DEF"
@@ -433,16 +472,19 @@ if [ "$verbose" = "on" ]; then
   export CDEBOOTSTRAP_OPTIONS="$CDEBOOTSTRAP_OPTIONS -v --debug"
 fi
 
-if [ -d "debian-live" ]; then
-  echo "Found dir debian-live, clean stale debian-live files..."
-  chroot debian-live/chroot umount /dev/pts &>/dev/null || true
-  chroot debian-live/chroot umount /proc &>/dev/null || true
-  chroot debian-live/chroot umount /sys &>/dev/null || true
+if [ -d "${workdir}" ]; then
+  echo "Found dir ${workdir}, clean stale ${workdir} files..."
+  chroot ${workdir}/chroot umount /dev/pts &>/dev/null || true
+  chroot ${workdir}/chroot umount /proc &>/dev/null || true
+  chroot ${workdir}/chroot umount /sys &>/dev/null || true
   (
-    cd debian-live/
+    cd ${workdir}/
     lb clean
   )
-  rm -rf debian-live
+  if mountpoint ${workdir}; then
+    umount ${workdir}
+  fi
+  [ -d "${workdir}" -a -n "$(echo ${workdir} | grep "debian-live")" ] && rm -rf ${workdir}
 fi
 
 # Use sub shell to keep the working dir
@@ -451,20 +493,27 @@ fi
 lb_ver="$(LC_ALL=C lb --version)"  # e.g. 3.0.5-1
 if [ "$lb_ver" \> 3 ] && [ "$lb_ver" \< 4 ]; then
   # Live build version 3 
-  mv -f debian-live/binary*.iso $target_iso
+  mv -f ${workdir}/binary*.iso $target_iso
   if [ "$gen_source_tarball" = "yes" ]; then
-    mv -f debian-live/source.debian.tar $target_src_tarball
-    mv -f debian-live/source.debian.contents $target_src_tarball_list
-    mv -f debian-live/source.debian-live.tar $target_src_debian_live_tarball
-    mv -f debian-live/source.debian-live.contents $target_src_debian_live_tarball_list
+    mv -f ${workdir}/source.debian.tar $target_src_tarball
+    mv -f ${workdir}/source.debian.contents $target_src_tarball_list
+    mv -f ${workdir}/source.debian-live.tar $target_src_debian_live_tarball
+    mv -f ${workdir}/source.debian-live.contents $target_src_debian_live_tarball_list
   fi
 else
   # Live build version 4
-  mv -f debian-live/live-image*.iso $target_iso
+  mv -f ${workdir}/live-image*.iso $target_iso
   if [ "$gen_source_tarball" = "yes" ]; then
-    mv -f debian-live/live-image-source.debian.contents $target_src_tarball_list
-    mv -f debian-live/live-image-source.debian.tar $target_src_tarball
-    mv -f debian-live/live-image-source.live.contents $target_src_debian_live_tarball_list
-    mv -f debian-live/live-image-source.live.tar $target_src_debian_live_tarball
+    mv -f ${workdir}/live-image-source.debian.contents $target_src_tarball_list
+    mv -f ${workdir}/live-image-source.debian.tar $target_src_tarball
+    mv -f ${workdir}/live-image-source.live.contents $target_src_debian_live_tarball_list
+    mv -f ${workdir}/live-image-source.live.tar $target_src_debian_live_tarball
+  fi
+fi
+
+# Unmount the RAM disk.
+if [ "$use_ramfs" = "yes" ]; then
+  if mountpoint ${workdir}; then
+    umount ${workdir}
   fi
 fi

@@ -24,6 +24,9 @@ pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DRBL_FOR_CLONEZILLA_LIVE"
 categories_default="main restricted universe multiverse"
 cpu_flavor_default="386"
 workdir="ubuntu-live"
+# RAM as the working dir. Speed up the live system creation, but need RAM space.
+use_ramfs="no"
+ramfs_size_def="5368709120"  # Unit: bytes. Use for mount -t tmpfs if use_ramfs=yes
 
 # The files in dir $ocs_live_script_dir/ will be copied to the dir /live-hook-dir in dir chroot. The file "ocs-live-hook" is in $ocs_live_script_dir
 # We put some files in dir ocs_minimal_hook/ to do some jobs, like clean unnecessary files, set locales...
@@ -52,12 +55,14 @@ USAGE() {
     echo "-b, --branch [s|stable|t|testing|u|unstable|e|experimental]  Specify the DRBL branch to be used in Live CD. Default is stable."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main universe', default is \'$categories_default\' if not specified."
     echo "-d, --debian-dist [xenial|bionic|cosmic|disco]  Assign Ubuntu dist, the default is $DEBIAN_DIST_DEF if not assigned."
+    echo "-e, --ramfs-size  SIZE  Use SIZE (bytes) as the size of RAM for working dir. Default is $ramfs_size_def."
     echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 386, amd64 or arm64. If it's not assigned, $cpu_flavor_default will be used."
     echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
     echo "-k, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
     echo "-l, --drbl-live-ubuntu-branch [s|stable|t|testing|u|unstable|e|experimental]  specifies the DRBL live-ubuntu branch to be used in Live CD. Default is stable."
     echo "-m, --mirror-url URL  Assign the Ubuntu repository URL instead of default one $ubuntu_mirror_url_def. "
+    echo "-r, --enable-ramfs    Use RAM as the working dir. This will need $ramfs_size_def bytes RAM space by default."
     echo "-s, --mirror-security-url URL  Assign the Ubuntu security repository URL instead of default one $ubuntu_mirror_security_url_def."
     echo "-o, --create-source-tarball  Create a corresponding source image to the binary image.  By default such an source image will not be created since this would require to download quite a few source packages."
     echo "-t, --batch     Run in batch mode"
@@ -65,8 +70,21 @@ USAGE() {
 }
 #
 build_it(){
-  mkdir $workdir
-  cd $workdir
+  mkdir ${workdir}
+  if [ "$use_ramfs" = "yes" ]; then
+    ramfs_cmd="mount -t tmpfs -o "size=${ramfs_size}" tmpfs ${workdir}"
+    eval $ramfs_cmd
+    rc_ram="$?"
+    if [ "$rc_ram" -ne 0 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Failed to mount RAM as working dir by this command:"
+      echo "$ramfs_cmd"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      exit 1
+    fi
+  fi
+  cd ${workdir}
   
   # Force to load debian mode, or it will use ubuntu mode, which might fail in some cases.
   # E.g. tar (child): /usr/share/gfxboot-theme-ubuntu/bootlogo.tar.gz: Cannot open: No such file or directory
@@ -359,6 +377,18 @@ while [ $# -gt 0 ]; do
     -o|--create-source-tarball)
 	    gen_source_tarball="yes"
             shift ;;
+    -r|--enable-ramfs)
+	    use_ramfs="yes"
+            shift ;;
+    -e|--ramfs-size)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ramfs_size="$1"
+              shift
+            fi
+	    [ -z "$ramfs_size" ] && USAGE && exit 1
+            ;;
     -t|--batch)
 	    batch_mode="on"
             shift ;;
@@ -371,6 +401,13 @@ while [ $# -gt 0 ]; do
     *)      break ;;
   esac
 done
+
+[ -z "$ramfs_size" ] && ramfs_size="$ramfs_size_def"
+if [ "$use_ramfs" = "yes" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Using RAM disk with size $ramfs_size bytes for live build working dir."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+fi
 
 if ! type lb &>/dev/null; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -395,7 +432,8 @@ if [ "$batch_mode" = "no" ]; then
   read
 fi
 
-rm -rf $workdir/.stage/
+ask_and_load_lang_set en_US.UTF-8
+rm -rf ${workdir}/.stage/
 
 # Apply default settings if not assigned
 [ -z "$debian_dist" ] && debian_dist="$DEBIAN_DIST_DEF"
@@ -486,13 +524,16 @@ if [ "$verbose" = "on" ]; then
   export DEBOOTSTRAP_OPTIONS="$DEBOOTSTRAP_OPTIONS --verbose"
 fi
 
-if [ -d "$workdir" ]; then
-  echo "Found dir $workdir, clean stale files..."
-  chroot $workdir/chroot umount /dev/pts &>/dev/null || true
-  chroot $workdir/chroot umount /proc &>/dev/null || true
-  chroot $workdir/chroot umount /sys &>/dev/null || true
-  ( cd $workdir/; lb clean )
-  [ -d "$workdir" -a -n "$(echo $workdir | grep "ubuntu-live")" ] && rm -rf $workdir
+if [ -d "${workdir}" ]; then
+  echo "Found dir ${workdir}, clean stale files..."
+  chroot ${workdir}/chroot umount /dev/pts &>/dev/null || true
+  chroot ${workdir}/chroot umount /proc &>/dev/null || true
+  chroot ${workdir}/chroot umount /sys &>/dev/null || true
+  ( cd ${workdir}/; lb clean )
+  if mountpoint ${workdir}; then
+    umount ${workdir}
+  fi
+  [ -d "${workdir}" -a -n "$(echo ${workdir} | grep "ubuntu-live")" ] && rm -rf ${workdir}
 fi
 
 # Use sub shell to keep the working dir
@@ -501,20 +542,27 @@ fi
 lb_ver="$(LC_ALL=C lb --version)"  # e.g. 3.0.5-1
 if [ "$lb_ver" \> 3 ] && [ "$lb_ver" \< 4 ]; then
   # Live build version 3 
-  mv -f $workdir/binary*.iso $target_iso
+  mv -f ${workdir}/binary*.iso $target_iso
   if [ "$gen_source_tarball" = "yes" ]; then
-    mv -f $workdir/source.debian.tar $target_src_tarball
-    mv -f $workdir/source.debian.contents $target_src_tarball_list
-    mv -f $workdir/source.debian-live.tar $target_src_debian_live_tarball
-    mv -f $workdir/source.debian-live.contents $target_src_debian_live_tarball_list
+    mv -f ${workdir}/source.debian.tar $target_src_tarball
+    mv -f ${workdir}/source.debian.contents $target_src_tarball_list
+    mv -f ${workdir}/source.debian-live.tar $target_src_debian_live_tarball
+    mv -f ${workdir}/source.debian-live.contents $target_src_debian_live_tarball_list
   fi
 else
   # Live build version 4
-  mv -f $workdir/live-image*.iso $target_iso
+  mv -f ${workdir}/live-image*.iso $target_iso
   if [ "$gen_source_tarball" = "yes" ]; then
-    mv -f $workdir/live-image-source.debian.contents $target_src_tarball_list
-    mv -f $workdir/live-image-source.debian.tar $target_src_tarball
-    mv -f $workdir/live-image-source.live.contents $target_src_debian_live_tarball_list
-    mv -f $workdir/live-image-source.live.tar $target_src_debian_live_tarball
+    mv -f ${workdir}/live-image-source.debian.contents $target_src_tarball_list
+    mv -f ${workdir}/live-image-source.debian.tar $target_src_tarball
+    mv -f ${workdir}/live-image-source.live.contents $target_src_debian_live_tarball_list
+    mv -f ${workdir}/live-image-source.live.tar $target_src_debian_live_tarball
+  fi
+fi
+
+# Unmount the RAM disk.
+if [ "$use_ramfs" = "yes" ]; then
+  if mountpoint ${workdir}; then
+    umount ${workdir}
   fi
 fi
