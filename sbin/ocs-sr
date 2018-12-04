@@ -104,12 +104,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
-# Fedora Core 1 seems to use dumb for rc1, we have to force it use linux.
-# otherwise setterm will complain.
-[ -z "$TERM" -o "$TERM" = "dumb" ] && TERM="linux"
-echo "Setting the TERM as $TERM"
-export TERM="$TERM"
-
+force_TERM_as_linux_if_necessary
 #
 check_if_root
 
@@ -1219,12 +1214,15 @@ case "$ocs_sr_type" in
     fi
 
     if [ "$rc_savedisk" -eq 0 -a "$chk_img_restoreable_mod_save" = "yes" ]; then
+      # To avoid the /var/lib/clonezilla/ocs-vars is overwritten by ocs-chkimg, backup it first.
+      mv -f /var/lib/clonezilla/ocs-vars /var/lib/clonezilla/ocs-vars.before-ocs-chkimg
       check_image_if_restorable "$ocsroot"
       rc_chkimg="$?"
       if [ "$rc_chkimg" -ne 0 ]; then
         echo "$msg_program_stop!"
         my_ocs_exit 1
       fi
+      mv -f /var/lib/clonezilla/ocs-vars.before-ocs-chkimg /var/lib/clonezilla/ocs-vars 
     fi
     echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_hd" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
 
