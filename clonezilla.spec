@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.15
+Version:	3.32.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Dec 04 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.16-drbl1
+  * A workaround to avoid TERM "xterm-256color" crashing Partclone:
+    https://sourceforge.net/p/clonezilla/bugs/305/
+    Thanks to Laurent B for reporting this.
+  * Option "-p poweroff" did not work when saving image with image
+    checking is enabled. Thanks to Eduardo for reporting this.
+
 * Sun Dec 02 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.15-drbl1
   * Add an option (-r) for create-debian-live and create-ubuntu-live to use
     RAMFS as live-build working dir.
