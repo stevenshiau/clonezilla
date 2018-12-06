@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.16
+Version:	3.32.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Dec 06 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.17-drbl1
+  * Disable espeakup service when creating DRBL/Clonezilla live
+    due to it's auto started in espeakup >= 1:0.80-11.
+    Ref: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=911120
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/aed3724275
+    Thanks to Eduardo for reporting this.
+
 * Tue Dec 04 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.16-drbl1
   * A workaround to avoid TERM "xterm-256color" crashing Partclone:
     https://sourceforge.net/p/clonezilla/bugs/305/
