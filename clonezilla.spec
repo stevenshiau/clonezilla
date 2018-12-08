@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.17
+Version:	3.32.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Dec 08 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.18-drbl1
+  * Let live-build deal with DRBL and GParted live's uEFI boot.
+    Due to this, the changes:
+    1. /boot/grub/efiboot.img is /boot/grub/efi.img now.
+    2. /EFI/boot/grub.cfg is moved to /boot/grub/grub.cfg now.
+  * Add options (-rs and -er) for create-{drbl|gparted}-live to use
+    RAMFS as live-build working dir.
+
 * Thu Dec 06 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.17-drbl1
   * Disable espeakup service when creating DRBL/Clonezilla live
     due to it's auto started in espeakup >= 1:0.80-11.
