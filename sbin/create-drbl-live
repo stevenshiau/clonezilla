@@ -20,7 +20,11 @@ debian_type="minbase"
 DEBIAN_DIST_DEF="sid"
 pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DBN $PKG_FROM_DRBL"
 categories_default="main"
-cpu_flavor_default="586"
+cpu_flavor_default="amd64"
+workdir="debian-live"
+# RAM as the working dir. Speed up the live system creation, but need RAM space.
+use_ramfs="no"
+ramfs_size_def="7516192768"  # Unit: bytes. Use for mount -t tmpfs if use_ramfs=yes
 
 # The files in dir $ocs_live_script_dir/ will be copied to the dir live-hook-dir in dir chroot. The file "drbl-live-hook" is in $ocs_live_script_dir
 ocs_live_script_dir="$DRBL_SCRIPT_PATH/setup/files/ocs/live-hook"
@@ -56,6 +60,8 @@ USAGE() {
     echo "-n, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
     echo "-e, --drbl-live-branch [s|stable|t|testing|u|unstable|e|experimental]  specifies the DRBL live branch to be used in Live CD. Default is stable."
+    echo "-er, --enable-ramfs    Use RAM as the working dir. This will need $ramfs_size_def bytes RAM space by default."
+    echo "-rs, --ramfs-size  SIZE  Use SIZE (bytes) as the size of RAM for working dir. Default is $ramfs_size_def."
     echo "-k, --package FILE  Specify package FILE to be installed in Live CD."
     echo "-p, --metapackages TASK  Specifies a task metapackage maintained by your distribution (such as task-xfce-desktop,task-gnome-desktop ...), one package for each line"
     echo "-m, --mirror-url URL  Assign the Debian repository URL instead of default one $debian_mirror_url_def. "
@@ -124,8 +130,6 @@ create_drbl_live_iso(){
       break
     fi
   done
-  BOOT_ITEM_DIR=$ISOSYSLNX_TMP/$sys_files_dir
-  [ ! -d $BOOT_ITEM_DIR ] && mkdir $BOOT_ITEM_DIR
 
   if [ -z "$sys_files_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -143,6 +147,45 @@ create_drbl_live_iso(){
      exit 1
   fi
 
+  BOOT_ITEM_DIR=$ISOSYSLNX_TMP/$sys_files_dir
+  [ ! -d $BOOT_ITEM_DIR ] && mkdir $BOOT_ITEM_DIR
+
+  # Files and dirs in stage1:
+  # dr-xr-xr-x 1 root root 2.0K Dec  7 23:44 ./
+  # drwxr-xr-x 4 root root 4.0K Dec  8 00:02 ../
+  # dr-xr-xr-x 1 root root 2.0K Dec  7 23:44 boot/
+  # dr-xr-xr-x 1 root root 2.0K Dec  7 23:44 .disk/
+  # dr-xr-xr-x 1 root root 2.0K Dec  7 23:44 EFI/
+  # -r--r--r-- 1 root root 320K Dec  7 23:44 efi.img
+  # dr-xr-xr-x 1 root root 4.0K Dec  7 23:44 isolinux/
+  # dr-xr-xr-x 1 root root 2.0K Dec  7 23:44 live/
+  # -r--r--r-- 1 root root  36K Dec  7 23:44 md5sum.txt
+
+  # We want to make it like:
+
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:55 boot/
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:55 .disk/
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:52 EFI/
+  # -r--r--r-- 1 root root  709 Aug 23 11:55 DRBL-Live-Version
+  # -r--r--r-- 1 root root  18K Aug 11  2015 GPL
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:55 live/
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:55 syslinux/
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:55 utils/
+
+  echo -n "Copying the system files to working dir... This might take a few minutes... "
+  rsync -a $stage1_iso_TMP/$sys_files_dir $stage1_iso_TMP/boot $stage1_iso_TMP/.disk $ISOSYSLNX_TMP/
+  RC=$?
+  if [ "$RC" -ne 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to copy system files to working dir..."
+    echo "$msg_program_stop"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 1
+  fi
+  echo "done!"
+  # Remove unnecessary files from $stage1_iso_TMP/boot/
+  rm -rf $ISOSYSLNX_TMP/boot/grub/{live-theme,loopback.cfg,grub.cfg,splash.png}
+
   if [ "$output_mode" = "cdwriter" -a type wodim &>/dev/null ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "Program wodim is not aviailable! You have to install it."
@@ -150,8 +193,9 @@ create_drbl_live_iso(){
     echo "$msg_program_stop"
     exit 1
   fi
+
   # Now we can insert the boot menu of syslinux/isolinux
-  mkdir -p $ISOSYSLNX_TMP/syslinux $ISOSYSLNX_TMP/EFI/boot/
+  mkdir -p $ISOSYSLNX_TMP/syslinux $ISOSYSLNX_TMP/EFI/boot/ $ISOSYSLNX_TMP/boot/grub/
   # create isolinux menu
   # isolinux should be rw, so we have to copy it, and exclude the one in iso image.
   # We have to overwrite isolinux.bin since vesamenu.c32 should be same version with that.
@@ -174,14 +218,14 @@ create_drbl_live_iso(){
     if [ -e "$stage1_iso_TMP/EFI/boot/bootia32.efi" -a -e "$stage1_iso_TMP/EFI/boot/bootx64.efi" ]; then
       # The EFI/boot/{bootia32.efi,boox64.efi} are copied by the above rsync command from $stage1_iso_TMP
       cp -af $stage1_iso_TMP/EFI $ISOSYSLNX_TMP
-      cp -af $pxelinux_bg_img $ISOSYSLNX_TMP/EFI/boot/
+      cp -af $pxelinux_bg_img $ISOSYSLNX_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
     # Those files are prepared in /usr/share/drbl/pkg/syslinux/efi64/ by drbl-prepare-pxelinux
     cp -af $pxelinux_binsrc_dir/efi64/syslinux.efi $ISOSYSLNX_TMP/EFI/boot/bootx64.efi 
     cp -af $pxelinux_binsrc_dir/efi64/ldlinux.e64 $ISOSYSLNX_TMP/EFI/boot/
     cp -af $pxelinux_binsrc_dir/efi64/*.c32 $ISOSYSLNX_TMP/EFI/boot/
-    cp -af $pxelinux_bg_img $ISOSYSLNX_TMP/EFI/boot/
+    cp -af $pxelinux_bg_img $ISOSYSLNX_TMP/boot/grub/
   fi
 
   # etherboot_zlilo="$($query_pkglist_cmd drbl-etherboot 2>/dev/null | grep -E "eb-.*-etherboot-pci.zlilo$" || true)"
@@ -234,7 +278,7 @@ create_drbl_live_iso(){
   # Excluding list for mkisofs
   # We will create it like this:
   # -x $stage1_iso_TMP/isolinux -x $stage1_iso_TMP/md5sum.txt -x $stage1_iso_TMP/casper/memtest 
-  mkiso_exclude_list="isolinux syslinux EFI efi efi.img boot/grub/ .disk md5sum.txt doc utils "
+  mkiso_exclude_list="isolinux syslinux md5sum.txt doc "
   for i in $live_sys_files_dir_list; do
     if [ -e "$stage1_iso_TMP/$i/memtest" ]; then
       mkiso_exclude_list="$mkiso_exclude_list $i/memtest"
@@ -248,7 +292,7 @@ create_drbl_live_iso(){
 
   # Find the boot param $boot_param
   if [ "$template_mode" = "from-booting-live-media" ]; then
-    # From boot media (clonezilla live), DEBIAN_ISO_TMP is LIVE_MEDIA
+    # From boot media (clonezilla live), stage1_iso_TMP is LIVE_MEDIA
     # Jan/19/2014 We have unified syslinux and isolinux to one dir "syslinux"
     get_live_boot_param $stage1_iso_TMP/syslinux
   else
@@ -267,10 +311,10 @@ create_drbl_live_iso(){
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
     if [ -e "$ISOSYSLNX_TMP/EFI/boot/bootia32.efi" -a -e "$ISOSYSLNX_TMP/EFI/boot/bootx64.efi" ]; then
-      ocs-live-boot-menu -s -vb -l $lang_answer --title "DRBL Live" --toram-mode live -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param" -r "* Boot menu for EFI machine" grub2-efi $ISOSYSLNX_TMP/EFI/boot/
+      ocs-live-boot-menu -s -vb -l $lang_answer --title "DRBL Live" --toram-mode live -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param" -r "* Boot menu for EFI machine" grub2-efi $ISOSYSLNX_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-    ocs-live-boot-menu -s -vb -l $lang_answer --title "DRBL Live" --toram-mode live -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param" -r "* Boot menu for EFI machine" syslinux $ISOSYSLNX_TMP/EFI/boot/
+    ocs-live-boot-menu -s -vb -l $lang_answer --title "DRBL Live" --toram-mode live -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param" -r "* Boot menu for EFI machine" syslinux $ISOSYSLNX_TMP/boot/grub/
   fi
 
   echo "Preparing syslinux.exe, syslinux, makeboot.bat and makeboot.sh in dir utils... "
@@ -298,47 +342,6 @@ create_drbl_live_iso(){
   # Remove the existing iso
   [ -e "$real_target_iso" ] && rm -f $real_target_iso
 
-  # Build the EFI boot image. This is especially for iso file. Not for USB stick.
-  efi_img_opt=""
-  # The following codes are referred from Fedora 
-  EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
-  EFI_BOOTTREE="$stage1_iso_TMP/EFI"
-  EFI_IMG="$ISOSYSLNX_TMP/boot/grub/efiboot.img"
-  mkdir -p $ISOSYSLNX_TMP/boot/grub/
-  rm -rf $ISOSYSLNX_TMP/.disk
-  rm -f $EFI_IMG
-  
-  BOOTDISKSIZE="$(LC_ALL=C du -kcs $EFI_BOOTTREE/boot/boot*.efi | tail -n1 | awk '{print $1}')"
-  BOOTDISKSIZE="$(LC_ALL=C echo "scale=0; $BOOTDISKSIZE * 1.02 / 1" | bc -l)"
-  echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
-  mkdosfs -n DRBL-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
-  mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
-  mkdir -p $EFI_BOOTIMG_TMP/EFI/boot/
-
-  if [ "$live_efi_boot_loader" = "grub" ]; then
-    # In this case, bootx64.efi is in $EFI_BOOTTREE/
-    rsync -a $EFI_BOOTTREE/boot/boot*.efi $EFI_BOOTIMG_TMP/EFI/boot/
-  elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-    # In this case, bootx64.efi is copied in $ISOSYSLNX_TMP/EFI/, we should do something similar with ocs-gen-grub2-efi-bldr
-    rsync -a $ISOSYSLNX_TMP/EFI/boot*.efi $EFI_BOOTIMG_TMP/EFI/boot/
-    # TODO similar to ocs-gen-grub2-efi-bldr, create a syslinux.cfg to include /syslinux/syslinux.cfg.
-  fi
-  umount $EFI_BOOTIMG_TMP
-  if [ -d "$EFI_BOOTIMG_TMP" -a -n \
-  	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
-    rm -rf $EFI_BOOTIMG_TMP
-  fi
-  
-  # Create an info file for grub2 to autodetect the cd root
-  # Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
-  mkdir $ISOSYSLNX_TMP/.disk
-  echo -n "[DRBL]" > $ISOSYSLNX_TMP/.disk/info
-  
-  cat <<-EFI_END > $ISOSYSLNX_TMP/boot/grub/grub.cfg
-# This file is for compatibility to Ubuntu Linux's uEFI secure boot. 
-# The real config file for grub is /EFI/boot/grub.cfg.
-configfile /EFI/boot/grub.cfg
-EFI_END
   efi_img_graft_opt="/.disk/=$ISOSYSLNX_TMP/.disk /boot/=$ISOSYSLNX_TMP/boot/ "
 
   # Prepare the sort file for xorriso.
@@ -353,7 +356,7 @@ EFI_END
    -V "DRBL-live" \
    -b syslinux/isolinux.bin -c syslinux/boot.cat \
    -no-emul-boot -boot-load-size 4 -boot-info-table \
-   -eltorito-alt-boot --efi-boot boot/grub/efiboot.img \
+   -eltorito-alt-boot --efi-boot boot/grub/efi.img \
    -isohybrid-gpt-basdat -isohybrid-apm-hfsplus \
    -sort $ISOSYSLNX_TMP/syslinux/iso_sort.txt \
    $mkiso_exclude_opt \
@@ -363,7 +366,6 @@ EFI_END
    $efi_img_graft_opt \
    /GPL=$DRBL_SCRIPT_PATH/doc/GPL \
    /DRBL-Live-Version=$ISOSYSLNX_TMP/DRBL-Live-Version \
-   $stage1_iso_TMP \
    > $real_target_iso
   RC_ISO=$?
   if [ "$RC_ISO" -eq 0 ]; then
@@ -419,9 +421,34 @@ create_drbl_live_zip() {
   WD="$(pwd)"
   USB_TMP="$(mktemp -d /tmp/ocs-usb-dev.XXXXXX)"
   mkdir -p $USB_TMP/$sys_files_dir
-  mkdir -p $USB_TMP/syslinux/ $USB_TMP/EFI/boot/
+  mkdir -p $USB_TMP/syslinux/ $USB_TMP/EFI/boot/ $USB_TMP/boot/grub/
+  # Files and dirs in stage1:
+  # dr-xr-xr-x 1 root root 2.0K Dec  7 23:44 ./
+  # drwxr-xr-x 4 root root 4.0K Dec  8 00:02 ../
+  # dr-xr-xr-x 1 root root 2.0K Dec  7 23:44 boot/
+  # dr-xr-xr-x 1 root root 2.0K Dec  7 23:44 .disk/
+  # dr-xr-xr-x 1 root root 2.0K Dec  7 23:44 EFI/
+  # -r--r--r-- 1 root root 320K Dec  7 23:44 efi.img
+  # dr-xr-xr-x 1 root root 4.0K Dec  7 23:44 isolinux/
+  # dr-xr-xr-x 1 root root 2.0K Dec  7 23:44 live/
+  # -r--r--r-- 1 root root  36K Dec  7 23:44 md5sum.txt
+
+  # We want to make it like:
+
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:55 boot/
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:55 .disk/
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:52 EFI/
+  # -r--r--r-- 1 root root  709 Aug 23 11:55 DRBL-Live-Version
+  # -r--r--r-- 1 root root  18K Aug 11  2015 GPL
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:55 live/
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:55 syslinux/
+  # dr-xr-xr-x 1 root root 2.0K Aug 23 11:55 utils/
   echo "Copying files to temp working directory... This might take some time..."
-  rsync -av --exclude isolinux --exclude md5sum.txt --exclude doc --exclude efi --exclude efi.img --exclude boot/grub/ $stage1_iso_TMP/.  $USB_TMP/
+  rsync -av --exclude /isolinux --exclude /md5sum.txt --exclude /doc --exclude /efi/ --exclude /efi.img $stage1_iso_TMP/.  $USB_TMP/
+  # Remove unnecessary files in $USB_TMP/boot/
+  rm -rf $USB_TMP/boot/grub/{live-theme,loopback.cfg,grub.cfg,splash.png}
+  echo "done!"
+
   cp -af $DRBL_SCRIPT_PATH/doc/GPL $USB_TMP/
   # For syslinux
   cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $pxelinux_chain_file $USB_TMP/syslinux/
@@ -440,60 +467,19 @@ create_drbl_live_zip() {
   if [ "$live_efi_boot_loader" = "grub" ]; then
     # The EFI/boot/{bootia32.efi,boox64.efi} are copied by the above rsync command from $stage1_iso_TMP
     if [ -d "$USB_TMP/EFI/boot/" ]; then
-      cp -af $pxelinux_bg_img $USB_TMP/EFI/boot/
+      cp -af $pxelinux_bg_img $USB_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
      # Those files are prepared in /usr/share/drbl/pkg/syslinux/efi64/ by drbl-prepare-pxelinux
      cp -af $pxelinux_binsrc_dir/efi64/syslinux.efi $USB_TMP/EFI/boot/bootx64.efi 
      cp -af $pxelinux_binsrc_dir/efi64/ldlinux.e64 $USB_TMP/EFI/boot/
      cp -af $pxelinux_binsrc_dir/efi64/*.c32 $USB_TMP/EFI/boot/
-     cp -af $pxelinux_bg_img $USB_TMP/EFI/boot/
+     cp -af $pxelinux_bg_img $USB_TMP/boot/grub/
   fi
   # $USB_TMP/EFI and its sub dirs might be not in the mode of 755 since they are copied from the files from iso. We chmod to 755 so that it's easier to remove them by "rm -rf" when it's not used anymore.
   # This especially for zip file, not iso file, because iso file won't only mount it, not unzip it.
   chmod 755 $USB_TMP/EFI
   find $USB_TMP/EFI -type d -exec chmod 755 {} \;
-
-  # Build the EFI boot image. This is especially for iso file. Not for USB stick. However, here we still prepare the file so that later it's easier to use xorriso to create the EFI-enabled iso.
-  # The following codes are referred from Fedora 
-  EFI_BOOTIMG_TMP="$(mktemp -d /tmp/efi-boot.XXXXXX)"
-  EFI_BOOTTREE="$stage1_iso_TMP/EFI"
-  EFI_IMG="$USB_TMP/boot/grub/efiboot.img"
-  mkdir -p $USB_TMP/boot/grub/
-  rm -rf $USB_TMP/.disk
-  rm -f $EFI_IMG
-  
-  BOOTDISKSIZE="$(LC_ALL=C du -kcs $EFI_BOOTTREE/boot/boot*.efi | tail -n1 | awk '{print $1}')"
-  BOOTDISKSIZE="$(LC_ALL=C echo "scale=0; $BOOTDISKSIZE * 1.02 / 1" | bc -l)"
-  echo "The size of the $EFI_IMG is $BOOTDISKSIZE"
-  mkdosfs -n DRBL-EFI -C $EFI_IMG $BOOTDISKSIZE >/dev/null
-  mount -o loop,shortname=winnt,umask=0077 -t vfat $EFI_IMG $EFI_BOOTIMG_TMP
-  mkdir -p $EFI_BOOTIMG_TMP/EFI/boot/
-
-  if [ "$live_efi_boot_loader" = "grub" ]; then
-    # In this case, bootx64.efi is in $EFI_BOOTTREE/
-    rsync -a $EFI_BOOTTREE/boot/boot*.efi $EFI_BOOTIMG_TMP/EFI/boot/
-  elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-    # In this case, bootx64.efi is copied in $USB_TMP/EFI/, we should do something similar with ocs-gen-grub2-efi-bldr
-    rsync -a $USB_TMP/boot/boot*.efi $EFI_BOOTIMG_TMP/EFI/boot/
-    # TODO similar to ocs-gen-grub2-efi-bldr, create a syslinux.cfg to include /syslinux/syslinux.cfg.
-  fi
-  umount $EFI_BOOTIMG_TMP
-  if [ -d "$EFI_BOOTIMG_TMP" -a -n \
-  	"$(echo $EFI_BOOTIMG_TMP | grep -e "efi-boot")" ]; then
-    rm -rf $EFI_BOOTIMG_TMP
-  fi
-  
-  # Create an info file for grub2 to autodetect the cd root
-  # Ref: http://www.sysresccd.org/forums/viewtopic.php?f=5&t=4410
-  mkdir $USB_TMP/.disk
-  echo -n "[DRBL]" > $USB_TMP/.disk/info
-  
-  cat <<-EFI_END > $USB_TMP/boot/grub/grub.cfg
-# This file is for compatibility to Ubuntu Linux's uEFI secure boot. 
-# The real config file for grub is /EFI/boot/grub.cfg.
-configfile /EFI/boot/grub.cfg
-EFI_END
 
   # Prepare the sort file for xorriso. Although we do not use xorriso here, however, we'd like the file created by ocs-live-dev is the same with that of ocs-iso. So it's easier to convert zip file to iso file.
   # Therefore we still put the file iso_sort.txt here.
@@ -522,7 +508,7 @@ EFI_END
 
   # Find the boot param $boot_param
   if [ "$template_mode" = "from-booting-live-media" ]; then
-    # From boot media (clonezilla live), DEBIAN_ISO_TMP is LIVE_MEDIA
+    # From boot media (clonezilla live), stage1_iso_TMP is LIVE_MEDIA
     # Jan/19/2014 We have unified syslinux and isolinux to one dir "syslinux"
     get_live_boot_param $stage1_iso_TMP/syslinux
   else
@@ -537,10 +523,10 @@ EFI_END
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
     if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -a -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
-      ocs-live-boot-menu -s -vb -l $lang_answer --title "DRBL Live" --toram-mode live -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param" -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/EFI/boot/
+      ocs-live-boot-menu -s -vb -l $lang_answer --title "DRBL Live" --toram-mode live -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param" -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-    ocs-live-boot-menu -s -vb -l $lang_answer --title "DRBL Live" --toram-mode live -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param" -r "* Boot menu for EFI machine" syslinux $USB_TMP/EFI/boot/
+    ocs-live-boot-menu -s -vb -l $lang_answer --title "DRBL Live" --toram-mode live -f 785 -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $pxelinux_bg_img --boot-param "$boot_param $live_extra_boot_param" -r "* Boot menu for EFI machine" syslinux $USB_TMP/boot/grub/
   fi
 
   echo "Preparing syslinux.exe, syslinux, makeboot.bat and makeboot.sh in dir utils... "
@@ -651,6 +637,18 @@ while [ $# -gt 0 ]; do
             fi
 	    [ -z "$drbl_live_branch" ] && USAGE && exit 1
             ;;
+    -er|--enable-ramfs)
+	    use_ramfs="yes"
+            shift ;;
+    -rs|--ramfs-size)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              ramfs_size="$1"
+              shift
+            fi
+	    [ -z "$ramfs_size" ] && USAGE && exit 1
+            ;;
     -p|--metapackages)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -742,6 +740,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+[ -z "$ramfs_size" ] && ramfs_size="$ramfs_size_def"
+if [ "$use_ramfs" = "yes" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Using RAM disk with size $ramfs_size bytes for live build working dir."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+fi
+
 #
 if [ "$use_existing_stage1_iso" = "no" ]; then
   # if we use existing stage 1 iso file, then we do not have to check if lb exists. Otherwise we need make-live to create the stage 1 iso file
@@ -770,7 +775,7 @@ ask_and_load_lang_set $specified_lang
 echo "Creating DRBL live..." 
 [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
-rm -rf debian-live/.stage/
+rm -rf ${workdir}/.stage/
 
 # Apply default settings if not assigned
 [ -z "$debian_dist" ] && debian_dist="$DEBIAN_DIST_DEF"
@@ -887,20 +892,36 @@ if [ "$verbose" = "on" ]; then
 fi
 
 if [ "$use_existing_stage1_iso" = "no" ]; then
-  if [ -d "debian-live" ]; then
-    echo "Found dir debian-live, clean stale debian-live files..."
-    chroot debian-live/chroot umount /dev/pts &>/dev/null || true
-    chroot debian-live/chroot umount /proc &>/dev/null || true
-    chroot debian-live/chroot umount /sys &>/dev/null || true
+  if [ -d "${workdir}" ]; then
+    echo "Found dir ${workdir}, clean stale ${workdir} files..."
+    chroot ${workdir}/chroot umount /dev/pts &>/dev/null || true
+    chroot ${workdir}/chroot umount /proc &>/dev/null || true
+    chroot ${workdir}/chroot umount /sys &>/dev/null || true
     (
-      cd debian-live/
+      cd ${workdir}/
       lb clean
     )
   fi
-  rm -rf debian-live
-  mkdir debian-live
+  if mountpoint ${workdir}; then
+    umount ${workdir}
+  fi
+  [ -d "${workdir}" -a -n "$(echo ${workdir} | grep "debian-live")" ] && rm -rf ${workdir}
+  mkdir ${workdir}
+  if [ "$use_ramfs" = "yes" ]; then
+    ramfs_cmd="mount -t tmpfs -o "size=${ramfs_size}" tmpfs ${workdir}"
+    eval $ramfs_cmd
+    rc_ram="$?"
+    if [ "$rc_ram" -ne 0 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Failed to mount RAM as working dir by this command:"
+      echo "$ramfs_cmd"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      exit 1
+    fi
+  fi
   (
-  cd debian-live
+  cd ${workdir}
 
   $pref lb config --archive-areas "$categories"
   # It is important to make the url for --parent-mirror-binary is different from that of --parent-mirror-chroot so that in /usr/lib/live/build/chroot_archives the "lb config --cache-packages false" and "lb config --apt-indices false" can work and those /var/cache/apt/{pkgcache.bin,srcpkgcache.bin} and those /var/lib/apt/lists/{*_Packages,*Release*,*_Sources} will not be cached.
@@ -1042,34 +1063,38 @@ AddDRBLRepository
   lb_ver="$(LC_ALL=C lb --version)"  # e.g. 3.0.5-1
   if [ "$lb_ver" \> 3 ] && [ "$lb_ver" \< 4 ]; then
     # Live build version 3 
-    mv -f debian-live/binary*.iso $stage1_target_iso
+    mv -f ${workdir}/binary*.iso $stage1_target_iso
     if [ "$gen_source_tarball" = "yes" ]; then
-      mv -f debian-live/source.debian.tar $target_src_tarball
-      mv -f debian-live/source.debian.contents $target_src_tarball_list
-      mv -f debian-live/source.debian-live.tar $target_src_debian_live_tarball
-      mv -f debian-live/source.debian-live.contents $target_src_debian_live_tarball_list
+      mv -f ${workdir}/source.debian.tar $target_src_tarball
+      mv -f ${workdir}/source.debian.contents $target_src_tarball_list
+      mv -f ${workdir}/source.debian-live.tar $target_src_debian_live_tarball
+      mv -f ${workdir}/source.debian-live.contents $target_src_debian_live_tarball_list
     fi
   else
     # Live build version 4
-    mv -f debian-live/live-image*.iso $stage1_target_iso
+    mv -f ${workdir}/live-image*.iso $stage1_target_iso
     if [ "$gen_source_tarball" = "yes" ]; then
-      mv -f debian-live/live-image-source.debian.contents $target_src_tarball_list
-      mv -f debian-live/live-image-source.debian.tar $target_src_tarball
-      mv -f debian-live/live-image-source.live.contents $target_src_debian_live_tarball_list
-      mv -f debian-live/live-image-source.live.tar $target_src_debian_live_tarball
+      mv -f ${workdir}/live-image-source.debian.contents $target_src_tarball_list
+      mv -f ${workdir}/live-image-source.debian.tar $target_src_tarball
+      mv -f ${workdir}/live-image-source.live.contents $target_src_debian_live_tarball_list
+      mv -f ${workdir}/live-image-source.live.tar $target_src_debian_live_tarball
     fi
   fi
 else
   echo "Use existing temp iso file: $stage1_target_iso"
 fi
-# clean the dir debian-live if $stage1_target_iso is already created
-if [ -f "$stage1_target_iso" -a -d "debian-live" ]; then
-  echo "Removing working dir debian-live in background..."
+# clean the dir ${workdir} if $stage1_target_iso is already created
+if [ -f "$stage1_target_iso" -a -d "${workdir}" ]; then
+  echo "Removing working dir ${workdir} in background..."
   # If live cd is not created, we have to force umount these before rm files.
-  umount -l debian-live/chroot/dev/pts &>/dev/null || true
-  umount -l debian-live/chroot/proc &>/dev/null || true
-  umount -l debian-live/chroot/sys &>/dev/null || true
-  rm -rf debian-live &
+  umount -l ${workdir}/chroot/dev/pts &>/dev/null || true
+  umount -l ${workdir}/chroot/proc &>/dev/null || true
+  umount -l ${workdir}/chroot/sys &>/dev/null || true
+  # Maybe in used by RAMFS
+  if mountpoint ${workdir}; then
+    umount ${workdir}
+  fi
+  [ -d "${workdir}" -a -n "$(echo ${workdir} | grep "debian-live")" ] && rm -rf ${workdir} &
 fi
 # 
 if [ ! -e "$stage1_target_iso" ]; then
