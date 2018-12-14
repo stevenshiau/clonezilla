@@ -22,11 +22,9 @@ fi
 # Create the ChangeLog file
 cat <<EOF > doc/ChangeLog.txt
 Clonezilla, the opensource clone system.
-Authors: Steven Shiau <steven _at_ nchc org tw>, Blake, Kuo-Lien Huang (klhaung _at_ gmail com), Ceasar Sun (ceasar _at_ nchc org tw), Jazz Wang (jazz _at_ nchc org tw) and Thomas Tsai (thomas _at_ nchc org tw)
+Authors: Steven Shiau <steven _at_ clonezilla org>, Blake, Kuo-Lien Huang (klhaung _at_ gmail com), Ceasar Sun (ceasar _at_ clonezilla org), Jazz Wang (jazz _at_ clonezilla org) and Thomas Tsai (thomas _at_ clonezilla org)
 License: GPL
-http://clonezilla.org
-http://clonezilla.sourceforge.net
-http://clonezilla.nchc.org.tw
+https://clonezilla.org
 
 EOF
 
