@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.19
+Version:	3.32.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Dec 14 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.20-drbl1
+  * Use https instead of http to show related URL.
+    http://clonezilla.org -> https://clonezilla.org
+    http://drbl.org -> https://drbl.org
+    http://gparted.org -> https://gparted.org
+
 * Tue Dec 11 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.19-drbl1
   * Make all the modes of files in Clonezilla live zip be writable
     so that the uncompressed files can be removed easily with rm -rf.
