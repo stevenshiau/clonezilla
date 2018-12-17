@@ -81,6 +81,35 @@ check_if_apple_mac() {
   return 1
 } # end of check_if_apple_mac
 #
+check_if_dell() {
+  # Function to check if it's Dell machine.
+  # Some users reported that efibootmgr bricked Dell's BIOS:
+  # https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/9fc9c4dee3/
+  # https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/76ba35a226/
+  # https://sourceforge.net/p/clonezilla/bugs/310/
+  local system_manufac product_nm
+  system_manufac="$(LC_ALL=C dmidecode -s system-manufacturer)"
+  product_nm="$(LC_ALL=C dmidecode -s system-product-name)"
+  if [ -n "$(echo $product_nm | grep -i "Dell.")" ]; then
+    echo "This machine is from Dell."
+    return 0
+  elif [ -n "$(echo $system_manufac | grep -i "Dell.")" ]; then
+    echo "This machine was made by Dell."
+    return 0
+  fi
+  # Final check, sometimes dmidecode won't give anything. Like it gives errors:
+  # mmap: Can't map beyond end of file /sys/firmware/dmi/tables/DMI
+  # Table is unreachable, sorry.
+  if [ -z "$product_nm" -a -z "$system_manufac" ]; then
+    if [ -n "$(LC_ALL=C strings /sys/firmware/dmi/tables/DMI 2>/dev/null | \
+	    grep -i "Dell Inc.")" ]; then
+      echo "This machine was made by Dell."
+      return 0
+    fi
+  fi
+  return 1
+} # end of check_if_dell
+#
 get_efi_system_part() {
   # root@debian:/tmp# sgdisk -p /dev/sda
   # Disk /dev/sda: 125829120 sectors, 60.0 GiB
@@ -418,6 +447,15 @@ fi
 #  echo "$msg_program_stop!"
 #  exit 1
 #fi
+
+if check_if_dell; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Due to an issue of efibootmgr on Dell's machine, EFI NVRAM boot entry update was skipped."
+  echo "For more info, please check: https://sourceforge.net/p/clonezilla/bugs/310/"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
 
 echo "Updating boot entry of EFI NVRAM..."
 # Check if it meets required kernel and module
