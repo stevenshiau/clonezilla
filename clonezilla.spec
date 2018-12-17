@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.20
+Version:	3.32.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 17 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.21-drbl1
+  * Blacklist Dell machine for update-efi-nvram-boot-entry due to these
+    issues:
+    https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/9fc9c4dee3/
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/76ba35a226/
+    https://sourceforge.net/p/clonezilla/bugs/310/ 
+
 * Fri Dec 14 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.20-drbl1
   * Use https instead of http to show related URL.
     http://clonezilla.org -> https://clonezilla.org
