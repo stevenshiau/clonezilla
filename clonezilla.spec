@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.21
+Version:	3.32.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 31 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.22-drbl1
+  * To RAM option should also copy EFI dir so that the recovery iso/zip
+    script works.
+    Thanks to Mr. Brandon Lancaster for reporting this issue.
+  * Not to check source device busy in network mode for ocs-onthefly. Thanks
+    to Xuewen Wang for providing this patch.
+    Ref: https://github.com/stevenshiau/clonezilla/pull/42
+
 * Mon Dec 17 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.21-drbl1
   * Blacklist Dell machine for update-efi-nvram-boot-entry due to these
     issues:
