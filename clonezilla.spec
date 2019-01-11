@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.32.22
+Version:	3.33.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.28.10, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.28.11, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,15 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jan 11 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.1-drbl1
+  * Enlarge ramfs_size_def as 7 GB for create-debian-live and
+    create-ubuntu-live.
+  * Add a new program ocs-gen-bt-metainfo for later use.
+  * Add an option for skipping file system save. This is used to create a
+    pseudo image for BT from device. (not ready yet)
+  * Two more variables were added in drbl-ocs.conf: p_length_transmission
+    and bt_buffer_size. Later version will need them.
+
 * Mon Dec 31 2018 Steven Shiau <steven _at_ clonezilla org> 3.32.22-drbl1
   * To RAM option should also copy EFI dir so that the recovery iso/zip
     script works.
