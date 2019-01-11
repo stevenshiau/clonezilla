@@ -1,0 +1,242 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>, Date Huang <tjjh89017 _at_ hotmail com>
+# Description: Program to create .torrent file from file system on a partition directly
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+# Set initial IP address and port. These two values are not important because it will be tuned by transmission-edit in runtime.
+init_ip="192.168.1.1"
+init_port="6969"
+
+# Settings
+#
+USAGE() {
+    echo "$ocs - To create the Clonezilla bittorrent slices files from existing Clonezilla image"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] DEV"
+    echo "Options:"
+    echo "-d|--output-dir DIR  Specify DIR (absolute path) as the output dir"
+    echo "-i|--image-dir DIR   Specify DIR (absolute path) as the image dir which has existing LVM info file (lvm_vg_dev.list)"
+    echo "DEV is the device name, can be either begin with /dev/ or not."
+    echo "If \"DEV\" is not assigned, a dialog menu will be shown for you to select."
+    echo "Ex:"
+    echo "To create the Clonezilla bittorrent slices files from the partition \"sda1\", run"
+    echo "   $ocs sda1"
+    echo
+} # end of USAGE
+#
+create_dev_torrent_file() {
+  local ot_dir="$1"
+  local iprt="${2#/dev/*}"  # e.g., sda1, bionic-x64-vg/root (lvm)
+  local ifs_ pt_cmd ifn_
+  if [ -z "$ot_dir" ]; then
+     echo "Variable \"ot_dir\" was not assigned in function create_dev_torrent_file! Program terminated!"
+     exit 1
+  fi
+  if [ -z "$iprt" ]; then
+     echo "Variable \"iprt\" was not assigned in function create_dev_torrent_file! Program terminated!"
+     exit 1
+  fi
+  ifs_="$(LC_ALL=C ocs-get-part-info /dev/${iprt} fs)"
+  if `is_partclone_support_fs $ifs_`; then
+    # clean the stale file torrent.info
+    rm -fv ${ot_dir}/torrent.info
+    pt_cmd="partclone.${ifs_} -c -t --buffer_size ${bt_buffer_size} -s /dev/${iprt} -o ${ot_dir}"
+    echo "Running: $pt_cmd"
+    eval $pt_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
+    if [ -e "${ot_dir}/torrent.info" ]; then
+      ifn_="$(to_filename ${iprt#/dev/*})"
+      partclone_create_torrent.py -p ${iprt} -t http://${init_ip}:${init_port}/announce -c Clonezilla -i ${ot_dir}/torrent.info -o ${ot_dir}/${ifn_}.torrent
+      if [ ! -e "${ot_dir}/${ifn_}.torrent" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "Failed to create this metainfo file: ${ot_dir}/${ifn_}.torrent"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop."
+        my_ocs_exit 1
+      fi
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Failed to create ${ot_dir}/torrent.info!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      my_ocs_exit 1
+    fi
+    # clean the temp file torrent.info
+    rm -fv ${ot_dir}/torrent.info
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "The file system \"${ifs_}\" on device \"$iprt\" is not supported by Partclone?"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop."
+    my_ocs_exit 1
+  fi
+} # end of create_dev_torrent_file
+#
+create_LVM_torrent_file_from_disk() {
+  # This is for LVM parts
+  # tgt_parts is global variable
+  local img_d_="$1"
+  local tgt_parts="$2"
+  local volg n PV_PARSE_CONF LOGV_PARSE_CONF
+  local is_in_chosen_partition dummy fs_
+  PV_PARSE_CONF="$img_d_/lvm_vg_dev.list"
+  LOGV_PARSE_CONF="$img_d_/lvm_logv.list"
+  [ ! -f "$PV_PARSE_CONF" ] && exit 1
+  [ ! -f "$LOGV_PARSE_CONF" ] && exit 1
+  
+  while read lv dummy; do
+   # Process the real data partition, only those in the chosen partitions
+   # Ex:
+   # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
+   # Then lvol0 is belong to VG vg3
+   volg="$(echo "$lv" | awk -F"/" '{print $3}')"
+   # Find if the LV is in the chosen partition (via VG, we can determine that)
+   # EX: tgt_parts: hda1, hda3, hda5...
+   #     vg3 /dev/hda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
+   is_in_chosen_partition="no"
+   for ipt in $tgt_parts; do
+     if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
+       # Found the chosen partitions is in the VG
+       is_in_chosen_partition="yes"
+       break
+     fi
+   done
+   [ "$is_in_chosen_partition" = "no" ] && continue
+   fs_="$(LC_ALL=C ocs-get-part-info ${lv} fs)"
+   # Skip swap
+   case "$fs_" in 
+     *[Ss][Ww][Aa][Pp]*) continue;; 
+   esac
+   create_dev_torrent_file $output_dir $lv
+  done < $LOGV_PARSE_CONF
+} # end of create_LVM_torrent_file_from_disk
+#
+create_bt_metainfo() {
+  local tgt_pts="$1"
+  local ipart pt_cmd
+  local pt_no_lvm
+  if [ -z "$tgt_pts" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No \"$tgt_pts\" assigned in function create_bt_metainfo!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    my_ocs_exit 1
+  fi
+  pt_no_lvm=""
+  for ipart in $tgt_pts; do
+    # sda1 -> sda
+    hd_tmp="$(get_diskname $ipart)"
+    part_is_lvm="no"
+    # If ipart is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
+    if [ -n "$(grep -Ew "$ipart" $img_dir/lvm_vg_dev.list 2>/dev/null)" ]; then
+      # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
+      part_is_lvm="yes"
+      continue
+    fi
+    create_dev_torrent_file $output_dir $ipart
+  done
+  # We have to do restore LVM (PV/VG/LV) together, not follow every partition
+  if [ -n "$img_dir" ]; then
+    if [ "$part_is_lvm" = "yes" ]; then
+      create_LVM_torrent_file_from_disk "$img_dir" "$tgt_pts"
+    fi
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "No pseudo image dir was assigned. No way to create LVM torrent file!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+} # create_bt_metainfo
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -d|--output-dir)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             output_dir="$1"
+             shift;
+           fi
+           [ -z "$output_dir" ] && USAGE && exit 1
+           ;;
+   -i|--image-dir)
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             img_dir="$1"
+             shift;
+           fi
+           [ -z "$img_dir" ] && USAGE && exit 1
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+target_dev="$*"
+
+force_TERM_as_linux_if_necessary
+
+#
+check_if_root
+ask_and_load_lang_set
+# check DIA
+check_DIA_set_ESC $DIA
+
+if [ -z "$output_dir" ]; then
+  output_dir="$(pwd)"
+else
+  if [ ! -d "$output_dir" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "This directory was not found: \"$output_dir\""
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    my_ocs_exit 1
+  fi
+fi
+
+target_parts=""
+if [ -n "$target_dev" ]; then
+  # Removing the leading /dev/, make it like: /dev/sda1 -> sda1
+  for idev in $target_dev; do
+    target_parts="${target_parts} ${idev#/dev/*}" 
+  done
+fi
+if [ -z "$target_parts" ]; then
+  get_target_parts_name_from_local_machine  # get $target_parts
+fi
+
+# check if the device exists
+ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
+trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+check_if_input_device_exist $ANS_TMP $target_parts
+# we have to remove " (comes with checklist in dialog) so that for loop
+# will work (Specially for FC3/4...)
+target_parts="$(cat $ANS_TMP | tr -d \")"
+[ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "$msg_choose_parts_to_save: $target_parts"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+echo "Start creating BT metainfo for device: $target_parts"
+create_bt_metainfo "$target_parts"
+rc=$?
+my_ocs_exit $rc
