@@ -991,7 +991,7 @@ do_mount_subdir_bind() {
 }
 #
 find_ocsroot_dev_description(){
-  local ocsroot_parent filesystem writable rw_test_file
+  local filesystem writable rw_test_file
   filesystem="$(get_dir_filesystem $ocsroot)"
   rw_test_file="$(mktemp $ocsroot/rw_test.XXXXXX)"
   rc=$?
@@ -1047,6 +1047,30 @@ find_ocsroot_dev_description(){
   esac
   [ -z "$livemedia_des" ] && livemedia_des="$msg_unknown"
 } # end of find_ocsroot_dev_description
+#
+do_mount_ram_disk() {
+  local filesystem
+  filesystem="$(get_dir_filesystem $ocsroot)"
+  if [ "$filesystem" = "tmpfs" ]; then
+    echo "$msg_img_repo_is_using_tmpfs: $ocsroot"
+  else
+    filesystem=""
+    umount $ocsroot 2>/dev/null
+    filesystem="$(get_dir_filesystem $ocsroot)"
+    if [ "$filesystem" = "overlay" ]; then
+       # Make sure it's clonezilla live. If so, then definitely the underlay dir of overlay FS is tmpfs.
+       check_if_in_clonezilla_live  # get $LIVE_MEDIA
+       echo "$msg_img_repo_is_using_tmpfs: $ocsroot"
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "$msg_failed_to_use_ramdisk_as_repo"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo -n "$msg_press_enter_to_continue..."
+      read
+      /bin/bash
+    fi
+  fi
+} # end of do_mount_ram_disk
 #
 webdav_ocsroot_dia_des() {
   webdav_ocsroot_msg_1="webdav_server"
@@ -1104,6 +1128,7 @@ get_ocsroot_resource() {
     $swift_ocsroot_msg_1 $swift_ocsroot_msg_2 \
     $bind_ocsroot_msg_1 $bind_ocsroot_msg_2 \
     "enter_shell"  "$msg_enter_cml. $msg_do_it_manually" \
+    "ram_disk"     "$msg_mount_ramdisk" \
     "skip"         "$msg_skip_this_use_existing_ocsroot ($livemedia_des)" \
     2> $TMP
     # Since curlftpfs is not stable with partimage/ntfsclone, skip that now. We will turn it on when it's stable.
@@ -1115,7 +1140,7 @@ get_ocsroot_resource() {
     [ -f "$TMP" ] && rm -f $TMP
   fi
   case "$ocsroot_src" in
-    "local_dev"|"ssh_server"|"samba_server"|"nfs_server"|"webdav_server"|"s3_server"|"swift_server"|"use_subdir"|"enter_shell"|"skip")
+    "local_dev"|"ssh_server"|"samba_server"|"nfs_server"|"webdav_server"|"s3_server"|"swift_server"|"use_subdir"|"enter_shell"|"ram_disk"|"skip")
        true;;
     *)
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -1187,6 +1212,7 @@ case "$ocsroot_src" in
   s3_server)      do_mount_s3_server;;
   swift_server)   do_mount_swift_server;;
   use_subdir)     do_mount_subdir_bind;;
+  ram_disk)       do_mount_ram_disk;;
   enter_shell) 
       echo $msg_enter_another_shell_hint_with_netcfg_prompt
       echo -n "$msg_press_enter_to_continue..."
