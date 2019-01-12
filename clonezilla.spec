@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.1
+Version:	3.33.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.28.11, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.11, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.28.12, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jan 12 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.2-drbl1
+  * New mechanism was added: instead of using Partclone image as the BT
+    source, the local device (whole disk or partitions) can be as the
+    source, too.
+
 * Fri Jan 11 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.1-drbl1
   * Enlarge ramfs_size_def as 7 GB for create-debian-live and
     create-ubuntu-live.
