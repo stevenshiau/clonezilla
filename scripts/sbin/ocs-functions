@@ -1637,52 +1637,51 @@ image_save() {
   fi
   if [ "$fsck_src_part_intr" = "yes" -o \
        "$fsck_src_part_auto" = "yes" ]; then
-    # Available fsck:
-    # fsck.cramfs    fsck.ext4      fsck.hfsplus   fsck.msdos     fsck.reiserfs
-    # fsck.ext2      fsck.ext4dev   fsck.jfs       fsck.nfs       fsck.vfat
-    # fsck.ext3      fsck.hfs       fsck.minix     fsck.reiser4   fsck.xfs
     fsck_partition $part_fs $source_dev $fsck_extra_opt
     echo $msg_delimiter_star_line
   fi
 
-  echo "Starting saving $source_dev as $tgt_dir/${tgt_file}.XXX..." | tee --append ${OCS_LOGFILE}
-  if [ -z "$part_fs" ]; then
-    part_fs_shown="Unknown or unsupported"
-  else
-    part_fs_shown="$part_fs"
-  fi
-  echo "$source_dev $part_fs" >> $tgt_dir/dev-fs.list
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "$source_dev filesystem: $part_fs_shown." | tee --append ${OCS_LOGFILE}
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  if [ "$FORCE_TO_USE_DD" = "yes" ]; then
-    # case (0): force to use dd
-    # save_part_by_dd
-    save_part_by_partclone dd
-  elif [ "$USE_NTFSCLONE" = "yes" -a "$part_fs" = "ntfs" ]; then
-    # case (1): ntfsclone is preferred
-    save_part_by_ntfsclone
-  elif [ "$USE_PARTCLONE" = "yes" ] && `is_partclone_support_fs $part_fs`; then
-    # case (2): partclone is preferred
-    save_part_by_partclone $part_fs
-  elif `is_partimage_support_fs $part_fs`; then
-    # case (3): partimage supported filesystem, we can use partimage to save it.
-    save_part_by_partimage
-  else
-    # case (4): not supported filesystem, the last choice is to use dd to dump.
-    # save_part_by_dd
-    save_part_by_partclone dd
-  fi
-  rc=$?
-  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-  if [ "$rc" -ne 0 ]; then
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "Failed to save partition $source_dev." | tee --append ${OCS_LOGFILE}
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-     echo "$msg_press_enter_to_continue..."
-     read
-     # Saving mode, always copy error log to image dir.
-     copy_error_log
+  # do_fs_save is a global variable
+  if [ "$do_fs_save" = "yes" ]; then
+    echo "Starting saving $source_dev as $tgt_dir/${tgt_file}.XXX..." | tee --append ${OCS_LOGFILE}
+    if [ -z "$part_fs" ]; then
+      part_fs_shown="Unknown or unsupported"
+    else
+      part_fs_shown="$part_fs"
+    fi
+    echo "$source_dev $part_fs" >> $tgt_dir/dev-fs.list
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$source_dev filesystem: $part_fs_shown." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    if [ "$FORCE_TO_USE_DD" = "yes" ]; then
+      # case (0): force to use dd
+      # save_part_by_dd
+      save_part_by_partclone dd
+    elif [ "$USE_NTFSCLONE" = "yes" -a "$part_fs" = "ntfs" ]; then
+      # case (1): ntfsclone is preferred
+      save_part_by_ntfsclone
+    elif [ "$USE_PARTCLONE" = "yes" ] && `is_partclone_support_fs $part_fs`; then
+      # case (2): partclone is preferred
+      save_part_by_partclone $part_fs
+    elif `is_partimage_support_fs $part_fs`; then
+      # case (3): partimage supported filesystem, we can use partimage to save it.
+      save_part_by_partimage
+    else
+      # case (4): not supported filesystem, the last choice is to use dd to dump.
+      # save_part_by_dd
+      save_part_by_partclone dd
+    fi
+    rc=$?
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    if [ "$rc" -ne 0 ]; then
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+       echo "Failed to save partition $source_dev." | tee --append ${OCS_LOGFILE}
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       echo "$msg_press_enter_to_continue..."
+       read
+       # Saving mode, always copy error log to image dir.
+       copy_error_log
+    fi
   fi
 
   #
@@ -6148,12 +6147,23 @@ feed_multicast_restoreparts() {
 # function to feed bittorrent for restoring partitions
 feed_bittorrent_restoreparts() {
   # This is for None-LVM parts
-  local tgt_dir="$1"
-  local tgt_parts="$2" # e.g. sda1, sda2...
+  local tgt_dir
+  local tgt_parts # e.g. sda1, sda2...
   local time_to_pause_before_mail mail_client="" time_tag part_is_lvm
   local bts_cmd pt_no_lvm
   local track_max_client_opt
+  local from_rawdev_opt
   # do_regen_BT_img is a global variable. It's the flag about regenerating the BT files
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -f|--from-raw-dev)
+	 from_rawdev_opt="-f"
+         shift;;
+      *) break ;;
+    esac
+  done
+  tgt_dir="$1"
+  tgt_parts="$2" # e.g. sda1, sda2...
 
   # prepare the mail client
   if type mutt &>/dev/null; then
@@ -6177,16 +6187,22 @@ feed_bittorrent_restoreparts() {
     pt_no_lvm="$pt_no_lvm $partition"
   done
   [ -n "$n_clients" ] && track_max_client_opt="-m $n_clients"
-  bts_cmd="ocs-btsrv $track_max_client_opt start $tgt_dir $pt_no_lvm"
-  # Squeeze multiple spaces as one only
-  bts_cmd="$(echo $bts_cmd | sed -r -e "s|[[:space:]]+| |g")"
-  echo "Running: $bts_cmd"
-  eval $bts_cmd
+  if [ -n "$pt_no_lvm" ]; then
+    bts_cmd="ocs-btsrv $track_max_client_opt $from_rawdev_opt start $tgt_dir $pt_no_lvm"
+    # Squeeze multiple spaces as one only
+    bts_cmd="$(echo $bts_cmd | sed -r -e "s|[[:space:]]+| |g")"
+    echo "Running: $bts_cmd"
+    eval $bts_cmd
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Warning! No partition was assigned! Assum there is LVM on system."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
 
   # We have to do restore LVM (PV/VG/LV) together, not follow every partition
   if [ "$part_is_lvm" = "yes" ]; then
     # LVM exists, feed images to restore PV/VG/LV.
-    feed_bittorrent_LVM "$tgt_parts"
+    feed_bittorrent_LVM $from_rawdev_opt "$tgt_parts"
   fi
   # spawn a background program to wait and mail the clonezilla-jogs.log to root
   # if we can find mail/mutt program then we do it, otherwise skip.
@@ -6806,11 +6822,20 @@ feed_LVM_multicast() {
 feed_bittorrent_LVM() {
   # This is for LVM parts
   # imagedir, port and ipart are global variable
-  local tgt_parts="$1"
+  local tgt_parts
   local volg n
   local btl_cmd
   local fn
-  local track_max_client_opt
+  local track_max_client_opt from_rawdev_opt
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -f|--from-raw-dev)
+	 from_rawdev_opt="-f"
+         shift;;
+      *) break ;;
+    esac
+  done
+  tgt_parts="$1"
   # Note! With a leading $imagedir before /$target_dir
   PV_PARSE_CONF="$imagedir/$target_dir/lvm_vg_dev.list"
   LOGV_PARSE_CONF="$imagedir/$target_dir/lvm_logv.list"
@@ -6841,16 +6866,19 @@ feed_bittorrent_LVM() {
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*) continue;; 
    esac
-   if [ ! -d "$ocsroot_btzone/$tgt_dir/$fn" ]; then
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "$ocsroot_btzone/$tgt_dir/$fn was not found! The restored OS might be uncompleted!"
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-     echo -n "$msg_press_enter_to_continue..."
-     read
-     continue
+   if [ -z "$from_rawdev_opt" ]; then
+     # from image, not from raw dev. Check BT slices dir.
+     if [ ! -d "$ocsroot_btzone/$tgt_dir/$fn" ]; then
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+       echo "$ocsroot_btzone/$tgt_dir/$fn was not found! The restored OS might be uncompleted!"
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       echo -n "$msg_press_enter_to_continue..."
+       read
+       continue
+     fi
    fi
    [ -n "$n_clients" ] && track_max_client_opt="-m $n_clients"
-   btl_cmd="ocs-btsrv $track_max_client_opt start $target_dir ${lv#/dev/*}"
+   btl_cmd="ocs-btsrv $track_max_client_opt $from_rawdev_opt start $target_dir ${lv#/dev/*}"
    # Squeeze multiple spaces as one only
    btl_cmd="$(echo $btl_cmd | sed -r -e "s|[[:space:]]+| |g")"
    echo "Running: $btl_cmd"
@@ -7084,6 +7112,8 @@ start_ocs_service() {
   local regen_opt
   local mgrd_opt
   local	feed_only="no"
+  local from_raw_dev="no"
+  local raw_dev_opt
   while [ $# -gt 0 ]; do
     case "$1" in
       -t|--task)
@@ -7107,6 +7137,9 @@ start_ocs_service() {
       -f|--feed-only)
 	 feed_only="yes"
          shift;;
+      -r|--from-raw-dev)
+	 from_raw_dev="yes"
+         shift;;
       -n|--n-clients)
          shift
          if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -7116,6 +7149,7 @@ start_ocs_service() {
          fi
          [ -z "$n_clients" ] && echo "-n is used, but no n_clients assigned." && exit 1
          ;;
+      *) break ;;
     esac
   done
   if [ "$feed_only" = "no" ]; then
@@ -7125,7 +7159,6 @@ start_ocs_service() {
     # maybe it will be ask_user, if so, change it as choose later
     tgt_img_menu="$(echo "$tgt_img_menu" | sed -e "s/ask_user/(choose later)/g")"
     tgt_dev_menu="$(echo "$tgt_dev_menu" | sed -e "s/ask_user/(choose later)/g")"
-    
     
     echo "clonezilla.lock dir: $ocs_lock_dir"
     # Create the ocs_lock_dir if it does not exist
@@ -7351,9 +7384,15 @@ start_ocs_service() {
         echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
         exit 1
       fi
-      echo "Running: ocs-gen-bt-slices \"$target_dir\" \"$target_parts\""
-      ocs-gen-bt-slices "$target_dir" "$target_parts"
-      feed_bittorrent_restoreparts "$target_dir" "$target_parts"
+      if [ "$from_raw_dev" = "yes" ]; then
+        # This is from raw device, so add an option
+	raw_dev_opt="-f"
+      else
+        # This is from image. First convert the image to BT files
+        echo "Running: ocs-gen-bt-slices \"$target_dir\" \"$target_parts\""
+        ocs-gen-bt-slices "$target_dir" "$target_parts"
+      fi
+      feed_bittorrent_restoreparts $raw_dev_opt "$target_dir" "$target_parts"
       ;;
 
     "bt_restoreparts")
@@ -7365,9 +7404,15 @@ start_ocs_service() {
         echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
         exit 1
       fi
-      echo "Running: ocs-gen-bt-slices \"$target_dir\" \"$target_parts\""
-      ocs-gen-bt-slices "$target_dir" "$target_parts"
-      feed_bittorrent_restoreparts "$target_dir" "$target_parts"
+      if [ "$from_raw_dev" = "yes" ]; then
+        # This is from raw device, so add an option
+	raw_dev_opt="-f"
+      else
+        # This is from image. First convert the image to BT files
+        echo "Running: ocs-gen-bt-slices \"$target_dir\" \"$target_parts\""
+        ocs-gen-bt-slices "$target_dir" "$target_parts"
+      fi
+      feed_bittorrent_restoreparts $raw_dev_opt "$target_dir" "$target_parts"
       ;;
 
   esac
@@ -8392,8 +8437,6 @@ task_saveparts() {
       continue
     fi
     # not LVM, normal partition
-    # From partimage 0.6.6, batch mode won't stop if checkInodeForDevice is not run. Therefore comment it.
-    # checkInodeForDevice /dev/$partition 
     image_save /dev/$partition $target_dir_fullpath $partition
     rc_saveparts="$(($rc_saveparts + $?))"
     # Tag the partition info. This is special for NTFS boot reserved partiition
@@ -13066,10 +13109,10 @@ create_bt_image_files_from_partclone_img() {
     if [ "$partclone_make_slice_opt" = "extract" ]; then
       # Method 1: Extract the slices from image directly for BT
       if [ "$fs_" != "dd" ]; then
-        cmd_partclone_extract="partclone.${fs_} -d -r $PARTCLONE_RESTORE_OPT -s - -T --buffer_size 16777216 -o $ocsroot_btzone/$tgt_dir/$img_file"
+        cmd_partclone_extract="partclone.${fs_} -d -r $PARTCLONE_RESTORE_OPT -s - -T --buffer_size ${bt_buffer_size} -o $ocsroot_btzone/$tgt_dir/$img_file"
       else
         # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when extracting 
-        cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT -s - --btfiles --buffer_size 16777216 -o $ocsroot_btzone/$tgt_dir/$img_file"
+        cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT -s - --btfiles --buffer_size ${bt_buffer_size} -o $ocsroot_btzone/$tgt_dir/$img_file"
       fi
       echo "Preparing image slice files for BT use: $ocsroot_btzone/$tgt_dir/${img_file}/" | tee --append ${OCS_LOGFILE}
       ( for img in $target_d/$img_file_prefix; do
@@ -13150,7 +13193,7 @@ create_bt_image_files_from_partclone_img() {
     ) \
     | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
     | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -d --btfiles \
-      --buffer_size 16777216 -s - -o $ocsroot_btzone/$tgt_dir/$img_file
+      --buffer_size ${bt_buffer_size} -s - -o $ocsroot_btzone/$tgt_dir/$img_file
 _EOT_
     ( for img in $ocsroot/$tgt_dir/$img_file_prefix; do
         # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
@@ -13160,7 +13203,7 @@ _EOT_
     ) \
     | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
     | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -d --btfiles \
-      --buffer_size 16777216 -s - -o $ocsroot_btzone/$tgt_dir/$img_file
+      --buffer_size ${bt_buffer_size} -s - -o $ocsroot_btzone/$tgt_dir/$img_file
     retcodes=(${PIPESTATUS[@]})
     
     if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then

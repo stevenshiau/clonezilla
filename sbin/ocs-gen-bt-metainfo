@@ -36,7 +36,7 @@ USAGE() {
 create_dev_torrent_file() {
   local ot_dir="$1"
   local iprt="${2#/dev/*}"  # e.g., sda1, bionic-x64-vg/root (lvm)
-  local ifs_ pt_cmd ifn_
+  local ifs_ pt_cmd bt_cvt_cmd ifn_ pclone_opt
   if [ -z "$ot_dir" ]; then
      echo "Variable \"ot_dir\" was not assigned in function create_dev_torrent_file! Program terminated!"
      exit 1
@@ -46,38 +46,41 @@ create_dev_torrent_file() {
      exit 1
   fi
   ifs_="$(LC_ALL=C ocs-get-part-info /dev/${iprt} fs)"
+  # Check if file system supported by Partclone or not.
   if `is_partclone_support_fs $ifs_`; then
-    # clean the stale file torrent.info
-    rm -fv ${ot_dir}/torrent.info
-    pt_cmd="partclone.${ifs_} -c -t --buffer_size ${bt_buffer_size} -s /dev/${iprt} -o ${ot_dir}"
-    echo "Running: $pt_cmd"
-    eval $pt_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
-    if [ -e "${ot_dir}/torrent.info" ]; then
-      ifn_="$(to_filename ${iprt#/dev/*})"
-      partclone_create_torrent.py -p ${iprt} -t http://${init_ip}:${init_port}/announce -c Clonezilla -i ${ot_dir}/torrent.info -o ${ot_dir}/${ifn_}.torrent
-      if [ ! -e "${ot_dir}/${ifn_}.torrent" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "Failed to create this metainfo file: ${ot_dir}/${ifn_}.torrent"
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop."
-        my_ocs_exit 1
-      fi
-    else
+    # Supported by Partclone. Use clone mode (-c) and partclone.${ifs_}, e.g. partclone.ext4
+    pclone_opt="-c"
+  else
+    # Not supported by Partclone, force to use partclone.dd which does not have "-c" option.
+    ifs_="dd"
+    pclone_opt=""
+  fi
+  # clean the stale file torrent.info
+  rm -fv ${ot_dir}/torrent.info
+  pt_cmd="partclone.${ifs_} $pclone_opt -d -t --buffer_size ${bt_buffer_size} -s /dev/${iprt} -o ${ot_dir}"
+  echo "Running: $pt_cmd"
+  eval $pt_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
+  if [ -e "${ot_dir}/torrent.info" ]; then
+    ifn_="$(to_filename ${iprt#/dev/*})"
+    bt_cvt_cmd="partclone_create_torrent.py -p ${iprt} -t http://${init_ip}:${init_port}/announce -c Clonezilla -i ${ot_dir}/torrent.info -o ${ot_dir}/${ifn_}.torrent"
+    echo "Running: $bt_cvt_cmd"
+    eval $bt_cvt_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
+    if [ ! -e "${ot_dir}/${ifn_}.torrent" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Failed to create ${ot_dir}/torrent.info!"
+      echo "Failed to create this metainfo file: ${ot_dir}/${ifn_}.torrent"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
+      echo "$msg_program_stop."
       my_ocs_exit 1
     fi
-    # clean the temp file torrent.info
-    rm -fv ${ot_dir}/torrent.info
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The file system \"${ifs_}\" on device \"$iprt\" is not supported by Partclone?"
+    echo "Failed to create ${ot_dir}/torrent.info!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop."
+    echo "$msg_program_stop!"
     my_ocs_exit 1
   fi
+  # clean the temp file torrent.info
+  rm -fv ${ot_dir}/torrent.info
 } # end of create_dev_torrent_file
 #
 create_LVM_torrent_file_from_disk() {

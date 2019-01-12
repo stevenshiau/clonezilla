@@ -23,6 +23,8 @@ brutal_kill="no"
 # BT_PORT_INIT, p_length_ctorrent, p_length_mktorrent, ocsroot_btzone, btlog_dir are loaded from drbl-ocs.conf.
 # Log file to keep the status of ezio seeding.
 ezio_seeding_log="/var/log/ezio-seeding"
+# Default mode for reading BT data from image
+bt_slices_from_dev="img"
 
 # Functions
 USAGE() {
@@ -31,7 +33,9 @@ USAGE() {
     echo "To run $ocs:"
     echo "$ocs [OPTION] [start|stop|status] [IMAGE] [DEV1] [DEV1]..."
     echo "Options:"
-    echo "-c, --metainfo-creator  PROG  Use PROG to create the metainfo (.torrent) file"
+    echo "-b, --brutal-kill            Brutally kill all the related service when stopping."
+    echo "-c, --metainfo-creator PROG  Use PROG to create the metainfo (.torrent) file"
+    echo "-f, --from-raw-dev           Force to read BT data from raw device. Default is from image"
     echo "-g, --log-dir DIR            Use DIR as the log dir. Default value is \"$btlog_dir\""
     echo "-m, --max-client-no NO       Assign the client number as NO. When this number of clients finishes downloading, BT tracker will exit so that client will stop, too."
     echo "-p, --bt-srv-ip  IP          Assign the IP address for using in tracker's URL. If not assigned, the IP address detected on the machine will be used"
@@ -86,16 +90,25 @@ start_bt_srv() {
     echo "$msg_program_stop!"
     exit 1
   fi
-  # Check if the bt image dir exists
-  for ipt in $parts; do
-    if [ ! -d "$ocsroot_btzone/$img_dir/$(to_filename $ipt)" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Image dir \"$ocsroot_btzone/$img_dir/$(to_filename $ipt)\" not found!"
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
-      exit 1
-    fi
-  done
+  if [ -z "$parts" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Warning! No partition was assigned! Assum there is LVM on system."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+  if [ "$bt_slices_from_dev" = "img" ]; then
+    # Check if the bt image dir exists
+    for ipt in $parts; do
+      if [ ! -d "$ocsroot_btzone/$img_dir/$(to_filename $ipt)" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "Image dir \"$ocsroot_btzone/$img_dir/$(to_filename $ipt)\" not found!"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop!"
+        exit 1
+      fi
+    done
+  fi
   # Stop previous bt service first.
   stop_bt_srv
 
@@ -121,7 +134,7 @@ start_bt_srv() {
     if [ "$metainfo_creator" = "ctorrent" ]; then
       cmd_make_metainfo="ctorrent -t -p -c For_Clonezilla -l ${p_length_ctorrent} -u http://${btsrv_ip}:$port_b/announce -s $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
     elif [ "$metainfo_creator" = "transmission-create" ]; then
-      cmd_make_metainfo="transmission-create -p -c For_Clonezilla -t http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
+      cmd_make_metainfo="transmission-create -s ${p_length_transmission} -p -c For_Clonezilla -t http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
     else
       cpu_no="$(LC_ALL=C grep -Ew "^processor[[:space:]]+" /proc/cpuinfo | wc -l)"
       cmd_make_metainfo="mktorrent -p -c For_Clonezilla -t ${cpu_no} -l ${p_length_mktorrent} -a http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
@@ -185,7 +198,17 @@ start_bt_srv() {
       # //NOTE// The working dir for ezio is the working dir as torrent file
       # E.g., ezio -U -f /home/partimag/btzone/xenial-x64-20161104/sda1.torrrent /home/partimag/btzone/xenial-x64-20161104
       ezio_log_idir="${ezio_seeding_log}-${idir_name}.log"
-      cmd_start_seeding="$ezio_prog -U -f $ezio_seeder_extra_opt $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$(dirname ${idir}) >$ezio_log_idir 2>&1 &"
+      case "$bt_slices_from_dev" in
+      img)
+        cmd_start_seeding="$ezio_prog -U -f $ezio_seeder_extra_opt $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$(dirname ${idir}) >$ezio_log_idir 2>&1 &"
+        ;;
+      raw-dev)
+        parse_cmdline_option -c /proc/cmdline "ezio_opt"
+        # Squeeze multiple spaces to one only
+        cmd_start_seeding="$(echo $ezio_prog -U $ezio_opt $ocsroot_btzone/${idir}.torrent /dev/$ipt | sed -r -e "s|[[:space:]]+| |g")"
+	cmd_start_seeding="$cmd_start_seeding >$ezio_log_idir 2>&1 &"
+        ;;
+      esac
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "$ezio_prog seeding status output for ${idir}.torrent will be in \"$ezio_log_idir\". Use \"tail -f $ezio_log_idir\" to check the status."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -301,6 +324,8 @@ while [ $# -gt 0 ]; do
            fi
            [ -z "$btlog_dir" ] && USAGE && exit 1
            ;;
+   -f|--from-raw-dev) bt_slices_from_dev="raw-dev"
+	   shift;;
    -g|--log-dir)
            shift; 
            if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -362,6 +387,12 @@ parts="$*"
 # Load deafult values if not specified.
 [ -z "$metainfo_creator" ] && metainfo_creator="$metainfo_creator_def"
 [ -z "$bt_client" ] && bt_client="$bt_client_def"
+if [ "$bt_slices_from_dev" = "raw-dev" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Option -f or --from-raw-dev is assigned. Force to use ezio as the BT client."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  bt_client="ezio"
+fi
 
 # Strip the leading /dev/ if it's assigned. Make it like sda1, sdb1, not /dev/sda1, /dev/sdb1.
 parts="$(echo $parts | sed -r -e "s|/dev/||g")"  # partition name, e.g. sda1, sda2

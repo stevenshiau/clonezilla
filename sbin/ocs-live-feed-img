@@ -38,6 +38,7 @@ ipadd_closed_lan="192.168.169.250"
 netmask_closed_lan="24"
 gwadd_closed_lan="192.168.169.254"
 ocs_sr_mode=""
+bt_raw_dev_psuedo_img_prefix="bt-raw-psuedo"
 
 # Functions
 USAGE() {
@@ -61,7 +62,11 @@ USAGE() {
     echo " -x, --full-duplex        Use full-duplex network with udpcast in multicast mode (faster, but does not work with network hub, only works in switch.)."
     echo " -dm, --dhcpd-mode  MODE  Assign the dhcp service mode: use-existing-dhcpd, start-new-dhcpd, auto-detect, no-dhcpd"
     echo " -md, --massive-deploy-mode MODE   Assign the mass deployment mode: broadcast, multicast, or bittorrent"
-    echo " -cbm, --client-boot-mode MODE   Assign the client boot mode: netboot, local-boot-media, or both"
+    echo " -cbm, --client-boot-mode MODE     Assign the client boot mode: netboot, local-boot-media, or both"
+    echo " -lscm, --lite-srv-client-mode MODE  Assign lite server client mode: massive-deployment or interactive-client"
+    echo " -mdst, --massive-deploy-source-type MODE  Assign massive deployment source type: from-image or from-device"
+    echo " -bdt, --bt-dev-type MODE Assign BT device type: disk-2-mdisks or part-2-mparts" 
+    echo " -bsdf,--bt-src-dev-fsck  TYPE   Assign the type for fsck the source device: sfsck, fsck, fsck-y. Do not put \"-\" before the TYPE. It will confuse $ocs. Use it like: \"-bsdf fsck-y\""
     echo
     echo "MODE is \"start\" or \"stop\""
     echo "IMAGE_NAME is the image dir name, not absolute path"
@@ -420,6 +425,54 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
 	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
   	    # XXXXXX OCS_OPT="$OCS_OPT -cbm $client_boot_mode"
   	    ;;
+      -lscm|--lite-srv-client-mode)
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              ls_client_mode="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$ls_client_mode" ] && USAGE && exit 1
+	    # //NOTE// Do not pass -lscm option to OCS_OPT here.
+	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
+  	    # XXXXXX OCS_OPT="$OCS_OPT -lscm $client_boot_mode"
+  	    ;;
+      -mdst|--massive-deploy-source-type)
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+	      md_source_type="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$md_source_type" ] && USAGE && exit 1
+	    # //NOTE// Do not pass -mdst option to OCS_OPT here.
+	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
+  	    # XXXXXX OCS_OPT="$OCS_OPT -mdst $client_boot_mode"
+  	    ;;
+      -bdt|--bt-dev-type)
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+	      bt_dev_type="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$bt_dev_type" ] && USAGE && exit 1
+	    # //NOTE// Do not pass -mdst option to OCS_OPT here.
+	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
+  	    # XXXXXX OCS_OPT="$OCS_OPT -mdst $client_boot_mode"
+  	    ;;
+      -bsdf|--bt-src-dev-fsck)
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+	      btsrc_dev_fsck="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$btsrc_dev_fsck" ] && USAGE && exit 1
+	    # //NOTE// Do not pass -mdst option to OCS_OPT here.
+	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
+  	    # XXXXXX OCS_OPT="$OCS_OPT -mdst $client_boot_mode"
+  	    ;;
       -*)   echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
             exit 2 ;;
@@ -607,11 +660,11 @@ stop_nat_service() {
 } # end of stop_nat_service
 #
 task_start_feed_img_for_cast() {
-  local MCAST_TMP ans_ cast_dev_action
+  local MCAST_TMP ans_ cast_dev_action 
   local start_cmd
   local OCS_OPT_PRE ocs_opt_dia
-  local rc_chkimg rc_final
-  local castmode choose_term input_key
+  local rc_chkimg rc_final bt_metainfo_cmd
+  local castmode choose_term input_key input_key2 raw_dev_opt
 
   #prompt_for_lite_server
   # If network setting is not configured. Ask
@@ -631,7 +684,9 @@ task_start_feed_img_for_cast() {
     echo "client_boot_mode is $client_boot_mode"
     [ -f "$TMP" ] && rm -f $TMP
   fi
-  OCS_OPT_PRE="$OCS_OPT_PRE -cbm $client_boot_mode"
+  if [ -n "$client_boot_mode" ]; then
+    OCS_OPT_PRE="$OCS_OPT_PRE -cbm $client_boot_mode"
+  fi
 
   # If secure boot is enabled for clients, then set ocs_litesrv_netmode as start-new-dhcpd
   # This limit can be lifted in the future when shim and grub honor the proxy mode of dnsmasq.
@@ -675,7 +730,9 @@ task_start_feed_img_for_cast() {
     fi
   fi
   # 4 modes for ocs_litesrv_netmode: use-existing-dhcpd, start-new-dhcpd, auto-detect, no-dhcpd" -> where auto-detect will be decided as "use-existing-dhcpd" or "start-new-dhcpd" in the end.
-  OCS_OPT_PRE="$OCS_OPT_PRE -dm $ocs_litesrv_netmode"
+  if [ -n "$ocs_litesrv_netmode" ]; then
+    OCS_OPT_PRE="$OCS_OPT_PRE -dm $ocs_litesrv_netmode"
+  fi
   if [ "$ocs_litesrv_netmode" = "auto-detect" ]; then
     # Detect if there is an existing DHCP service in LAN
     detect_dhcp_srv_in_lan  # Get use_existing_dhcp_srv and DHCPOFFER_eth
@@ -757,27 +814,68 @@ task_start_feed_img_for_cast() {
     [ -z "$ocs_user_mode" ] && ask_if_beginner_or_expert_mode
   fi
 
-  # Ask if restoring or clonezilla live diskless service
-  TMP=$(mktemp /tmp/menu.XXXXXX)
-  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-  $DIA \
-  --backtitle "$msg_nchc_title" \
-  --title "$msg_start_clonezilla_mode" \
-  --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
-  "massive-deployment" "$msg_clonezilla_massive_deployment" \
-  "interactive-client" "$msg_netboot_interactive_client" \
-  2> $TMP
-  ls_client_mode=$(cat $TMP)
-  [ -f "$TMP" ] && rm -f $TMP
+  if [ -z "$ls_client_mode" ]; then
+    # Ask if restoring or clonezilla live diskless service
+    TMP=$(mktemp /tmp/menu.XXXXXX)
+    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+    $DIA \
+    --backtitle "$msg_nchc_title" \
+    --title "$msg_start_clonezilla_mode" \
+    --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
+    "massive-deployment" "$msg_clonezilla_massive_deployment" \
+    "interactive-client" "$msg_netboot_interactive_client" \
+    2> $TMP
+    ls_client_mode="$(cat $TMP)"
+    [ -f "$TMP" ] && rm -f $TMP
+  fi
   if [ -z "$ls_client_mode" ]; then
     echo "$msg_program_stop!"
     exit 1
+  fi
+  if [ -n "$ls_client_mode" ]; then
+    OCS_OPT_PRE="$OCS_OPT_PRE -lscm $ls_client_mode"
   fi
 
   # Clean stale files to avoid accidentally using them.
   rm -f /var/www/html/ocs-client-run.conf /var/www/html/img-wo-fs.tar.xz | tee -a ${OCS_LOGFILE}
   if [ "$ls_client_mode"  = "massive-deployment" ]; then
-    # Ask image name first (disk or parts image)
+    if type ocs-bttrack &>/dev/null; then
+      # Enable from-device when ocs-bttrack exists, otherwise only from-image.
+      # Ask image massive deployment or BT onthefly
+      # former case: ocs_restore_img_name=ocs_img_name_or_src_dev
+      # latter case: ocs_source_dev=ocs_img_name_or_src_dev
+      if [ -z "$md_source_type" ]; then
+        TMP=$(mktemp /tmp/menu.XXXXXX)
+        trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+        $DIA \
+        --backtitle "$msg_nchc_title" \
+        --title "$msg_start_clonezilla_mode" \
+        --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
+        "from-image" "$msg_img_massive_deploy" \
+        "from-device" "$msg_dev_massive_deploy" \
+        2> $TMP
+        md_source_type="$(cat $TMP)"
+        [ -f "$TMP" ] && rm -f $TMP
+      fi
+    else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Program ocs-bttrack was not found. Only massive deploymnet from image is available."
+        md_source_type="from-image"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    fi
+    case "$md_source_type" in
+      from-image) ocs_restore_img_name="$ocs_img_name_or_src_dev";;
+      from-device) ocs_source_dev="$ocs_img_name_or_src_dev";;
+               *) echo "Unknown type for md_source_type!"
+                  echo "$msg_program_stop!"
+                  exit 1
+		  ;;
+    esac
+    if [ -n "$md_source_type" ]; then
+      OCS_OPT_PRE="$OCS_OPT_PRE -mdst $md_source_type"
+    fi
+
+    # Ask image name first (disk or parts image) for from-image mode
     # Image name
     if [ "$ocs_restore_img_name" = "ask_user" ]; then
       TMP=$(mktemp /tmp/menu.XXXXXX)
@@ -789,7 +887,7 @@ task_start_feed_img_for_cast() {
       "restoredisk" "$msg_clonezilla_restore_disk" \
       "restoreparts" "$msg_clonezilla_restore_parts" \
       2> $TMP
-      cast_dev_action=$(cat $TMP)
+      cast_dev_action="$(cat $TMP)"
       [ -f "$TMP" ] && rm -f $TMP
       # ocs_mode_prompt will be passed to the dialog about asking dev_type, OCS parameters...
       ocs_mode_prompt="$cast_dev_action"
@@ -822,9 +920,73 @@ task_start_feed_img_for_cast() {
     else
       target_dir="$ocs_restore_img_name"
     fi
-    check_input_target_image "$ocsroot/$target_dir"
+
+    # For from-device mode (BT onthefly)
+    if [ "$ocs_source_dev" = "ask_user" ]; then
+      if [ -z "$bt_dev_type" ]; then
+        TMP=$(mktemp /tmp/menu.XXXXXX)
+        trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+        $DIA \
+        --backtitle "$msg_nchc_title" \
+        --title "$msg_start_clonezilla_mode" \
+        --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
+        "disk-2-mdisks" "$msg_disk_to_mdisk_by_BT" \
+        "part-2-mparts" "$msg_part_to_mpart_by_BT" \
+        2> $TMP
+        bt_dev_type="$(cat $TMP)"
+        [ -f "$TMP" ] && rm -f $TMP
+      fi
+
+      # ocs_mode_prompt will be passed to the dialog about asking dev_type, OCS parameters...
+      ocs_mode_prompt="$bt_dev_type"
+      case "$bt_dev_type" in
+      "disk-2-mdisks")
+        if [ "$ocs_source_dev" = "ask_user" ]; then
+          # To get $target_hd
+          get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
+	  ocs_source_dev="$target_hd"
+        fi
+        dev_type="disk"
+        ;;
+      "part-2-mparts")
+        if [ "$ocs_source_dev" = "ask_user" ]; then
+          # To get $target_parts
+          get_target_parts_name_from_local_machine "$msg_local_source_part \n$msg_linux_parts_MS_mapping" $dia_sel_opt
+	  ocs_source_dev="$target_parts"
+        fi
+        dev_type="parts"
+        ;;
+      *)
+        echo "Unknown mode for bt_dev_type: $bt_dev_type"
+        echo "$msg_program_stop!"
+        exit 1
+        ;;
+      esac
+      if [ -n "$bt_dev_type" ]; then
+        OCS_OPT_PRE="$OCS_OPT_PRE -bdt $bt_dev_type"
+      fi
+      # Since the mode is decided, we can assign some variables now.
+      # Force set destination disk in the clients as the same one from this local machine, and the mode is BT
+      ocs_restore_dev="$ocs_source_dev"
+      massive_deploy_mode="bittorrent"
+      # When not in interactive mode, we have no idea what $dev_type is.
+      # However, we can tell from $ocs_restore_dev, e.g. sda -> disk, sda1 -> parts
+      # cast_dev_action is required for function start_ocs_service
+      # while target_hd or target_parts is required for function 
+      # multicast|bt_restoredisk and multicast|bt_restoreparts (hence for start_ocs_service)
+      first_ele="$(echo $ocs_restore_dev | awk -F" " '{print $1}')"
+      if is_whole_disk $first_ele; then
+        cast_dev_action="restoredisk"
+      else
+        cast_dev_action="restoreparts"
+      fi
+    fi
+
+    if [ "$md_source_type" = "from-image" ]; then
+      check_input_target_image "$ocsroot/$target_dir"
+    fi
   
-    # Get target device
+    # Get target device for from-image mode
     if [ -z "$ocs_restore_dev" -o \
             "$ocs_restore_dev" = "ask_user" ]; then
       # choose the only dev we want
@@ -832,7 +994,7 @@ task_start_feed_img_for_cast() {
        "disk")
           ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
           trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-  	get_existing_disks_from_img $ANS_TMP $imagedir/$target_dir
+  	  get_existing_disks_from_img $ANS_TMP $imagedir/$target_dir
           # we have to remove " (comes with checklist in dialog) so that for loop
           # will work (Specially for FC3/4...)
           target_hd="$(cat $ANS_TMP | tr -d \")"
@@ -842,7 +1004,7 @@ task_start_feed_img_for_cast() {
        "parts")
           ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
           trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-  	get_existing_partitions_from_img $ANS_TMP $imagedir/$target_dir no restore
+  	  get_existing_partitions_from_img $ANS_TMP $imagedir/$target_dir no restore
           # we have to remove " (comes with checklist in dialog) so that for loop
           # will work (Specially for FC3/4...)
           target_parts="$(cat $ANS_TMP | tr -d \")"
@@ -867,7 +1029,7 @@ task_start_feed_img_for_cast() {
         # However, we can tell from $ocs_restore_dev, e.g. sda -> disk, sda1 -> parts
         # cast_dev_action is required for function start_ocs_service
         # while target_hd or target_parts is required for function 
-        # multicast_restoredisk and multicast_restoreparts (hence for start_ocs_service)
+        # multicast|bt_restoredisk and multicast|bt_restoreparts (hence for start_ocs_service)
         first_ele="$(echo $ocs_restore_dev | awk -F" " '{print $1}')"
         if is_whole_disk $first_ele; then
           cast_dev_action="restoredisk"
@@ -895,22 +1057,81 @@ task_start_feed_img_for_cast() {
     fi
     cast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_deploy_packet)"
   
-    if [ "$ocs_sr_mode" = "interactive" ]; then
-      # ask if want to set ocs extra param
-      OCS_PARAM_TMP=`mktemp /tmp/ocs_param_tmp.XXXXXX`
-      trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
-      set_drbl_ocs_extra_param -s -p reboot restore $OCS_PARAM_TMP $dev_type
-      # OCS_OPT_PRE is for ocs-live-feed-img, we have to convert to that for ocs-sr
-      ocs_opt_dia="$(cat $OCS_PARAM_TMP)"
-      ocs_opt_dia="$(echo $ocs_opt_dia)"  # Make it in one line
-      parse_ocs_live_feed_img_cmd_options_with_dash $ocs_opt_dia # Obtain $OCS_OPT for ocs-sr
-      [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
-      OCS_OPT_PRE="$OCS_OPT_PRE $ocs_opt_dia"
-    fi
-    # Load default settings if not assigned
-    if [ -z "$chk_img_restoreable_on_srv" ]; then
-      chk_img_restoreable_on_srv="$chk_img_restoreable_on_srv_def"
-    fi
+    case "$md_source_type" in
+      from-image) 
+        if [ "$ocs_sr_mode" = "interactive" ]; then
+          # ask if want to set ocs extra param
+          OCS_PARAM_TMP=`mktemp /tmp/ocs_param_tmp.XXXXXX`
+          trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
+          set_drbl_ocs_extra_param -s -p reboot restore $OCS_PARAM_TMP $dev_type
+          # OCS_OPT_PRE is for ocs-live-feed-img, we have to convert to that for ocs-sr
+          ocs_opt_dia="$(cat $OCS_PARAM_TMP)"
+          ocs_opt_dia="$(echo $ocs_opt_dia)"  # Make it in one line
+          parse_ocs_live_feed_img_cmd_options_with_dash $ocs_opt_dia # Obtain $OCS_OPT for ocs-sr
+          [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
+          if [ -n "$ocs_opt_dia" ]; then
+            OCS_OPT_PRE="$OCS_OPT_PRE $ocs_opt_dia"
+          fi
+        fi
+        # Load default settings if not assigned
+        if [ -z "$chk_img_restoreable_on_srv" ]; then
+          chk_img_restoreable_on_srv="$chk_img_restoreable_on_srv_def"
+        fi
+        ;;
+      from-device) 
+	# Two parts: (1) fsck source dev. 
+	#            (2) Parameters for restoring clients.
+	# 1. Ask about fsck source dev
+        OCS_PARAM_TMP=`mktemp /tmp/ocs_sr_param_tmp.XXXXXX`
+        trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
+        # Question about fsck the source partition. By default, no matter it's beginner or advanced mode, we will ask.
+        if [ -z "$btsrc_dev_fsck" ]; then
+          $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+          "$msg_clonezilla_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_save_temp_img_for_BT\n$msg_choose_if_fsck_the_source_part" \
+          0 0 0 $DIA_ESC \
+          "-sfsck "  "$msg_skip_check_source_fs" \
+          "-fsck "   "$msg_ocs_param_fsck_src_part" \
+          "-fsck-y " "$msg_ocs_param_fsck_src_part_yes" \
+          2>> $OCS_PARAM_TMP
+	  # Remove the first "-", make like: -sfsck -> sfsck
+	  # This is to avoid it's used as an option for ocs-live-feed-img.
+	  # Otherwise ocs-live-feed-img will parse wrongly.
+	  perl -pi -e 's|^-(.*)$|$1|' $OCS_PARAM_TMP
+        else
+          echo "${btsrc_dev_fsck} " >> $OCS_PARAM_TMP
+        fi
+        btsrc_dev_fsck="$(cat $OCS_PARAM_TMP)"
+        [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
+        if [ -n "$btsrc_dev_fsck" ]; then
+          OCS_OPT_PRE="$OCS_OPT_PRE -bsdf ${btsrc_dev_fsck}"
+	  # E.g., sfsck -> -sfsck
+	  btsrc_dev_fsck_opt="-${btsrc_dev_fsck}"
+        fi
+
+	# 2. Ask parameters about restoring clients
+        if [ "$ocs_sr_mode" = "interactive" ]; then
+          # ask if want to set ocs extra param
+          OCS_PARAM_TMP=`mktemp /tmp/ocs_param_tmp.XXXXXX`
+          trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
+	  # The pseudo image is not restorable. Only some files about partition table and boot loader. Therefore skip check it.
+	  chk_img_restoreable_on_srv="-sc0"
+          set_drbl_ocs_extra_param -s -p reboot restore $OCS_PARAM_TMP $dev_type
+          # OCS_OPT_PRE is for ocs-live-feed-img, we have to convert to that for ocs-sr
+          ocs_opt_dia="$(cat $OCS_PARAM_TMP)"
+          ocs_opt_dia="$(echo $ocs_opt_dia)"  # Make it in one line
+          parse_ocs_live_feed_img_cmd_options_with_dash $ocs_opt_dia # Obtain $OCS_OPT for ocs-sr
+          [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
+          if [ -n "$ocs_opt_dia" ]; then
+            OCS_OPT_PRE="$OCS_OPT_PRE $ocs_opt_dia"
+          fi
+        fi
+        ;;
+    esac
+    # keep ocs_img_name_or_src_dev so it can be used for run again prompt
+    case "$md_source_type" in
+      from-image) ocs_img_name_or_src_dev="$ocs_restore_img_name";;
+      from-device) ocs_img_name_or_src_dev="$ocs_source_dev";;
+    esac
   
     # Enable bittorrent restoring when ocs-bttrack is available
     if type ocs-bttrack &>/dev/null; then
@@ -941,7 +1162,9 @@ task_start_feed_img_for_cast() {
   			 ;;
     esac
     [ "$massive_deploy_mode" = "broadcast" ] && udp_sender_extra_opt="$udp_sender_extra_opt --broadcast"
-    OCS_OPT_PRE="$OCS_OPT_PRE -md $massive_deploy_mode"
+    if [ -n "$massive_deploy_mode" ]; then
+      OCS_OPT_PRE="$OCS_OPT_PRE -md $massive_deploy_mode"
+    fi
   
     # ocs_mode_prompt will be passed to the dialog about asking mcast_wait_time, n_clients, mcast_max_wait_time
     ocs_mode_prompt="$massive_deploy_mode"
@@ -996,12 +1219,46 @@ task_start_feed_img_for_cast() {
         exit 1
       fi
     fi
-  
+
+    if [ "$md_source_type" = "from-device" ]; then
+      # BT from raw device, we have to ignore the input image name, and create a pseudo image
+      # The pseudo image is not restorable. Only some files about partition table and boot loader.
+      target_dir="${bt_raw_dev_psuedo_img_prefix}-$(LC_ALL=C date +%Y%m%d-%H%M%S)"
+      one_time_image_for_bt="$target_dir"  # Keep the image name for later usage since target_dir is only temporary name.
+      if [ -d "$ocsroot/${target_dir}" ]; then
+        mv $imagedir/${target_dir} $imagedir/${target_dir}-saved
+      fi
+      case "$bt_dev_type" in
+      "disk-2-mdisks")
+         ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true savedisk ${target_dir} $target_hd
+	 # Need to list all the partitions.
+         part_rec_f="$(mktemp /tmp/part_rec_f_bt.XXXXXX)"
+         target_parts=""
+         for idisk in $target_hd; do
+           echo "Searching for data/swap/extended partition(s)..." | tee --append $OCS_LOGFILE
+           get_known_partition_proc_format $idisk all $part_rec_f
+           target_parts="$target_parts $(awk -F":" '/^data_dev:/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
+         done
+	 ;;
+      "part-2-mparts")
+         ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true saveparts ${target_dir} $target_parts
+	 ;;
+      esac
+
+      mkdir -p $imagedir/btzone/${target_dir}
+      bt_metainfo_cmd="ocs-gen-bt-metainfo -d $imagedir/btzone/${target_dir}/ -i $imagedir/${target_dir} $target_parts"
+      echo "Running: $bt_metainfo_cmd"
+      eval $bt_metainfo_cmd
+      # Assign option raw_dev_opt for start_ocs_service
+      raw_dev_opt="-r"
+    fi
+
     # For {multicast|bt}_restoredisk, the input device variable is $target_hd
     # For {multicast|bt}_restoreparts, the input device variable is $target_parts
-    start_cmd="start_ocs_service $cast_client_no_opt -f -t \"${castmode}_${cast_dev_action}\" -o \"$target_dir $ocs_restore_dev\""
+    start_cmd="start_ocs_service $cast_client_no_opt $raw_dev_opt -f -t \"${castmode}_${cast_dev_action}\" -o \"$target_dir $ocs_restore_dev\""
     echo "Running: $start_cmd"
     eval $start_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
+    # TODO: Check return status, if failed, stop here.
   
     if [ "$castmode" = "multicast" ]; then
       echo -n "Waiting for udp-sender service to be started... "
@@ -1026,6 +1283,37 @@ task_start_feed_img_for_cast() {
       echo $msg_delimiter_star_line | tee -a ${OCS_LOGFILE}
       echo "More udp-sender and cat comamnds (if available) will be spawned when the 1st one is done." | tee -a ${OCS_LOGFILE}
     fi
+    #
+    if [ "$castmode" = "bt" ]; then
+      if [ "$md_source_type" = "from-device" ]; then
+         get_ezio_prog  # get the variable ezio_prog
+         bt_client="$ezio_prog"
+      else
+         # TODO: Make sure it is the same with ocs-btsrv if user assigns it by option -t|--bt-client.
+         bt_client="$bt_client_def"
+      fi
+      echo -n "Waiting for $bt_client service to be started... "
+      time=$timeout_max
+      while [ -z "$(LC_ALL=C ps -www --no-headers -C "$bt_client" -o pid,cmd)" ]; do
+        sleep 1
+        time="$((time - 1))"
+        if [ "$time" -le "0" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo -n "Timeout for waiting for $bt_client process..." | tee -a ${OCS_LOGFILE}
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+          exit 1
+        else
+          echo -n "$time "
+        fi
+      done
+      echo -e -n "Done!\n"
+      echo "Feeding status:" | tee -a ${OCS_LOGFILE}
+      echo $msg_delimiter_star_line | tee -a ${OCS_LOGFILE}
+      ps -www -C "cat" -C "$bt_client" -o pid,cmd | tee -a ${OCS_LOGFILE}
+      echo $msg_delimiter_star_line | tee -a ${OCS_LOGFILE}
+      echo "More $bt_client and cat comamnds (if available) will be spawned when the 1st one is done." | tee -a ${OCS_LOGFILE}
+    fi
   
     # Prepare image for clients
     echo $msg_delimiter_star_line
@@ -1041,8 +1329,8 @@ task_start_feed_img_for_cast() {
     fi
     # TODO: partimage file name, or drop it?
     for ifile in $imagedir/$target_dir/*-ptcl-img.* \
-  	       $imagedir/$target_dir/*.ntfs-img.* \
-  	       $imagedir/$target_dir/*.dd-img.*; do
+               $imagedir/$target_dir/*.ntfs-img.* \
+               $imagedir/$target_dir/*.dd-img.*; do
       [ ! -e "$ifile" ] && continue  
       fn="$(basename $ifile)"
       touch $img_no_fs_tmp/$fn
@@ -1123,7 +1411,7 @@ CLIENT_END
     run_again_fname="/tmp/ocs-live-feed-img-`date +%F-%H-%M`"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
     echo PS. $msg_run_drbl_ocs_again_cmd | tee -a ${OCS_LOGFILE}
-    echo $ocs $OCS_OPT_PRE $mode $ocs_restore_img_name $ocs_restore_dev | tee $run_again_fname
+    echo $ocs $OCS_OPT_PRE $mode $ocs_img_name_or_src_dev $ocs_restore_dev | tee $run_again_fname
     [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
     echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -1147,16 +1435,22 @@ CLIENT_END
   while [ "$choose_term" = "no" ]; do
     echo "$msg_now_wait_for_client_to_connect"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_do_all_clients_finish_jobs"
-    echo "$msg_it_might_stop_required_restoring_service"
+    echo "$msg_do_all_clients_finish_jobs" "$msg_it_might_stop_required_restoring_service"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo -n "[y/N] "
     read input_key
     case "$input_key" in
-     y|Y) ocs_prompt_mode="cmd"
-          confirm_continue_or_not_default_quit -d "$msg_it_might_stop_required_restoring_service"
-          choose_term="yes"
-	  rc_final="0"
+     y|Y) 
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	  echo "$msg_let_me_ask_you_again."
+          echo "$msg_do_all_clients_finish_jobs" "$msg_it_might_stop_required_restoring_service"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo -n "[y/N] "
+          read input_key2
+          case "$input_key2" in
+           y|Y) rc_final="0"
+                choose_term="yes"
+	  esac
           ;;
     esac
   done
@@ -1194,16 +1488,16 @@ parse_ocs_live_feed_img_cmd_options_with_dash $*
 shift ${n_shift}
 mode="$1"
 shift
-ocs_restore_img_name="$1"
+ocs_img_name_or_src_dev="$1"  # Later we will decide it's used as image name or source device (BT onthefly).
 shift
 ocs_restore_dev="$*"
 
 #
 [ -z "$mode" ] && mode="ask_user"
-[ -z "$ocs_restore_img_name" ] && ocs_restore_img_name="ask_user"
+[ -z "$ocs_img_name_or_src_dev" ] && ocs_img_name_or_src_dev="ask_user"
 [ -z "$ocs_restore_dev" ] && ocs_restore_dev="ask_user"
 
-if [ "$ocs_restore_img_name" = "ask_user" -a \
+if [ "$ocs_img_name_or_src_dev" = "ask_user" -a \
      "$ocs_restore_dev" = "ask_user" ]; then
    ocs_sr_mode="interactive"
 fi
@@ -1261,4 +1555,10 @@ case "$mode" in
 	 rc=1 ;;
 esac
 
+if [ -d "$imagedir/$one_time_image_for_bt" ] && \
+   [ -n "$(echo $one_time_image_for_bt | grep -E "^$bt_raw_dev_psuedo_img_prefix")" ]; then
+   echo -n "Cleaning the one-time-use temp image \"$one_time_image_for_bt\"... "
+   rm -rf $imagedir/$one_time_image_for_bt $imagedir/btzone/$one_time_image_for_bt
+   echo "done!"
+fi
 exit $rc
