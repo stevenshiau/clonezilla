@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.2
+Version:	3.33.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jan 13 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.3-drbl1
+  * Add nuttcp as an option for ocs-onthefly, the -u, --use-nuttcp can be
+    used.
+  * Bug fixed: For CentOS 7, the ncat need the option "--recv-only" in the
+    client.
+
 * Sat Jan 12 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.2-drbl1
   * New mechanism was added: instead of using Partclone image as the BT
     source, the local device (whole disk or partitions) can be as the
