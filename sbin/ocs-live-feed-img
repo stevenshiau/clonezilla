@@ -65,6 +65,7 @@ USAGE() {
     echo " -cbm, --client-boot-mode MODE     Assign the client boot mode: netboot, local-boot-media, or both"
     echo " -lscm, --lite-srv-client-mode MODE  Assign lite server client mode: massive-deployment or interactive-client"
     echo " -mdst, --massive-deploy-source-type MODE  Assign massive deployment source type: from-image or from-device"
+    echo " -mdst-img, --massive-deploy-source-type-img IMAGE  Assign massive deployment source image name. You have to make sure the file system in the source device is not modified, and the image dir already exists."
     echo " -bdt, --bt-dev-type MODE Assign BT device type: disk-2-mdisks or part-2-mparts" 
     echo " -bsdf,--bt-src-dev-fsck  TYPE   Assign the type for fsck the source device: sfsck, fsck, fsck-y. Do not put \"-\" before the TYPE. It will confuse $ocs. Use it like: \"-bsdf fsck-y\""
     echo
@@ -445,6 +446,18 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
               shift; n_shift=$((n_shift+1))
             fi
             [ -z "$md_source_type" ] && USAGE && exit 1
+	    # //NOTE// Do not pass -mdst option to OCS_OPT here.
+	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
+  	    # XXXXXX OCS_OPT="$OCS_OPT -mdst $client_boot_mode"
+  	    ;;
+      -mdst-img|--massive-deploy-source-type-img)
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+	      mdst_img="$1"
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$mdst_img" ] && USAGE && exit 1
 	    # //NOTE// Do not pass -mdst option to OCS_OPT here.
 	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
   	    # XXXXXX OCS_OPT="$OCS_OPT -mdst $client_boot_mode"
@@ -1223,32 +1236,42 @@ task_start_feed_img_for_cast() {
     if [ "$md_source_type" = "from-device" ]; then
       # BT from raw device, we have to ignore the input image name, and create a pseudo image
       # The pseudo image is not restorable. Only some files about partition table and boot loader.
-      target_dir="${bt_raw_dev_psuedo_img_prefix}-$(LC_ALL=C date +%Y%m%d-%H%M%S)"
-      one_time_image_for_bt="$target_dir"  # Keep the image name for later usage since target_dir is only temporary name.
-      if [ -d "$ocsroot/${target_dir}" ]; then
-        mv $imagedir/${target_dir} $imagedir/${target_dir}-saved
+      # If an image name is assigned (for reuse purpose, and user has to make sure the source file system was not modified).
+      if [ -n "$mdst_img" -a -d "$imagedir/$mdst_img" ]; then
+        target_dir="$mdst_img"
+      else
+        target_dir="${bt_raw_dev_psuedo_img_prefix}-$(LC_ALL=C date +%Y%m%d-%H%M%S)"
+        if [ -d "$ocsroot/${target_dir}" ]; then
+          mv $imagedir/${target_dir} $imagedir/${target_dir}-saved
+        fi
+        case "$bt_dev_type" in
+        "disk-2-mdisks")
+           ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true savedisk ${target_dir} $target_hd
+           # Need to list all the partitions.
+           part_rec_f="$(mktemp /tmp/part_rec_f_bt.XXXXXX)"
+           target_parts=""
+           for idisk in $target_hd; do
+             echo "Searching for data/swap/extended partition(s)..." | tee --append $OCS_LOGFILE
+             get_known_partition_proc_format $idisk all $part_rec_f
+             target_parts="$target_parts $(awk -F":" '/^data_dev:/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
+           done
+           ;;
+        "part-2-mparts")
+           ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true saveparts ${target_dir} $target_parts
+           ;;
+        esac
       fi
-      case "$bt_dev_type" in
-      "disk-2-mdisks")
-         ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true savedisk ${target_dir} $target_hd
-	 # Need to list all the partitions.
-         part_rec_f="$(mktemp /tmp/part_rec_f_bt.XXXXXX)"
-         target_parts=""
-         for idisk in $target_hd; do
-           echo "Searching for data/swap/extended partition(s)..." | tee --append $OCS_LOGFILE
-           get_known_partition_proc_format $idisk all $part_rec_f
-           target_parts="$target_parts $(awk -F":" '/^data_dev:/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
-         done
-	 ;;
-      "part-2-mparts")
-         ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true saveparts ${target_dir} $target_parts
-	 ;;
-      esac
-
-      mkdir -p $imagedir/btzone/${target_dir}
-      bt_metainfo_cmd="ocs-gen-bt-metainfo -d $imagedir/btzone/${target_dir}/ -i $imagedir/${target_dir} $target_parts"
-      echo "Running: $bt_metainfo_cmd"
-      eval $bt_metainfo_cmd
+      one_time_image_for_bt="$target_dir"  # Keep the image name for later usage since target_dir is only temporary name.
+      if [ -n "$mdst_img" -a -d "$imagedir/btzone/$mdst_img" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Assigned image $mdst_img was found. No need to re-generate torrent metainfo file."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      else
+        mkdir -p $imagedir/btzone/${target_dir}
+        bt_metainfo_cmd="ocs-gen-bt-metainfo -d $imagedir/btzone/${target_dir}/ -i $imagedir/${target_dir} $target_parts"
+        echo "Running: $bt_metainfo_cmd"
+        eval $bt_metainfo_cmd
+      fi
       # Assign option raw_dev_opt for start_ocs_service
       raw_dev_opt="-r"
     fi
