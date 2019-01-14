@@ -33,6 +33,18 @@ USAGE() {
     echo
 } # end of USAGE
 #
+get_get_ptcl_to_torrent_prog(){
+  # ptcl_2_torrent_prog is global variable.
+  # Find if partclone_create_torrent.py or gen-torrent-from-ptcl
+  # partclone_create_torrent.py is from ezio package, while
+  # gen-torrent-from-ptcl is from clonezilla when ezio-static is used.
+  if type partclone_create_torrent.py &>/dev/null; then
+    ptcl_2_torrent_prog="partclone_create_torrent.py"
+  else
+    ptcl_2_torrent_prog="gen-torrent-from-ptcl"
+  fi
+} # end of ptcl_2_torrent_prog
+#
 create_dev_torrent_file() {
   local ot_dir="$1"
   local iprt="${2#/dev/*}"  # e.g., sda1, bionic-x64-vg/root (lvm)
@@ -62,7 +74,8 @@ create_dev_torrent_file() {
   eval $pt_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
   if [ -e "${ot_dir}/torrent.info" ]; then
     ifn_="$(to_filename ${iprt#/dev/*})"
-    bt_cvt_cmd="partclone_create_torrent.py -p ${iprt} -t http://${init_ip}:${init_port}/announce -c Clonezilla -i ${ot_dir}/torrent.info -o ${ot_dir}/${ifn_}.torrent"
+    get_get_ptcl_to_torrent_prog # get $ptcl_2_torrent_prog
+    bt_cvt_cmd="$ptcl_2_torrent_prog  -p ${iprt} -t http://${init_ip}:${init_port}/announce -c Clonezilla -i ${ot_dir}/torrent.info -o ${ot_dir}/${ifn_}.torrent"
     echo "Running: $bt_cvt_cmd"
     eval $bt_cvt_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
     if [ ! -e "${ot_dir}/${ifn_}.torrent" ]; then
@@ -203,9 +216,10 @@ ask_and_load_lang_set
 # check DIA
 check_DIA_set_ESC $DIA
 
-if ! type partclone_create_torrent.py &>/dev/null; then
+if ! type partclone_create_torrent.py -a \
+   ! type gen-torrent-from-ptcl &>/dev/null; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Program partclone_create_torrent.py is required. Install package ezio."
+  echo "Program partclone_create_torrent.py or gen-torrent-from-ptcl is required. Install package ezio."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "$msg_program_stop!"
   my_ocs_exit 1
