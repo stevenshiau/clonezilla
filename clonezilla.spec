@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.3
+Version:	3.33.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 14 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.4-drbl1
+  * Add a mechanism to reuse image for BT from disk mode. The option
+    -mdst-img can be used to assign the existing pseudo image.
+  * Add a backup plan to use gen-torrent-from-ptcl when ezio-static is used,
+    no partclone_create_torrent.py is available.
+  * Add gen-torrent-from-ptcl as a backup for partclone_create_torrent.py
+    when ezio-static package is used.
+
 * Sun Jan 13 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.3-drbl1
   * Add nuttcp as an option for ocs-onthefly, the -u, --use-nuttcp can be
     used.
