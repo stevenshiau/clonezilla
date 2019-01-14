@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.4
+Version:	3.33.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 14 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.5-drbl1
+  * Bug fixed: better way to check ptcl_2_torrent_prog
+    in ocs-gen-bt-metainfo.
+
 * Mon Jan 14 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.4-drbl1
   * Add a mechanism to reuse image for BT from disk mode. The option
     -mdst-img can be used to assign the existing pseudo image.
