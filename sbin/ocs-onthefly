@@ -12,6 +12,7 @@
 #  partimage -M -f3 -b restore /dev/hdc1 stdin)
 # Similar idea for ntfsclone and dd.
 # partclone has a better function, i.e. option "-b" allows to do local partition to partition clone without having piping.
+# //NOTE// For nuttcp, both control port (-P) and data port (-p) have to be assigned when multiple nuttcp need to be run simultaneously. Otherwise the default ports will be busy.
 ocs="$(basename $0)"
 VOL_ZERO="0"
 #create image volumes with a size of X, 
@@ -37,7 +38,9 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 # Default program for network pipe, netcat or nuttcp
 NET_PIPE="netcat"
-ocs_nuttcp_log="/var/log/ocs-nuttcp.log"
+ocs_nuttcp_log="/var/log/ocs-nuttcp-$$.log"
+# By default the prevous partclone and NET_PIPE service will be killed
+keep_netpipe="no"
 
 # Local functions:
 # check if the user input /dev/hda, /dev/hdb...
@@ -427,7 +430,7 @@ nc_lp_check() {
 kill_clone_prog_nc_process() {
   local i
   echo "Terminate partimage and $NC_CMD processs if they exist..." | tee --append ${OCS_LOGFILE}
-  for i in partclone partimage ntfsclone dd $NC_CMD; do
+  for i in partclone partimage ntfsclone dd nc netcat nuttcp; do
     echo "pkill -u root $i"  && pkill -u root $i
   done
 } # end of kill_clone_prog_nc_process
@@ -847,7 +850,7 @@ prepare_network_clone_dev_info() {
     echo "source_type=$source_type" > $hd_src_tmp/target_type.ocs_onthefly
     case $NET_PIPE in
       netcat) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &" ;;
-      nuttcp) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -1 -s --nofork -P $NC_PORT &" ;;
+      nuttcp) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) &" ;;
     esac
     echo "Running: $run_cmd"
     eval $run_cmd
@@ -867,7 +870,7 @@ prepare_network_clone_dev_info() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     case $NET_PIPE in
       netcat) run_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT > $hd_tgt_tmp/target_type.ocs_onthefly" ;;
-      nuttcp) run_cmd="$NC_CMD -r -s -P $NC_PORT $SOURCE_IP 2>>$ocs_nuttcp_log > $hd_tgt_tmp/target_type.ocs_onthefly"
+      nuttcp) run_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log > $hd_tgt_tmp/target_type.ocs_onthefly"
     esac
     echo "Running: $run_cmd"
     eval $run_cmd
@@ -1114,7 +1117,7 @@ ADVAN_PARAM_END
     # wait for client to download it
     case "$NET_PIPE" in
       netcat) run_cmd="cat $hd_src_tmp/ocs-onthefly-info.tgz | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &" ;;
-      nuttcp) run_cmd="cat $hd_src_tmp/ocs-onthefly-info.tgz | $NC_CMD -1 -s --nofork -P $NC_PORT &" ;;
+      nuttcp) run_cmd="cat $hd_src_tmp/ocs-onthefly-info.tgz | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) &" ;;
     esac
     echo "Running: $run_cmd"
     eval $run_cmd
@@ -1159,7 +1162,7 @@ ADVAN_PARAM_END
     # Get the pt and mbr... from server
     case "$NET_PIPE" in
       netcat) run_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT > $hd_tgt_tmp/ocs-onthefly-info.tgz" ;;
-      nuttcp) run_cmd="$NC_CMD -r -s -P $NC_PORT $SOURCE_IP 2>>$ocs_nuttcp_log > $hd_tgt_tmp/ocs-onthefly-info.tgz" ;;
+      nuttcp) run_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log > $hd_tgt_tmp/ocs-onthefly-info.tgz" ;;
     esac
     echo "Running: $run_cmd"
     eval $run_cmd
@@ -1423,7 +1426,7 @@ feed_dev_in_server() {
   echo "Feeding partition $src_p in listen mode with port $NC_PORT..." | tee --append $OCS_LOGFILE
   case "$NET_PIPE" in
     netcat) netpipe_srv_cmd="$NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT" ;;
-    nuttcp) netpipe_srv_cmd="$NC_CMD -1 -s --nofork -P $NC_PORT" ;;
+    nuttcp) netpipe_srv_cmd="$NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1))" ;;
   esac
   if [ "$USE_NTFSCLONE_IN_OCS_ONTHEFLY" = "yes" ] && [ "$pt_fs" = "ntfs" ]; then
     echo "Using ntfsclone to clone..." | tee --append $OCS_LOGFILE
@@ -1496,7 +1499,7 @@ receive_partition_from_server_then_write() {
   clean_filesystem_header_in_partition $tgt_p
   case "$NET_PIPE" in
     netcat) netpipe_cli_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT" ;;
-    nuttcp) netpipe_cli_cmd="$NC_CMD -r -s -P $NC_PORT $SOURCE_IP 2>>$ocs_nuttcp_log" ;;
+    nuttcp) netpipe_cli_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log" ;;
   esac
   echo "$msg_delimiter_star_line"
   if [ "$USE_NTFSCLONE_IN_OCS_ONTHEFLY" = "yes" ] && [ "$pt_fs" = "ntfs" ]; then
@@ -1794,7 +1797,7 @@ clone_over_net() {
   echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
   [ -n "$filter" ] && filter_opt="-i $filter"
   if [ "$NET_PIPE" = "nuttcp" ]; then
-     use_nuttcp_opt="-u"
+    use_nuttcp_opt="-u"
   fi
   if [ "$STATUS" = "clone_server" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -1954,6 +1957,33 @@ case "$filter" in
 	 exit 1
        fi
        ;;
+   lz4)
+       if type lz4 &>/dev/null; then
+         filter_comp="lz4 -c $extra_lz4_opt"
+         filter_decomp="lz4 -cd"
+       else
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "lz4 is NOT found." | tee --append $OCS_LOGFILE
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+	 exit 1
+       fi
+       ;;
+   zstd)
+       if type pzstd &>/dev/null; then
+         filter_comp="pzstd -c $extra_pzstd_opt"
+         filter_decomp="pzstd -dc"
+       elif type zstd &>/dev/null; then
+         filter_comp="zstd -c $extra_zstd_opt"
+         filter_decomp="zstd -cd"
+       else
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "zstd is NOT found." | tee --append $OCS_LOGFILE
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+	 exit 1
+       fi
+       ;;
    xz)
        if type pixz &>/dev/null; then
          filter_comp="pixz $extra_pixz_opt"
@@ -2055,7 +2085,7 @@ USAGE() {
     echo "-r, --resize-partition   Resize the file system size to fit the partition size in the destination disk. It is normally used when when a small partition image is restored to a larger partition."
     echo "-f, --source DEV         Specify the source device as DEV (sda, sda1...)"
     echo "-g, --grub-install GRUB_PARTITION     Install grub in the MBR of the disk containing partition GRUB_PARTITION with root grub directory in the same GRUB_PARTITION when restoration finishes, GRUB_PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the grub root partition automatically). If \"auto\" is assigned, it will work if grub partition and root partition are not in the same partition."
-    echo "-i, --filter PROGRAM     Use the PROGRAM (gzip/lzop/bzip2/xz/cat) before sending partition data to netcat (only in network clone mode). The default action is gzip. Use \"cat\" if you do not want to compress (Good for fast internode network)."
+    echo "-i, --filter PROGRAM     Use the PROGRAM (gzip/lzop/bzip2/xz/lz4/zstd/cat) before sending partition data to netcat (only in network clone mode). The default action is gzip. Use \"cat\" if you do not want to compress (Good for fast internode network)."
     echo "-nogui, --nogui          Do not show GUI (TUI) of Partclone or Partimage, use text only"
     echo "-rescue, --rescue        Turn on rescue mode, i.e. try to skip bad sectors."
     echo "-irhr, --irhr            Skip removing the Linux udev hardware records on the restored GNU/Linux."
@@ -2262,6 +2292,7 @@ set_ocs_onthefly_extra_param() {
     "-j2 "      "$msg_ocs_onthefly_param_j2" on \
     "-r "       "$msg_ocs_onthefly_param_e" on \
     "-nogui "   "$msg_ocs_onthefly_param_nogui" off \
+    "-u "       "$msg_ocs_onthefly_param_u" off \
     "-q1 "      "$msg_ocs_onthefly_param_q1" off \
     "-m "       "$msg_ocs_onthefly_param_m" off \
     "-rescue "  "$msg_ocs_onthefly_param_rescue" off \
@@ -2274,6 +2305,22 @@ set_ocs_onthefly_extra_param() {
     "-cmf "     "$msg_ocs_onthefly_param_cmf" off \
     "-v "       "$msg_ocs_onthefly_param_v" off \
     2> $OCS_PARAM_TMP
+    # Ask about compression program for clone server
+    if [ "$STATUS" = "clone_server" ]; then
+      $DIA --separate-output --backtitle "$msg_nchc_free_software_labs" --title  \
+      "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set_before_sending_data:" \
+      0 0 0 $DIA_ESC \
+      "gz"     "$msg_ocs_onthefly_param_gz" \
+      "bzip2"  "$msg_ocs_onthefly_param_bzip2" \
+      "xz"     "$msg_ocs_onthefly_param_xz" \
+      "lzop"   "$msg_ocs_onthefly_param_lzop" \
+      "zstd"   "$msg_ocs_onthefly_param_zstd" \
+      "cat"    "$msg_ocs_onthefly_param_cat" \
+      2> ${OCS_PARAM_TMP}.a
+      # We need to append a space after this parameter so it won't be connected to next parameter.
+      echo -n "-i $(cat "${OCS_PARAM_TMP}.a") " >> $OCS_PARAM_TMP
+      rm -f ${OCS_PARAM_TMP}.a
+    fi
   else
     if [ "$inst_grub_opt" = "on" ]; then
       echo "-g auto" "-e1 auto" "-e2" "-r" "-j2" > $OCS_PARAM_TMP
@@ -2532,6 +2579,7 @@ parse_ocs_onthefly_cmd_options() {
       -ro|--remote-clone-only) shift; show_remote_menu_in_ocs_onthefly="yes";;
       -lo|--local-clone-only)  shift; show_local_menu_in_ocs_onthefly="yes";;
       -u|--use-nuttcp) shift; NET_PIPE="nuttcp" ;;
+      -kn|--keep-netpipe) shift; keep_netpipe="yes" ;;
       -v|--verbose) shift; verbose="on" ;;
       -*)     echo "${0}: ${1}: invalid option" >&2
               USAGE >& 2
@@ -2857,11 +2905,13 @@ if [ -n "$STATUS" ]; then
   #
   echo "$msg_delimiter_star_line"
   mode="network"
-  my_ip="$(LC_ALL=C get-all-nic-ip -i)"
+  my_ip="$(LC_ALL=C get-all-nic-ip -i 2>/dev/null)"
   echo "$msg_my_IP_in_drbl_env: $my_ip"
   [ -z "$NC_PORT" ] && NC_PORT="$NC_PORT_DEFAULT"
   # The NC port for target machine to notify the server
-  JOB_NOTIFY_PORT=$((NC_PORT - 1))
+  JOB_NOTIFY_PORT=$((NC_PORT + 1))
+  # Advance 3 for the next. For nuttcp both -P and -p are required so at least we need to increase 2.
+  NC_PORT=$((NC_PORT + 3))
   # Get the source port option of nc is "-p" or none.
   nc_lp_check
 else
@@ -2896,7 +2946,9 @@ case "$mode" in
     ;;
   network)
     # clean the stalled partimage and netcat process
-    kill_clone_prog_nc_process
+    if [ "$keep_netpipe" = "no" ]; then
+      kill_clone_prog_nc_process
+    fi
     ;;
 esac
 
@@ -2996,14 +3048,14 @@ if [ "$STATUS" = "clone_server" ]; then
   echo -n "Waiting for the target machine to connect... " | tee --append ${OCS_LOGFILE}
   case "$NET_PIPE" in
     netcat) $NC_CMD -l $NC_LOCAL_PORT_OPT $JOB_NOTIFY_PORT | tee --append ${OCS_LOGFILE};;
-    nuttcp) $NC_CMD -1 -s --nofork -P $JOB_NOTIFY_PORT | tee --append ${OCS_LOGFILE};;
+    nuttcp) $NC_CMD -1 -s --nofork -P $JOB_NOTIFY_PORT -p $((JOB_NOTIFY_PORT + 1)) | tee --append ${OCS_LOGFILE};;
   esac
 elif [ "$STATUS" = "clone_client" ]; then
   echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
   echo -n "Notifying the source machine that my job is done... " | tee --append ${OCS_LOGFILE}
   case "$NET_PIPE" in
     netcat) echo 'done!' | $NC_CMD $NC_QUIT_OPT $SOURCE_IP $JOB_NOTIFY_PORT;;
-    nuttcp) echo 'done!' | $NC_CMD -t -s -P $JOB_NOTIFY_PORT $SOURCE_IP >>$ocs_nuttcp_log;;
+    nuttcp) echo 'done!' | $NC_CMD -t -s -P $JOB_NOTIFY_PORT -p $((JOB_NOTIFY_PORT + 1)) $SOURCE_IP >>$ocs_nuttcp_log;;
   esac
   echo 'done!' | tee --append ${OCS_LOGFILE}
 fi
