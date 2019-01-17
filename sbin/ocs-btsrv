@@ -82,7 +82,8 @@ get_idir_name() {
 start_bt_srv() {
   local ipt idir idir_name ezio_log_idir
   local cpu_no cmd_make_metainfo cmd_update_metainfo
-  local existing_ip existing_port
+  local existing_ip existing_port 
+  local cmd_start_seeding ezio_start_seeding_param ezio_ram_size_KB ct_pid_log_prefix
   if [ -z "$img_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "No image dir was assigned!"
@@ -121,13 +122,18 @@ start_bt_srv() {
   fi
   echo "Using IP address \"$btsrv_ip\" for BT server..."
 
+  ezio_start_seeding_param=""
+  ct_pid_log_prefix=""
   for ipt in $parts; do
+    # Reset cmd_start_seeding for each ipt, because for ezio,
+    # we will collect all param and run it outside the for loop.
+    cmd_start_seeding=""
     # Prepare port no
     get_available_bt_port # Obtain port_b
 
-    idir="$img_dir/$(to_filename $ipt)" # e.g. xenial-x64-20161104/sda1
+    idir="$img_dir/$(to_filename $ipt)" # e.g., xenial-x64-20161104/sda1
     # idir_name is the name for log usage
-    get_idir_name $idir # Obtian $idir_name
+    get_idir_name $idir # Obtian $idir_name, e.g., xenial-x64-20161104~sda1
     # Part 1: create metainfo file (.torrent)
     echo $msg_delimiter_star_line
     # Set the variable cmd_make_metainfo
@@ -190,28 +196,25 @@ start_bt_srv() {
 
     # Part 3: start bitorrent client program
     echo $msg_delimiter_star_line
-    ct_pid_log="$btlog_dir/${idir_name}-torrent.pid"
+    ct_pid_log="$btlog_dir/${idir_name}-torrent.pid" # Used for non-ezio bt client
     if [ "$bt_client" = "lftp" ]; then
       cmd_start_seeding="lftp -c torrent -O $(dirname $ocsroot_btzone/${idir}) $ocsroot_btzone/${idir}.torrent"
     elif [ "$bt_client" = "ezio" ]; then
-      get_ezio_prog  # get the variable ezio_prog
-      # //NOTE// The working dir for ezio is the working dir as torrent file
-      # E.g., ezio -U -f /home/partimag/btzone/xenial-x64-20161104/sda1.torrrent /home/partimag/btzone/xenial-x64-20161104
-      ezio_log_idir="${ezio_seeding_log}-${idir_name}.log"
+      # Make the pid file for ezio like: sda1~sda2~sda3-torrent.pid
+      ct_pid_log_prefix="${ct_pid_log_prefix}~$(to_filename $ipt)"
       case "$bt_slices_from_dev" in
       img)
-        cmd_start_seeding="$ezio_prog -U -f $ezio_seeder_extra_opt $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$(dirname ${idir}) >$ezio_log_idir 2>&1 &"
+        # Collect multiple torrent files. Make it like:
+	# ezio -U -T sda1.torrent -L /home/partimag/btzone/myimg/sda1/ -T sda2.torrent -L /home/partimag/btzone/myimg/sda2/
+        ezio_start_seeding_param="$ezio_start_seeding_param -T $ocsroot_btzone/${idir}.torrent -L $ocsroot_btzone/$(dirname ${idir})"
         ;;
       raw-dev)
-        parse_cmdline_option -c /proc/cmdline "ezio_opt"
         # Squeeze multiple spaces to one only
-        cmd_start_seeding="$(echo $ezio_prog -U $ezio_opt $ocsroot_btzone/${idir}.torrent /dev/$ipt | sed -r -e "s|[[:space:]]+| |g")"
-	cmd_start_seeding="$cmd_start_seeding >$ezio_log_idir 2>&1 &"
+        # Collect multiple torrent files. Make it like:
+	# ezio -U -T sda1.torrent -L /dev/sda1 -T sda2.torrent -L /dev/sda2
+        ezio_start_seeding_param="$ezio_start_seeding_param -T $ocsroot_btzone/${idir}.torrent -L /dev/$ipt"
         ;;
       esac
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "$ezio_prog seeding status output for ${idir}.torrent will be in \"$ezio_log_idir\". Use \"tail -f $ezio_log_idir\" to check the status."
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     elif [ "$bt_client" = "btdownloadheadless" ]; then
       cmd_start_seeding="btdownloadheadless --saveas $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent &"
     elif [ "$bt_client" = "aria2c" ]; then
@@ -236,33 +239,78 @@ start_bt_srv() {
       fi
       cmd_start_seeding="ctorrent -f -d $ctorrent_extra_opt -s $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent"
     fi
-    echo "Start seeding by:"
-    echo "$cmd_start_seeding"
-    eval $cmd_start_seeding
-    # Fail to get pid in this case by checking the $! if the command is run in daemon mode.
-    # Ref: http://unix.stackexchange.com/questions/90244/bash-run-command-in-background-and-capture-pid
-    #ct_pid="$!"
-    # Since start-stop-daemon is not available for all distributions, we use general solution here.
-    # TODO: Improve this. If user put more space or // in the path, it will be converted by system and the matching by grep won't work.
-    ct_pid="$(LC_ALL=C ps -www -C "$bt_client" -o pid,cmd | grep -Ew "$cmd_start_seeding" | awk -F" " '{print $1}')"
-    ct_pid="$(echo $ct_pid)"  # Make it in a line.
-    echo "$ct_pid" > $ct_pid_log
-    echo $msg_delimiter_star_line
+    if [ -n "$cmd_start_seeding" ]; then
+      # For non-ezio cases
+      echo "Start seeding by:"
+      echo "$cmd_start_seeding"
+      eval $cmd_start_seeding
+      ct_pid="$!"
+      echo "$ct_pid" > $ct_pid_log
+      echo $msg_delimiter_star_line
+    fi
   done
+  # For ezio case
+  if [ -n "$ezio_start_seeding_param" ]; then
+     get_ezio_prog  # get the variable ezio_prog
+     # //NOTE// The working dir for ezio is the working dir as torrent file
+     # E.g., ezio -U -f /home/partimag/btzone/xenial-x64-20161104/sda1.torrrent /home/partimag/btzone/xenial-x64-20161104
+     # Option ezio_seeder_extra_opt is from drbl-ocs.conf, while option ezio_opt is from boot parameters.
+     parse_cmdline_option -c /proc/cmdline "ezio_opt"
+     # Set memory limit
+     ezio_ram_size_KB="$(LC_ALL=C vmstat -s -S k |grep "free memory" | awk -F" " '{print $1}')"
+     # Do not use all the free memory. ezio_cache_ratio is from drbl-ocs.conf.
+     ezio_ram_size_KB="$(LC_ALL=C printf "%.0f" "$(echo "($ezio_ram_size_KB*$ezio_cache_ratio)" | bc -l)")"
+     # Log and pid
+     ezio_log_idir="${ezio_seeding_log}-${ct_pid_log_prefix}.log"
+     # Remove the leading ~
+     ct_pid_log_prefix="$(echo $ct_pid_log_prefix | sed -e "s/^~//g")"
+     ct_pid_log="$btlog_dir/${ct_pid_log_prefix}-torrent.pid"
+     case "$bt_slices_from_dev" in
+     img)
+       # E.g., ezio -U -f -T sda1.torrent -L /dev/sda1 -T sda2.torrent -L /dev/sda2
+       cmd_start_seeding="$ezio_prog $ezio_opt $ezio_seeder_extra_opt -U -f --cache $ezio_ram_size_KB $ezio_start_seeding_param" 
+       ;;
+     raw-dev)
+       # E.g., -U -T sda1.torrent -L /dev/sda1 -T sda2.torrent -L /dev/sda2
+       cmd_start_seeding="$ezio_prog $ezio_opt $ezio_seeder_extra_opt -U --cache $ezio_ram_size_KB $ezio_start_seeding_param" 
+       ;;
+     esac
+     # Squeeze multiple spaces to one only
+     cmd_start_seeding="$(echo $cmd_start_seeding | sed -r -e "s|[[:space:]]+| |g")"
+     cmd_start_seeding="$cmd_start_seeding > $ezio_log_idir 2>&1 &"
+     echo "Start seeding by:"
+     echo "$cmd_start_seeding"
+     eval $cmd_start_seeding
+     ct_pid="$!"
+     echo "$ct_pid" > $ct_pid_log
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+     echo "$ezio_prog seeding status output for ${idir}.torrent will be in \"$ezio_log_idir\". Use \"tail -f $ezio_log_idir\" to check the status."
+     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+     echo $msg_delimiter_star_line
+   fi
 } # end of start_bt_srv
 #
 stop_bt_srv() {
   local id_file=""
   local all_pid rc kill_cmd ipt idir_name
+  local ct_pid_log_prefix
+  # List the possible id_file, and this is only list for later to test if it exists.
   case "$img_dir" in 
      "all"|"") id_file="$btlog_dir/*.pid";;
             *)
+               ct_pid_log_prefix=""
   	       for ipt in $parts; do
 		 idir="$img_dir/$(to_filename $ipt)"
                  # idir_name is the name for log usage
                  get_idir_name $ipt # Obtian $idir_name
+                 ct_pid_log_prefix="${ct_pid_log_prefix}~$(to_filename $ipt)"
+		 # Possible tracker pid file and torrent pid file, there is ezio part later.
                  id_file="$btlog_dir/${idir_name}-tracker.pid $btlog_dir/${idir_name}-torrent.pid"
                done
+	       # Append Ezio part
+               # Remove the leading ~
+               ct_pid_log_prefix="$(echo $ct_pid_log_prefix | sed -e "s/^~//g")"
+               id_file="$id_file $btlog_dir/${ct_pid_log_prefix}-tracker.pid $btlog_dir/${ct_pid_log_prefix}-torrent.pid"
 	       ;;
   esac
 
