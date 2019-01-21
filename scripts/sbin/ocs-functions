@@ -6152,7 +6152,7 @@ feed_bittorrent_restoreparts() {
   local time_to_pause_before_mail mail_client="" time_tag part_is_lvm
   local bts_cmd pt_no_lvm
   local track_max_client_opt
-  local from_rawdev_opt
+  local from_rawdev_opt lv_list_bt
   # do_regen_BT_img is a global variable. It's the flag about regenerating the BT files
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -6186,9 +6186,20 @@ feed_bittorrent_restoreparts() {
     fi
     pt_no_lvm="$pt_no_lvm $partition"
   done
+  # Collect lv_list_bt in function feed_bittorrent_LVM
+  lv_list_bt=""
+  if [ "$part_is_lvm" = "yes" ]; then
+    # LVM exists, collect the LVs to restore PV/VG/LV. This feed_bittorrent_LVM
+    # will only return lv_list_bt. It will _NOT_ do the real job about feeding LVs.
+    # Later ocs-btsrv will use ezio to restore them in one command.
+    feed_bittorrent_LVM $from_rawdev_opt "$tgt_parts" # get lv_list_bt
+  fi
+
+  # Start all the parts and LVs in one ocs-btsrv (hence one ezio process.
+  # This is better since we can control the cache size in one ezio process)
   [ -n "$n_clients" ] && track_max_client_opt="-m $n_clients"
   if [ -n "$pt_no_lvm" ]; then
-    bts_cmd="ocs-btsrv $track_max_client_opt $from_rawdev_opt start $tgt_dir $pt_no_lvm"
+    bts_cmd="ocs-btsrv $track_max_client_opt $from_rawdev_opt start $tgt_dir $pt_no_lvm $lv_list_bt"
     # Squeeze multiple spaces as one only
     bts_cmd="$(echo $bts_cmd | sed -r -e "s|[[:space:]]+| |g")"
     echo "Running: $bts_cmd"
@@ -6199,11 +6210,6 @@ feed_bittorrent_restoreparts() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
 
-  # We have to do restore LVM (PV/VG/LV) together, not follow every partition
-  if [ "$part_is_lvm" = "yes" ]; then
-    # LVM exists, feed images to restore PV/VG/LV.
-    feed_bittorrent_LVM $from_rawdev_opt "$tgt_parts"
-  fi
   # spawn a background program to wait and mail the clonezilla-jogs.log to root
   # if we can find mail/mutt program then we do it, otherwise skip.
   # When the udp-sender finishes, clonezilla client need to do more:
@@ -6827,6 +6833,7 @@ feed_bittorrent_LVM() {
   local btl_cmd
   local fn
   local track_max_client_opt from_rawdev_opt
+  # lv_list_bt is gloable variable
   while [ $# -gt 0 ]; do
     case "$1" in
       -f|--from-raw-dev)
@@ -6877,13 +6884,11 @@ feed_bittorrent_LVM() {
        continue
      fi
    fi
-   [ -n "$n_clients" ] && track_max_client_opt="-m $n_clients"
-   btl_cmd="ocs-btsrv $track_max_client_opt $from_rawdev_opt start $target_dir ${lv#/dev/*}"
-   # Squeeze multiple spaces as one only
-   btl_cmd="$(echo $btl_cmd | sed -r -e "s|[[:space:]]+| |g")"
-   echo "Running: $btl_cmd"
-   eval $btl_cmd
+   # Collect all LVs
+   lv_list_bt="$lv_list_bt ${lv#/dev/*}"
   done < $LOGV_PARSE_CONF
+  # Pass lv_list_bt to parent function
+  #
 } # end of feed_bittorrent_LVM
 #
 check_target_hd() {
