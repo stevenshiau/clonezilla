@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.6
+Version:	3.33.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 21 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.7-drbl1
+  * Set ezio_cache_ratio as 0.7 since we use one ezio process only for all
+    the partitions and LVs.
+  * Only one ezio process only for both parts and LVs. This is easier to
+    allow ezio to control the cache size.
+
 * Thu Jan 17 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.6-drbl1
   * The nuttcp in ocs-onthefly should run with -P and -p so that
     multiple nuttcp processes can be run simultaneously.
