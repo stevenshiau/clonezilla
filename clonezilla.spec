@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.7
+Version:	3.33.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jan 22 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.8-drbl1
+  * Enable secure boot support when creating Debian live system
+    (create-debian-live).
+    However, it's still not ready for secure boot:
+    https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=920144
+
 * Mon Jan 21 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.7-drbl1
   * Set ezio_cache_ratio as 0.7 since we use one ezio process only for all
     the partitions and LVs.
