@@ -6198,16 +6198,18 @@ feed_bittorrent_restoreparts() {
   # Start all the parts and LVs in one ocs-btsrv (hence one ezio process.
   # This is better since we can control the cache size in one ezio process)
   [ -n "$n_clients" ] && track_max_client_opt="-m $n_clients"
-  if [ -n "$pt_no_lvm" ]; then
+  if [ -z "$pt_no_lvm" -a -z "$lv_list_bt" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Neither partition nor LV was assigned! No way to start BT service."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    my_ocs_exit 1
+  else
     bts_cmd="ocs-btsrv $track_max_client_opt $from_rawdev_opt start $tgt_dir $pt_no_lvm $lv_list_bt"
     # Squeeze multiple spaces as one only
     bts_cmd="$(echo $bts_cmd | sed -r -e "s|[[:space:]]+| |g")"
     echo "Running: $bts_cmd"
     eval $bts_cmd
-  else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Warning! No partition was assigned! Assum there is LVM on system."
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
 
   # spawn a background program to wait and mail the clonezilla-jogs.log to root
@@ -7296,7 +7298,7 @@ start_ocs_service() {
       # if the mode restore, show the log prompt
       echo "$msg_client_sfdisk_log_are_in $OCS_LOGFILE"
     fi
-  fi
+  fi # end of feed_only = no
 
   # Multicast part
   # set udpcast holding option
