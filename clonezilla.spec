@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.8
+Version:	3.33.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jan 23 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.9-drbl1
+  * Bug fixed: in LV only, no partition case the BT service
+    was not started.
+
 * Tue Jan 22 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.8-drbl1
   * Enable secure boot support when creating Debian live system
     (create-debian-live).
