@@ -1309,11 +1309,18 @@ task_start_feed_img_for_cast() {
     #
     if [ "$castmode" = "bt" ]; then
       if [ "$md_source_type" = "from-device" ]; then
+         # For BT from device, it must be ezio, we decide it's ezio or ezio-static
          get_ezio_prog  # get the variable ezio_prog
          bt_client="$ezio_prog"
       else
-         # TODO: Make sure it is the same with ocs-btsrv if user assigns it by option -t|--bt-client.
+	 # For BT from image files, it can be ezio or others (ctorrent, aria2c..)
+         # TODO: Make sure it is the same with ocs-btsrv if user assigns it by option -t|--bt-client in ocs-btsrv. Here we assume it's bt_client_def.
          bt_client="$bt_client_def"
+	 if [ "$bt_client" = "ezio" ]; then
+           # when bt_client is ezio, we have to decide it's ezio or ezio-static
+           get_ezio_prog  # get the variable ezio_prog
+           bt_client="$ezio_prog"
+	 fi
       fi
       echo -n "Waiting for $bt_client service to be started... "
       time=$timeout_max
