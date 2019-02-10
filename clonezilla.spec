@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.10
+Version:	3.33.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.28.14, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.28.15, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,19 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Feb 10 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.11-drbl1
+  * Suppress error message of mkswapfile service stop only when it's added
+    in systemd.
+    Bug fixed: live USB version of Clonezilla live should not link
+    /home/partimag to /run/live/medium/home/partimag/ when there is no
+    images exist in /run/live/medium/home/partimag/. The find command was
+    wrong.
+  * Bugs fixed: -p poweroff failed for saveparts.
+    Option "-p poweroff" did not work when saving partition image with
+    image checking is enabled. Previous fix only works for savedisk.
+    Thanks to ski-777 for reporting this.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/ff5b0d60
+
 * Wed Jan 23 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.10-drbl1
   * Bug fixed: failed to detect ezio process for BT from image.
 
