@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.11
+Version:	3.33.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Feb 18 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.12-drbl1
+  * Bug fixed: label parsed from EFI boot entry was wrong
+    when multiple OSs are available. This should fix the issue that bricks
+    Dell's machine:
+    https://sourceforge.net/p/clonezilla/bugs/310/
+    Thanks to Dell US & Taiwan, and AMI Taiwan.
+
 * Sun Feb 10 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.11-drbl1
   * Suppress error message of mkswapfile service stop only when it's added
     in systemd.
