@@ -4671,6 +4671,8 @@ get_existing_disk_image() {
      # only directory ..., not file
      [ ! -d "$imagedir/$file" ] && continue
      [ ! -f "$imagedir/$file/disk" ] && continue
+     # Skip pseudo image
+     [ -e "$imagedir/$file/00-pseudo-img-note.txt" ] && continue
      # When mode is nonenc or enc, we should skip some dirs.
      case "$list_mode" in
        "rest-unenc") [ -e "$imagedir/$file/ecryptfs.info" ] && continue ;;
@@ -10951,7 +10953,8 @@ check_if_any_image_exists() {
   [ -z "$ocsroot" ] && return 1
   for i in $ocsroot/*; do
     [ ! -e "$i" ] && continue  # skip *
-    if [ -e "$i/clonezilla-img" ]; then
+    if [ -e "$i/clonezilla-img" -a \
+	 ! -e "$i/00-pseudo-img-note.txt" ]; then
       # New tag file from Oct/21/2011.
       img_exist_flag="0"
       break
@@ -12941,6 +12944,8 @@ get_directories_list_common() {
    echo -n "."
    # Only directory ..., not file
    [ ! -d "$file" ] && continue
+   # Skip pseudo image
+   [ -e "$file/00-pseudo-img-note.txt" ] && continue
    # Exclude those special name dir, e.g. with space, or beginning with "-"
    [ -n "$(echo $file | grep -E "[[:space:]]")" ] && continue
    [ -n "$(echo "$(basename "$file")" | grep -E "^-+")" ] && continue
