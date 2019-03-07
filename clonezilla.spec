@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.12
+Version:	3.33.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.28.15, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.28.18, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,15 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Mar 07 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.13-drbl1
+  * Keep the pseudo image dir by adding a tag file 00-pseudo-img-note.txt
+    inside it.
+  * Change ezio_seeder_extra_opt as ezio_seeder_opt.
+    Add two more options: ezio_leecher_opt and ezio_common_opt in
+    drbl-ocs.conf. These three options can also be overwritten 
+    if it's assigned in boot parameters.
+  * Assign "-t 1" for ezio_leecher_opt so that ezio will timeout in 1 min.
+
 * Mon Feb 18 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.12-drbl1
   * Bug fixed: label parsed from EFI boot entry was wrong
     when multiple OSs are available. This should fix the issue that bricks
