@@ -1262,6 +1262,10 @@ task_start_feed_img_for_cast() {
         esac
       fi
       one_time_image_for_bt="$target_dir"  # Keep the image name for later usage since target_dir is only temporary name.
+      # TODO: Check if the one_time_image_for_bt exists?
+      if [ -d "$imagedir/$one_time_image_for_bt" ]; then
+        echo "Pseudo image for \"BT from device\" mode use only. This image is not really restorable, and it can be safely removed." > "$imagedir/$one_time_image_for_bt/00-pseudo-img-note.txt"
+      fi
       if [ -n "$mdst_img" -a -d "$imagedir/btzone/$mdst_img" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "Assigned image $mdst_img was found. No need to re-generate torrent metainfo file."
@@ -1271,6 +1275,7 @@ task_start_feed_img_for_cast() {
         bt_metainfo_cmd="ocs-gen-bt-metainfo -d $imagedir/btzone/${target_dir}/ -i $imagedir/${target_dir} $target_parts"
         echo "Running: $bt_metainfo_cmd"
         eval $bt_metainfo_cmd
+        echo "Torrent info dir for \"BT from device\" mode use only. This dir can be safely removed if the corresponding pseudo image dir \"$imagedir/$one_time_image_for_bt\" is removed." > "$imagedir/btzone/$one_time_image_for_bt/00-pseudo-img-note.txt"
       fi
       # Assign option raw_dev_opt for start_ocs_service
       raw_dev_opt="-r"
@@ -1585,10 +1590,5 @@ case "$mode" in
 	 rc=1 ;;
 esac
 
-if [ -d "$imagedir/$one_time_image_for_bt" ] && \
-   [ -n "$(echo $one_time_image_for_bt | grep -E "^$bt_raw_dev_psuedo_img_prefix")" ]; then
-   echo -n "Cleaning the one-time-use temp image \"$one_time_image_for_bt\"... "
-   rm -rf $imagedir/$one_time_image_for_bt $imagedir/btzone/$one_time_image_for_bt
-   echo "done!"
-fi
+echo "done!"
 exit $rc
