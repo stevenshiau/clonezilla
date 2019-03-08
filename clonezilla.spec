@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.13
+Version:	3.33.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Mar 08 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.14-drbl1
+  * Make rsync follow link in ocs-iso-2-onie.
+
 * Thu Mar 07 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.13-drbl1
   * Keep the pseudo image dir by adding a tag file 00-pseudo-img-note.txt
     inside it.
