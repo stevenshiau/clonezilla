@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.15
+Version:	3.33.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Mar 21 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.16-drbl1
+  * Keep more x-related packages in GParted live:
+    xorg-docs-core xfonts-100dpi xfonts-75dpi xfonts-scalable
+
 * Thu Mar 21 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.15-drbl1
   * Replace leafpad by geany in DRBL live and GParted live 
     since leafpad is no more in Debian repository.
