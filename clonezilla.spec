@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.16
+Version:	3.33.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Mar 27 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.17-drbl1
+  * Bug fixed: should only keep libgl1-mesa-dri, while remove other packages.
+    i.e., assign unnecessary_packages="xorg-docs-core xfonts-100dpi
+    xfonts-75dpi xfonts-scalable" for GParted live.
+  * Add USB NIC modules in initramfs of live system.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_server_edition/thread/de7c4f810a/
+
 * Thu Mar 21 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.16-drbl1
   * Keep more x-related packages in GParted live:
     xorg-docs-core xfonts-100dpi xfonts-75dpi xfonts-scalable
