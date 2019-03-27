@@ -147,11 +147,13 @@ fi
 
 # Append extra modules included in initramfs, since some NIC modules (e.g. atl2) will not be included in initramfs, those driver is required for PXE booting. 
 # Ref: https://sourceforge.net/tracker/?func=detail&atid=671650&aid=2854969&group_id=115473
-if [ -e "/etc/initramfs-tools/modules" ]; then
-  echo "# The following modules were added by Clonezilla" >> /etc/initramfs-tools/modules
+if [ -d "/usr/share/initramfs-tools/modules.d" ]; then
+  echo "# The following modules were added by Clonezilla" >> /usr/share/initramfs-tools/modules.d/ocs-pxe.mod
   for i in $extra_module_list_in_initramfs; do
-    echo "$i" >> /etc/initramfs-tools/modules
+    echo "$i" >> /usr/share/initramfs-tools/modules.d/ocs-pxe.mod
   done 
+  # Add USB NIC drivers
+  find /lib/modules/*/kernel/drivers/net/usb/*.ko -exec basename {} \; | sed -r -e "s|\.ko$||g" | sort | uniq > /usr/share/initramfs-tools/modules.d/usb-nic.mod
   update_initramfs_flag="yes"
 fi
 
