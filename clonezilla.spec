@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.17
+Version:	3.33.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Mar 28 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.18-drbl1
+  * Add sleep .1 before cat /proc/partitions to file.
+    Thanks to Zibarov Volodymyr.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/318/
+
 * Thu Mar 27 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.17-drbl1
   * Bug fixed: should only keep libgl1-mesa-dri, while remove other packages.
     i.e., assign unnecessary_packages="xorg-docs-core xfonts-100dpi
