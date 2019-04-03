@@ -1632,14 +1632,18 @@ image_save() {
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
-  if [ "$fsck_src_part_auto" = "yes" ]; then
-    # It's auto (actually say "yes" to all), so we add "-y" for fsck.
-    fsck_extra_opt="-y"
-  fi
-  if [ "$fsck_src_part_intr" = "yes" -o \
-       "$fsck_src_part_auto" = "yes" ]; then
-    fsck_partition $part_fs $source_dev $fsck_extra_opt
-    echo $msg_delimiter_star_line
+  if [ -z "$part_fs" ]; then
+    echo "Refusing to fsck unknown or unsupported file system on $source_dev." | tee --append ${OCS_LOGFILE}
+  else
+    if [ "$fsck_src_part_auto" = "yes" ]; then
+      # It's auto (actually say "yes" to all), so we add "-y" for fsck.
+      fsck_extra_opt="-y"
+    fi
+    if [ "$fsck_src_part_intr" = "yes" -o \
+         "$fsck_src_part_auto" = "yes" ]; then
+      fsck_partition $part_fs $source_dev $fsck_extra_opt
+      echo $msg_delimiter_star_line
+    fi
   fi
 
   # do_fs_save is a global variable
@@ -11161,6 +11165,10 @@ get_diskname() {
   # └─sda5                            8:5    0   7.8G  0 part
   #   ├─lucid--server-root (dm-0)   254:0    0   7.4G  0 lvm
   #     └─lucid--server-swap_1 (dm-1) 254:1    0   388M  0 lvm
+  # 2019/04/03, for LV name, keep the way it is, e.g.,
+  # /dev/host-vg/swap_1 -> /dev/host-vg/swap_1
+  # Ref: https://sourceforge.net/p/clonezilla/bugs/314/
+  # Thanks to Constantino Michailidis for the patch file.
 
   [ -z "$dev_" ] && return 1
   case "$dev_" in
@@ -11171,7 +11179,13 @@ get_diskname() {
     nbd*)    echo "$dev_" | sed -r -e 's/^([^0-9]*[0-9]+)p[0-9]*$/\1/g' ;;
     nvme*)   echo "$dev_" | sed -r -e 's/^([^0-9]*e[0-9]+n[0-9]+)p[0-9]*$/\1/g' ;;
     md*)     echo "$dev_" | sed -r -e 's/^([^0-9]*[0-9]+)p[0-9]*$/\1/g' ;;
-    *)       echo "$dev_" | sed -r -e 's/^([^0-9]*)[0-9]*$/\1/g' ;;
+    *)       if [[ "$dev_" =~ "/" ]]; then
+	       # e.g., lv name: /dev/host-vg/swap_1
+               echo "$dev_"
+             else
+               echo "$dev_" | sed -r -e 's/^([^0-9]*)[0-9]*$/\1/g'
+             fi
+             ;;
   esac
 } # end of get_diskname
 #
