@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.18
+Version:	3.33.19
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.28.18, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.28.20, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Apr 09 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.19-drbl1
+  * Bug fixed: can't create disk image if swap is provided by logical volume
+    listed in crypttab.
+    Thanks to Constantino Michailidis for providing the patch file.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/314/
+
 * Thu Mar 28 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.18-drbl1
   * Add sleep .1 before cat /proc/partitions to file.
     Thanks to Zibarov Volodymyr.
