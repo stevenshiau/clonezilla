@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.19
+Version:	3.33.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Apr 29 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.20-drbl1
+  * Make create-ubuntu-live work for eoan.
+
 * Tue Apr 09 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.19-drbl1
   * Bug fixed: can't create disk image if swap is provided by logical volume
     listed in crypttab.
