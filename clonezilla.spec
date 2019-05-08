@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.21
+Version:	3.33.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed May 08 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.22-drbl1
+  * Add a large font menu for uEFI mode in Clonezilla live.
+
 * Wed May 08 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.21-drbl1
   * Add a boot menu "KMS with large fonts" for Clonezilla live.
   * No need to press enter when batch mode is off about warning MBR disk > 4 TB.
