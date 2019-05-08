@@ -1,0 +1,81 @@
+#!/bin/bash
+# Program to tune the Clonezilla live console font size in KMS mode, especially for HiDPI monitor.
+# For the font size, run "man console-setup" for more details. The following is from "man console-setup":
+# FONTFACE and FONTSIZE
+#   Valid font faces are: VGA (sizes 8x8, 8x14, 8x16, 16x28 and 16x32), Terminus (sizes 6x12, 8x14, 8x16, 10x20,
+#   12x24,  14x28  and  16x32),  TerminusBold (sizes 8x14, 8x16, 10x20, 12x24, 14x28 and 16x32), TerminusBoldVGA
+#   (sizes 8x14 and 8x16), and Fixed (sizes 8x13, 8x14, 8x15, 8x16 and  8x18).   If  however  CODESET=Ethiopian,
+#   then the available font faces are Goha and GohaClassic, each in sizes 8x12, 8x14 and 8x16.
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+console_setup_cfg="/etc/default/console-setup"
+default_font_size="16x32" # Available size: 6x12, 8x14, 8x16, 10x20, 12x24,  14x28  and  16x32
+
+#
+check_if_root
+
+# Functions
+USAGE() {
+   echo "Usage: $0 [Font size] "
+   echo "Available font size: 6x12, 8x14, 8x16, 10x20, 12x24, 14x28 and 16x32. Default is $default_font_size."
+   echo "Ex:"
+   echo "To set the font size as 14x28, run"
+   echo "   $ocs 14x28"
+   echo
+}
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+#
+font_size="$1"
+
+#
+[ -z "$font_size" ] && font_size="$default_font_size"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "Using font size for the console: $font_size"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+#
+ask_and_load_lang_set $specified_lang
+
+##############
+#### main ####
+##############
+
+if [ ! -e "$console_setup_cfg" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Config file $console_setup_cfg not found."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  my_ocs_exit 1
+fi
+cp $console_setup_cfg ${console_setup_cfg}.ocs-saved
+perl -pi -e "s/^CODESET=.*/CODESET=\"Uni2\"/g" $console_setup_cfg
+perl -pi -e "s/^FONTFACE=.*/FONTFACE=\"Terminus\"/g" $console_setup_cfg
+perl -pi -e "s/^FONTSIZE=.*/FONTSIZE=\"$font_size\"/g" $console_setup_cfg
+# Make it take effect
+setupcon
+rc=$?
+exit $rc
