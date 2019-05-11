@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.24
+Version:	3.33.25
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun May 11 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.25-drbl1
+  * Append dirs "boot,.disk,utils" to toram parameter. This would make To
+    RAM option can be used for creating recovery iso/zip.
+
 * Thu May 09 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.24-drbl1
   * Add option "-t 1 -k 60" for ezio on server side.
 
