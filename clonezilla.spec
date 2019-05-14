@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.26
+Version:	3.33.27
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue May 14 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.27-drbl1
+  * Add hotkey l (large font) for syslinux boot menu.
+
 * Mon May 13 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.26-drbl1
   * Sorted the boot menu, and added a hotkey (l) for large font boot
     menu in Clonezilla live uEFI booting.
