@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.30
+Version:	3.33.31
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri May 17 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.31-drbl1
+  * Add two more menus in uEFI boot menu:
+    1. uEFI firmware setup
+    2. Clonezilla live version info
+
 * Fri May 17 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.30-drbl1
   * ntegrated backup plan in boot-local-efi.cfg. Hence the regexp
     issue in Ubuntu's grub2 can be workarounded.
