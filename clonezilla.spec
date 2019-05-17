@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.31
+Version:	3.33.32
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri May 17 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.32-drbl1
+  * Tune more menus for uEFI boot menu, including:
+    1. Make wording more consistent
+    2. Show countdown and can be skipped by pressing Esc key when running sleep
+       (sleep --verbose --interruptible 10).
+
 * Fri May 17 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.31-drbl1
   * Add two more menus in uEFI boot menu:
     1. uEFI firmware setup
