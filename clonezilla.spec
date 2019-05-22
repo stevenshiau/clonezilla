@@ -49,7 +49,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
     2. Clonezilla live version info
 
 * Fri May 17 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.30-drbl1
-  * ntegrated backup plan in boot-local-efi.cfg. Hence the regexp
+  * Integrated backup plan in boot-local-efi.cfg. Hence the regexp
     issue in Ubuntu's grub2 can be workarounded.
     Ref: https://bugs.launchpad.net/bugs/1829331
 
