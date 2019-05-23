@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.33
+Version:	3.33.34
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu May 23 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.34-drbl1
+  * Program gparted-console-font-size was improved, no need to load language
+    file.
+
 * Thu May 23 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.33-drbl1
   * Improve ocs-live-boot-menu, so the new sorted uEFI menu
     works for GParted live
