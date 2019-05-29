@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.33.35
+Version:	3.33.36
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed May 29 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.36-drbl1
+  * Add prompt about entering uEFI firmware setup.
+
 * Fri May 25 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.35-drbl1
   * uEFI boot menu of GParted live was corrected. It was Clonezilla live.
 
