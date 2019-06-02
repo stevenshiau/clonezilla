@@ -9116,6 +9116,14 @@ task_restoreparts() {
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
+  # Update initramfs here
+  if [ "$do_update_initrd" = "yes" ]; then
+    grub_cand_parts="$target_parts $processed_extended_parts"
+    echo "Running: ocs-update-initrd -p \"$grub_cand_parts\" $grub_partition" | tee --append $OCS_LOGFILE
+    ocs-update-initrd -p "$grub_cand_parts" $grub_partition | tee --append $OCS_LOGFILE
+    echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+  fi
+
   # Reloc ntfs boot partition
   if [ "$change_ntfs_boot_chs" = "on" ]; then
     echo "Running: run_ntfsreloc_part -p \"$target_parts\" $ntfs_boot_partition" | tee --append $OCS_LOGFILE
@@ -9728,6 +9736,7 @@ USAGE_common_restore(){
     echo " -irhr, --irhr            Skip removing the Linux udev hardware records on the restored GNU/Linux."
     echo " -irvd, --irvd            Skip removing the NTFS volume dirty flag after the file system is restored."
     echo " -ius, --ius              Skip updating syslinux-related files on the restored GNU/Linux."
+    echo " -iui, --iui              Skip updating initramfs file(s) on the restored GNU/Linux."
     echo " -icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
     echo " -iefi, --ignore-update-efi-nvram  Skip updating boot entries in EFI NVRAM after restoring."
     echo " -k1,                     Create partition table in the target disk proportionally."
