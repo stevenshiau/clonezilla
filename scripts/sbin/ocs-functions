@@ -2272,7 +2272,7 @@ mount_root_partition_for_separate_boot_part() {
   fi
   [ -f "$partition_table" ] && rm -f $partition_table
   if [ -n "$found_root_partition" ]; then
-    echo "$found_root_partition is mounted as root partition for grub-install..."
+    echo "$found_root_partition is mounted as root partition for grub-install or updating initramfs..."
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "No root partition is mounted! You'd better to make sure the running kernel does support the file system of root partition!"
@@ -2751,18 +2751,17 @@ do_run_update_initrd_from_restored_os() {
   local mnt_pnt mkinitrd_run_sh mkinitrd_cmd ival rc_
   local grub2_prt="$1"  # e.g. /dev/sda1, the partition where /boot/grub exists
   local root_prt="$2"   # e.g. /dev/sda2, the partition where / exists
-  local grub2_hd_p="$3" # e.g. /dev/sda, the disk to install grub boot loader, or like /dev/sda2, the partition where grub boot loader is installed.
-  local kver_initrd req_mod_for_vm_candi
-  for i in grub2_prt root_prt grub2_hd_p; do
+  local diff_grub_pt_flag kver_initrd initrd_tool initrd_2_be_updated 
+  for i in grub2_prt root_prt; do
     eval ivar=\$${i}
     if [ -z "$ivar" ]; then
-      echo "No \"$i\" assigned in function run_grub2_from_restored_os." | tee --append ${OCS_LOGFILE}
+      echo "No \"$i\" assigned in function do_run_update_initrd_from_restored_os." | tee --append ${OCS_LOGFILE}
       echo "Program terminated." | tee --append ${OCS_LOGFILE}
       [ "$save_restore_error_log" = "yes" ] && copy_error_log
       exit 1
     fi
   done
-  echo "Re-creating initrd on disk $grub2_hd_p with boot dir in partition $grub2_prt and root partition $root_prt... "
+  echo "Re-creating initrd on boot dir in partition $grub2_prt and root partition $root_prt... "
   mnt_pnt="$(mktemp -d /tmp/root_reinst.XXXXXX)"
   mount $root_prt $mnt_pnt
   rc_=$?
@@ -2775,28 +2774,47 @@ do_run_update_initrd_from_restored_os() {
   mount --bind /proc $mnt_pnt/proc
   mount --bind /sys $mnt_pnt/sys
 
-  # If grub partition is not in the same partition as root partition, we have to mount grub partition in the root partition.
+  # If boot partition is not in the same partition as root partition, we have to mount grub partition in the root partition.
   diff_grub_pt_flag="no"
   if [ "$grub2_prt" != "$root_prt" ]; then
-     mkdir -p $mnt_pnt/boot/grub
      chroot $mnt_pnt mount $grub2_prt /boot/
      diff_grub_pt_flag="yes"
   fi
 
-  kver_initrd="$(LC_ALL=C find $mnt_pnt/boot/ -iname "vmlinuz*" -print | sort -r -V | head -n 1 | xargs basename | sed -r -e "s/^vmlinuz-//g")"
-  # mkinitrd --with ata_piix --with dm-mirror --with dm-mod --with dm-snapshot --with dm-zero --with ext3 --with jbd --with libata --with mptbase --with mptsas --with mptscsih --with mptscsi --with mptspi --with scsi_mod --with sd_mod /boot/initrd-2.6.9-11.EL.img 2.6.9-11.EL
-  req_mod_for_vm_candi="ata_piix dm-mirror dm-mod dm-snapshot dm-zero ext3 ext4 jbd libata mptbase mptsas mptscsih mptscsi mptspi scsi_mod sd_mod"
-  mkinitrd_with_opt=""
-  for i in $req_mod_for_vm_candi; do
-    if [ -n "$(find $mnt_pnt/lib/modules/$kver_initrd/ -name "${i}.ko" -print)" ]
-    then
-      mkinitrd_with_opt="$mkinitrd_with_opt --with $i"
-    fi
-  done
+  # TODO: for each kernel version, update
+  # Now only for the latest kernel version
+  # Initramfs file name examples:
+  # Debian: initrd.img-4.18.0-0.bpo.3-amd64
+  # CentOS: initramfs-3.10.0-957.12.2.el7.x86_64.img
+  kver_initrd="$(LC_ALL=C find $mnt_pnt/boot/ -name "vmlinuz*" -print 2>/dev/null | sort -r -V | head -n 1 | xargs basename | sed -r -e "s/^vmlinuz-//g")"
+  # Get the file name for initramfs
+  initrd_2_be_updated="$(LC_ALL=C find $mnt_pnt/boot/ -name "init*${kver_initrd}*" -print 2>/dev/null | grep -v kdum)"
+  # Decide it's update-initramfs or dracut
   mkinitrd_run_sh="$(mktemp $mnt_pnt/grub2-sh-XXXXXX)"
-  mkinitrd_cmd="mkinitrd -f $mkinitrd_with_opt /boot/initrd-${kver_initrd}.img $kver_initrd"
+  if [ -e "$mnt_pnt/usr/bin/dracut" ]; then
+    initrd_tool="dracut"
+  elif [ -e "$mnt_pnt/usr/sbin/update-initramfs" ]; then
+    initrd_tool="update-initramfs"
+  fi
+  case "$initrd_tool" in
+    "update-initramfs")
+      mkinitrd_cmd="update-initramfs -u -k all" ;;
+    "dracut")
+      mkinitrd_cmd="dracut -f ${initrd_2_be_updated#$mnt_pnt} $kver_initrd" ;;
+    *)
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "The tool to update initramfs was NOT found in function do_run_update_initrd_from_restored_os!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      unmount_wait_and_try $mnt_pnt/boot
+      unmount_wait_and_try $mnt_pnt/sys
+      unmount_wait_and_try $mnt_pnt/proc
+      unmount_wait_and_try $mnt_pnt/dev
+      unmount_wait_and_try $mnt_pnt
+      return 1
+      ;;
+  esac
   cat <<-SH_END > $mkinitrd_run_sh
-#!/bin/bash
+#!/bin/sh
 export LC_ALL=C
 export PATH=/sbin/:/usr/sbin:/bin/:/usr/bin
 $mkinitrd_cmd
@@ -2811,16 +2829,16 @@ SH_END
   #
   if [ "$diff_grub_pt_flag" = "yes" ]; then
     chroot $mnt_pnt umount /boot/
-    rmdir $mnt_pnt/boot/grub 2>/dev/null
   fi
-
   unmount_wait_and_try $mnt_pnt/sys
   unmount_wait_and_try $mnt_pnt/proc
   unmount_wait_and_try $mnt_pnt/dev
   unmount_wait_and_try $mnt_pnt
   [ -d "$mnt_pnt/dev" ] && rmdir $mnt_pnt/dev
   [ -d "$mnt_pnt" -a -n "$mnt_pnt" ] && rmdir $mnt_pnt
+
   return $rc_
+
 } # end of do_run_update_initrd_from_restored_os
 # output the CHS values of a HD
 output_HD_CHS() {
