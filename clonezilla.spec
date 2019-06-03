@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.34.1
+Version:	3.34.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 03 2019 Steven Shiau <steven _at_ clonezilla org> 3.34.2-drbl1
+  * Improve the mechanism to update uEFI nvram boot entry. It's the same way
+    as boot-local-efi.cfg.
+
 * Sun Jun 02 2019 Steven Shiau <steven _at_ clonezilla org> 3.34.1-drbl1
   * Default to run ocs-update-initrd for the restored OS when running ocs-sr.
     This helps to make initramfs work for different hardware.
