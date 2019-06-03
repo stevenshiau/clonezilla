@@ -21,17 +21,8 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # OpenSuSE 12.3: /EFI/opensuse/grubx64.efi" 
 # MS Windows 7/8: /EFI/Boot/bootx64.efi
 # CentOS 7.4: /EFI/centos/grubx64.efi
-# //NOTE//
-# 1. Put /EFI/Boot/bootx64.efi as the last one. Hence when appending new one, put it before /EFI/Boot/bootx64.efi.
-known_efi_boot_file_chklist="/EFI/centos/grubx64.efi /EFI/debian/grubx64.efi \
-/EFI/ubuntu/grubx64.efi /EFI/fedora/shim.efi /EFI/fedora/grubx64.efi \
-/EFI/redhat/grub.efi /EFI/redhat/grubx64.efi /EFI/opensuse/grubx64.efi \
-/EFI/Microsoft/Boot/bootmgfw.efi \
-/EFI/centos/grubaa64.efi /EFI/debian/grubaa64.efi /EFI/ubuntu/grubaa64.efi \
-/EFI/fedora/grubaa64.efi /EFI/redhat/grubaa64.efi /EFI/opensuse/grubaa64.efi \
-/EFI/Boot/bootx64.efi /EFI/Boot/bootaa64.efi"
-# For the unknown full path file to EFI boot file list, which we will find the full path:
-unknown_efi_boot_file_chklist="bootx64.efi bootaa64.efi grubx64.efi grubaa64.efi grub.efi"
+# //NOTE// Rememer to sync the variable efiblfiles in /etc/drbl/boot-local-efi.cfg
+efiblfiles="shim.efi grubx64.efi grub.efi elilo.efi bootx64.efi Boot/bootmgfw.efi grubaa64.efi bootaa64.efi"
 # Default label name
 label_def="OS on hard drive"
 # The log file later other program can refer
@@ -274,9 +265,11 @@ find_efi_boot_loader_file() {
   # Boot0005* EFI Network   VenHw(837dca9e-e874-4d82-b29a-23fe0e23d1e2,003e000a00000000)/MAC(525400123456,1)
   # Boot0006* EFI Internal Shell    MemoryMapped(11,0x13f7c2000,0x13fbc3c3f)/FvFile(7c04a583-9e3e-4f1c-ad65-e05268d0b4d1)
   # Boot0007* Debian ARM64          HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
+  #
+  # The return variables are: esp_boot_f, esp_boot_os
    
   local efi_sys_part_="$1"
-  local mnt_pnt
+  local mnt_pnt obreak efi_boot efi_boot_append dirs_list
 
   [ -z "$efi_sys_part_" ] && return 1
   esp_boot_f_in_nvram="$(get_efi_hd_boot_entry_info nvram boot_file)"
@@ -306,25 +299,47 @@ find_efi_boot_loader_file() {
       esp_boot_f="$esp_boot_f_in_nvram"
     fi
   else
-    # No reference one from EFI NVRAM, we have to guess...
-    # Possible files:
+    # No reference one from EFI NVRAM, we have to find or guess...
+    # Possible files examples:
     # Ubuntu Quantal: /EFI/ubuntu/grubx64.efi
     # Fedora 19: /EFI/fedora/shim.efi
     # MS Windows: /EFI/Boot/bootx64.efi
-    # TODO: find a better way to deal with this
-    for i in $known_efi_boot_file_chklist; do
-      if [ -e "$mnt_pnt/$i" ]; then
-        esp_boot_f="$(echo "$i" | sed -r -e "s|\/|\\\|g")"
-	break
+    obreak="no"
+    efi_boot="no"
+    efi_boot_append=""
+    dirs_list=""
+    for idir in $mnt_pnt/EFI/*; do
+      # We only need dir in 2nd level of path
+      if [ ! -d "$idir" ]; then
+        continue
+      fi
+      #if [ "$idir" = "$mnt_pnt/EFI/boot" -o "$idir" = "$mnt_pnt/EFI/Boot" ]; then
+      if [ -n "$(echo "$idir" | grep -i "$mnt_pnt/EFI/boot")" ]; then
+        # Should not add /EFI/{boot,Boot,BOOT} now, make it as the last one later.
+        efi_boot="yes"
+        efi_boot_append="$idir"
+        continue
+      fi
+      dirs_list="$dirs_list $idir"
+    done
+    if [ "$efi_boot" = "yes" ]; then
+      dirs_list="$dirs_list $efi_boot_append"
+    fi
+    for dir in $dirs_list; do
+      for file in $efiblfiles; do
+          if test -f $dir/$file; then
+            echo "Found EFI boot loader: $dir/$file"
+            # esp_boot_f example: \EFI\Boot\bootx64.efi
+	    esp_boot_f="$(LC_ALL=C echo $dir/$file | sed -r -e "s|$mnt_pnt||g" | sed -r -e "s|\/|\\\|g")"
+	    esp_boot_os="$(LC_ALL=C echo $dir/$file | sed -r -e "s|$mnt_pnt/EFI/||g" | xargs dirname)"
+            obreak="yes"
+            break
+          fi
+      done
+      if [ "$obreak" = "yes" ]; then
+        break
       fi
     done
-    # Last choice, find the full path to "grubx64.efi"
-    if [ -z "$esp_boot_f" ]; then
-      for i in $unknown_efi_boot_file_chklist; do
-	esp_boot_f="$(LC_ALL=C find $mnt_pnt/EFI/ -iname "$i" -print | sort | uniq | head -n 1 | sed -r -e "s|$mnt_pnt||g" | sed -r -e "s|\/|\\\|g")"
-	[ -n "$esp_boot_f" ] && break
-      done
-    fi
   fi
   if [ -n "$esp_boot_f" ]; then
     echo "EFI boot file \"$esp_boot_f\" in partition $efi_system_part was found."
@@ -418,7 +433,9 @@ fi
 ask_and_load_lang_set $specified_lang
 
 #
-if [ -n "$full_path_to_efi_file" -a \
+if [ -n "$label_assigned" ]; then
+  label="$label_assigned"
+elif [ -n "$full_path_to_efi_file" -a \
      -e "$full_path_to_efi_file" ]; then
   label="$(get_efi_hd_boot_entry_info $full_path_to_efi_file label)"
   if [ -z "$label" ]; then
@@ -431,10 +448,6 @@ if [ -n "$full_path_to_efi_file" -a \
       label="$label_def"
     fi
   fi
-elif [ -n "$label_assigned" ]; then
-  label="$label_assigned"
-else
-  label="$label_def"
 fi
 
 # //NOTE// 2017/09/20 No more need this, since efibootmgr works for Mac now.
@@ -500,6 +513,7 @@ ret="$?"
 # 0: UUID exists, match, no need to update boot entry.
 # 1: UUID does not exist, need to update boot entry.
 # 2: UUID exists, not match, need to update boot entry.
+esp_boot_os=""
 if [ "$ret" -eq 2 ]; then
   # 2: UUID exists, not match, need to update boot entry.
   # Updating the boot entry for EFI NVRAM
@@ -524,13 +538,20 @@ if [ "$ret" -eq 2 ]; then
     echo "$msg_program_stop!"
     boot_order_removed="1"
   fi
-  find_efi_boot_loader_file $efi_system_part # We will get $esp_boot_f
+  find_efi_boot_loader_file $efi_system_part # We will get $esp_boot_f, esp_boot_os
   if [ -z "$esp_boot_f" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "EFI boot file in partition $efi_system_part was _NOT_ found."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!"
     exit 2
+  fi
+  if [ -z "$label" ]; then
+    if [ -n "$esp_boot_os" ]; then
+      label="$esp_boot_os"
+    else
+      label="$label_def"
+    fi
   fi
   if [ "$boot_order_removed" -eq 0 ]; then
     cmd_update_boot_entry="efibootmgr -c -d ${disk_} -p ${esp_no} -L \"$label\" -l \"$esp_boot_f\""
@@ -541,13 +562,20 @@ if [ "$ret" -eq 2 ]; then
   fi
 elif [ "$ret" -eq 1 ]; then
   # 1: UUID does not exist, need to update boot entry.
-  find_efi_boot_loader_file $efi_system_part # We will get $esp_boot_f
+  find_efi_boot_loader_file $efi_system_part # We will get $esp_boot_f, esp_boot_os
   if [ -z "$esp_boot_f" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "EFI boot file in partition $efi_system_part was _NOT_ found."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!"
     exit 2
+  fi
+  if [ -z "$label" ]; then
+    if [ -n "$esp_boot_os" ]; then
+      label="$esp_boot_os"
+    else
+      label="$label_def"
+    fi
   fi
   cmd_add_boot_entry="efibootmgr -c -d ${disk_} -p ${esp_no} -L \"$label\" -l \"$esp_boot_f\""
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -560,8 +588,8 @@ elif [ "$ret" -eq 0 ]; then
   # 0: UUID exists, match, no need to update boot entry.
   # EFI system partition UUID in EFI NVRAM matches the one on this system
   if [ -n "$efi_boot_file_info" ]; then
-    # Here we still need to run find_efi_boot_loader_file so that if efi_boot_file_info is required, the info will be dumped.
-    find_efi_boot_loader_file $efi_system_part # We will get $esp_boot_f
+    # Here we still need to run find_efi_boot_loader_file so that if the file efi_boot_file_info is required, the info will be dumped when the function is run.
+    find_efi_boot_loader_file $efi_system_part # We will get $esp_boot_f, esp_boot_os
   fi
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "No need to update the boot entry of EFI NVRAM."
