@@ -9160,8 +9160,9 @@ task_restoreparts() {
       if `is_gpt_partitition_table_disk /dev/$ihd` && \
         ! `is_gpt_disk_with_bios_boot_part_in_legacy_bios /dev/$ihd`; then
         efi_info_tmp="$(mktemp /tmp/efi_info.XXXXXX)"
-        echo "Running: update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat -f $efi_info_tmp /dev/$ihd" | tee --append $OCS_LOGFILE
-        update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat -f $efi_info_tmp /dev/$ihd | tee --append $OCS_LOGFILE
+	update_efi_nvram_boot_entry_cmd="update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat -f $efi_info_tmp /dev/$ihd | tee --append $OCS_LOGFILE"
+	echo "Running: $update_efi_nvram_boot_entry_cmd"
+	eval $update_efi_nvram_boot_entry_cmd
         # Get the new efi_os_label, efi_system_part_no and efi_sys_part_boot_file which ocs-socket will use later to notify the server.
         . $efi_info_tmp
 	# efi_os_label might be more than one word, like "Windows Boot Manager", we need to make it one word otherwise ocsmgrd will fail to parse.
@@ -11720,9 +11721,9 @@ get_latest_kernel_ver_in_repository() {
 #
 get_efi_hd_boot_entry_info() {
   # This function is used to get some variables for boot entry in EFI NVRAM or the saved file. E.g. it's used to get the following variables in Boot0004 for CentOS 6.
-  # Usage: get_efi_hd_boot_entry_info (nvram|full_path_to_efi_nvram_data_file) (boot_order|label|part_no|uuid|boot_file)
-  # E.g. to get the "boot_order" in the EFI NVRAM, use:
-  # get_efi_hd_boot_entry_info nvram boot_order
+  # Usage: get_efi_hd_boot_entry_info (nvram|full_path_to_efi_nvram_data_file) (boot_num|label|part_no|uuid|boot_file)
+  # E.g. to get the "boot_num" in the EFI NVRAM, use:
+  # get_efi_hd_boot_entry_info nvram boot_num
   # To get the label from the saved file (it's from the saved image full_path_to_efi_nvram_data_file/efi-nvram.dat):
   # get_efi_hd_boot_entry_info full_path_to_efi_nvram_data_file label
 
@@ -11759,11 +11760,37 @@ get_efi_hd_boot_entry_info() {
   # Boot0004* EFI Network   VenHw(837dca9e-e874-4d82-b29a-23fe0e23d1e2,003e000a00000000)/MAC(525400123456,1)
   # Boot0005* EFI Internal Shell    MemoryMapped(11,0x13f7c2000,0x13fbc3c3f)/FvFile(7c04a583-9e3e-4f1c-ad65-e05268d0b4d1)
   # Boot0006* Debian        PciRoot(0x0)/Pci(0x1,0x0)/HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
-
-  local type_="$1" # nvram, full_path_to_efi_nvram_data_file
-  local term_="$2" # boot_order, label, no, uuid, boot_file
-  local cmd_ boot_order label part_no uuid boot_file first_bo
+  local type_ term_ fbo_only
+  local cmd_ boot_num label part_no uuid boot_file boot_num filter_entery
   local efibootmgr_v=""
+  fbo_only="yes" # Default to filter 1st boot entry only
+  # Input boot_num is like 000C, later it will be prepended "Boot" so that it will like: Boot000C
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -a|--all-boot-entry) shift; fbo_only="no" ;;
+      -b|--show-num-order-info-only) 
+         shift
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+	   boot_num="$1"
+           shift
+         fi
+         if [ -z "$boot_num" ]; then
+           echo "-b is used, but no boot_num was assigned."
+           echo "$msg_program_stop"
+           [ "$save_restore_error_log" = "yes" ] && copy_error_log
+           exit 1
+         fi
+         ;;
+      -*)     echo "${0}: ${1}: invalid option"
+              echo "$msg_program_stop"
+              [ "$save_restore_error_log" = "yes" ] && copy_error_log
+              exit 2 ;;
+      *)      break ;;
+    esac
+  done
+  type_="$1" # nvram, full_path_to_efi_nvram_data_file
+  term_="$2" # boot_num, label, no, uuid, boot_file
 
   # efibootmgr output has different formats for different versions. Therefore we have to separate them.
   case "$type_" in
@@ -11794,7 +11821,7 @@ get_efi_hd_boot_entry_info() {
   if [ "$(LC_ALL=C echo -ne "$efibootmgr_v\n0.11" | sort -Vr | head -n1)" = "0.11" ]; then
     # efibootmgr_v < 0.12 (so we use 0.11 in the above)
     case "$term_" in
-      boot_order)
+      boot_num)
         LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g"
         ;;
       label)
@@ -11812,10 +11839,24 @@ get_efi_hd_boot_entry_info() {
     esac
   else
     # for efibootmgr version >= 0.12
-    # Get the 1st boot order. When multiple items are available, we only refer to first boot order.
-    first_bo="Boot$(LC_ALL=C ${cmd_} | grep -Eiw "^BootOrder:" | awk -F" " '{print $2}' | awk -F"," '{print $1}')"
+    case "$fbo_only" in
+      yes)
+          # Get the 1st boot order. When multiple items are available, we only refer to first boot order.
+          # boot_num e.g.,: Boot000C
+	  # When boot_num is not assigned, it's first boot order we want. If it's assigned, then just search the one assigned.
+	  if [ -z "$boot_num" ]; then
+            boot_num="Boot$(LC_ALL=C ${cmd_} | grep -Eiw "^BootOrder:" | awk -F" " '{print $2}' | awk -F"," '{print $1}')"
+          else
+            boot_num="Boot${boot_num}" # Prepend "Boot" so that it's like Boot000C
+          fi
+	  filter_entery="grep -Ew ^${boot_num}" 
+          ;;
+        *)
+	  filter_entery="cat"
+          ;;
+    esac
     case "$term_" in
-      boot_order)
+      boot_num)
         # Can be multiple ones
         LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g"
         ;;
@@ -11829,17 +11870,17 @@ get_efi_hd_boot_entry_info() {
 	# Boot0002* EFI Network   PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x1,0x0)/MAC(000c291d9ad1,0)
 	# Boot0003* EFI Internal Shell (Unsupported option)       MemoryMapped(11,0xef9d018,0xf3f7017)/FvFile(c57ad6b7-0515-40a8-9d21-551652854e37)
 	# Boot0004* EFI VMware Virtual SCSI Hard Drive (1.0)      PciRoot(0x0)/Pci(0x10,0x0)/SCSI(1,0)
-        LC_ALL=C ${cmd_} | grep -Ew "^${first_bo}" | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)\/*FILE\(.*\)" | head -n 1 | sed -r -e "s|^Boot[[:alnum:]]+[*][[:space:]]+||g" -e "s|[[:space:]]+HD\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\).*||g" | sort | uniq
+        LC_ALL=C ${cmd_} | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)\/*FILE\(.*\)" | sed -r -e "s|^Boot[[:alnum:]]+[*][[:space:]]+||g" -e "s|[[:space:]]+HD\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\).*||g"
         ;;
       part_no)
-        LC_ALL=C ${cmd_} | grep -Ew "^${first_bo}" | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | head -n 1 | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $1}' | sort | uniq
+        LC_ALL=C ${cmd_} | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $1}'
         ;;
       uuid)
-        LC_ALL=C ${cmd_} | grep -Ew "^${first_bo}" | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | head -n 1 | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $3}' | tr '[:upper:]' '[:lower:]' | sort | uniq
+        LC_ALL=C ${cmd_} | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $3}' | tr '[:upper:]' '[:lower:]'
         ;;
       boot_file)
         # e.g., Boot0006* Debian        PciRoot(0x0)/Pci(0x1,0x0)/HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
-        LC_ALL=C ${cmd_} | grep -Ew "^${first_bo}" | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)\/*FILE\(.*\)" | grep -o -iE "FILE\(.*\)" | head -n 1 | sed -r -e "s/^File\(//g" -e "s/\)$//g" | sort | uniq
+        LC_ALL=C ${cmd_} | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)\/*FILE\(.*\)" | grep -o -iE "FILE\(.*\)" | sed -r -e "s/^File\(//g" -e "s/\)$//g"
         ;;
     esac
   fi

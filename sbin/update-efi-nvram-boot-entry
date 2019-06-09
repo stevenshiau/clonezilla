@@ -14,6 +14,9 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
 # Settings
+clean_nvram_unused_boot_entry="yes"
+
+# Settings
 # For the known full path file to EFI boot file list:
 # Ubuntu 12.10: /EFI/ubuntu/grubx64.efi
 # Fedora 18: /EFI/fedora/shim.efi /EFI/fedora/grubx64.efi
@@ -38,6 +41,7 @@ USAGE() {
     echo "-l, --label LABEL     Use LABEL when writing label in EFI NVRAM."
     echo "-f, --efi-boot-file-info FNAME Output the EFI system partition and boot file info to file FNAME."
     echo "-r, --full-path-to-efi-file  FULL_PATH_TO_EFI_FILE   Use the label in FULL_PATH_TO_EFI_FILE, which is the output of command \"efibootmgr -v\"."
+    echo "-s, --skip-clean-nvram-unused-boot-entry  Skip cleaning unused boot entry in NVRAM. Just keep the way it is."
     echo "//NOTE// The options -l and -r conflict with each other. Use one of them only."
     echo "DEVICE is the hard drive name, e.g. /dev/sda, /dev/sda..."
     echo "Ex:"
@@ -146,8 +150,8 @@ get_efi_system_part() {
   fi
 } # end of get_efi_system_part
 #
-check_if_nvram_efi_boot_partition_exist() {
-  # Function to check if the boot parition exists
+check_if_nvram_efi_boot_entry_exist() {
+  # Function to check if the boot entry exists
   # Some examples:
   # 1. Fedora 19:
   # root@debian:~# efibootmgr -v
@@ -217,7 +221,7 @@ check_if_nvram_efi_boot_partition_exist() {
     echo $msg_delimiter_star_line
   fi
   return $ret_code
-} # end of check_if_nvram_efi_boot_partition_exist
+} # end of check_if_nvram_efi_boot_entry_exist
 #
 find_efi_boot_loader_file() {
   # Function to find the EFI boot loader file
@@ -373,6 +377,38 @@ find_efi_boot_loader_file() {
     fi
   fi
 } # end of find_efi_boot_loader_file
+#
+clean_unused_uefi_boot_entry_in_nvram() {
+  all_boot_num=$(get_efi_hd_boot_entry_info -a nvram boot_num)
+  efi_tmpd="$(LC_ALL=C mktemp -d /tmp/efi_tmpd.XXXXXX)"
+  echo "Trying to clean unused uEFI boot entry if it exists..."
+  for ib in $all_boot_num; do
+    # The file path got from get_efi_hd_boot_entry_info is like: \EFI\fedora\shim.efi
+    # We have to convert it as something like: /EFI/fedora/shim.efi
+    efi_f="$(get_efi_hd_boot_entry_info -b $ib nvram boot_file | sed -r -e "s|\\\|\/|g")"
+    efi_partuuid="$(get_efi_hd_boot_entry_info -b $ib nvram uuid)"
+    efi_part="$(blkid -o full | grep -Ew "PARTUUID=\"${efi_partuuid}\"" | awk -F":" '{print $1}')"
+    if [ -z "$efi_part" ]; then
+      continue
+    fi
+    if mount -o ro $efi_part $efi_tmpd; then
+      if [ ! -e "$efi_tmpd/$efi_f" ]; then
+        echo "Boot file $efi_f does not exist in partition $efi_part."
+        echo "Clean the boot entry $ib by:"
+        clean_boot_entry_cmd="efibootmgr -b $ib -B"
+        echo "Running: $clean_boot_entry_cmd"
+        LC_ALL=C eval $clean_boot_entry_cmd
+        echo $msg_delimiter_star_line
+      fi
+    fi
+    if mountpoint $efi_tmpd 2>/dev/null; then
+      umount $efi_tmpd
+    fi
+  done
+  if [ -d "$efi_tmpd" ]; then
+    rmdir $efi_tmpd
+  fi
+} # end of clean_unused_uefi_boot_entry_in_nvram
 
 ########################
 ##### MAIN PROGRAM #####
@@ -410,6 +446,9 @@ while [ $# -gt 0 ]; do
            fi
            [ -z "$full_path_to_efi_file" ] && USAGE && exit 1
            ;;
+   -s|--skip-clean-nvram-unused-boot-entry)  
+	   clean_nvram_unused_boot_entry="no"
+           shift;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
            exit 2 ;;
@@ -508,7 +547,13 @@ else
   exit 2
 fi
 
-check_if_nvram_efi_boot_partition_exist
+#
+if [ "$clean_nvram_unused_boot_entry" = "yes" ]; then
+  clean_unused_uefi_boot_entry_in_nvram
+fi
+
+#
+check_if_nvram_efi_boot_entry_exist
 ret="$?"
 # 0: UUID exists, match, no need to update boot entry.
 # 1: UUID does not exist, need to update boot entry.
@@ -518,17 +563,17 @@ if [ "$ret" -eq 2 ]; then
   # 2: UUID exists, not match, need to update boot entry.
   # Updating the boot entry for EFI NVRAM
   # Before updating, we need to remove the stale one if it exist
-  efi_sys_part_boot_order_in_nvram="$(get_efi_hd_boot_entry_info nvram boot_order)"
-  boot_order_removed="0"
-  if [ -n "$efi_sys_part_boot_order_in_nvram" ]; then
+  efi_sys_part_boot_num_in_nvram="$(get_efi_hd_boot_entry_info nvram boot_num)"
+  boot_num_removed="0"
+  if [ -n "$efi_sys_part_boot_num_in_nvram" ]; then
     ret_rm="0"
-    for i in $efi_sys_part_boot_order_in_nvram; do
+    for i in $efi_sys_part_boot_num_in_nvram; do
       cmd_rm_boot_entry="efibootmgr -B -b $i"
       echo "Removing the stale boot entry $i by command:"
       echo "$cmd_rm_boot_entry"
       LC_ALL=C eval "(${cmd_rm_boot_entry} && exit \${PIPESTATUS[0]})"
       ret_rm="$?"
-      boot_order_removed="$((boot_order_removed + ret_rm))"
+      boot_num_removed="$((boot_num_removed + ret_rm))"
       echo $msg_delimiter_star_line
     done
   else
@@ -536,7 +581,7 @@ if [ "$ret" -eq 2 ]; then
     echo "EFI system partition boot order was _NOT_ found in EFI NVRAM!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!"
-    boot_order_removed="1"
+    boot_num_removed="1"
   fi
   find_efi_boot_loader_file $efi_system_part # We will get $esp_boot_f, esp_boot_os
   if [ -z "$esp_boot_f" ]; then
@@ -553,9 +598,9 @@ if [ "$ret" -eq 2 ]; then
       label="$label_def"
     fi
   fi
-  if [ "$boot_order_removed" -eq 0 ]; then
+  if [ "$boot_num_removed" -eq 0 ]; then
     cmd_update_boot_entry="efibootmgr -c -d ${disk_} -p ${esp_no} -L \"$label\" -l \"$esp_boot_f\""
-    echo "Updating the boot entry $efi_sys_part_boot_order_in_nvram by command:"
+    echo "Updating the boot entry by command:"
     echo "$cmd_update_boot_entry"
     LC_ALL=C eval "(${cmd_update_boot_entry} && exit \${PIPESTATUS[0]})"
     echo $msg_delimiter_star_line
