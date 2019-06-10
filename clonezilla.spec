@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.34.3
+Version:	3.34.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 10 2019 Steven Shiau <steven _at_ clonezilla org> 3.34.4-drbl1
+  * Improve the mechanism to clean and sort the boot entries in the NVRAM.
+    The duplicated or useless boot entries will be cleaned.
+    Make the codes in update-efi-nvram-boot-entry more readable.
+
 * Sun Jun 09 2019 Steven Shiau <steven _at_ clonezilla org> 3.34.3-drbl1
   * Add a mechanism to clean unused uEFI boot entry in NVRAM.
   * Use /tmp instead of /var/tmp for dracut. This could avoid the failure
