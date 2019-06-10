@@ -191,27 +191,29 @@ check_if_nvram_efi_boot_entry_exist() {
   #  UDISKS_PARTITION_UUID=E72DCE29-EA6A-4235-9EAA-FC11605559CA
   local efi_sys_part_uuid_in_nvram efi_sys_part_uuid_in_harddrive ret_code
   # Return code: 
-  # 0: UUID exists, match, no need to update boot entry.
-  # 1: UUID does not exist, need to update boot entry.
-  # 2: UUID exists, not match, need to update boot entry.
+  # 0: UUID exists in NVRAM, matching the one in hard drive, no need to update boot entry in NVRAM.
+  # 2: UUID exists in NVRAM, not matching the one in hard drive, need to update boot entry in NVRAM.
+  # 4: UUID does not exist in NVRAM, need to update boot entry in NVRAM.
+
+  # efi_system_part is global variable
   
-  efi_sys_part_uuid_in_nvram="$(get_efi_hd_boot_entry_info nvram uuid)"
+  efi_sys_part_uuid_in_nvram="$(get_efi_hd_boot_entry_info -n $efi_system_part nvram uuid)"
   efi_sys_part_uuid_in_harddrive="$(get_part_uuid_in_harddrive $efi_system_part)"
   ret_code=""
   if [ -n "$efi_sys_part_uuid_in_nvram" ]; then
-    if [ "$efi_sys_part_uuid_in_nvram" != "$efi_sys_part_uuid_in_harddrive" ]; then
-      ret_code="2"
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "The EFI system partition UUID $efi_sys_part_uuid_in_nvram in EFI NVRAM does _NOT_ match the one on partition $efi_system_part. UUID of $efi_system_part is: $efi_sys_part_uuid_in_harddrive"
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    else
+    if [ "$efi_sys_part_uuid_in_nvram" = "$efi_sys_part_uuid_in_harddrive" ]; then
       ret_code="0"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "EFI system partition UUID $efi_sys_part_uuid_in_nvram in EFI NVRAM matches the one on partition $efi_system_part."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    else
+      ret_code="2"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "The EFI system partition UUID $efi_sys_part_uuid_in_nvram in EFI NVRAM does _NOT_ match the one on partition $efi_system_part. UUID of $efi_system_part is: $efi_sys_part_uuid_in_harddrive"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
   else
-    ret_code="1"
+    ret_code="4"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "No partition boot entry from hard drive exists in EFI NVRAM."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -276,7 +278,7 @@ find_efi_boot_loader_file() {
   local mnt_pnt obreak efi_boot efi_boot_append dirs_list
 
   [ -z "$efi_sys_part_" ] && return 1
-  esp_boot_f_in_nvram="$(get_efi_hd_boot_entry_info nvram boot_file)"
+  esp_boot_f_in_nvram="$(get_efi_hd_boot_entry_info -n $efi_sys_part_ nvram boot_file)"
 
   if [ -n "$(LC_ALL=C mount | awk -F" " '{print $1}' | grep -Ew ${efi_system_part})" ]; then
     umount ${efi_system_part}
@@ -317,7 +319,6 @@ find_efi_boot_loader_file() {
       if [ ! -d "$idir" ]; then
         continue
       fi
-      #if [ "$idir" = "$mnt_pnt/EFI/boot" -o "$idir" = "$mnt_pnt/EFI/Boot" ]; then
       if [ -n "$(echo "$idir" | grep -i "$mnt_pnt/EFI/boot")" ]; then
         # Should not add /EFI/{boot,Boot,BOOT} now, make it as the last one later.
         efi_boot="yes"
@@ -378,36 +379,78 @@ find_efi_boot_loader_file() {
   fi
 } # end of find_efi_boot_loader_file
 #
+do_clean_EFI_boot_entry_job() {
+  local boot_num_2_remove="$1"
+  if [ -z "$boot_num_2_remove" ]; then
+    echo "boot_num_2_remove not assigned in function do_clean_EFI_boot_entry_job!"
+    exit 1
+  fi
+  echo "Clean the boot entry $boot_num_2_remove by:"
+  clean_boot_entry_cmd="efibootmgr -b $boot_num_2_remove -B"
+  echo "Running: $clean_boot_entry_cmd"
+  LC_ALL=C eval $clean_boot_entry_cmd
+} # end of do_clean_EFI_boot_entry_job
+#
 clean_unused_uefi_boot_entry_in_nvram() {
+  local do_clean_EFI_boot_entry
+  local dup_bf_fp all_boot_num boot_nums_2_be_removed
   all_boot_num=$(get_efi_hd_boot_entry_info -a nvram boot_num)
   efi_tmpd="$(LC_ALL=C mktemp -d /tmp/efi_tmpd.XXXXXX)"
   echo "Trying to clean unused uEFI boot entry if it exists..."
   for ib in $all_boot_num; do
+    do_clean_EFI_boot_entry="no"
+    efi_f=""
+    efi_partuuid=""
+    efi_part=""
     # The file path got from get_efi_hd_boot_entry_info is like: \EFI\fedora\shim.efi
     # We have to convert it as something like: /EFI/fedora/shim.efi
     efi_f="$(get_efi_hd_boot_entry_info -b $ib nvram boot_file | sed -r -e "s|\\\|\/|g")"
     efi_partuuid="$(get_efi_hd_boot_entry_info -b $ib nvram uuid)"
     efi_part="$(blkid -o full | grep -Ew "PARTUUID=\"${efi_partuuid}\"" | awk -F":" '{print $1}')"
-    if [ -z "$efi_part" ]; then
+    if [ -z "$efi_f" ]; then
       continue
     fi
-    if mount -o ro $efi_part $efi_tmpd; then
+    # Found EFI boot file listed in NVRAM.
+    # The cases for useless uEFI boot entry:
+    # (1) EFI boot file listed in NVRAM, but there is no such partition.
+    # (2) EFI boot file listed in NVRAM, the partition exists, but there is no such boot file.
+    if [ -z "$efi_part" ]; then
+      # This is case 1.
+      echo "Boot file $efi_f listed in NVRAM, but there is no any partition with PARTUUID \"$efi_partuuid\" contains it."
+      do_clean_EFI_boot_entry="yes"
+    elif mount -o ro $efi_part $efi_tmpd 2>&1; then
       if [ ! -e "$efi_tmpd/$efi_f" ]; then
+        # This is case 2.
         echo "Boot file $efi_f does not exist in partition $efi_part."
-        echo "Clean the boot entry $ib by:"
-        clean_boot_entry_cmd="efibootmgr -b $ib -B"
-        echo "Running: $clean_boot_entry_cmd"
-        LC_ALL=C eval $clean_boot_entry_cmd
-        echo $msg_delimiter_star_line
+        do_clean_EFI_boot_entry="yes"
+      else
+        echo "Found Boot file $efi_f in partition $efi_part."
       fi
     fi
-    if mountpoint $efi_tmpd 2>/dev/null; then
+    if mountpoint $efi_tmpd >/dev/null 2>&1; then
       umount $efi_tmpd
+    fi
+    if [ "$do_clean_EFI_boot_entry" = "yes" ]; then
+      do_clean_EFI_boot_entry_job $ib
+      echo $msg_delimiter_star_line
     fi
   done
   if [ -d "$efi_tmpd" ]; then
     rmdir $efi_tmpd
   fi
+  # Process the duplicated uEFI boot entry, just need to keep one.
+  dup_bf_fp="$(get_efi_hd_boot_entry_info -a nvram boot_file_full_path | sort | uniq -d)"
+  for id in $dup_bf_fp; do
+    all_boot_num="$(LC_ALL=C efibootmgr -v | grep -F "$id" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g")"
+    all_boot_num="$(echo $all_boot_num)"  # Make it in one line
+    # Remove all the duplicated bootnum except the 1st one since we have to keep at least one.
+    boot_nums_2_be_removed="$(echo $all_boot_num | awk -F" " '{for (i=2; i<=NF; ++i) print $i}')"
+    boot_nums_2_be_removed="$(echo $boot_nums_2_be_removed)"  # Make it in one line
+    for ib in $boot_nums_2_be_removed; do
+      echo "Removing duplicated boot entry $ib..."
+      do_clean_EFI_boot_entry_job $ib
+    done
+  done
 } # end of clean_unused_uefi_boot_entry_in_nvram
 
 ########################
@@ -471,24 +514,6 @@ fi
 #
 ask_and_load_lang_set $specified_lang
 
-#
-if [ -n "$label_assigned" ]; then
-  label="$label_assigned"
-elif [ -n "$full_path_to_efi_file" -a \
-     -e "$full_path_to_efi_file" ]; then
-  label="$(get_efi_hd_boot_entry_info $full_path_to_efi_file label)"
-  if [ -z "$label" ]; then
-    # Try to extract from boot file
-    label="$(get_efi_hd_boot_entry_info $full_path_to_efi_file boot_file)"
-    # boot_file will be like: \EFI\debian\grubaa64.efi -> Extract debian
-    label="$(echo "$label" | awk -F'\' '{print $3}')"
-    if [ -z "$label" -o "$label" = "Boot" ]; then
-      # If still not found, or like /EFI/Boot/bootx64.efi, use default label.
-      label="$label_def"
-    fi
-  fi
-fi
-
 # //NOTE// 2017/09/20 No more need this, since efibootmgr works for Mac now.
 ## Check if it's Apple Mac machine
 #if check_if_apple_mac; then
@@ -548,42 +573,40 @@ else
 fi
 
 #
+if [ -n "$label_assigned" ]; then
+  label="$label_assigned"
+elif [ -n "$full_path_to_efi_file" -a \
+       -e "$full_path_to_efi_file" ]; then
+  label="$(get_efi_hd_boot_entry_info -n $efi_system_part $full_path_to_efi_file label)"
+  if [ -z "$label" ]; then
+    # Try to extract from boot file
+    label="$(get_efi_hd_boot_entry_info -n -n $efi_system_part $full_path_to_efi_file boot_file)"
+    # boot_file will be like: \EFI\debian\grubaa64.efi -> Extract debian
+    label="$(echo "$label" | awk -F'\' '{print $3}')"
+    if [ -z "$label" -o "$label" = "Boot" ]; then
+      # If still not found, or like /EFI/Boot/bootx64.efi, use default label.
+      label="$label_def"
+    fi
+  fi
+fi
+
+#
 if [ "$clean_nvram_unused_boot_entry" = "yes" ]; then
   clean_unused_uefi_boot_entry_in_nvram
 fi
 
 #
-check_if_nvram_efi_boot_entry_exist
+check_if_nvram_efi_boot_entry_exist # input global variable $efi_system_part
 ret="$?"
-# 0: UUID exists, match, no need to update boot entry.
-# 1: UUID does not exist, need to update boot entry.
-# 2: UUID exists, not match, need to update boot entry.
+# 0: UUID exists in NVRAM, matching the one in hard drive, no need to update boot entry in NVRAM.
+# 2: UUID exists in NVRAM, not matching the one in hard drive, need to update boot entry in NVRAM.
+# 4: UUID does not exist in NVRAM, need to update boot entry in NVRAM.
 esp_boot_os=""
-if [ "$ret" -eq 2 ]; then
-  # 2: UUID exists, not match, need to update boot entry.
+if [ "$ret" -eq 2 -o "$ret" -eq 4 ]; then
+  # 1: UUID does not exist in NVRAM, need to update boot entry in NVRAM.
+  # 2: UUID exists in NVRAM, not matching the one in hard drive, need to update boot entry in NVRAM.
   # Updating the boot entry for EFI NVRAM
-  # Before updating, we need to remove the stale one if it exist
-  efi_sys_part_boot_num_in_nvram="$(get_efi_hd_boot_entry_info nvram boot_num)"
-  boot_num_removed="0"
-  if [ -n "$efi_sys_part_boot_num_in_nvram" ]; then
-    ret_rm="0"
-    for i in $efi_sys_part_boot_num_in_nvram; do
-      cmd_rm_boot_entry="efibootmgr -B -b $i"
-      echo "Removing the stale boot entry $i by command:"
-      echo "$cmd_rm_boot_entry"
-      LC_ALL=C eval "(${cmd_rm_boot_entry} && exit \${PIPESTATUS[0]})"
-      ret_rm="$?"
-      boot_num_removed="$((boot_num_removed + ret_rm))"
-      echo $msg_delimiter_star_line
-    done
-  else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "EFI system partition boot order was _NOT_ found in EFI NVRAM!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
-    boot_num_removed="1"
-  fi
-  find_efi_boot_loader_file $efi_system_part # We will get $esp_boot_f, esp_boot_os
+  find_efi_boot_loader_file $efi_system_part # We will get esp_boot_f, esp_boot_os
   if [ -z "$esp_boot_f" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "EFI boot file in partition $efi_system_part was _NOT_ found."
@@ -598,43 +621,19 @@ if [ "$ret" -eq 2 ]; then
       label="$label_def"
     fi
   fi
-  if [ "$boot_num_removed" -eq 0 ]; then
-    cmd_update_boot_entry="efibootmgr -c -d ${disk_} -p ${esp_no} -L \"$label\" -l \"$esp_boot_f\""
-    echo "Updating the boot entry by command:"
-    echo "$cmd_update_boot_entry"
-    LC_ALL=C eval "(${cmd_update_boot_entry} && exit \${PIPESTATUS[0]})"
-    echo $msg_delimiter_star_line
-  fi
-elif [ "$ret" -eq 1 ]; then
-  # 1: UUID does not exist, need to update boot entry.
-  find_efi_boot_loader_file $efi_system_part # We will get $esp_boot_f, esp_boot_os
-  if [ -z "$esp_boot_f" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "EFI boot file in partition $efi_system_part was _NOT_ found."
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
-    exit 2
-  fi
-  if [ -z "$label" ]; then
-    if [ -n "$esp_boot_os" ]; then
-      label="$esp_boot_os"
-    else
-      label="$label_def"
-    fi
-  fi
-  cmd_add_boot_entry="efibootmgr -c -d ${disk_} -p ${esp_no} -L \"$label\" -l \"$esp_boot_f\""
+  cmd_update_add_boot_entry="efibootmgr -c -d ${disk_} -p ${esp_no} -L \"$label\" -l \"$esp_boot_f\""
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Adding the boot entry in EFI NVRAM by command:"
+  echo "Updating/Adding the boot entry in EFI NVRAM by command:"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "$cmd_add_boot_entry"
-  LC_ALL=C eval "(${cmd_add_boot_entry} && exit \${PIPESTATUS[0]})"
+  echo "$cmd_update_add_boot_entry"
+  LC_ALL=C eval "(${cmd_update_add_boot_entry} && exit \${PIPESTATUS[0]})"
   echo $msg_delimiter_star_line
 elif [ "$ret" -eq 0 ]; then
-  # 0: UUID exists, match, no need to update boot entry.
+  # 0: UUID exists in NVRAM, matching the one in hard drive, no need to update boot entry in NVRAM.
   # EFI system partition UUID in EFI NVRAM matches the one on this system
   if [ -n "$efi_boot_file_info" ]; then
     # Here we still need to run find_efi_boot_loader_file so that if the file efi_boot_file_info is required, the info will be dumped when the function is run.
-    find_efi_boot_loader_file $efi_system_part # We will get $esp_boot_f, esp_boot_os
+    find_efi_boot_loader_file $efi_system_part # We will get esp_boot_f, esp_boot_os
   fi
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "No need to update the boot entry of EFI NVRAM."

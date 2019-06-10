@@ -11760,14 +11760,14 @@ get_efi_hd_boot_entry_info() {
   # Boot0004* EFI Network   VenHw(837dca9e-e874-4d82-b29a-23fe0e23d1e2,003e000a00000000)/MAC(525400123456,1)
   # Boot0005* EFI Internal Shell    MemoryMapped(11,0x13f7c2000,0x13fbc3c3f)/FvFile(7c04a583-9e3e-4f1c-ad65-e05268d0b4d1)
   # Boot0006* Debian        PciRoot(0x0)/Pci(0x1,0x0)/HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
-  local type_ term_ fbo_only
-  local cmd_ boot_num label part_no uuid boot_file boot_num filter_entery
+  local type_ term_ filt_case
+  local cmd_ boot_num label part_no uuid boot_file boot_num filter_entery dev_uuid dev_nam
   local efibootmgr_v=""
-  fbo_only="yes" # Default to filter 1st boot entry only
+  filt_case="fbo-only" # Default to filter 1st boot entry only
   # Input boot_num is like 000C, later it will be prepended "Boot" so that it will like: Boot000C
   while [ $# -gt 0 ]; do
     case "$1" in
-      -a|--all-boot-entry) shift; fbo_only="no" ;;
+      -a|--all-boot-entry) shift; filt_case="all" ;;
       -b|--show-num-order-info-only) 
          shift
          if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -11781,6 +11781,38 @@ get_efi_hd_boot_entry_info() {
            [ "$save_restore_error_log" = "yes" ] && copy_error_log
            exit 1
          fi
+	 filt_case="boot-num"
+         ;;
+      -d|--show-dev-uuid-only) 
+         shift
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+	   dev_uuid="$1"
+           shift
+         fi
+         if [ -z "$dev_uuid" ]; then
+           echo "-d is used, but no dev_uuid was assigned."
+           echo "$msg_program_stop"
+           [ "$save_restore_error_log" = "yes" ] && copy_error_log
+           exit 1
+         fi
+	 filt_case="dev-uuid"
+         ;;
+      -n|--show-dev-name-only) 
+         # Assigned dev_nam is like: /dev/sda1
+         shift
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+	   dev_nam="$1"
+           shift
+         fi
+         if [ -z "$dev_nam" ]; then
+           echo "-d is used, but no dev_nam was assigned."
+           echo "$msg_program_stop"
+           [ "$save_restore_error_log" = "yes" ] && copy_error_log
+           exit 1
+         fi
+	 filt_case="dev-name"
          ;;
       -*)     echo "${0}: ${1}: invalid option"
               echo "$msg_program_stop"
@@ -11789,8 +11821,8 @@ get_efi_hd_boot_entry_info() {
       *)      break ;;
     esac
   done
-  type_="$1" # nvram, full_path_to_efi_nvram_data_file
-  term_="$2" # boot_num, label, no, uuid, boot_file
+  type_="$1" # nvram or full_path_to_efi_nvram_data_file
+  term_="$2" # boot_num, label, no, uuid, boot_file or boot_file_full_path
 
   # efibootmgr output has different formats for different versions. Therefore we have to separate them.
   case "$type_" in
@@ -11839,19 +11871,30 @@ get_efi_hd_boot_entry_info() {
     esac
   else
     # for efibootmgr version >= 0.12
-    case "$fbo_only" in
-      yes)
+    case "$filt_case" in
+      fbo-only)
           # Get the 1st boot order. When multiple items are available, we only refer to first boot order.
           # boot_num e.g.,: Boot000C
-	  # When boot_num is not assigned, it's first boot order we want. If it's assigned, then just search the one assigned.
-	  if [ -z "$boot_num" ]; then
-            boot_num="Boot$(LC_ALL=C ${cmd_} | grep -Eiw "^BootOrder:" | awk -F" " '{print $2}' | awk -F"," '{print $1}')"
-          else
-            boot_num="Boot${boot_num}" # Prepend "Boot" so that it's like Boot000C
-          fi
+          boot_num="Boot$(LC_ALL=C ${cmd_} | grep -Eiw "^BootOrder:" | awk -F" " '{print $2}' | awk -F"," '{print $1}')"
 	  filter_entery="grep -Ew ^${boot_num}" 
           ;;
-        *)
+      boot-num)
+          boot_num="Boot${boot_num}" # Prepend "Boot" so that it's like Boot000C
+	  filter_entery="grep -Ew ^${boot_num}" 
+          ;;
+      dev-uuid)
+          # The case when -d|--show-dev-uuid-only) is used
+          # Boot0004* opensuse  HD(1,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\opensuse\grubx64.efi)
+	  filter_entery="grep -E ,${dev_uuid}," 
+          ;;
+      dev-name)
+          # The case when -n|--show-dev-name-only) is used
+          # Boot0004* opensuse  HD(1,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\opensuse\grubx64.efi)
+	  dev_uuid="$(get_part_uuid_in_harddrive $dev_nam)"
+	  filter_entery="grep -E ,${dev_uuid}," 
+          ;;
+      all) 
+          # no any filter
 	  filter_entery="cat"
           ;;
     esac
@@ -11861,7 +11904,7 @@ get_efi_hd_boot_entry_info() {
         LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g"
         ;;
       label)
-        # Can be only one result. E.g., this contains at least two label, but we can only give one label as the result
+        # Must be only one result. E.g., this contains at least two label, but we can only return one label
         # BootCurrent: 000E
         # Timeout: 1 seconds
         # BootOrder: 0000,0001,0003,0002,0001,0004,0005
@@ -11882,6 +11925,10 @@ get_efi_hd_boot_entry_info() {
         # e.g., Boot0006* Debian        PciRoot(0x0)/Pci(0x1,0x0)/HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
         LC_ALL=C ${cmd_} | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)\/*FILE\(.*\)" | grep -o -iE "FILE\(.*\)" | sed -r -e "s/^File\(//g" -e "s/\)$//g"
         ;;
+      boot_file_full_path)
+        # e.g., HD(1,GPT,aff8ff57-5b02-4d9b-8945-35fb0e5a905f,0x800,0x100000)/File(\EFI\ubuntu\shimx64.efi)
+	LC_ALL=C ${cmd_} | $filter_entery | grep -iE -o "HD\(.*\)\/*FILE\(.*\)"
+        ;;
     esac
   fi
 } # end of get_efi_hd_boot_entry_info
@@ -11891,12 +11938,11 @@ get_part_uuid_in_harddrive() {
   local part_="$1"
   local uuid_ret=""
   [ -z "${part_}" ] && return 2
+  # Use "blkid -o export" to get that.
+  # Another way is to use udevadm to get that:
   # For old udevadm info output format: UDISKS_PARTITION_UUID=B5BC1DC2-779B-4895-AD7D-6606D7841A5C
   # For new udevadm info output format: ID_PART_ENTRY_UUID=e8d785ed-a65f-4ea1-adf0-cc61e75677eb
-  uuid_ret="$(LC_ALL=C udevadm info -q env -n ${part_} 2>/dev/null | grep -E "^ID_PART_ENTRY_UUID=" | sed -r -e "s/^ID_PART_ENTRY_UUID=//g" | tr '[:upper:]' '[:lower:]')"
-  if [ -z "$uuid_ret" ]; then
-    uuid_ret="$(LC_ALL=C udevadm info -q env -n ${part_} 2>/dev/null | grep -E "^UDISKS_PARTITION_UUID=" | sed -r -e "s/^UDISKS_PARTITION_UUID=//g" | tr '[:upper:]' '[:lower:]')"
-  fi
+  uuid_ret="$(LC_ALL=C blkid -o export ${part_} 2>/dev/null | grep -E "^PARTUUID=" | awk -F"=" '{print $2}' | tr '[:upper:]' '[:lower:]')"
   echo $uuid_ret
 } # end of get_uuid_in_harddrive
 #
