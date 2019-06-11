@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.34.4
+Version:	3.34.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jun 11 2019 Steven Shiau <steven _at_ clonezilla org> 3.34.5-drbl1
+  * Bind mount /sys before running chroot for dracut,
+    otherwise for RHEL 8, it will run very slow.
+
 * Mon Jun 10 2019 Steven Shiau <steven _at_ clonezilla org> 3.34.4-drbl1
   * Improve the mechanism to clean and sort the boot entries in the NVRAM.
     The duplicated or useless boot entries will be cleaned.
