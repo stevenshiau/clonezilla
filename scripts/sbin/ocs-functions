@@ -2768,6 +2768,23 @@ do_run_update_initrd_from_restored_os() {
   if [ "$rc_" -gt 0 ]; then
     echo "Failed to mount $root_prt! Maybe it does not exist or the file system is not supported in the kernel. Skip running grub2 reinstallation!" 
     return 1
+  else
+    echo "Test if we can chroot the restored OS partition $root_prt..."
+    # Actually we'd better to test /bin/bash instead of ls since we will run a shell script to for grub-install. However, if we test /bin/bash, we will enter the shell if it's successful.
+    LC_ALL=C chroot $mnt_pnt ls &>/dev/null
+    rc_=$?
+    if [ "$rc_" -eq 0 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Yes, we are able to chroot the restored OS partition $root_prt."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "No, we are not able to chroot the restored OS partition $root_prt."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "Skip updating initrd from restored OS."
+      unmount_wait_and_try $mnt_pnt
+      return 199
+    fi
   fi
   mkdir -p $mnt_pnt/dev
   mount --bind /dev $mnt_pnt/dev
@@ -2830,6 +2847,7 @@ SH_END
   # Run mkinitrd
   echo "Running the command in the restored GNU/Linux chroot env:"
   echo "$mkinitrd_cmd"
+  echo "This might take a few minutes..."
   LC_ALL=C chroot $mnt_pnt /"$(basename $mkinitrd_run_sh)"
   rc_=$?
   [ -e "$mkinitrd_run_sh" ] && rm -f $mkinitrd_run_sh
