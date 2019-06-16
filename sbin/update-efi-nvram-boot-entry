@@ -577,10 +577,16 @@ if [ -n "$label_assigned" ]; then
   label="$label_assigned"
 elif [ -n "$full_path_to_efi_file" -a \
        -e "$full_path_to_efi_file" ]; then
-  label="$(get_efi_hd_boot_entry_info -n $efi_system_part $full_path_to_efi_file label)"
+  # We have to clean and sort the boot entries in $full_path_to_efi_file, like that for NVRAM.
+  # However, only the duplicated uEFI boot entry has to be processed, i.e., just need to keep one.
+  # No need to check if the boot entry exists in the NVRAM since it's a saved file, not NVRAM.
+  # TODO: when there are two boot entries existing in the same EFI partition, like:
+  # /EFI/debian/grubx64.efi, /EFI/Microsoft/Boot/bootmgfw.efi in /dev/sda1
+  # it might get the wrong one.
+  label="$(get_efi_hd_boot_entry_info -n $efi_system_part $full_path_to_efi_file label | head -n 1)"
   if [ -z "$label" ]; then
     # Try to extract from boot file
-    label="$(get_efi_hd_boot_entry_info -n -n $efi_system_part $full_path_to_efi_file boot_file)"
+    label="$(get_efi_hd_boot_entry_info -n $efi_system_part $full_path_to_efi_file boot_file)"
     # boot_file will be like: \EFI\debian\grubaa64.efi -> Extract debian
     label="$(echo "$label" | awk -F'\' '{print $3}')"
     if [ -z "$label" -o "$label" = "Boot" ]; then
