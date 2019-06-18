@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.34.6
+Version:	3.34.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jun 18 2019 Steven Shiau <steven _at_ clonezilla org> 3.34.7-drbl1
+  * Make sure label will have one name only in update-efi-nvram-boot-entry.
+
 * Tue Jun 11 2019 Steven Shiau <steven _at_ clonezilla org> 3.34.6-drbl1
   * Give warning about failing to create initrd in the restored OS due to different
     system architecture (e.g., i686 vs x86-64) for ocs-update-initrd.
