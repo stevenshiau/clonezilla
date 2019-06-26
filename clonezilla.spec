@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.34.7
+Version:	3.34.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+
+* Wed Jun 26 2019 Steven Shiau <steven _at_ clonezilla org> 3.34.8-drbl1
+  * Enable ntfs module in live initramfs.
+    Ref: http://gparted-forum.surf4.info/viewtopic.php?id=17840
+
 * Tue Jun 18 2019 Steven Shiau <steven _at_ clonezilla org> 3.34.7-drbl1
   * Make sure label will have one name only in update-efi-nvram-boot-entry.
 
