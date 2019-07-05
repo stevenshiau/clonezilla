@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.34.8
+Version:	3.35.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.29.9, partimage >= 0.6.7, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.29.9, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+
+* Fri Jul 05 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.1-drbl1
+  * Deprecate Partimage, i.e. no more depending on Partimage.
+    Since it's not in the Debian Buster repository.
+    It's only recommended to install, not a required package.
 
 * Wed Jun 26 2019 Steven Shiau <steven _at_ clonezilla org> 3.34.8-drbl1
   * Enable ntfs module in live initramfs.
