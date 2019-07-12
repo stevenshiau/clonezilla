@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.35.1
+Version:	3.35.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+
+* Fri Jul 12 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.2-drbl1
+  * Reuse ocs-gen-grub2-efi-bldr for drbl-usb-netinstall. Make appropriate
+    changes for uEFI booting use case.
 
 * Fri Jul 05 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.1-drbl1
   * Deprecate Partimage, i.e. no more depending on Partimage.
