@@ -41,6 +41,8 @@ NET_PIPE="netcat"
 ocs_nuttcp_log="/var/log/ocs-nuttcp-$$.log"
 # By default the prevous partclone and NET_PIPE service will be killed
 keep_netpipe="no"
+# Default to run ocs-update-initrd to update the initramfs of restored OS
+do_update_initrd="yes"
 
 # Local functions:
 # check if the user input /dev/hda, /dev/hdb...
@@ -1804,6 +1806,8 @@ clone_over_net() {
     if [ "$(echo $my_ip | wc -w)" -gt 1 ]; then
       my_ip_one="$(echo $my_ip | awk -F" " '{print $1}')"
       echo "Multiple IP addresses exist ($my_ip). Show only one as an example in the following: $my_ip_one."
+    else
+      my_ip_one="$my_ip"
     fi
     echo "$msg_now_run_this_cmd_in_target_machine:"
     echo "sudo su -"
@@ -1903,6 +1907,13 @@ post_process_in_target_dev() {
       ocs-install-grub $tgt_disk_select_opt $grub_partition | tee --append $OCS_LOGFILE
     fi
     echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
+
+    # Update initramfs here
+    if [ "$do_update_initrd" = "yes" ]; then
+      echo "Running: ocs-update-initrd -s \"$target_hd\" $grub_partition" | tee --append $OCS_LOGFILE
+      ocs-update-initrd -s "$target_hd" $grub_partition | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    fi
 
     #
     if [ "$change_ntfs_boot_chs" = "on" ]; then
@@ -2090,6 +2101,7 @@ USAGE() {
     echo "-rescue, --rescue        Turn on rescue mode, i.e. try to skip bad sectors."
     echo "-irhr, --irhr            Skip removing the Linux udev hardware records on the restored GNU/Linux."
     echo "-ius, --ius              Skip updating syslinux-related files on the restored GNU/Linux."
+    echo "-iui, --iui              Skip updating initramfs file(s) on the restored GNU/Linux."
     echo "-icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
     echo "-iefi, --ignore-update-efi-nvram  Skip updating boot entries in EFI NVRAm after cloning."
     echo "-k, --no-sfdisk          Do NOT create partition table in boot sector in target machine"
@@ -2298,6 +2310,7 @@ set_ocs_onthefly_extra_param() {
     "-rescue "  "$msg_ocs_onthefly_param_rescue" off \
     "-irhr "    "$msg_ocs_onthefly_param_irhr" off \
     "-ius "     "$msg_ocs_onthefly_param_ius" off \
+    "-iui "     "$msg_ocs_onthefly_param_iui" off \
     "-icds "    "$msg_ocs_onthefly_param_icds" off \
     "-iefi "    "$msg_ocs_onthefly_param_iefi" off \
     "-o "       "$msg_ocs_onthefly_param_o" off \
@@ -2568,6 +2581,7 @@ parse_ocs_onthefly_cmd_options() {
       -rescue|--rescue) shift; rescue_mode="on";;
       -irhr|--irhr) shift; do_rm_hardware_record="no";;
       -ius|--ius) shift; do_update_syslinux="no";;
+      -iui|--iui) shift;do_update_initrd="no";;
       -icds|--ignore-chk-dsk-size-pt) shift; chk_tgt_disk_size_bf_mk_pt="no";;
       -iefi|--ignore-update-efi-nvram) shift; update_efi_nvramt="no";;
       -sfsck|--skip-fsck-src-part) shift; 
