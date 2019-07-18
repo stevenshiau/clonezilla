@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.35.2
+Version:	3.35.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.29.9, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.30.6, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+
+* Thu Jul 18 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.3-drbl1
+  * Add option -iui for ocs-onthefly, and implement the ocs-update-initrd
+    for restored GNU/Linux.
+  * Bug fixed: the source IP address for disk to remote disk was not shown
+    in the source (server) side when there is one NIC configured.
 
 * Fri Jul 12 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.2-drbl1
   * Reuse ocs-gen-grub2-efi-bldr for drbl-usb-netinstall. Make appropriate
