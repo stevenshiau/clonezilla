@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.35.3
+Version:	3.35.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+
+* Fri Jul 21 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.4-drbl1
+  * Add hotkey for boot menu "To RAM" (R) and KMS (K) modes.
 
 * Thu Jul 18 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.3-drbl1
   * Add option -iui for ocs-onthefly, and implement the ocs-update-initrd
