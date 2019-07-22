@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.35.4
+Version:	3.35.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+
+* Mon Jul 22 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.5-drbl1
+  * Update the mechanism to generate new machine-id for restored GNU/Linux.
+    Thanks to Peter Sun for reporting the issue and providing the solution.
 
 * Fri Jul 21 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.4-drbl1
   * Add hotkey for boot menu "To RAM" (R) and KMS (K) modes.
