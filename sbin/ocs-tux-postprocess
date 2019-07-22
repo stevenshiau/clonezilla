@@ -94,6 +94,21 @@ rm_udev_persistent_record() {
 		"$remove_dbus_machine_id" = "true" ]; then
           rm -fv $hd_img/var/lib/dbus/machine-id
         fi
+        if [ -e "$hd_img/etc/machine-id" -a \
+		"$remove_dbus_machine_id" = "true" ]; then
+          rm -fv $hd_img/etc/machine-id
+        fi
+	systemd-machine-id-setup --root=$hd_img
+	if [ -e "$hd_img/etc/machine-id" ]; then
+	  chmod 444 $hd_img/etc/machine-id
+	  chcon --reference=$hd_img/etc/issue $hd_img/etc/machine-id
+	  chcon -u system_u -t machineid_t $hd_img/etc/machine-id
+	  (cd $hd_img/var/lib/dbus/; ln -fs /etc/machine-id .)
+  	else
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "Failed to create /etc/machine-id in the deployed GNU/Linux $hd_img/."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        fi
         [ "$mrc" -eq 0 ] && unmount_wait_and_try $target_p
         [ -d "$hd_img" -a -n "$hd_img" ] && rmdir $hd_img
 	;;
