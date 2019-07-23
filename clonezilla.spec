@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.35.5
+Version:	3.35.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jul 23 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.6-drbl1
+  * Only re-gen the machine id in the right fs when running
+    ocs-tux-postprocess.
 
 * Mon Jul 22 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.5-drbl1
   * Update the mechanism to generate new machine-id for restored GNU/Linux.
