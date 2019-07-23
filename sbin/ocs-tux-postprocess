@@ -30,6 +30,7 @@ USAGE() {
 rm_udev_persistent_record() {
   local selected_dev="$*"  # selected_dev is like "sda1 sda2"
   local fs target_p
+  local gen_ma_id_flag="no"
 
   if [ -z "$selected_dev" ]; then
     # Here we also search LVM, since udev persistent record could be inside that.
@@ -90,24 +91,31 @@ rm_udev_persistent_record() {
 	# Ref: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=639261
 	#      http://unix.stackexchange.com/questions/120612/why-cant-i-run-gnome-apps-over-remote-ssh-session
 	# Thanks to Peter Sun for reporting this.
+	# gen_ma_id_flag is where we will know if it's the right partition to deal with.
         if [ -e "$hd_img/var/lib/dbus/machine-id" -a \
 		"$remove_dbus_machine_id" = "true" ]; then
           rm -fv $hd_img/var/lib/dbus/machine-id
+	  gen_ma_id_flag="yes"
         fi
         if [ -e "$hd_img/etc/machine-id" -a \
 		"$remove_dbus_machine_id" = "true" ]; then
           rm -fv $hd_img/etc/machine-id
+	  gen_ma_id_flag="yes"
         fi
-	systemd-machine-id-setup --root=$hd_img
-	if [ -e "$hd_img/etc/machine-id" ]; then
-	  chmod 444 $hd_img/etc/machine-id
-	  chcon --reference=$hd_img/etc/issue $hd_img/etc/machine-id
-	  chcon -u system_u -t machineid_t $hd_img/etc/machine-id
-	  (cd $hd_img/var/lib/dbus/; ln -fs /etc/machine-id .)
-  	else
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-          echo "Failed to create /etc/machine-id in the deployed GNU/Linux $hd_img/."
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	if [ "$gen_ma_id_flag" = "yes" ]; then
+          echo "Found the file system and mount point to re-generate machine id: $target_p, $hd_img"
+          systemd-machine-id-setup --root=$hd_img
+          if [ -e "$hd_img/etc/machine-id" ]; then
+            chmod 444 $hd_img/etc/machine-id
+	    # TODO: maybe a better file to replace /etc/issue?
+            chcon --reference=$hd_img/etc/issue $hd_img/etc/machine-id
+            chcon -u system_u -t machineid_t $hd_img/etc/machine-id
+            (cd $hd_img/var/lib/dbus/; ln -fs /etc/machine-id .)
+          else
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+            echo "Failed to create /etc/machine-id in the deployed GNU/Linux $hd_img/."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          fi
         fi
         [ "$mrc" -eq 0 ] && unmount_wait_and_try $target_p
         [ -d "$hd_img" -a -n "$hd_img" ] && rmdir $hd_img
