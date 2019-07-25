@@ -1031,15 +1031,26 @@ calculate_elapsed_time() {
 } # end of calculate_elapsed_time
 #
 disk_full_test() {
-  local tgt_dir rc prompt_msg
+  local tgt_dir ok_c prompt_msg
   tgt_dir="$1"
   prompt_msg="$2"
   [ -z "$tgt_dir" ] && return 1
-  diskfull_test="$tgt_dir/DISK_FULL"
-  # Testing using 1MB, since small file maybe is accepted when disk is full.
-  if ! dd if=/dev/zero of=$diskfull_test bs=1M count=1 &>/dev/null; then
+  diskfull_test="$(mktemp $tgt_dir/diskfull-test.XXXXXX 2>/dev/null)"
+  if [ -z "$diskfull_test" ]; then
+    # Even mktemp fails...
+    ok_c="no"
+  else
+    # mktemp works, but need bigger file to test.
+    # Testing using 1 MB, since small file maybe is accepted when disk is full.
+    if ! dd if=/dev/zero of=$diskfull_test bs=1M count=1 &>/dev/null; then
+      ok_c="no"
+    else
+      ok_c="yes"
+    fi
+  fi
+  if [ "$ok_c" = "no" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$tgt_dir is full! No space left on device!" | tee --append ${OCS_LOGFILE}
+    echo "$msg_disk_is_full_or_permission_issue: $tgt_dir" | tee --append ${OCS_LOGFILE}
     [ -n "$prompt_msg" ] && echo $prompt_msg
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
