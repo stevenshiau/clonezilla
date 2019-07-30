@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.35.6
+Version:	3.35.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jul 30 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.7-drbl1
+  * Improved the disk full test function:
+    /usr/share/drbl/sbin/ocs-functions:disk_full_test()
+    Should use mktemp instead of the fixed file name.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/d3f3bfb5/
+
 * Tue Jul 23 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.6-drbl1
   * Only re-gen the machine id in the right fs when running
     ocs-tux-postprocess.
