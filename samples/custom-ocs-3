@@ -1,0 +1,136 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# License: GPL
+# Program to save the image from hard drive to 2nd partition of USB flash drive, which contains 2 partitions:
+# (1) 1st partition: Clonezilla live, customized with ocs_live_run to run this program.
+# (2) 2nd partition: image repository, which contains only image.
+# //NOTE// THIS SOFTWARE COMES WITH ABSOLUTELY NO WARRANTY! 
+# //NOTE// USE AT YOUR OWN RISK!
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+# Settings
+check_from_usb="yes"
+
+# Functions
+USAGE() {
+    echo "$ocs - To save or restore an image from USB device using Clonezilla live"
+    echo "This prrogram is to save the image from hard drive to 2nd partition of USB flash drive, which contains 2 partitions:"
+    echo "(1) 1st partition: Clonezilla live, customized with ocs_live_run to run this program."
+    echo "(2) 2nd partition: image repository, which contains only image."
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] MODE"
+    echo "Options:"
+    echo "-s, --skip-check-usb   Skip checking if Clonezilla live is from USB"
+    echo "MODE is \"save\" or \"restore\""
+    echo "Ex:"
+    echo "To save the 1st disk to the USB flash drive's 2nd partition, run:"
+    echo "   $ocs save"
+    echo "To restore the image on the USB flash drive's 2nd partition to 1st drive, run:"
+    echo "   $ocs restore"
+    echo
+} # end of USAGE
+#
+check_usb_clonezilla() {
+  # Make sure the device is USB storage
+  # The codes are borrowed from live-tools: live-medium-eject
+  _DEVICE="$1"
+  if [ ! -b "/dev/${_DEVICE}" ]; then
+    exit 0
+  fi
+  _DEVICE=$(echo $_DEVICE | sed -e 's/[0-9]*$//')
+  if readlink "/sys/block/${_DEVICE}" | grep -q usb; then
+    echo "Found Clonezilla media on USB device."
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Clonezilla live is not from USB storage. This program is intended to be used for Clonezilla live is not from USB storage with 2 partitions."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+  exit 1
+  fi
+} # end of check_usb_clonezilla
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -s|--skip-check-usb) check_from_usb="no"; shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+mode="$1"
+
+if [ -z "$mode" ]; then
+  USAGE
+  exit 9
+fi
+
+force_TERM_as_linux_if_necessary
+
+#
+check_if_root
+ask_and_load_lang_set
+
+ocs_dev="$(LC_ALL=C findmnt -Un -o source /run/live/medium | sed -e 's|^/dev/||')" # e.g., sdb1
+if [ "$check_from_usb" = "yes" ]; then
+  check_usb_clonezilla $ocs_dev
+fi
+# sdb1 -> sdb2
+img_dev="$(echo $ocs_dev | sed -e 's|1$|2|')" 
+if [ ! -b "/dev/${img_dev}" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Image repository partition /dev/${img_dev} not found."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+umount /home/partimag/
+
+case "$mode" in
+  save)    if mount /dev/$img_dev /home/partimag/; then
+             img_name="myimg-aiGhooj7"
+	     ocs-sr -q2 -c -j2 -z9p -i 4096 -sfsck -senc -p choose savedisk $img_name sda
+           else
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+             echo "Failed to mount image repository /dev/$img_dev."
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+             echo "$msg_program_stop!"
+             my_ocs_exit 1
+           fi
+           ;;
+  restore) if mount -o ro /dev/$img_dev /home/partimag/; then
+             img_name="$(mktemp /tmp/myimg.XXXXXX)"
+             find /home/partimag -name clonezilla-img  -print | head -n 1 | xargs dirname | xargs basename > $img_name
+             ocs-sr -g auto -e1 auto -e2 -r -j2 -c -scr -p choose restoredisk `cat $img_name` sda
+             rm -f $img_name
+           else
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+             echo "Failed to mount image repository /dev/$img_dev."
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+             echo "$msg_program_stop!"
+             my_ocs_exit 1
+           fi
+           ;;
+  *)
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+	  echo "Unknown mode."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "$msg_program_stop!"
+          my_ocs_exit 1
+esac
