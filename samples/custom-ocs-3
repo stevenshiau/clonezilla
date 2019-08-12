@@ -116,7 +116,16 @@ case "$mode" in
            ;;
   restore) if mount -o ro /dev/$img_dev /home/partimag/; then
              img_name="$(mktemp /tmp/myimg.XXXXXX)"
-             find /home/partimag -name clonezilla-img  -print | head -n 1 | xargs dirname | xargs basename > $img_name
+	     img_ds="$(find /home/partimag -name clonezilla-img  -print)"
+	     if [ -z "$img_ds" ]; then
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+	       echo "No image was found in /home/partimag/ (/dev/$img_dev)."
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+               echo "$msg_program_stop!"
+               my_ocs_exit 1
+	     fi
+	     # Only 1 image, just in case.
+             echo "$img_ds" | head -n 1 | xargs dirname | xargs basename > $img_name
              ocs-sr -g auto -e1 auto -e2 -r -j2 -c -scr -p choose restoredisk `cat $img_name` sda
              rm -f $img_name
            else
