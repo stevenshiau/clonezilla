@@ -1716,10 +1716,14 @@ image_save() {
 check_input_hd() {
     local target_hd="$*"
     if [ -z "$target_hd" ]; then
-      echo "No device selected." | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$msg_no_device_selected" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop."  | tee --append ${OCS_LOGFILE}
-      if [ -n "$(echo $ocs_mode_prompt | grep -iw "restore")" ]; then
-        [ "$save_restore_error_log" = "yes" ] && copy_error_log
+      [ "$save_restore_error_log" = "yes" ] && copy_error_log
+      if [ "$ocs_batch_mode" != "on" ]; then
+        echo -n "$msg_press_enter_to_continue..."
+        read
       fi
       exit 1
     fi
@@ -1753,7 +1757,18 @@ check_input_partition() {
       esac
     done
     tgt_parts="$*"
-    [ -z "$tgt_parts" ] && echo "No device selected!" && exit 1
+    if [ -z "$tgt_parts" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$msg_no_device_selected" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop."  | tee --append ${OCS_LOGFILE}
+      [ "$save_restore_error_log" = "yes" ] && copy_error_log
+      if [ "$ocs_batch_mode" != "on" ]; then
+        echo -n "$msg_press_enter_to_continue..." | tee --append ${OCS_LOGFILE}
+        read
+      fi
+      exit 1
+    fi
     for ipart in $tgt_parts; do
       if ! is_partition "$ipart"; then
         if [ "$allow_disk_with_fs" = "yes" ]; then
@@ -4100,10 +4115,14 @@ check_input_target_image() {
   [ -z "$tgt_dir" ] && echo "Image name not found!" && exit 1
   if [ ! -d "$tgt_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The directory $tgt_dir for the inputed name does NOT exist!" | tee --append ${OCS_LOGFILE}
+    echo "$msg_input_img_dir_not_exist $tgt_dir" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
     [ "$save_restore_error_log" = "yes" ] && copy_error_log
+    if [ "$ocs_batch_mode" != "on" ]; then
+      echo -n "$msg_press_enter_to_continue..."
+      read
+    fi
     exit 1
   fi
 } # end of check_input_target_image
