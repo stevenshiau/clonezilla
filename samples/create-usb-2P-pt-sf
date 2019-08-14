@@ -1,0 +1,188 @@
+#!/bin/bash
+# Author: Steven Shiau (steven _at_ clonezilla org)
+# License: GPL
+# Description: A sample script to auto create partitions on a disk:
+# (1) 1st partition: ext4
+# (2) 2nd partition: ntfs
+#
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# WARNING!!! WARNING!!! WARNING!!!
+# YOU HAVE BEEN WARNED!
+# This is a dangerous program! Do not run it as root in any machine unless you know what you are doing.
+# THIS PROGRAM WILL DELETE ALL THE DATA IN YOUR DISK!!!
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+batch_mode="off"
+check_from_usb="yes"
+chosen_hd=""
+# Unit: MB
+czp_size="500"
+
+# Functions
+USAGE() {
+    echo "$ocs - To create two partitions on disk"
+    echo "This program is to create two partitions on disk, 1st one has file system ext4, and 2nd one has NTFS"
+    echo "(1) 1st partition: ext4, default is $czp_size MB."
+    echo "(2) 2nd partition: NTFS, the rest of disk"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] DISK"
+    echo "Options:"
+    echo "-b, -batch, --batch       Batch mode. Dangerous! Use carefully!"
+    echo "-s, --skip-check-usb      Skip checking if Clonezilla live is from USB"
+    echo "-z|--1st-part-size  N     Create the 1st partition with size N MB."
+    echo "DISK is like \"sda\", \"sdb\" or \"sdc\", /dev/sda... /dev/sdb or /dev/sdc also works."
+    echo "Ex:"
+    echo "To create two partitions on /dev/sda, run:"
+    echo "   $ocs /dev/sda"
+    echo
+} # end of USAGE
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -b|-batch|--batch) batch_mode="on"; shift;;
+   -s|--skip-check-usb) check_from_usb="no"; shift;;
+   -z|--1st-part-size)
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+	     czp_size="$1"
+             shift;
+           fi
+           [ -z "$czp_size" ] && USAGE && exit 1
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+# Format the input disk, e.g., no mater it's /dev/sdc or sdc, make it as sdc
+chosen_hd=${1#/dev/*}  # e.g., sdc
+
+check_if_root
+ask_and_load_lang_set
+
+#
+if [ -z "$chosen_hd" ]; then
+  USAGE
+  exit 1
+fi
+
+dst_disk="/dev/$chosen_hd"
+
+if [ ! -b "$dst_disk" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$dst_disk not found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+if ! is_whole_disk $dst_disk; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$dst_disk is not a disk name!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+if [ "$check_from_usb" = "yes" ]; then
+  if readlink "/sys/block/${chosen_hd}" | grep -q usb; then
+    echo "$dst_disk is a USB device."
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Disk $dst_disk is not USB device!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+fi
+
+#
+PT_TMP="$(mktemp /tmp/pt-tmp.XXXXXX)"
+
+# partition
+cat <<-EOF > $PT_TMP 
+,${czp_size}MB,L,*
+,,7
+EOF
+
+if [ "$batch_mode" != "on" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Are you sure you want to create the partition table in $dst_disk?"
+  echo "--------------------------------------------"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  parted -s $dst_disk print
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "--------------------------------------------"
+  confirm_continue_no_default_answer
+  echo $msg_delimiter_star_line
+  # 2nd confirmation
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_let_me_ask_you_again."
+  echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
+  echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten: $dst_disk" | tee --append ${OCS_LOGFILE}
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  confirm_continue_no_default_answer
+fi
+
+# create the partition
+sfdisk -f $dst_disk < $PT_TMP
+rs=$?
+if [ "$rs" -ne 0 ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Failed to create partition table on $dst_disk."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+else
+  echo "The created partition table on $dst_disk:"
+  echo "--------------------------------------------"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  parted -s $dst_disk print
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "--------------------------------------------"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+fi
+
+# clean temp file
+[ -e "$PT_TMP" ] && rm -f $PT_TMP
+
+echo "Now format the file system on 1st and 2nd partition..."
+# TODO: for multi-path device.
+echo "--------------------------------------------"
+echo "Format ext4 for /dev/${chosen_hd}1..."
+mkfs.ext4 /dev/${chosen_hd}1
+echo "--------------------------------------------"
+echo "Format ntfs for /dev/${chosen_hd}2..."
+mkfs.ntfs -f /dev/${chosen_hd}2
+
+echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+echo "The created partition table on $dst_disk:"
+echo "--------------------------------------------"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+parted -s $dst_disk print
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "--------------------------------------------"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
