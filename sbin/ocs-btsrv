@@ -122,6 +122,11 @@ start_bt_srv() {
   fi
   echo "Using IP address \"$btsrv_ip\" for BT server..."
 
+  if [ "$metainfo_creator" = "ezio-ptcl" ]; then
+    get_ptcl_to_torrent_prog # get $ptcl_2_torrent_prog
+    # Overwrite it by $ptcl_2_torrent_prog
+    metainfo_creator="$ptcl_2_torrent_prog"
+  fi
   ezio_start_seeding_param=""
   ct_pid_log_prefix=""
   for ipt in $parts; do
@@ -141,6 +146,10 @@ start_bt_srv() {
       cmd_make_metainfo="ctorrent -t -p -c For_Clonezilla -l ${p_length_ctorrent} -u http://${btsrv_ip}:$port_b/announce -s $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
     elif [ "$metainfo_creator" = "transmission-create" ]; then
       cmd_make_metainfo="transmission-create -s ${p_length_transmission} -p -c For_Clonezilla -t http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
+    elif [ "$metainfo_creator" = "gen-torrent-from-ptcl" -o \
+           "$metainfo_creator" = "partclone_create_torrent.py" ]; then
+      # E.g., gen-torrent-from-ptcl -p sda1 -t http://192.168.1.1:6969/announce -c Clonezilla -i /home/partimag/btzone/xenial-20180722/torrent.info -o /home/partimag/btzone/xenial-20180722/sda1.torrent
+      cmd_make_metainfo="$ptcl_2_torrent_prog -p "$(to_filename $ipt)" -t http://${btsrv_ip}:${port_b}/announce -c Clonezilla -i $ocsroot_btzone/$idir/torrent.info -o $ocsroot_btzone/${idir}.torrent"
     else
       cpu_no="$(LC_ALL=C grep -Ew "^processor[[:space:]]+" /proc/cpuinfo | wc -l)"
       cmd_make_metainfo="mktorrent -p -c For_Clonezilla -t ${cpu_no} -l ${p_length_mktorrent} -a http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
