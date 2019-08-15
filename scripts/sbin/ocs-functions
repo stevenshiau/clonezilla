@@ -13335,6 +13335,9 @@ create_bt_image_files_from_partclone_img() {
       | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
       | LC_ALL=C $cmd_partclone_extract
       retcodes=(${PIPESTATUS[@]})
+      # //NOTE// torrent.info will be created by partclone in
+      # $ocsroot_btzone/$tgt_dir/$img_file/
+      # (e.g., /home/partimag/btzone/xenial-x64-20190422/sda1/torrent.info)
     elif [ "$partclone_make_slice_opt" = "fusecopy" ]; then
       ## Method 2: Use Partclone >= 0.3.5 to mount uncompressed image as BT slices.
       # Somehow it's still slow. Therefore this method copy files from fuse dir to disk
@@ -13689,3 +13692,15 @@ force_TERM_as_linux_if_necessary() {
   echo "Setting the TERM as $TERM"
   export TERM="$TERM"
 } # end of force_TERM_as_linux_if_necessary
+#
+get_ptcl_to_torrent_prog(){
+  # ptcl_2_torrent_prog is global variable.
+  # Find if partclone_create_torrent.py or gen-torrent-from-ptcl
+  # partclone_create_torrent.py is from ezio package, while
+  # gen-torrent-from-ptcl is from clonezilla when ezio-static is used.
+  if type partclone_create_torrent.py &>/dev/null; then
+    ptcl_2_torrent_prog="partclone_create_torrent.py"
+  else
+    ptcl_2_torrent_prog="gen-torrent-from-ptcl"
+  fi
+} # end of get_ptcl_to_torrent_prog
