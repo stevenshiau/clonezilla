@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.35.11
+Version:	3.35.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Aug 16 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.12-drbl1
+  * Avoid torrent.info created by Partclone being included in the torrent
+    file. 
+
 * Thu Aug 15 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.11-drbl1
   * Modify parameters about BT in drbl-ocs.conf:
     Switch to use gen-torrent-from-ptcl (ezio-ptcl)
