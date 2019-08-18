@@ -37,7 +37,7 @@ USAGE() {
     echo "-c, --metainfo-creator PROG  Use PROG to create the metainfo (.torrent) file"
     echo "-f, --from-raw-dev           Force to read BT data from raw device. Default is from image"
     echo "-g, --log-dir DIR            Use DIR as the log dir. Default value is \"$btlog_dir\""
-    echo "-m, --max-client-no NO       Assign the client number as NO. When this number of clients finishes downloading, BT tracker will exit so that client will stop, too."
+    echo "-m, --max-client-no NO       Assign the client number as NO. When this number of clients finishes downloading, BT tracker will exit so that client will stop, too. (DEPRECATED!)"
     echo "-p, --bt-srv-ip  IP          Assign the IP address for using in tracker's URL. If not assigned, the IP address detected on the machine will be used"
     echo "-r, --bt-root DIR            Use DIR as the working dir. It's preceded to the files downloaded. Default value is \"$ocsroot_btzone\""
     echo "-t, --bt-client PROG         Use PROG instead of ctorrent as the bittorrent client program. Available PROG: ezio, ctorrent, lftp, btdownloadheadless, aria2c"
@@ -189,7 +189,12 @@ start_bt_srv() {
     log_file="$btlog_dir/${idir_name}-tracker.log"
     tracker_pid_log="$btlog_dir/${idir_name}-tracker.pid"
     if [ -n "$btclient_no" ]; then
-      btclient_no_opt="--tracker_max_completed $btclient_no"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "The option \"-m, --max-client-no\" for $ocs is deprecated! It won't be used for $ocs anymore." | tee --append ${OCS_LOGFILE}
+      echo "$msg_img_check_not_supported" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      #btclient_no_opt="--tracker_max_completed $btclient_no"
+      btclient_no_opt=""
     fi
     rm -f $d_file $log_file $tracker_pid_log
     # cmd_start_tracker="ocs-bttrack --port $port_b --dfile $d_file $btclient_no_opt --logfile $log_file --nat_check 0 --scrape_allowed full --allowed_dir $(dirname $(readlink -f $ocsroot_btzone/${idir}.torrent)) &"
