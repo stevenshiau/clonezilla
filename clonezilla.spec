@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.36.1
+Version:	3.36.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Aug 19 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.2-drbl1
+  * Rename the file torrent.info as something like sda1.torrent.info when
+    running BT from device mode in ocs-gen-bt-metainfo.
+    That file can be useful for debugging.
+
 * Sun Aug 18 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.1-drbl1
   * Deprecate the option -m for ocs-btsrv since we will switch to use kill
     to terminate the tracker.
