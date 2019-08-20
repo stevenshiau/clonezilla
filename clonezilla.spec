@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.36.3
+Version:	3.36.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Aug 20 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.4-drbl1
+  * stop_ocs_service of ocs-functions wrongly parses -m option.
+    Make PXE and uEFI netboot have same menu when stop_ocs_service is run
+    for NFSroot mode.
+  * Stop ocs-related services when lite service is done so that
+    poweroff/reboot will work smoothly.
+
 * Mon Aug 19 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.3-drbl1
   * Switch to use gen-torrent-from-ptcl to create torrent file from
     torrent.info, not using transmission-create anymore. This could
