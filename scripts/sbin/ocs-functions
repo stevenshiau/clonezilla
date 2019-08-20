@@ -7004,7 +7004,7 @@ check_target_parts() {
 }
 #
 stop_ocs_service() {
-  local to_gen_ssi_files="$1"
+  local to_gen_ssi_files
   local IP ihost
   local pxecfg grubcfg pxecfg_MAC grubcfg_MAC
   # By default this function kills drbl-ocs, but it can also be used to kill ocs-live-feed-img
@@ -7029,6 +7029,7 @@ stop_ocs_service() {
       *)   break ;;
     esac
   done
+  to_gen_ssi_files="$1"
 
   [ -z "$main_prog" ] && main_prog="$main_prog_def"
 
@@ -7078,13 +7079,14 @@ stop_ocs_service() {
     force_grub_efi_clients_boot_label clonezilla-live-client "Clonezilla-live"
     hide_reveal_grub_efi_ent "clonezilla-live-client" hide $GRUB_CONF
   else
+    # NFSroot mode
     remove_opt_in_pxelinux_cfg_block clonezilla ocs_opt
     remove_opt_in_grub_efi_cfg_block "clonezilla-se-client" ocs_opt
     # Update the description to avoid confusion:
     # (1) PXE
     force_pxe_clients_boot_label local "$local_os_menu_label"
     # (2) uEFI (GRUB)
-    force_grub_efi_clients_boot_label clonezilla-se-client "Clonezilla"
+    force_grub_efi_clients_boot_label local-disk
     hide_reveal_grub_efi_ent "clonezilla-se-client" hide $GRUB_CONF
   fi
   # prepare the HOSTNAME-IP-MAC table
