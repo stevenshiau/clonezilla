@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.36.4
+Version:	3.36.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Aug 21 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.5-drbl1
+  * Add boot parameter enforcing=0 for live system. This can make
+    poweroff/reboot more smoothly.
+  * Run "ocs-btsrv stop" instead of "ocs-live-feed-img stop". This should
+    keep the same mechanism for the previous versions in the boot menu
+    of clients.
+
 * Tue Aug 20 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.4-drbl1
   * stop_ocs_service of ocs-functions wrongly parses -m option.
     Make PXE and uEFI netboot have same menu when stop_ocs_service is run
