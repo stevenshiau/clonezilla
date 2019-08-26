@@ -2,7 +2,7 @@
 # Author: Steven Shiau (steven _at_ clonezilla org)
 # License: GPL
 # Description: A sample script to auto create partitions on a disk:
-# (1) 1st partition: ext4
+# (1) 1st partition: vfat (-f option can be used to assign different fs)
 # (2) 2nd partition: ntfs
 #
 # WARNING!!! WARNING!!! WARNING!!!
@@ -29,6 +29,8 @@ check_from_usb="yes"
 chosen_hd=""
 # Unit: MB
 czp_size="500"
+# File system for 1st partition.
+fs_1st_part_def="vfat"
 
 # Functions
 USAGE() {
@@ -41,6 +43,7 @@ USAGE() {
     echo "$ocs [OPTION] DISK"
     echo "Options:"
     echo "-b, -batch, --batch       Batch mode. Dangerous! Use carefully!"
+    echo "-f, --fs-1st-part FS      Format the 1st partition as FS. Assign it as vfat will work for uEFI booting. By default the 1st partition is formatted as $fs_1st_part_def."
     echo "-s, --skip-check-usb      Skip checking if Clonezilla live is from USB"
     echo "-z|--1st-part-size  N     Create the 1st partition with size N MB."
     echo "DISK is like \"sda\", \"sdb\" or \"sdc\", /dev/sda... /dev/sdb or /dev/sdc also works."
@@ -60,6 +63,15 @@ ocs=`basename $ocs_file`
 while [ $# -gt 0 ]; do
  case "$1" in
    -b|-batch|--batch) batch_mode="on"; shift;;
+   -f|--fs-1st-part)
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+	     fs_1st_part="$1"
+             shift;
+           fi
+           [ -z "$fs_1st_part" ] && USAGE && exit 1
+           ;;
    -s|--skip-check-usb) check_from_usb="no"; shift;;
    -z|--1st-part-size)
            shift; 
@@ -90,6 +102,7 @@ if [ -z "$chosen_hd" ]; then
 fi
 
 dst_disk="/dev/$chosen_hd"
+[ -z "$fs_1st_part" ] && fs_1st_part="$fs_1st_part_def"
 
 if [ ! -b "$dst_disk" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -173,8 +186,8 @@ fi
 echo "Now format the file system on 1st and 2nd partition..."
 # TODO: for multi-path device.
 echo "--------------------------------------------"
-echo "Format ext4 for /dev/${chosen_hd}1..."
-mkfs.ext4 /dev/${chosen_hd}1
+echo "Format ${fs_1st_part}  for /dev/${chosen_hd}1..."
+mkfs.${fs_1st_part} /dev/${chosen_hd}1
 echo "--------------------------------------------"
 echo "Format ntfs for /dev/${chosen_hd}2..."
 mkfs.ntfs -f /dev/${chosen_hd}2
