@@ -39,6 +39,7 @@ netmask_closed_lan="24"
 gwadd_closed_lan="192.168.169.254"
 ocs_sr_mode=""
 bt_raw_dev_psuedo_img_prefix="btraw-psdo"
+check_ocs_live="yes"
 
 # Functions
 USAGE() {
@@ -486,6 +487,10 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
 	    # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
   	    # XXXXXX OCS_OPT="$OCS_OPT -mdst $client_boot_mode"
   	    ;;
+      -icol|--ignore-check-ocs-live)
+  	    check_ocs_live="no"
+  	    OCS_OPT="$OCS_OPT -icol"
+  	    shift; n_shift=$((n_shift+1));;
       -*)   echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
             exit 2 ;;
@@ -672,14 +677,7 @@ stop_nat_service() {
   echo 0 > /proc/sys/net/ipv4/ip_forward
 } # end of stop_nat_service
 #
-task_start_feed_img_for_cast() {
-  local MCAST_TMP ans_ cast_dev_action 
-  local start_cmd
-  local OCS_OPT_PRE ocs_opt_dia
-  local rc_chkimg rc_final bt_metainfo_cmd
-  local castmode choose_term input_key input_key2 raw_dev_opt
-
-  #prompt_for_lite_server
+configure_net_and_dhcp_mode(){
   # If network setting is not configured. Ask
   # TODO: What if multiple IP addresses?
   configured_ip="$(get-all-nic-ip --all-ip-address)"
@@ -800,6 +798,18 @@ task_start_feed_img_for_cast() {
        exit 0
        ;;
   esac
+} # end of configure_net_and_dhcp_mode
+#
+task_start_feed_img_for_cast() {
+  local MCAST_TMP ans_ cast_dev_action 
+  local start_cmd
+  local OCS_OPT_PRE ocs_opt_dia
+  local rc_chkimg rc_final bt_metainfo_cmd
+  local castmode choose_term input_key input_key2 raw_dev_opt
+
+  #prompt_for_lite_server
+
+  configure_net_and_dhcp_mode
 
   MCAST_TMP=`mktemp /tmp/ocs_recovery_tmp.XXXXXX`
   trap "[ -f "$MCAST_TMP" ] && rm -f $MCAST_TMP" HUP INT QUIT TERM EXIT
@@ -1542,18 +1552,20 @@ force_TERM_as_linux_if_necessary
 
 #
 check_if_root
-check_if_in_clonezilla_live  # get $LIVE_MEDIA
-ask_and_load_lang_set
-
-# Check if we can find LIVE_MEDIA
-if [ -z "$LIVE_MEDIA" -o ! -d "$LIVE_MEDIA" ]; then
- [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
- echo "Failed to find root file system in $LIVE_MEDIA!"
- [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
- echo "Unable to let PXE client boot Clonezilla live."
- echo "$msg_program_stop!"
- exit 1
+if [ "$check_ocs_live" = "yes" ]; then
+  check_if_in_clonezilla_live  # get $LIVE_MEDIA
+  # Check if we can find LIVE_MEDIA
+  if [ -z "$LIVE_MEDIA" -o ! -d "$LIVE_MEDIA" ]; then
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+   echo "Failed to find root file system in $LIVE_MEDIA!"
+   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+   echo "Unable to let PXE client boot Clonezilla live."
+   echo "$msg_program_stop!"
+   exit 1
+  fi
 fi
+
+ask_and_load_lang_set
 
 # check DIA
 check_DIA_set_ESC $DIA
