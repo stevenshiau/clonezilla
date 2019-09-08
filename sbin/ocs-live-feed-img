@@ -68,7 +68,8 @@ USAGE() {
     echo " -mdst, --massive-deploy-source-type MODE  Assign massive deployment source type: from-image or from-device"
     echo " -mdst-img, --massive-deploy-source-type-img IMAGE  Assign massive deployment source image name. You have to make sure the file system in the source device is not modified, and the image dir already exists."
     echo " -bdt, --bt-dev-type MODE Assign BT device type: disk-2-mdisks or part-2-mparts" 
-    echo " -bsdf,--bt-src-dev-fsck  TYPE   Assign the type for fsck the source device: sfsck, fsck, fsck-y. Do not put \"-\" before the TYPE. It will confuse $ocs. Use it like: \"-bsdf fsck-y\""
+    echo " -bsdf, --bt-src-dev-fsck  TYPE   Assign the type for fsck the source device: sfsck, fsck, fsck-y. Do not put \"-\" before the TYPE. It will confuse $ocs. Use it like: \"-bsdf fsck-y\""
+    echo " -icol, --ignore-check-ocs-live   Skip checking if the working environment is Clonezilla live or not."
     echo
     echo "MODE is \"start\" or \"stop\""
     echo "IMAGE_NAME is the image dir name, not absolute path"
@@ -489,7 +490,6 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
   	    ;;
       -icol|--ignore-check-ocs-live)
   	    check_ocs_live="no"
-  	    OCS_OPT="$OCS_OPT -icol"
   	    shift; n_shift=$((n_shift+1));;
       -*)   echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
@@ -806,6 +806,7 @@ task_start_feed_img_for_cast() {
   local OCS_OPT_PRE ocs_opt_dia
   local rc_chkimg rc_final bt_metainfo_cmd
   local castmode choose_term input_key input_key2 raw_dev_opt
+  local pid1_prog
 
   #prompt_for_lite_server
 
@@ -1426,7 +1427,12 @@ CLIENT_END
   
   # Prepare the config for clients
   if ! systemctl status lighttpd >/dev/null 2>&1; then
-    systemctl start lighttpd | tee -a ${OCS_LOGFILE}
+    pid1_prog="$(LC_ALL=C ps -p 1 -o comm=)"
+    # In Singularity container, there is an issue to start systemd service because its PID=1 is sinit, not systemd.
+    case "$pid1_prog" in
+      *systemd*) systemctl start lighttpd | tee -a ${OCS_LOGFILE};;
+      *)         lighttpd -f /etc/lighttpd/lighttpd.conf | tee -a ${OCS_LOGFILE};;
+    esac
   fi
 
   # Prepare netboot required files and services
