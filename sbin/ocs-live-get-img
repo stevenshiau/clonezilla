@@ -13,6 +13,8 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
 # Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+#
+check_ocs_live="yes"
 
 # Functions
 USAGE() {
@@ -23,6 +25,7 @@ USAGE() {
     echo "This program is specially used in Clonezilla live to start restoring an image with multicast packets in clients."
     echo "Options:"
     echo "-b, --batch-mode   Run in batch mode"
+    echo "-icol, --ignore-check-ocs-live   Skip checking if the working environment is Clonezilla live or not."
     echo "SERVER is the multicast server IP address or FQDN, e.g. 192.168.25.111..."
     echo "If no SERVER is specified, a dialog menu will be shown."
     echo "Ex:"
@@ -164,6 +167,7 @@ OCS_LOGFILE="/var/log/${ocs}.log"
 while [ $# -gt 0 ]; do
  case "$1" in
    -b|--batch) ocs_batch_mode="on"; shift;;
+   -icol|--ignore-check-ocs-live) check_ocs_live="no"; shift;;
    -v|--verbose)
            verbose="on"
 	   shift;;
@@ -178,7 +182,9 @@ cast_srv="$1"
 [ -z "$cast_srv" ] && cast_srv="ask_user"
 #
 check_if_root
-check_if_in_clonezilla_live
+if [ "$check_ocs_live" = "yes" ]; then
+  check_if_in_clonezilla_live
+fi
 ask_and_load_lang_set
 
 # check DIA
