@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.36.10
+Version:	3.36.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-* Sun Sep 07 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.10-drbl1
+* Sun Sep 08 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.11-drbl1
+  * A workaround to start lighttpd when PID=1 program is not systemd, which
+    makes "systemctl start lighttpd" fail.
+  * Add the option "-icol" to ocs-live-get-img.
+  * Update the comments in singularity-debian-ocs.def.
+    Rename singularity-debian-ocs as singularity-debian-ocs.def.
+
+* Sat Sep 07 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.10-drbl1
   * Add an option -icol for ocs-live-feed-img which can be used to skip
     checking the running environment is Clonezilla live or not.
     Move the part about network configuration and dhcp mode as a function.
