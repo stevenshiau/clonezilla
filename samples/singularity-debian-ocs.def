@@ -1,0 +1,27 @@
+# Singularity recipe to build an image to run Clonezilla BT mode.
+# With this recipe, you can use the following command to build debian.simg:
+# singularity build debian.sif singularity-debian-ocs
+# Then start Clonezilla BT environment by:
+# singularity shell -p -e --writable-tmpfs -B /run debian.sif
+Bootstrap: docker
+From: debian:latest
+%runscript
+exec echo "Debian 10 image for use with Clonezilla BT mode"
+%files
+%environment
+export LC_ALL=C
+%labels
+AUTHOR steven@clonezilla.org
+%post
+apt-get update; apt-get -y install wget gnupg software-properties-common cpio
+wget http://drbl.org/GPG-KEY-DRBL
+apt-key add GPG-KEY-DRBL
+add-apt-repository -r 'deb http://cdn-fastly.deb.debian.org/debian buster main'
+add-apt-repository -r 'deb http://deb.debian.org/debian buster main'
+add-apt-repository 'deb http://free.nchc.org.tw/debian buster main non-free contrib'
+add-apt-repository 'deb http://free.nchc.org.tw/drbl-core drbl unstable live-unstable'
+apt-get update
+apt-get -y install drbl clonezilla ezio-static mktorrent transmission-cli ezio-static ocs-bttrack python-crypto python-libtorrent
+. /etc/drbl/drbl.conf
+apt-get -y install $PKG_FROM_DBN_WHICH_OCS_LIVE_MUST_HAVE
+mkdir -p /var/log /var/lock/ /var/lib /var/www/html /home/partimag/
