@@ -105,14 +105,20 @@ tgt_dev="$4"
 ask_and_load_lang_set $specified_lang
 
 if [ -z "$imgname" ]; then
-  echo "No EXISTING_IMAGE!"
+  echo "No EXISTING_IMAGE name was assigned!"
   echo "$msg_program_stop!"
   USAGE
   exit 1
 fi
 
+if [ ! -d "$ocsroot/$imgname" ]; then
+  echo "EXISTING_IMAGE $ocsroot/$imgname was NOT found!"
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
 if [ -z "$new_imgname" ]; then
-  echo "No NEW_IMAGE!"
+  echo "No NEW_IMAGE name was assigned!"
   echo "$msg_program_stop!"
   USAGE
   exit 1
@@ -158,6 +164,9 @@ if [ -d "$new_imghome/$new_imgname" -a -n "$new_imgname" -a \
   rm -f $new_imghome/$new_imgname/*
 fi
 mkdir -p $new_imghome/$new_imgname
+if [ -d "$ocsroot/btzone/$imgname" ]; then
+  mkdir -p $new_imghome/btzone/$new_imgname
+fi
 
 echo "Creating a temporary image based on image $imgname..."
 # Find the file to be linked, not be copied.
@@ -203,7 +212,6 @@ if [ -e "$LOGV_PARSE_CONF" ]; then
   done
   exec 3<&-
 fi
-
 # Softlink them
 for i in $PARTIMG_LIST $LV_LIST; do
   ( 
@@ -222,6 +230,35 @@ done
   fi
   done
 )
+
+# Copy BT files
+# For *.torrent and part dir, e.g., sda1.torrent, sda1
+# files example under $ocsroot/btzone/:
+#  ├── btraw-psdo-20190522-145631
+#  │   ├── 00-pseudo-img-note.txt
+#  │   ├── sda1.torrent
+#  │   ├── sda1.torrent.info
+#  │   └── sda2.torrent
+#  │   └── sda2.torrent.info
+#  └── xenial-x86-20171202-zst
+#      ├── Info-img-id.txt
+#      ├── sda1 (dir)
+#      └── sda1.torrent
+#      └── sda1.torrent.info
+if [ -d $new_imghome/btzone/$new_imgname ]; then
+  (
+  cd $new_imghome/btzone/$new_imgname 
+  for i in $ocsroot/btzone/$imgname/*; do
+    [ ! -e "$i" ] && continue
+    if [ -d "$i" ]; then
+      ln -fsv $i ./
+    fi
+    if [ -e "$i" ]; then
+      cp -v $i ./
+    fi
+  done
+  )
+fi
 
 # Modify the content of checksum info, e.g. "sda1.files-md5sum.info.gz"
 for i in $new_imghome/$new_imgname/*.files-*sum.info.gz; do
