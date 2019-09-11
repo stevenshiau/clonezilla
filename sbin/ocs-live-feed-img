@@ -59,7 +59,8 @@ USAGE() {
     echo " -s, --skip-hw-detect     Skip the hardware detection (kudzu, harddrake or discover)"
     echo " -n, --no-nfs-restart     Do not to restart nfs when start or stop $ocs (This is default)"
     echo " -f, --nfs-restart        Restart nfs when start or stop $ocs (Default is to restart nfs)"
-    echo " --mcast-iface  PORT      Specify the multicast seed ethernet port PORT (eth0, eth1, eth2...). Suppose clonezilla will try to find that for you, but in some case, you might want to specify that."
+    echo " -mcast-iface, --mcast-iface  PORT   Specify the multicast seed ethernet port PORT (eth0, eth1, eth2...). Suppose clonezilla will try to find that for you, but in some case, you might want to specify that."
+    echo " -bt-iface, --bt-iface  PORT         Specify the BT seed ethernet port PORT (eth0, eth1, eth2...). Suppose clonezilla will try to find that for you, but in some case, you might want to specify that."
     echo " -x, --full-duplex        Use full-duplex network with udpcast in multicast mode (faster, but does not work with network hub, only works in switch.)."
     echo " -dm, --dhcpd-mode  MODE  Assign the dhcp service mode: use-existing-dhcpd, start-new-dhcpd, auto-detect, no-dhcpd"
     echo " -md, --massive-deploy-mode MODE   Assign the mass deployment mode: broadcast, multicast, or bittorrent"
@@ -358,14 +359,14 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
   	    chk_chksum_for_files_in_dev="yes"
   	    OCS_OPT="$OCS_OPT -cmf"
   	    shift; n_shift=$((n_shift+1));;
-      --mcast-iface)
+      -mcast-iface|--mcast-iface|-bt-iface|--bt-iface)
   	    shift; n_shift=$((n_shift+1))
               if [ -z "$(echo $1 |grep ^-.)" ]; then
                 # skip the -xx option, in case 
-  	      eth_for_multicast="$1"
+  	      eth_for_cast="$1"
   	      shift; n_shift=$((n_shift+1))
               fi
-              [ -z "$eth_for_multicast" ] && USAGE && exit 1
+              [ -z "$eth_for_cast" ] && USAGE && exit 1
   	    ;;
       -um|--user-mode)
             shift; n_shift=$((n_shift+1))
@@ -498,6 +499,22 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
    esac
   done
 } # end of parse_ocs_live_feed_img_cmd_options_with_dash
+#
+get_cast_srv_ip() {
+  if [ -n "$eth_for_cast" ]; then
+    eth_for_deploy_packet="$eth_for_cast"
+  else
+    eth_for_deploy_packet="$(LC_ALL=C get-all-nic-ip -u)"
+  fi
+  if [ -z "$eth_for_deploy_packet" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE | tee -a ${OCS_LOGFILE}
+    echo "No network card was assigned for sending packets." | tee -a ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee -a ${OCS_LOGFILE}
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+  cast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_deploy_packet)"
+} # end of get_cast_srv_ip
 #
 config_netcard() {
   local status_done
@@ -1067,19 +1084,7 @@ task_start_feed_img_for_cast() {
   
     # When Clonezilla live runs as multicast feeding server, the uplink port is where the packets sending.
     # No matter it's multicast, broadcast or bt, we use that ethernet port
-    if [ -n "$eth_for_multicast" ]; then
-      eth_for_deploy_packet="$eth_for_multicast"
-    else
-      eth_for_deploy_packet="$(LC_ALL=C get-all-nic-ip -u)"
-    fi
-    if [ -z "$eth_for_deploy_packet" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE | tee -a ${OCS_LOGFILE}
-      echo "No network card was assigned for sending packets." | tee -a ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee -a ${OCS_LOGFILE}
-      echo "$msg_program_stop!"
-      exit 1
-    fi
-    cast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_deploy_packet)"
+    get_cast_srv_ip
   
     case "$md_source_type" in
       from-image) 
@@ -1371,7 +1376,7 @@ task_start_feed_img_for_cast() {
     rsync -a --exclude=*-ptcl-img.* --exclude=*.ntfs-img.* --exclude=*.dd-img.* $imagedir/$target_dir/* $img_no_fs_tmp | tee -a ${OCS_LOGFILE}
     if [ -d "$imagedir/btzone/$target_dir" ]; then
       mkdir -p $img_no_fs_tmp/btzone/$target_dir
-      rsync -a $imagedir/btzone/$target_dir/*.torrent $img_no_fs_tmp/btzone | tee -a ${OCS_LOGFILE}
+      rsync -a $imagedir/btzone/$target_dir/*.torrent $img_no_fs_tmp/btzone/$target_dir | tee -a ${OCS_LOGFILE}
     fi
     # TODO: partimage file name, or drop it?
     for ifile in $imagedir/$target_dir/*-ptcl-img.* \
@@ -1382,6 +1387,32 @@ task_start_feed_img_for_cast() {
       touch $img_no_fs_tmp/$fn
     done
     ( cd $img_no_fs_tmp
+      # The img_no_fs_tmp dir now contains a subdir btzone (if BT mode) and the clonezilla image files.
+      # E.g.:
+      #  -rw-r--r-- root/root       116 2019-09-11 13:13 00-pseudo-img-note.txt
+      #  -rw-r--r-- root/root      1067 2019-09-11 13:13 blkdev.list
+      #  -rw-r--r-- root/root       579 2019-09-11 13:13 blkid.list
+      #  drwxr-xr-x root/root         0 2019-09-11 13:13 btzone/
+      #  drwxr-xr-x root/root         0 2019-09-11 13:13 btzone/btraw-psdo-20190911-131338/
+      #  -rw------- root/root    161711 2019-09-11 13:13 btzone/btraw-psdo-20190911-131338/sda1.torrent
+      #  -rw-r--r-- root/root      2495 2019-09-11 13:13 clonezilla-img
+      #  -rw-r--r-- root/root       144 2019-09-11 13:13 dev-fs.list
+      #  -rw-r--r-- root/root         4 2019-09-11 13:13 disk
+      #  -rw-r--r-- root/root     97840 2019-09-11 13:13 Info-dmi.txt
+      #  -rw-r--r-- root/root       187 2019-09-11 13:13 Info-img-id.txt
+      #  -rw-r--r-- root/root     53419 2019-09-11 13:13 Info-lshw.txt
+      #  -rw-r--r-- root/root      4696 2019-09-11 13:13 Info-lspci.txt
+      #  -rw-r--r-- root/root       212 2019-09-11 13:13 Info-packages.txt
+      #  -rw-r--r-- root/root        65 2019-09-11 13:13 Info-saved-by-cmd.txt
+      #  -rw-r--r-- root/root         5 2019-09-11 13:13 parts
+      #  -rw-r--r-- root/root       512 2019-09-11 13:13 sda2-ebr
+      #  -rw-r--r-- root/root        36 2019-09-11 13:13 sda-chs.sf
+      #  -rw-r--r-- root/root   1048064 2019-09-11 13:13 sda-hidden-data-after-mbr
+      #  -rw-r--r-- root/root       512 2019-09-11 13:13 sda-mbr
+      #  -rw-r--r-- root/root       405 2019-09-11 13:13 sda-pt.parted
+      #  -rw-r--r-- root/root       366 2019-09-11 13:13 sda-pt.parted.compact
+      #  -rw-r--r-- root/root       250 2019-09-11 13:13 sda-pt.sf
+      #  -rw-r--r-- root/root        53 2019-09-11 13:13 swappt-sda5.info
       tar -cJf /var/www/html/img-wo-fs.tar.xz *
     )
     if [ -d "$img_no_fs_tmp" -a \
@@ -1392,7 +1423,8 @@ task_start_feed_img_for_cast() {
     cat <<-CLIENT_END > /var/www/html/ocs-client-run.conf
 pseudo_img="img-wo-fs.tar.xz"
 img_prefix="$target_dir"
-ocs_sr_opt="--ocsroot /tmp/ -l en_US.UTF-8 $OCS_OPT ${castmode}_${cast_dev_action} ocs_lite_pseudo_name $ocs_restore_dev"
+ocs_sr_opt="--ocsroot /tmp/ -l en_US.UTF-8 --batch $OCS_OPT ${castmode}_${cast_dev_action}"
+ocs_restore_dev="$ocs_restore_dev"
 CLIENT_END
     if [ -e "/var/www/html/img-wo-fs.tar.xz" -a -e "/var/www/html/ocs-client-run.conf" ]; then
       echo "Files /var/www/html/img-wo-fs.tar.xz and /var/www/html/ocs-client-run.conf created successfully:" | tee -a ${OCS_LOGFILE}
@@ -1417,8 +1449,7 @@ CLIENT_END
     # Interactive mode for clients.
     echo "Starting network booting mechanism for clients to enter Clonezilla live interactive mode..."
     # cast_srv_ip is required for generating uEFI netboot, a workaround for tftp to fix the dnsmasq issue for uEFI network boot clients. Check "drbl-gen-grub-efi-nb -t $cast_srv_ip" in function gen_ocs_live_netboot_conf
-    eth_for_deploy_packet="$(LC_ALL=C get-all-nic-ip -u)"
-    cast_srv_ip="$(LC_ALL=C drbl-get-ipadd $eth_for_deploy_packet)"
+    get_cast_srv_ip
   else
     echo "Unknown mode for ls_client_mode: $ls_client_mode"
     echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
