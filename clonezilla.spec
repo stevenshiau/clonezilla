@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.36.11
+Version:	3.36.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Sep 11 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.12-drbl1
+  * Add --dest-dev to ocs-live-get-img so that the destination disk in the
+    BT client can be different from the source disk.
+  * Add -bt-iface for ocs-live-feed-img so that the ethernet port can be
+    assigned in BT mode.
+
 * Sun Sep 08 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.11-drbl1
   * A workaround to start lighttpd when PID=1 program is not systemd, which
     makes "systemctl start lighttpd" fail.
