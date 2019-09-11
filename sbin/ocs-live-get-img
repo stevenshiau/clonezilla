@@ -35,6 +35,7 @@ USAGE() {
 } # end of USAGE
 #
 task_run_restoring() {
+  local new_img_flag
   network_config_if_necessary
   # No need for this. We have a tarball solution.
   #if ! mountpoint $ocsroot >/dev/null 2>&1; then 
@@ -101,7 +102,8 @@ task_run_restoring() {
   pseudo_img=""
   img_prefix=""
   ocs_sr_opt=""
-  . /tmp/ocs-client-run.conf
+  ocs_restore_dev=""
+  . /tmp/ocs-client-run.conf # Get the above variables.
   if [ -z "$pseudo_img" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "No pseudo_img was assigned in /tmp/ocs-client-run.conf!" | tee -a ${OCS_LOGFILE}
@@ -129,27 +131,49 @@ task_run_restoring() {
     echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
     exit 1
   fi
-  if [ -d "$/tmp/${img_prefix}" ]; then
+  new_img_flag="no"
+  if [ -d "/tmp/${img_prefix}" ]; then
     # If image already exists in /tmp, create a random dir.
-    image="$(mktemp -d /tmp/${img_prefix}.XXXXXX)"
+    image_abs_path="$(mktemp -d /tmp/${img_prefix}.XXXXXX)"
+    new_img_flag="yes"
   else
-    image="/tmp/${img_prefix}"
-    mkdir -p $image
+    image_abs_path="/tmp/${img_prefix}"
+    mkdir -p $image_abs_path
   fi
-  tar -xJf /tmp/$pseudo_img -C $image | tee -a ${OCS_LOGFILE}
-  if [ -d "$image/btzone" ]; then
-    mkdir -p /tmp/btzone/$(basename $image) | tee -a ${OCS_LOGFILE}
-    mv $image/btzone/*.torrent /tmp/btzone/$(basename $image) | tee -a ${OCS_LOGFILE}
+  ocs_restore_img="$(basename $image_abs_path)"
+  tar -xJf /tmp/$pseudo_img -C $image_abs_path | tee -a ${OCS_LOGFILE}
+  if [ "$new_img_flag" = "yes" ]; then
+     # We have to do the corresponding change for the new image name under btzone/
+     mv -v $image_abs_path/btzone/${img_prefix} $image_abs_path/btzone/$ocs_restore_img
+  fi
+  if [ -d "$image_abs_path/btzone" ]; then
+    mkdir -p /tmp/btzone/ | tee -a ${OCS_LOGFILE}
+    mv $image_abs_path/btzone/$ocs_restore_img /tmp/btzone/ | tee -a ${OCS_LOGFILE}
+    rmdir $image_abs_path/btzone/
   fi
   # Run restoring
   # Before running, replace the new created image name
-  ocs_sr_opt="$(echo $ocs_sr_opt | sed -r -e "s/ocs_lite_pseudo_name/$(basename $image)/g")"
-  if [ -n "$(ls -A $image 2>/dev/null)" ]; then
-    echo "Starting restoring..." | tee -a ${OCS_LOGFILE}
-    ocs-sr -os $cast_srv $ocs_sr_opt
+  if [ -z "$ocs_restore_img" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No image was assigned." | tee -a ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    my_ocs_exit 1
+  fi
+  if [ -n "$dest_dev" ]; then
+    # If it's assigned at runtime, use it. Otherwise use the one assigned from server.
+    ocs_restore_dev="$dest_dev"
+  fi
+  if [ -n "$(ls -A $image_abs_path 2>/dev/null)" ]; then
+    ocs_run_cmd="ocs-sr -os $cast_srv $ocs_sr_opt $ocs_restore_img $ocs_restore_dev"
+    echo "Starting restoring by:" | tee -a ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$ocs_run_cmd" | tee -a ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    eval $ocs_run_cmd
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Failed to find the correct pseudo image dir $image" | tee -a ${OCS_LOGFILE}
+    echo "Failed to find the correct pseudo image dir $image_abs_path" | tee -a ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop" | tee -a ${OCS_LOGFILE}
     exit 1
@@ -168,6 +192,16 @@ while [ $# -gt 0 ]; do
  case "$1" in
    -b|--batch) ocs_batch_mode="on"; shift;;
    -icol|--ignore-check-ocs-live) check_ocs_live="no"; shift;;
+   -d|--dest-dev) 
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             dest_dev="$1"
+             shift;
+           fi
+           [ -z "$dest_dev" ] && USAGE && exit 1
+           ;;
    -v|--verbose)
            verbose="on"
 	   shift;;
