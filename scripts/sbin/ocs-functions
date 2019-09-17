@@ -7935,9 +7935,9 @@ get_target_dir_name_when_checking_img_checksum() {
 } # end of get_target_dir_name_when_checking_img_checksum
 #
 rm_tmp_cnvt_img() {
-  # img_cnvt_flag is a global variable
-  [ -z "$img_cnvt_flag" ] && return 10
-  if [ "$img_cnvt_flag" -ge "1" ]; then
+  # img_cnvt_count is a global variable
+  [ -z "$img_cnvt_count" ] && return 10
+  if [ "$img_cnvt_count" -ge "1" ]; then
     if [ -d "$ocsroot/${target_dir}" -a \
          -n "$(echo $target_dir | grep -i "tmp-cnvted")" ]; then
       rm -rf "$ocsroot/${target_dir}" 
@@ -7951,17 +7951,33 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # (1) How about if target_hd is multi harddisks ? -> Won't supported. Too complicated.
   # (2) Add an option in create-ocs-tmp-img to assign the ocsroot
   # (3) Avoid multiple unicast clones to convert the same image.
-  #img_cnvt_flag="0"
-  local tmp_img_from_to_opt
+  # img_cnvt_count is a global variable for removing the temp converted image dir
+  local tmp_img_from_to_opt do_convert_flag
+  local dest_dev_
 
-  # Check if target disk name exists in the image.
-  tgtdisk_exist_flag=0
-  for i in $target_hd; do
+  # Check if target disk/part name exists in the image.
+  # It might be the image from disk or partition (including bare block device with file system) that we need to convert
+  if [ -n "$target_hd" ]; then
+    dest_dev_="$target_hd"
+  elif [ -n "$target_parts" ]; then
+    # E.g., /dev/md1 (bare block device with file system but without partition)
+    # Otherwise even if it's /dev/sda1, its disk name is /dev/sda.
+    dest_dev_="$target_parts"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No destination device was assigned. No way to convert the image."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    exit 1
+  fi
+
+  do_convert_flag="no"
+  for i in $dest_dev_; do
     if [ -z "$(echo "$dsksname_from_img" | grep -iEw "$i")" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "Target disk $i does not exist in the image saved from disk(s) \"$dsksname_from_img\"."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      tgtdisk_exist_flag=1
+      do_convert_flag="yes"
       break
     fi
   done
@@ -7969,58 +7985,60 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # If source_part exists, it means the image of a partition will be restored to different part.
   tmp_img_from_to_opt=""
   if [ -n "$source_part" ]; then
-    tgtdisk_exist_flag=1
+    do_convert_flag="yes"
     tmp_img_from_to_opt="-f $source_part -d $target_parts"
   fi
-  if [ "$tgtdisk_exist_flag" -eq 1 ]; then
-    # Some cases not supported:
-    # (1) Multicast clone.
-    # (2) Unicast clone with batch mode (Since maybe there will be more than 1 restoration, and they will create the same temp image, which will be in a mess.
-    # (3) source hardisk number is >= 2
-    # for BT, the port is assigned as "bt" from ocs-sr
-    if [ -n "$port" -a "$port" != "bt" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "$msg_create_cvrt_img_for_different_not_supported_in_multicast_mode $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      exit 1
-    fi
-    if [ "$src_dsk_no" -ge 2 ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "$msg_create_cvrt_img_for_more_than_2_disks_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      exit 1
-    fi
-    is_spawned_by_drbl_ocs $ocs_ppid
-    rc=$?
-    if [ "$rc" -eq 0 ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "$msg_create_cvrt_img_for_clonezilla_server_edition_client_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      exit 1
-    fi
-
-    # Creating a temp converted image:
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Creating a tmp Clonezilla image \"${target_dir}-tmp-cnvted\" based on the image \"$target_dir\" so that we can restore the image $target_dir (was saved from $dsksname_from_img) to $target_hd..."
-    echo "$msg_restored_OS_change_fstab_grub_conf"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    if [ "$ocs_batch_mode" != "on" ]; then
-      echo -n "$msg_press_enter_to_continue..."
-      read
-    fi
-    if [ -d "$ocsroot/${target_dir}-tmp-cnvted" -a \
-         -n "${target_dir}-tmp-cnvted" ]; then
-      rm -rf "$ocsroot/${target_dir}-tmp-cnvted" 
-    fi
-    create-ocs-tmp-img -or $ocsroot $tmp_img_from_to_opt $target_dir ${target_dir}-tmp-cnvted $dsksname_from_img $target_hd
-    # Change the ocsroot to /tmp now since create-ocs-tmp-img will create the image in /tmp
-    ocsroot="/tmp"
-    target_dir="${target_dir}-tmp-cnvted"
-    img_cnvt_flag="$(($img_cnvt_flag + 1))"
+  if [ "$do_convert_flag" = "no" ]; then
+    # Do nothing since there is no destination disk to be converted.
+    return 3
   fi
+  # Some cases not supported:
+  # (1) Multicast clone.
+  # (2) Unicast clone with batch mode (Since maybe there will be more than 1 restoration, and they will create the same temp image, which will be in a mess.
+  # (3) source hardisk number is >= 2
+  # for BT, the port is assigned as "bt" from ocs-sr
+  if [ -n "$port" -a "$port" != "bt" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$msg_create_cvrt_img_for_different_not_supported_in_multicast_mode $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    exit 1
+  fi
+  if [ "$src_dsk_no" -ge 2 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$msg_create_cvrt_img_for_more_than_2_disks_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    exit 1
+  fi
+  is_spawned_by_drbl_ocs $ocs_ppid
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$msg_create_cvrt_img_for_clonezilla_server_edition_client_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    exit 1
+  fi
+  # Not in the above 3 cases, do it.
+  # Creating a temp converted image:
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Creating a tmp Clonezilla image \"${target_dir}-tmp-cnvted\" based on the image \"$target_dir\" so that we can restore the image $target_dir (was saved from $dsksname_from_img) to $dest_dev_..."
+  echo "$msg_restored_OS_change_fstab_grub_conf"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  if [ "$ocs_batch_mode" != "on" ]; then
+    echo -n "$msg_press_enter_to_continue..."
+    read
+  fi
+  if [ -d "$ocsroot/${target_dir}-tmp-cnvted" -a \
+       -n "${target_dir}-tmp-cnvted" ]; then
+    rm -rf "$ocsroot/${target_dir}-tmp-cnvted" 
+  fi
+  create-ocs-tmp-img -or $ocsroot $tmp_img_from_to_opt $target_dir ${target_dir}-tmp-cnvted $dsksname_from_img $dest_dev_
+  # Change the ocsroot to /tmp now since create-ocs-tmp-img will create the image in /tmp
+  ocsroot="/tmp"
+  target_dir="${target_dir}-tmp-cnvted"
+  img_cnvt_count="$(($img_cnvt_count + 1))"
 } # end of create_temp_image_for_different_target_dev_name_if_necessary
 #
 check_mbr_gpt_partition_table() {
@@ -8276,7 +8294,11 @@ task_saveparts() {
   # find the target hd
   # maybe we will have one more hd (like hda1, hda2, hdb1, hdb3 -> hda, hdb)
   for ipart in $target_parts; do
+    # If ipart is bare block device without partition, e.g., sda with ext4, no partition sda1, not adding to target_hd list.
     hd_tmp="$(get_diskname $ipart)"
+    if is_bare_block_device_with_fs /dev/$hd_tmp; then
+      continue
+    fi
     if [ -z "$target_hd" ]; then
 	    target_hd="$hd_tmp"
     elif [ -z "$(echo $target_hd | grep -Ew "$hd_tmp" 2>/dev/null)" ]; then
@@ -8388,6 +8410,11 @@ task_saveparts() {
   # Save partition table
   for ihd in $target_hd; do
     check_integrity_of_partition_table_in_disk /dev/$ihd
+    if ! is_whole_disk /dev/$ihd; then
+      # E.g., a bare block device has file system (e.g., /dev/sda)
+      # in Clonezilla it is treated as a partition -> Skip saving partition table.
+      continue
+    fi
     echo -n "Reading the partition table for /dev/$ihd..." | tee --append $OCS_LOGFILE
     # No matter it's MBR or GPT, we use sfdisk to dump partition table since if dual boot (Mac OS, Linux) on Mac book, this partition table is required for Linux normally.
     # For sfdisk >=2.26, both GPT and MBR format are supported.
@@ -8598,7 +8625,7 @@ task_restoredisk() {
   local port="$3"
   local dsksname_from_img src_dsk_no dia_sel_opt tgt_dsk_no partition_table
   local pv_on_dsk
-  # img_cnvt_flag is a global variable
+  # img_cnvt_count is a global variable
 
   if [ "$target_dir" = "ask_user" ]; then
     get_target_dir_name_when_restoring_disk
@@ -9182,6 +9209,11 @@ task_restoreparts() {
   # Update initramfs here
   if [ "$do_update_initrd" = "yes" ]; then
     grub_cand_parts="$target_parts $processed_extended_parts"
+    if [ -z "$grub_partition" ]; then 
+      # E.g., restoreparts so there is no grub_partition assigned.
+      # Since option "-p" is used, this won't modify any unrelated partition.
+      grub_partition="auto"
+    fi
     echo "Running: ocs-update-initrd -p \"$grub_cand_parts\" $grub_partition" | tee --append $OCS_LOGFILE
     ocs-update-initrd -p "$grub_cand_parts" $grub_partition | tee --append $OCS_LOGFILE
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
@@ -9243,7 +9275,7 @@ task_restoreparts() {
     done
   fi
 
-  # Remove the temp converted image. //NOTE// Now target_dir is *-tmp-cnvted. img_cnvt_flag is just for insurance.
+  # Remove the temp converted image. //NOTE// Now target_dir is *-tmp-cnvted. img_cnvt_count is just for insurance.
   rm_tmp_cnvt_img
 
   #
@@ -11180,8 +11212,18 @@ is_partition() {
   local RE8='nvme[0-9]+n[0-9]+p+[0-9]+'
   local RE9='nbd[0-9]+p+[0-9]+'
   local rc=1
+  local fs_
 
-  if [ -n "$dev_" ]; then
+  if [ -z "$dev_" ]; then
+    return 1
+  fi
+  # The rule is: if there is file system on the bare block device, we treat it as a partition in Clonezilla.
+  # When there is file system on a bare block device (/dev/sda, /dev/md0, not /dev/sda1, /dev/nvme0n1p1...)
+  # -> It's a partition.
+  if is_bare_block_device_with_fs $dev_; then
+    # File system on a bare block device. Treat it as a partition.
+    rc=0
+  else
     echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9)$"
     rc=$?
   fi
@@ -11282,11 +11324,33 @@ get_diskname() {
   esac
 } # end of get_diskname
 #
+is_bare_block_device_with_fs() {
+  local dev_=${1#/dev/*} # Input is like /dev/sda, so dev_ becomes sda
+  local fs_
+  # A bare block device without partitions, but with file system
+  fs_="$(ocs-get-part-info /dev/$dev_ fs)"
+  if [ -n "$fs_" ]; then
+    return 0
+  else
+    return 1
+  fi
+} # end of is_bare_block_device_with_fs
+#
 is_whole_disk() {
   local dev_=${1#/dev/*} # Input is like /dev/sda, so dev_ becomes sda
+  local fs_
 
-  test "$dev_" = "$(get_diskname $dev_)"
-  return $?
+  # The rule is: if there is file system on the bare block device, we treat it as a partition in Clonezilla.
+  # When there is file system on a bare block device (/dev/sda, /dev/md0, not /dev/sda1, /dev/nvme0n1p1...)
+  # -> It's a partition.
+  if is_bare_block_device_with_fs $dev_; then
+    # File system on a bare block device. Treat it as a partition, so not a whole disk.
+    return 1
+  else
+    # Else condition, continue using another method
+    test "$dev_" = "$(get_diskname $dev_)"
+    return $?
+  fi
 } # end of is_whole_disk
 #
 to_dev_name() {
