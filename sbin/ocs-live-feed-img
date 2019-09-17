@@ -881,10 +881,10 @@ task_start_feed_img_for_cast() {
   rm -f /var/www/html/ocs-client-run.conf /var/www/html/img-wo-fs.tar.xz | tee -a ${OCS_LOGFILE}
   if [ "$ls_client_mode"  = "massive-deployment" ]; then
     if type ocs-bttrack &>/dev/null; then
-      # Enable from-device when ocs-bttrack exists, otherwise only from-image.
+      # Enable from-device (BT) when ocs-bttrack exists, otherwise only from-image.
       # Ask image massive deployment or BT onthefly
-      # former case: ocs_restore_img_name=ocs_img_name_or_src_dev
-      # latter case: ocs_source_dev=ocs_img_name_or_src_dev
+      # from-image: ocs_restore_img_name=ocs_img_name_or_src_dev
+      # from-device: ocs_source_dev=ocs_img_name_or_src_dev
       if [ -z "$md_source_type" ]; then
         TMP=$(mktemp /tmp/menu.XXXXXX)
         trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
@@ -905,129 +905,131 @@ task_start_feed_img_for_cast() {
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
     case "$md_source_type" in
-      from-image) ocs_restore_img_name="$ocs_img_name_or_src_dev";;
+      from-image)  ocs_restore_img_name="$ocs_img_name_or_src_dev";;
       from-device) ocs_source_dev="$ocs_img_name_or_src_dev";;
-               *) echo "Unknown type for md_source_type!"
-                  echo "$msg_program_stop!"
-                  exit 1
-		  ;;
+               *)  echo "Unknown type for md_source_type!"
+                   echo "$msg_program_stop!"
+                   exit 1
+		   ;;
     esac
     if [ -n "$md_source_type" ]; then
       OCS_OPT_PRE="$OCS_OPT_PRE -mdst $md_source_type"
     fi
 
-    # Ask image name first (disk or parts image) for from-image mode
-    # Image name
-    if [ "$ocs_restore_img_name" = "ask_user" ]; then
-      TMP=$(mktemp /tmp/menu.XXXXXX)
-      trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-      $DIA \
-      --backtitle "$msg_nchc_title" \
-      --title "$msg_start_clonezilla_mode" \
-      --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
-      "restoredisk" "$msg_clonezilla_restore_disk" \
-      "restoreparts" "$msg_clonezilla_restore_parts" \
-      2> $TMP
-      cast_dev_action="$(cat $TMP)"
-      [ -f "$TMP" ] && rm -f $TMP
-      # ocs_mode_prompt will be passed to the dialog about asking dev_type, OCS parameters...
-      ocs_mode_prompt="$cast_dev_action"
-      case "$cast_dev_action" in
-      "restoredisk")
-        ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
-        trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-        get_existing_disk_image $ANS_TMP rest-unenc
-        # the return name will be only one image name.
-        target_dir="$(cat $ANS_TMP)"
-        [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
-        dev_type="disk"
-        ;;
-      "restoreparts")
-        ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
-        trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-        get_existing_parts_image $ANS_TMP rest-unenc
-        # the return name will be only one image name.
-        target_dir="$(cat $ANS_TMP)"
-        [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
-        dev_type="parts"
-        ;;
-      *)
-        echo "Unknown mode for cast_dev_action: $cast_dev_action"
-        echo "$msg_program_stop!"
-        exit 1
-        ;;
-      esac
-      ocs_restore_img_name="$target_dir"  # Keep it for later use in run_again prompt
-    else
-      target_dir="$ocs_restore_img_name"
-    fi
-
-    # For from-device mode (BT onthefly)
-    if [ "$ocs_source_dev" = "ask_user" ]; then
-      if [ -z "$bt_dev_type" ]; then
+    case "$md_source_type" in
+    from-image) 
+      # Ask image name first (disk or parts image) for from-image mode
+      # Image name
+      if [ "$ocs_restore_img_name" = "ask_user" ]; then
         TMP=$(mktemp /tmp/menu.XXXXXX)
         trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
         $DIA \
         --backtitle "$msg_nchc_title" \
         --title "$msg_start_clonezilla_mode" \
         --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
-        "disk-2-mdisks" "$msg_disk_to_mdisk_by_BT" \
-        "part-2-mparts" "$msg_part_to_mpart_by_BT" \
+        "restoredisk" "$msg_clonezilla_restore_disk" \
+        "restoreparts" "$msg_clonezilla_restore_parts" \
         2> $TMP
-        bt_dev_type="$(cat $TMP)"
+        cast_dev_action="$(cat $TMP)"
         [ -f "$TMP" ] && rm -f $TMP
-      fi
-
-      # ocs_mode_prompt will be passed to the dialog about asking dev_type, OCS parameters...
-      ocs_mode_prompt="$bt_dev_type"
-      case "$bt_dev_type" in
-      "disk-2-mdisks")
-        if [ "$ocs_source_dev" = "ask_user" ]; then
-          # To get $target_hd
-          get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
-	  ocs_source_dev="$target_hd"
-        fi
-        dev_type="disk"
-        ;;
-      "part-2-mparts")
-        if [ "$ocs_source_dev" = "ask_user" ]; then
-          # To get $target_parts
-          get_target_parts_name_from_local_machine "$msg_local_source_part \n$msg_linux_parts_MS_mapping" $dia_sel_opt
-	  ocs_source_dev="$target_parts"
-        fi
-        dev_type="parts"
-        ;;
-      *)
-        echo "Unknown mode for bt_dev_type: $bt_dev_type"
-        echo "$msg_program_stop!"
-        exit 1
-        ;;
-      esac
-      if [ -n "$bt_dev_type" ]; then
-        OCS_OPT_PRE="$OCS_OPT_PRE -bdt $bt_dev_type"
-      fi
-      # Since the mode is decided, we can assign some variables now.
-      # Force set destination disk in the clients as the same one from this local machine, and the mode is BT
-      ocs_restore_dev="$ocs_source_dev"
-      massive_deploy_mode="bittorrent"
-      # When not in interactive mode, we have no idea what $dev_type is.
-      # However, we can tell from $ocs_restore_dev, e.g. sda -> disk, sda1 -> parts
-      # cast_dev_action is required for function start_ocs_service
-      # while target_hd or target_parts is required for function 
-      # multicast|bt_restoredisk and multicast|bt_restoreparts (hence for start_ocs_service)
-      first_ele="$(echo $ocs_restore_dev | awk -F" " '{print $1}')"
-      if is_whole_disk $first_ele; then
-        cast_dev_action="restoredisk"
+        # ocs_mode_prompt will be passed to the dialog about asking dev_type, OCS parameters...
+        ocs_mode_prompt="$cast_dev_action"
+        case "$cast_dev_action" in
+        "restoredisk")
+          ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+          trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+          get_existing_disk_image $ANS_TMP rest-unenc
+          # the return name will be only one image name.
+          target_dir="$(cat $ANS_TMP)"
+          [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
+          dev_type="disk"
+          ;;
+        "restoreparts")
+          ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+          trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+          get_existing_parts_image $ANS_TMP rest-unenc
+          # the return name will be only one image name.
+          target_dir="$(cat $ANS_TMP)"
+          [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
+          dev_type="parts"
+          ;;
+        *)
+          echo "Unknown mode for cast_dev_action: $cast_dev_action"
+          echo "$msg_program_stop!"
+          exit 1
+          ;;
+        esac
+        ocs_restore_img_name="$target_dir"  # Keep it for later use in run_again prompt
       else
-        cast_dev_action="restoreparts"
+        target_dir="$ocs_restore_img_name"
       fi
-    fi
+      ;;
+    from-device) 
+      # For from-device mode (BT onthefly) since ocs_source_dev is for from-device mode
+      if [ "$ocs_source_dev" = "ask_user" ]; then
+        if [ -z "$bt_dev_type" ]; then
+          TMP=$(mktemp /tmp/menu.XXXXXX)
+          trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+          $DIA \
+          --backtitle "$msg_nchc_title" \
+          --title "$msg_start_clonezilla_mode" \
+          --menu "$msg_clonezilla_is_free_and_no_warranty\n$msg_choose_mode:" 0 0 0 \
+          "disk-2-mdisks" "$msg_disk_to_mdisk_by_BT" \
+          "part-2-mparts" "$msg_part_to_mpart_by_BT" \
+          2> $TMP
+          bt_dev_type="$(cat $TMP)"
+          [ -f "$TMP" ] && rm -f $TMP
+        fi
+      
+        # ocs_mode_prompt will be passed to the dialog about asking dev_type, OCS parameters...
+        ocs_mode_prompt="$bt_dev_type"
+        case "$bt_dev_type" in
+        "disk-2-mdisks")
+          if [ "$ocs_source_dev" = "ask_user" ]; then
+            # To get $target_hd
+            get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
+            ocs_source_dev="$target_hd"
+          fi
+          dev_type="disk"
+          ;;
+        "part-2-mparts")
+          if [ "$ocs_source_dev" = "ask_user" ]; then
+            # To get $target_parts
+            get_target_parts_name_from_local_machine "$msg_local_source_part \n$msg_linux_parts_MS_mapping" $dia_sel_opt
+            ocs_source_dev="$target_parts"
+          fi
+          dev_type="parts"
+          ;;
+        *)
+          echo "Unknown mode for bt_dev_type: $bt_dev_type"
+          echo "$msg_program_stop!"
+          exit 1
+          ;;
+        esac
+        if [ -n "$bt_dev_type" ]; then
+          OCS_OPT_PRE="$OCS_OPT_PRE -bdt $bt_dev_type"
+        fi
+        # Since the mode is decided, we can assign some variables now.
+        # Force set destination disk in the clients as the same one from this local machine, and the mode is BT
+        ocs_restore_dev="$ocs_source_dev"
+        massive_deploy_mode="bittorrent"
+        # Prepare 3 variables: cast_dev_action, target_hd|target_parts for later use with start_ocs_service:
+        # cast_dev_action is required for function start_ocs_service
+        # while target_hd or target_parts is required for function 
+        # multicast|bt_restoredisk and multicast|bt_restoreparts (hence for start_ocs_service)
+        case "$bt_dev_type" in
+          "disk-2-mdisks") cast_dev_action="restoredisk" ;;
+          "part-2-mparts") cast_dev_action="restoreparts" ;;
+        esac
+      fi
+      ;;
+    esac
 
     if [ "$md_source_type" = "from-image" ]; then
       check_input_target_image "$ocsroot/$target_dir"
     fi
   
-    # Get target device for from-image mode
+    # Get target device for both from-image and from-device modes
     if [ -z "$ocs_restore_dev" -o \
             "$ocs_restore_dev" = "ask_user" ]; then
       # choose the only dev we want
@@ -1059,25 +1061,43 @@ task_start_feed_img_for_cast() {
          ;;
       esac
     else
+      # "ocs_restore_dev" is already assigned
       if [ -n "$dev_type" ]; then
         # In interactive mode, we know $dev_type is.
         case "$dev_type" in
-          "disk") target_hd="$ocs_restore_dev";;
-          "parts") target_parts="$ocs_restore_dev";;
+          "disk")  cast_dev_action="restoredisk"
+		   target_hd="$ocs_restore_dev"
+		   ;;
+          "parts") cast_dev_action="restoreparts"
+		   target_parts="$ocs_restore_dev"
+		   ;;
         esac
       else
-        # When not in interactive mode, we have no idea what $dev_type is.
-        # However, we can tell from $ocs_restore_dev, e.g. sda -> disk, sda1 -> parts
+        # Prepare 3 variables: cast_dev_action, target_hd|target_parts for later use with start_ocs_service:
         # cast_dev_action is required for function start_ocs_service
         # while target_hd or target_parts is required for function 
         # multicast|bt_restoredisk and multicast|bt_restoreparts (hence for start_ocs_service)
-        first_ele="$(echo $ocs_restore_dev | awk -F" " '{print $1}')"
-        if is_whole_disk $first_ele; then
-          cast_dev_action="restoredisk"
-          target_hd="$ocs_restore_dev"
-        else
-          cast_dev_action="restoreparts"
-          target_parts="$ocs_restore_dev"
+	# For BT mode, bt_dev_type is assigned. For multicast/broadcst mode, not yet?
+        case "$bt_dev_type" in
+          "disk-2-mdisks") cast_dev_action="restoredisk"
+                           target_hd="$ocs_restore_dev"
+		           ;;
+          "part-2-mparts") cast_dev_action="restoreparts"
+                           target_parts="$ocs_restore_dev"
+		           ;;
+        esac
+	# For cast_dev_action still can not be found at the moment.
+        # When not in interactive mode, we have no idea what $dev_type is.
+        # However, we can tell from $ocs_restore_dev, e.g. sda -> disk, sda1 -> parts
+	if [ -z "$cast_dev_action" ]; then
+          first_ele="$(echo $ocs_restore_dev | awk -F" " '{print $1}')"
+          if is_whole_disk $first_ele; then
+            cast_dev_action="restoredisk"
+            target_hd="$ocs_restore_dev"
+          else
+            cast_dev_action="restoreparts"
+            target_parts="$ocs_restore_dev"
+          fi
         fi
       fi
     fi
@@ -1186,9 +1206,8 @@ task_start_feed_img_for_cast() {
     case "$massive_deploy_mode" in
       multicast|broadcast) castmode="multicast";;
                bittorrent) castmode="bt";;
-  		      *) echo "$msg_program_stop!"
-  			 exit 1
-  			 ;;
+  		        *) echo "$msg_program_stop!"
+  			   exit 1;;
     esac
     [ "$massive_deploy_mode" = "broadcast" ] && udp_sender_extra_opt="$udp_sender_extra_opt --broadcast"
     if [ -n "$massive_deploy_mode" ]; then
