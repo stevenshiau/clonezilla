@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.36.12
+Version:	3.37.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Sep 17 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.1-drbl1
+  * Implement the code to work with bare block device with file system, e.g,
+    /dev/md0 with file system ext4. This type of device will be treated as
+    a partition.
+  * Format the inputted variable dest_dev of ocs-live-get-img as
+    device name without /dev, e.g. sda instead of /dev/sda
+  * Rewrite ocs-live-feed-img and ocs-functions so they are more readable.
+
 * Wed Sep 11 2019 Steven Shiau <steven _at_ clonezilla org> 3.36.12-drbl1
   * Add --dest-dev to ocs-live-get-img so that the destination disk in the
     BT client can be different from the source disk.
