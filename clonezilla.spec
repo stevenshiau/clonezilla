@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.1
+Version:	3.37.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 19 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.2-drbl1
+  * Bug fixed:The assigned IP address of eth port in
+    ocs-live-feed-img should be paswd to ocs-btsrv.
+
 * Tue Sep 17 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.1-drbl1
   * Implement the code to work with bare block device with file system, e.g,
     /dev/md0 with file system ext4. This type of device will be treated as
