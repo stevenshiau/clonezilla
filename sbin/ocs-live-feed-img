@@ -1567,9 +1567,14 @@ task_stop_feed_img_for_cast() {
   diskless_client_os="clonezilla-live"
   PXE_CONF="$PXELINUX_DIR/default"
   GRUB_CONF="$GRUB_EFINB_DIR/grub.cfg"
-  echo -n "Clean all the previous saved config file if they exist..."
-  clean_stale_node_pxe_cfg
-  clean_stale_node_grub_efi_cfg
+  if [ "$ocs_litesrv_netmode" != "no-dhcpd" ]; then
+    # This stop is before staring the ocs-live-feed-img, hence we have ocs_litesrv_netmode.
+    # When $ocs_litesrv_netmode is auto-detect, use-existing-dhcpd, or start-new-dhcpd,
+    # it means the netboot service exists, we have to clean it.
+    echo -n "Clean all the previous saved config file if they exist..."
+    clean_stale_node_pxe_cfg
+    clean_stale_node_grub_efi_cfg
+  fi
   service dnsmasq stop
   service lighttpd stop
   stop_nat_service
