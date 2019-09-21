@@ -6142,21 +6142,8 @@ udp_send_part_img() {
   [ -n "$verbose" ] && echo "done!"
 } # end of udp_send_part_img
 #
-mail_clonezilla_log_to_root() {
-  local mail_cli="$1"
-  # backup the log file so that it won't be overwritten, since we will run this function in background.
-  ocs_job_tmp="$(mktemp /tmp/ocs_job.XXXXXX)"
-  cp -af $ocs_log_dir/clonezilla-jobs.log $ocs_job_tmp
-  # mail the clonezilla log to root.
-  $mail_cli -s "Clonezilla report at `date +%F-%R`" root < $ocs_job_tmp
-  [ -f "$ocs_job_tmp" ] && rm -f $ocs_job_tmp
-}
-# function to feed multicast for restoring partitions
-feed_multicast_restoreparts() {
-  # This is for None-LVM parts
-  local tgt_dir="$1"
-  local tgt_parts="$2"
-  local time_to_pause_before_mail mail_client="" time_tag part_is_lvm
+get_mail_client_prog() {
+  # mail_client is a global variable.
   # prepare the mail client
   if type mutt &>/dev/null; then
     mail_client="mutt"
@@ -6165,6 +6152,24 @@ feed_multicast_restoreparts() {
   elif type mailx &>/dev/null; then
     mail_client="mailx"
   fi
+} # end of get_mail_client_prog
+#
+mail_clonezilla_log_to_root() {
+  local mail_cli="$1"
+  # backup the log file so that it won't be overwritten, since we will run this function in background.
+  ocs_job_tmp="$(mktemp /tmp/ocs_job.XXXXXX)"
+  cp -af $ocs_log_dir/clonezilla-jobs.log $ocs_job_tmp
+  # mail the clonezilla log to root.
+  $mail_cli -s "Clonezilla report at `date +%F-%R`" root < $ocs_job_tmp
+  [ -f "$ocs_job_tmp" ] && rm -f $ocs_job_tmp
+} # end of mail_clonezilla_log_to_root
+# function to feed multicast for restoring partitions
+feed_multicast_restoreparts() {
+  # This is for None-LVM parts
+  local tgt_dir="$1"
+  local tgt_parts="$2"
+  local time_to_pause_before_mail mail_client="" time_tag part_is_lvm
+  get_mail_client_prog # return $mail_client
   # Set the initial value for ipart and port.
   ipart=1
   port=$MULTICAST_PORT
@@ -6250,14 +6255,7 @@ feed_bittorrent_restoreparts() {
   tgt_dir="$1"
   tgt_parts="$2" # e.g. sda1, sda2...
 
-  # prepare the mail client
-  if type mutt &>/dev/null; then
-    mail_client="mutt"
-  elif type mail &>/dev/null; then
-    mail_client="mail"
-  elif type mailx &>/dev/null; then
-    mail_client="mailx"
-  fi
+  get_mail_client_prog # return $mail_client
   pt_no_lvm=""
   part_is_lvm="no"
   for partition in $tgt_parts; do
