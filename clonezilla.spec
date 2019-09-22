@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.3
+Version:	3.37.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.30.18, psmisc, udpcast, partclone >= 0.3.12, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.30.18, psmisc, udpcast, partclone >= 0.3.13, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Sep 22 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.4-drbl1
+  * Fix recovery Clonezilla live iso/zip issue with ocs-iso
+    and ocs-live-dev due to the recently modified syslinux
+    x86 and x64 path.
+    Thanks to Steeve Gagne for reporting this issue.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/331/
+
 * Sat Sep 21 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.3-drbl1
   * Use function to get the variable mail_client in ocs-functions
     so that it can be reused in both multicast and BT functions.
