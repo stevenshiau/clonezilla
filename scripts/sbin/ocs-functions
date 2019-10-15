@@ -3864,7 +3864,8 @@ task_postprocessing() {
   # (8) Unmount ecryptfs if necessary
   # (9) Remove some temp files
   # (10) Syncing - flush filesystem buffers
-  # (11) Reboot/poweroff/choose...
+  # (11) Play sound if assigned
+  # (12) Reboot/poweroff/choose...
 
   local mode="$1"
   local img_dir="$ocsroot/$2"
@@ -3959,6 +3960,14 @@ task_postprocessing() {
   #
   echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}
   sync;sync;sync | tee --append ${OCS_LOGFILE}
+
+  # Play sound
+  if [ "$ocs_play_sound" = "yes" ]; then
+    # TODO: use different sounds for return status from main job.
+    echo -n "Play sound $ocs_job_done_ok_sound..."
+    music123 -q $ocs_job_done_ok_sound
+    echo " done!"
+  fi
 
   # reboot/poweroff/choose...
   if [ "$ocs_sr_mode" != "interactive" ]; then
@@ -9934,6 +9943,7 @@ USAGE_common_general() {
     echo " -mp, --mount-point MOUNT_POINT Use NFS to mount MOUNT_POINT as directory ocsroot (ocsroot is assigned in drbl.conf)"
     echo " -or, --ocsroot DIR       Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
     echo " -p, --postaction [choose|poweroff|reboot|command|CMD]     When save/restoration finishes, choose action in the client, poweroff, reboot (default), in command prompt or run CMD"
+    echo " -ps, --play-sound        Play sound when the job is done."
     echo " -ns, --ntfs-progress-in-image-dir Save the ntfsclone progress tmp file in the image dir so that if cloning is in DRBL client, the progress can be check in the server (Default in to be put in local /tmp/, which is local tmpfs)."
     echo " -um, --user-mode [beginner|expert]      Specify the mode to use. If not specified, default mode is for a beginner."
     echo " -v, --verbose            Prints verbose information"
