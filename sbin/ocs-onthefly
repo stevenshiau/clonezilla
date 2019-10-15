@@ -26,6 +26,8 @@ NC_PORT_DEFAULT="9000"
 onthefly_2nd_confirm="yes"
 # Default not to create and inspect the checksum for files in the dev.
 chksum_for_files_in_dev="no"
+# Default not to play sound when job is done.
+ocs_play_sound="no"
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -2317,6 +2319,7 @@ set_ocs_onthefly_extra_param() {
     "-batch "   "$msg_ocs_onthefly_param_b" off \
     "-cmf "     "$msg_ocs_onthefly_param_cmf" off \
     "-v "       "$msg_ocs_onthefly_param_v" off \
+    "-ps "      "$msg_ocs_onthefly_param_ps" off \
     2> $OCS_PARAM_TMP
     # Ask about compression program for clone server
     if [ "$STATUS" = "clone_server" ]; then
@@ -2553,6 +2556,7 @@ parse_ocs_onthefly_cmd_options() {
               fi
               [ -z "$postaction" ] && USAGE && exit 1
               ;;
+      -ps|--play-sound) ocs_play_sound="yes"; shift ;;
       -q1|--force-to-use-dd) FORCE_TO_USE_DD="yes"; shift ;;
       -i|--filter)
               shift
@@ -3076,6 +3080,14 @@ fi
 
 echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}
 sync;sync;sync
+
+# Play sound
+if [ "$ocs_play_sound" = "yes" ]; then
+  # TODO: use different sounds for return status from main job.
+  echo -n "Play sound $ocs_job_done_ok_sound..."
+  music123 -q $ocs_job_done_ok_sound
+  echo " done!"
+fi
 
 if [ "$ocs_onthefly_mode" != "interactive" ]; then
   # Only when not in interactive mode we will run run_post_cmd_when_clone_end here.
