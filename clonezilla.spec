@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.4
+Version:	3.37.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.30.18, psmisc, udpcast, partclone >= 0.3.13, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.30.19, psmisc, udpcast, partclone >= 0.3.13, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,15 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Oct 15 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.5-drbl1
+  * An option "-ps" or "--play-sound" was added in expert mode so that when
+    Clonezilla job is done, a sound can be played.
+    Thanks to David McCracken (daveski at localnet com) for suggesting this.
+  * Bug fixed: machine-id should not be created in 2nd partition if it
+    exists due to the flag is not reset.
+    Thanks to czfan for reporting this issue:
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/ccb439f3da/
+
 * Sun Sep 22 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.4-drbl1
   * Fix recovery Clonezilla live iso/zip issue with ocs-iso
     and ocs-live-dev due to the recently modified syslinux
