@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.5
+Version:	3.37.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Oct 16 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.6-drbl1
+  * Exclude "-oracle" Linux kernel (e.g., linux-image-5.0.0-1004-oracle)
+    so that the generic kernel can be used in Clonezilla live.
+
 * Tue Oct 15 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.5-drbl1
   * An option "-ps" or "--play-sound" was added in expert mode so that when
     Clonezilla job is done, a sound can be played.
