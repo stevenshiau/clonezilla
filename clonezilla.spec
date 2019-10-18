@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.6
+Version:	3.37.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Oct 18 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.7-drbl1
+  * Only mail the results to root as MTA is running.
+
 * Wed Oct 16 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.6-drbl1
   * Exclude "-oracle" Linux kernel (e.g., linux-image-5.0.0-1004-oracle)
     so that the generic kernel can be used in Clonezilla live.
