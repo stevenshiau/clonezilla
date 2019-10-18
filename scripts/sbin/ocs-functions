@@ -6163,6 +6163,21 @@ get_mail_client_prog() {
   fi
 } # end of get_mail_client_prog
 #
+is_MTA_running(){
+  # Checking the MTA listening status
+  # root@debian:~# lsof -i :25
+  # COMMAND   PID        USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+  # exim4   26051 Debian-exim    3u  IPv4  90892      0t0  TCP localhost:smtp (LISTEN)
+  # exim4   26051 Debian-exim    4u  IPv6  90893      0t0  TCP localhost:smtp (LISTEN)
+  # Return value -> 0: MTA running, !=0: MTA not running.
+  if lsof -i :25 >/dev/null 2>&1; then
+    return 0
+  else
+    echo "No MTA is running. Skip mailing the results of Clonezilla job to root."
+    return 1
+  fi
+} # end of is_MTA_running
+#
 mail_clonezilla_log_to_root() {
   local mail_cli="$1"
   # backup the log file so that it won't be overwritten, since we will run this function in background.
@@ -6211,7 +6226,7 @@ feed_multicast_restoreparts() {
   # For 0-4, we estimate it as 120 secs totally.
   time_to_pause_before_mail="$((120+$SLEEP_TIME_AFTER_PART_CLONED+$NOTIFY_OCS_SERVER_TIME_LIMIT))"
   (
-   if [ -n "$mail_client" ]; then
+   if is_MTA_running && [ -n "$mail_client" ]; then
      sleep $time_to_pause_before_mail
      # Now all clients should finish all their jobs, we can mail now.
      mail_clonezilla_log_to_root $mail_client
@@ -6319,7 +6334,7 @@ feed_bittorrent_restoreparts() {
   # For 0-4, we estimate it as 120 secs totally.
   time_to_pause_before_mail="$((120+$SLEEP_TIME_AFTER_PART_CLONED+$NOTIFY_OCS_SERVER_TIME_LIMIT))"
   (
-   if [ -n "$mail_client" ]; then
+   if is_MTA_running && [ -n "$mail_client" ]; then
      sleep $time_to_pause_before_mail
      # Now all clients should finish all their jobs, we can mail now.
      mail_clonezilla_log_to_root $mail_client
