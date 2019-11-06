@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.7
+Version:	3.37.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Nov 06 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.8-drbl1
+  * Make create-ubuntu-live work for Ubuntu Focal.
+
 * Fri Oct 18 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.7-drbl1
   * Only mail the results to root as MTA is running.
 
