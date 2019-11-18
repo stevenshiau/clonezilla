@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.9
+Version:	3.37.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Nov 19 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.10-drbl1
+  * A workaround was added to avoid partclone wrongly detects device is
+    busy in Singularity environment:
+    https://github.com/sylabs/singularity/issues/4182
+    Otherwise Partclone will fail due to block device status not found
+
 * Fri Nov 08 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.9-drbl1
   * Add a workaround for singularity-debian-ocs.def so that
     the weird keyboard-configuration won't be asked interactively.
