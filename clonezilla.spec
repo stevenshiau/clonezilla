@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.11
+Version:	3.37.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.30.19, psmisc, udpcast, partclone >= 0.3.13, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.30.23, psmisc, udpcast, partclone >= 0.3.13, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Nov 19 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.12-drbl1
+  * Temporarily remove swift repository from the list of prep-ocsroot
+    since cloudfuse package is not maintained anymore.
+
 * Tue Nov 19 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.11-drbl1
   * Generate locales in the post script of singularity definition file
 
