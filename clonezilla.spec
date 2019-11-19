@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.10
+Version:	3.37.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Nov 19 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.11-drbl1
+  * Generate locales in the post script of singularity definition file
+
 * Tue Nov 19 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.10-drbl1
   * A workaround was added to avoid partclone wrongly detects device is
     busy in Singularity environment:
