@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.12
+Version:	3.37.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Nov 20 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.13-drbl1
+  * Remove nonempty from sshfs mouting
+    since fuse3 has used it by default.
+    Ref: https://github.com/libfuse/libfuse/commit/0bef21e8
+
 * Tue Nov 19 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.12-drbl1
   * Temporarily remove swift repository from the list of prep-ocsroot
     since cloudfuse package is not maintained anymore.
