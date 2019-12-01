@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.13
+Version:	3.37.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,8 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Dec 01 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.14-drbl1
+  * Fix expand tools from using the wrong filename for '.info' files.
+    See merge request stevenshiau/clonezilla!41
+
 * Wed Nov 20 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.13-drbl1
-  * Remove nonempty from sshfs mouting
+  * Remove nonempty from sshfs mounting
     since fuse3 has used it by default.
     Ref: https://github.com/libfuse/libfuse/commit/0bef21e8
 
