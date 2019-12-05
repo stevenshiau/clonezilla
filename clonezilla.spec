@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.15
+Version:	3.37.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Dec 05 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.16-drbl1
+  * New upstream partclone_create_torrent.py, use python3:
+    https://raw.githubusercontent.com/tjjh89017/ezio/migrate_to_py3/utils/partclone_create_torrent.py
+  * Slightly improve BT return status so that ocs-live-feed-img won't
+    continue running the rest. Not finished, need improvements in the
+    future.
+
 * Tue Dec 03 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.15-drbl1
   * Add options -z7/-z8/-z8p/-z9/-z9p to drbl-ocs.
     Ref: https://sourceforge.net/p/drbl/bugs/22/
