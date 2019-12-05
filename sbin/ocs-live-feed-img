@@ -821,7 +821,7 @@ task_start_feed_img_for_cast() {
   local MCAST_TMP ans_ cast_dev_action 
   local start_cmd
   local OCS_OPT_PRE ocs_opt_dia
-  local rc_chkimg rc_final bt_metainfo_cmd
+  local rc_chkimg rc_final bt_metainfo_cmd rc_feed
   local castmode choose_term input_key input_key2 raw_dev_opt
   local pid1_prog
 
@@ -1321,7 +1321,16 @@ task_start_feed_img_for_cast() {
     start_cmd="start_ocs_service $cast_client_no_opt $raw_dev_opt -f -t \"${castmode}_${cast_dev_action}\" -o \"$target_dir $ocs_restore_dev\""
     echo "Running: $start_cmd"
     eval $start_cmd  # Do not put "| tee -a ${OCS_LOGFILE}". It will loop.
-    # TODO: Check return status, if failed, stop here.
+    rc_feed="$?"
+    # TODO: Check return status, if it fails, stop here. (not well written here)
+    if [ "$rc_feed" -ne 0 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Failed to start service by running:"
+      echo "$start_cmd"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      exit 1
+    fi
   
     if [ "$castmode" = "multicast" ]; then
       echo -n "Waiting for udp-sender service to be started... "
