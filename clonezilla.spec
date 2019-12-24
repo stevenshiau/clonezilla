@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.16
+Version:	3.37.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Dec 24 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.17-drbl1
+  * Let a bare block device with a file system (e.g, /dev/sda, not /dev/sda1),
+    which we treat as a partition, can be chosen as the destination disk
+    when not saving.
+
 * Thu Dec 05 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.16-drbl1
   * New upstream partclone_create_torrent.py, use python3:
     https://raw.githubusercontent.com/tjjh89017/ezio/migrate_to_py3/utils/partclone_create_torrent.py
