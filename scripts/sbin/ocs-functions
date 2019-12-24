@@ -8323,7 +8323,7 @@ task_saveparts() {
   for ipart in $target_parts; do
     # If ipart is bare block device without partition, e.g., sda with ext4, no partition sda1, not adding to target_hd list.
     hd_tmp="$(get_diskname $ipart)"
-    if is_bare_block_device_with_fs /dev/$hd_tmp; then
+    if is_block_device_with_fs /dev/$hd_tmp; then
       continue
     fi
     if [ -z "$target_hd" ]; then
@@ -11245,11 +11245,13 @@ is_partition() {
   if [ -z "$dev_" ]; then
     return 1
   fi
-  # The rule is: if there is file system on the bare block device, we treat it as a partition in Clonezilla.
+  # The rule is: when saving, if there is file system on the bare block device,
+  # we treat it as a partition in Clonezilla.
   # When there is file system on a bare block device (/dev/sda, /dev/md0, not /dev/sda1, /dev/nvme0n1p1...)
   # -> It's a partition.
-  if is_bare_block_device_with_fs $dev_; then
-    # File system on a bare block device. Treat it as a partition.
+  if [ -n "$(echo "$ocs_sr_type" | grep -Ei "save")" ] && \
+     is_block_device_with_fs $dev_; then
+    # File system on a bare block device when saving. Treat it as a partition.
     rc=0
   else
     echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9)$"
@@ -11352,26 +11354,29 @@ get_diskname() {
   esac
 } # end of get_diskname
 #
-is_bare_block_device_with_fs() {
+is_block_device_with_fs() {
   local dev_=${1#/dev/*} # Input is like /dev/sda, so dev_ becomes sda
   local fs_
-  # A bare block device without partitions, but with file system
+  # A bare block device without partitions, e.g., /dev/sda, but with file system
+  # However, here dev_ can be /dev/sda1, too.
   fs_="$(ocs-get-part-info /dev/$dev_ fs)"
   if [ -n "$fs_" ]; then
     return 0
   else
     return 1
   fi
-} # end of is_bare_block_device_with_fs
+} # end of is_block_device_with_fs
 #
 is_whole_disk() {
   local dev_=${1#/dev/*} # Input is like /dev/sda, so dev_ becomes sda
   local fs_
 
-  # The rule is: if there is file system on the bare block device, we treat it as a partition in Clonezilla.
+  # The rule is: when saving, if there is file system on the bare block device,
+  # we treat it as a partition in Clonezilla.
   # When there is file system on a bare block device (/dev/sda, /dev/md0, not /dev/sda1, /dev/nvme0n1p1...)
   # -> It's a partition.
-  if is_bare_block_device_with_fs $dev_; then
+  if [ -n "$(echo "$ocs_sr_type" | grep -Ei "save")" ] && \
+     is_block_device_with_fs $dev_; then
     # File system on a bare block device. Treat it as a partition, so not a whole disk.
     return 1
   else
