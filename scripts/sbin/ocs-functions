@@ -1323,7 +1323,7 @@ save_part_by_partclone() {
     cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -c -s $source_dev --output - | $compress_prog_opt"
   else
     # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-    cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
+    cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
   fi
   case "$VOL_LIMIT" in
     [1-9]*)
@@ -1494,7 +1494,7 @@ save_part_by_dd() {
     #
     ( 
       (
-        LC_ALL=C dd bs=1M if=$source_dev $dd_save_extra_opt
+        LC_ALL=C dd bs=${dd_buffer_size} if=$source_dev $dd_save_extra_opt
         echo $? > $dd_retcode_file
       ) \
       | $compress_prog_opt \
@@ -1549,7 +1549,7 @@ save_part_by_dd() {
     split_error="$(mktemp /tmp/split_error.XXXXXX)"
     trap "[ -f "$TMP" ] && rm -f $split_error" HUP INT QUIT TERM EXIT
 
-    cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
+    cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
     case "$VOL_LIMIT" in
       [1-9]*)
          # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary make the output file is like hda1.dd-img.aa, hda1.dd-img.ab. We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.$dd-img.001)
@@ -5441,7 +5441,7 @@ unicast_restore_by_partclone() {
     cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part"
   else
     # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when restoring
-    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -o $part"
+    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part"
   fi
   # partclone_hfsp does not put any header, so just cat them
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
@@ -5540,7 +5540,7 @@ unicast_restore_by_dd() {
         done
       ) \
       | ( $unzip_stdin_cmd ; echo $? > $unzip_retcode_file ) \
-      | ( LC_ALL=C dd bs=1M of=$part ; echo $? > $dd_retcode_file ) \
+      | ( LC_ALL=C dd bs=${dd_buffer_size} of=$part ; echo $? > $dd_retcode_file ) \
     ) 2>&1 \
     | tee $dd_img_info_tmp
     tail -n 30 "${dd_img_info_tmp}" >> ${OCS_LOGFILE}
@@ -5585,7 +5585,7 @@ cat <<_EOT_ >> ${OCS_LOGFILE}
       done
     ) \
     | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
-    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -o $part
+    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
 _EOT_
     ( for img in $target_d/$img_file_prefix; do
         # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
@@ -5594,7 +5594,7 @@ _EOT_
       done
     ) \
     | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
-    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -o $part
+    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
     retcodes=(${PIPESTATUS[@]})
     
     if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
@@ -5751,7 +5751,7 @@ multicast_restore_by_partclone() {
     cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part"
   else
     # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when restoring
-    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -o $part"
+    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part"
   fi
 cat <<_EOT_ >> ${OCS_LOGFILE}
   $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
@@ -5810,7 +5810,7 @@ multicast_restore_by_dd() {
     dd_report_sig_pid=$!
     start_time="$(date +%s%N)"
     $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
-    LC_ALL=C dd bs=1M of=$part 2>&1 | tee $dd_img_info_tmp
+    LC_ALL=C dd bs=${dd_buffer_size} of=$part 2>&1 | tee $dd_img_info_tmp
     rc="${PIPESTATUS[0]}"
     end_time="$(date +%s%N)"
     kill -9 $dd_report_sig_pid &>/dev/null
@@ -5832,7 +5832,7 @@ multicast_restore_by_dd() {
     start_time="$(date +%s%N)"
     # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
     $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
-    LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -o $part
+    LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
     rc="$?"
     end_time="$(date +%s%N)"
     # sync_and_active_exec_files
