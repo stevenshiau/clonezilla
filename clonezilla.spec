@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.18
+Version:	3.37.19
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jan 28 2020 Steven Shiau <steven _at_ clonezilla org> 3.37.19-drbl1
+  * Move the stdout (-) to the last option for lrzip.
+
 * Thu Dec 26 2019 Steven Shiau <steven _at_ clonezilla org> 3.37.18-drbl1
   * Add Variables for the buffer size of dd & partclone.dd in drbl-ocs.conf:
     dd_buffer_size & partclone_dd_bs.
