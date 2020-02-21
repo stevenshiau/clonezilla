@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.19
+Version:	3.37.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Feb 21 2020 Steven Shiau <steven _at_ clonezilla org> 3.37.20-drbl1
+  * Bug fixed TYPE=isw_raid_member should not be a supported file system for
+    ocs-get-part-info to give. Thanks to Domenic DiSorbo for reporting this
+    issue.
+
 * Tue Jan 28 2020 Steven Shiau <steven _at_ clonezilla org> 3.37.19-drbl1
   * Move the stdout (-) to the last option for lrzip.
 
