@@ -195,6 +195,11 @@ get_fs_from_blkid() {
     # PARTUUID=0004b3fb-1e
     # //NOTE// "TYPE" in the output of blkid is actually for file system.
     TYPE="$(LC_ALL=C blkid -o export -c /dev/null $part_ | grep -E "^TYPE=.*" | sed -r -e "s|^TYPE=||")"
+    # If the result of TYPE is isw_raid_member, clean it 
+    # since it's not really a file system which Clonezilla can process.
+    if [ -n "$(echo "$TYPE" | grep -iE "(isw_raid_member|linux_raid_member)")" ]; then
+       TYPE=""
+    fi
     # If the result is vfat, it's too fuzzy, since there are fat12/fat16/fat32, and partimage does not support fat12.
     if [ -n "$(echo $TYPE | grep -iE "vfat")" ]; then
       if [ "$(file -Ls $part_ | grep -iw "fat" | grep -iw "12 bit")" ]; then
