@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.20
+Version:	3.37.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 01 2020 Steven Shiau <steven _at_ clonezilla org> 3.37.21-drbl1
+  * Fix the issue ocs-restore-mdisks failed to return to cmd:
+    https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/366eeabc42/
+    ocs-live-final-action was improved for usage.
+
 * Fri Feb 21 2020 Steven Shiau <steven _at_ clonezilla org> 3.37.20-drbl1
   * Bug fixed TYPE=isw_raid_member should not be a supported file system for
     ocs-get-part-info to give. Thanks to Domenic DiSorbo for reporting this
