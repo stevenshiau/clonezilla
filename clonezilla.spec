@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.37.21
+Version:	3.37.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.30.25, psmisc, udpcast, partclone >= 0.3.13, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.30.33, psmisc, udpcast, partclone >= 0.3.13, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Mar 02 2020 Steven Shiau <steven _at_ clonezilla org> 3.37.22-drbl1
+  * Improve ocs-restore-mdisks by adding option -a|--last-action to separate
+    the last action before it's finished.
+
 * Sun Mar 01 2020 Steven Shiau <steven _at_ clonezilla org> 3.37.21-drbl1
   * Fix the issue ocs-restore-mdisks failed to return to cmd:
     https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/366eeabc42/
