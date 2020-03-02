@@ -23,6 +23,9 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 batch_mode="false"
 # Option to separate fdisk action. See function separate_fdisk_in_another_step_first for more details.
 separate_fdisk="false"
+#
+do_lastaction="no"
+ocsmr_lastaction=""
 
 #
 USAGE() {
@@ -32,7 +35,8 @@ USAGE() {
     echo "IMAGE_NAME  The image name, i.e. the image dir in $ocsroot/"
     echo "DEV         The destination device name, e.g. sdc, sdd, sde..."
     echo "OPTION:"
-    echo "-b, -batch, --batch            Run in batch mode"
+    echo "-a, --last-action ACTION    Assign the last action as ACTION when $prog is finished, ACTION including: poweroff, reboot, cmd, choose, or a command like \"true\"."
+    echo "-b, -batch, --batch         Run in batch mode"
     echo "-p, --ocs-sr-param PARAM    Assign the parameters to be used in ocs-sr program."
     echo "-s, --separate-fdisk        Separate the fdisk action from the main program of restoring, i.e. run fdisk first for all the actions."
     echo "-um, --user-mode [beginner|expert]      Specify the mode to use."
@@ -112,6 +116,17 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -b|-batch|--batch) batch_mode="true"; shift;;
     -s|--separate-fdisk) separate_fdisk="true"; shift;;
+    -a|--last-action)
+            shift
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              ocsmr_lastaction="$1"
+              shift
+	      # Assigned by -a|--last-action, do it.
+              do_lastaction="yes"
+            fi
+            [ -z "$ocsmr_lastaction" ] && USAGE && exit 1
+	    ;;
     -p|--ocs-sr-param)
             shift
             # Here we accept the -xx option, since they are used by ocs-sr
@@ -203,8 +218,14 @@ if [ -z "$OCS_OPTS" ]; then
   [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
   run_again_flag="true"
 fi
-# Extract the postaction, like "-p poweroff", "-p choose" for later use, and for to use "-p true" ocs-sr.
-mdev_postact="$(echo $OCS_OPTS | grep -Ewo -- "-p[[:space:]]+[[:alpha:]+[[:space:]]+")"
+# Extract the postaction, like "-p poweroff", "-p choose" for later use, and for ocs-sr to use "-p true" only,
+# otherwise when ocs-sr is run with "-p choose", multiple ocs-sr will lead to multiplie same questions...
+mdev_postact="$(echo $OCS_OPTS | grep -Ewo -- "-p[[:space:]]+([^-]|$)+")"
+# mdev_postact is like: "-p true" or "-p poweroff" -> strip -p, make it as "true" or "poweroff"
+# When ocsmr_lastaction is not assigned, use mdev_postact to convert it.
+if [ -z "$ocsmr_lastaction" ]; then
+  ocsmr_lastaction="${mdev_postact#-p }"
+fi
 OCS_OPTS="$(echo $OCS_OPTS | sed -r -e "s|$mdev_postact|-p true|g")"
 
 # Run again prompt
@@ -213,10 +234,10 @@ if [ "$run_again_flag" = "true" ]; then
   run_again_bfname="/tmp/ocs-mdisk-batch-`date +%F-%H-%M`"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
   echo "PS. $msg_run_drbl_ocs_again_cmd"
-  echo "$prog -p \"$OCS_OPTS\" $image_name $tgt_dsks" | tee $run_again_fname
+  echo "$prog -a $ocsmr_lastaction -p \"$OCS_OPTS\" $image_name $tgt_dsks" | tee $run_again_fname
   echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
   echo "$msg_if_you_want_to_run_in_unattended_mode"
-  echo "$prog -b -p \"$OCS_OPTS\" $image_name $tgt_dsks" | tee $run_again_bfname
+  echo "$prog -b -a $ocsmr_lastaction -p \"$OCS_OPTS\" $image_name $tgt_dsks" | tee $run_again_bfname
   echo "$msg_ocs_sr_again_command_saved_filename: $run_again_bfname"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
@@ -325,9 +346,12 @@ for i in $tgt_dsks; do
   fi
 done
 
-# After ocs-sr is run, /var/lib/clonezilla/ocs-vars will be created, and ocs-live-final-action will honor that. However, here we should do the final action "$mdev_postact"
-# mdev_postact is like: "-p true" or "-p poweroff" -> strip -p, make it as "true" or "poweroff"
-# The command ocs-live-final-action will be called by the clonezilla live menu, not here.
-perl -pi -e "s/postaction=.*/postaction=\"${mdev_postact#-p }\"/g" /var/lib/clonezilla/ocs-vars
+# After ocs-sr is run, /var/lib/clonezilla/ocs-vars will be created, and ocs-live-final-action will honor that. However, here we should do the final action "$ocsmr_lastaction"
+perl -pi -e "s/postaction=.*/postaction=\"${ocsmr_lastaction}\"/g" /var/lib/clonezilla/ocs-vars
+# If do_lasttion is assigned by the command line option, do it. Otherwise let the command ocs-live-final-action be called by the clonezilla live menu (i.e., after ocs-restore-mdisks is finished), not here.
+if [ "$do_lastaction" = "yes" ]; then
+  ask_and_load_lang_set en_US.UTF-8
+  ocs-live-final-action
+fi
 
 my_ocs_exit 0
