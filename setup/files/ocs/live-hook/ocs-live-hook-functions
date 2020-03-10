@@ -708,7 +708,7 @@ get_unifont_bgf() {
   local tmp_wd bterm_unifont_udeb
   [ -z "$target_dir" ] && return 1
   tmp_wd="$(mktemp -d /tmp/unifont.XXXXXX)"
-  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-amd64/Packages.xz
+  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-${darch}/Packages.xz
   bterm_unifont_udeb="$(LC_ALL=C xzcat $tmp_wd/Packages.xz | sed -ne 's/^Filename: //p' | grep -Ew bterm-unifont)"
   # result like: pool/main/b/bterm-unifont/bterm-unifont_1.2_i386.udeb
   wget -P $tmp_wd $mirror_url/$bterm_unifont_udeb
@@ -771,7 +771,7 @@ get_non_free_net_firmware_for_ubuntu() {
     return 0
   fi
   tmp_wd="$(mktemp -d /tmp/nic_firmware.XXXXXX)"
-  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-amd64/Packages.xz
+  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-${darch}/Packages.xz
   # Find the firmware binary files.
   nic_firmware_udeb="$(LC_ALL=C xzcat $tmp_wd/Packages.xz | sed -ne 's/^Filename: //p' | grep -Ew "nic-firmware_.")"
   # result like: pool/main/l/linux-firmware/nic-firmware_1.78_all.udeb
@@ -831,4 +831,15 @@ append_live_boot_config() {
 # Added by Clonezilla live
 DISABLE_NTFS=false
 LB_END
-}
+} # end of append_live_boot_config
+#
+get_debian_pkg_arch() {
+  local uarch_ 
+  # darch is a global variable
+  uarch_="$(LC_ALL=C uname -m 2>/dev/null)"
+  case "$uarch_" in
+    x86_64) darch="amd64";;
+    x86) darch="i386";;
+    aarch64) darch="arm64";;
+  esac
+} #end of get_debian_pkg_arch
