@@ -11830,7 +11830,10 @@ output_blkid_info() {
 get_latest_kernel_ver_in_repository() {
   # Since we might run this on gutsy to create hardy live, so we can not use apt-cache to search that. Another approach is to use apt-file to do that. However, it looks like the file http://opensource.nchc.org.tw/ubuntu/dists/hardy/Contents-i386.gz which apt-file fetched is not updated with repository.
   local ktmp kver dist_path_chklist
+  local arch_s="$1"
   # release_kernel_ver is global variable
+  # If arch_s is not assigned, use amd64 as default.
+  [ -z "$arch_s" ] && arch_s="amd64"
 
   ktmp="$(mktemp -d /tmp/live_kver.XXXXXX || exit 1)"
   if [ -n "$(echo $mirror_url | grep -i "ubuntu")" ]; then
@@ -11841,8 +11844,8 @@ get_latest_kernel_ver_in_repository() {
     dist_path_chklist="$debian_dist"
   fi
   for i in $dist_path_chklist; do
-    echo "Downloading $mirror_url/dists/$i/main/binary-amd64/Packages.xz to finding latest kernel version..."
-    LC_ALL=C wget $wget_opt -P $ktmp/ $mirror_url/dists/$i/main/binary-amd64/Packages.xz
+    echo "Downloading $mirror_url/dists/$i/main/binary-${arch_s}/Packages.xz to finding latest kernel version..."
+    LC_ALL=C wget $wget_opt -P $ktmp/ $mirror_url/dists/$i/main/binary-${arch_s}/Packages.xz
     # The info in the Packages.xz is like:
     # Package: linux-image-4.8.0-1-686-pae-unsigned
     # Package: linux-image-4.8.0-1-686-unsigned
@@ -11869,7 +11872,7 @@ get_latest_kernel_ver_in_repository() {
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Warning!"
-    echo "Unable to find the latest kernel version in $mirror_url/dists/$i/main/binary-amd64/Packages.xz. Use the pre-defined one."
+    echo "Unable to find the latest kernel version in $mirror_url/dists/$i/main/binary-${arch_s}/Packages.xz. Use the pre-defined one."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo -n "$msg_press_enter_to_continue"
     read 
