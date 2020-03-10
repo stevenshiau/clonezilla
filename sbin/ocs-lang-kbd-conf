@@ -53,23 +53,26 @@ if [ -z "$live_keyboard_layouts" ]; then
   # (1) If bterm and uni fonts or jfbterm are available
   # (2) If it's not in serial console
   # (3) frambebuffer device exists
-  if [ -n "$fb_term" -a -z "$(grep -E "console=.*ttyS.*" /proc/cmdline)" ] && \
-     ([ -e /dev/fb/0 ] || [ -e /dev/fb0 ]); then 
-    case "$fb_term" in
-      "bterm")
-         export TERM=bterm
-         set +e
-         # bterm need full path command even it's in the PATH already.
-         bterm -l $LANG -f $uni_font `which ocs-langkbdconf-bterm`
-         set -e
-         ;;
-      "jfbterm")
-         export TERM=jfbterm
-         set +e
-         jfbterm -q -e ocs-langkbdconf-bterm
-         set -e
-         ;;
-    esac
+  # (4) CPU arch is x86/x86-64 since jfbterm does not work on aarch64.
+  if [ -n "$fb_term" ] && \
+     [ -z "$(grep -E "console=.*ttyS.*" /proc/cmdline)" ] && \
+     ([ -e /dev/fb/0 ] || [ -e /dev/fb0 ]) && \
+     [ -n "$(LC_ALL=C uname -m | grep -i x86)" ]; then 
+     case "$fb_term" in
+       "bterm")
+          export TERM=bterm
+          set +e
+          # bterm need full path command even it's in the PATH already.
+          bterm -l $LANG -f $uni_font `which ocs-langkbdconf-bterm`
+          set -e
+          ;;
+       "jfbterm")
+          export TERM=jfbterm
+          set +e
+          jfbterm -q -e ocs-langkbdconf-bterm
+          set -e
+          ;;
+     esac
   else
     # ocs-langkbdconf-bterm does keyboard config and language config. Here we have do the same 2 jobs. Otherwise locales will be empty and a lot of warnings will be shown when ruuning commands.
     force_TERM_as_linux_if_necessary
