@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.38.3
+Version:	3.38.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Mar 11 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.4-drbl1
+  * Bug fixed: To RAM option was not put in the large font+To RAM
+    boot menu.
+
 * Wed Mar 11 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.3-drbl1
   * put --distribution before --mode in the lb config in create-ubuntu-live. 
 
