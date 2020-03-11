@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.38.1
+Version:	3.38.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Mar 11 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.2-drbl1
+  * Improve get_latest_kernel_ver_in_repository to work with arm64.
+  * Put lb config --distribution in the beginning for create-*-live,
+    otherwise live-build 20191221 won't work.
+
 * Tue Mar 10 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.1-drbl1
   * Replace pzstd by zstdmt.
     Thanks to Lord65 (lord5319 _at_ gmail com) for this idea.
