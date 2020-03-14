@@ -54,7 +54,7 @@ USAGE() {
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
     echo "-d, --debian-dist [stable|testing|unstable|lenny|squeeze|wheezy|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
     echo "-e, --ramfs-size  SIZE  Use SIZE (bytes) as the size of RAM for working dir. Default is $ramfs_size_def."
-    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 586, 686, amd64 or arm64. If it's not assigned, $cpu_flavor_default will be used."
+    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 586, 686, amd64, arm64 or armhf. If it's not assigned, $cpu_flavor_default will be used."
     echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
     echo "-k, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
@@ -156,22 +156,43 @@ build_it() {
 	   # Add those x86 only packages
 	   pkgs="$pkgs $PKG_FROM_DBN_WHICH_OCS_LIVE_NEED_ARM64_ONLY"
 	   ;;
+    armhf) 
+           $pref lb config --bootloaders grub-efi
+           $pref lb config --binary-images iso
+	   # Add those armhf only packages
+	   pkgs="$pkgs $PKG_FROM_DBN_WHICH_OCS_LIVE_NEED_ARMHF_ONLY"
+	   ;;
   esac
   
   # This decide_MKSQUASHFS_OPTIONS function will output "export MKSQUASHFS_OPTIONS"
   decide_MKSQUASHFS_OPTIONS
+
+  # Options for kernel package version name and flavor, take "linux-image-5.4.0-4-amd64" as an example
+  # "linux-image-5.4.0-4" is assigned by "--linux-packages"
+  # "amd64" is assigned by "--linux-flavours"
   $pref lb config --linux-packages "${kernel_pkg}"
-  
-  # We force to use the specific CPU kernel.
-  $pref lb config --linux-flavours $cpu_flavor
   
   # For OS arch, we can build amd64 Debian on i386 Debian or vice versus.
   case "$cpu_flavor" in
-    686*|586*|486*) os_arch="i386";;
-    amd64)          os_arch="amd64";;
-    arm64)          os_arch="arm64";;
+    686*|586*|486*) os_arch="i386"
+	            lnx_flavor="$cpu_flavor"
+	            ;;
+    amd64)          os_arch="amd64"
+	            lnx_flavor="$cpu_flavor"
+	            ;;
+    arm64)          os_arch="arm64"
+	            lnx_flavor="$cpu_flavor"
+	            ;;
+    armhf)          os_arch="armhf"
+	            # Used for kernel like: linux-image-5.4.0-4-armmp-lpae
+	            lnx_flavor="armmp-lpae"
+	            ;;
   esac
   $pref lb config --architectures $os_arch
+
+  # We force to use the specific Linux kernel, e.g., linux-image-5.4.0-4-amd64, linux-image-5.4.0-4-armmp-lpae
+  $pref lb config --linux-flavours $lnx_flavor
+  
   $pref lb config --initsystem systemd
   
   # No memtest from debian, we will use the one from drbl since it's newer.

@@ -528,9 +528,11 @@ if [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootx64.efi" ]; then
    cpu_arch_type="x86"
 elif [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootaa64.efi"  ]; then
    cpu_arch_type="arm64"
+elif [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootarm.efi"  ]; then
+   cpu_arch_type="armhf"
 else
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "/EFI/boot/bootx64.efi or /EFI/boot/bootaa64.efi was not found in template Clonezilla live!"
+  echo "/EFI/boot/bootx64.efi, /EFI/boot/bootaa64.efi or /EFI/boot/bootarm.efi was not found in template Clonezilla live!"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "$msg_program_stop"
   exit 1
@@ -594,7 +596,7 @@ template_iso_size=0
 if [ "$template_mode" = "from-booting-live-media" ]; then
   # From boot media (clonezilla live), DEBIAN_ISO_TMP is LIVE_MEDIA
   # The dirs/files in Clonezilla live (x86):
-  # For arm64, only: EFI live
+  # For arm64/armhf, only: EFI live
   # -r--r--r--  Clonezilla-Live-Version
   # -r--r--r--  GPL
   # dr-xr-xr-x  .disk/
@@ -621,7 +623,7 @@ else
   # dr-xr-xr-x 1 root root 2.0K Nov 22 12:10 live/
   # -r--r--r-- 1 root root  36K Nov 22 12:10 md5sum.txt
   # We only need dirs: boot EFI isolinux live
-  # For arm64, only: EFI live
+  # For arm64/armhf, only: EFI live
   f_dir_chklist="boot EFI isolinux $sys_files_dir"
   for i in $f_dir_chklist; do 
     if [ -e "$DEBIAN_ISO_TMP/$i" ]; then
@@ -702,12 +704,12 @@ mkdir -p $USB_TMP/EFI/boot/
 # Copy the EFI boot files
 if [ "$live_efi_boot_loader" = "grub" ]; then
   if [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootia32.efi" -o -e "$DEBIAN_ISO_TMP/EFI/boot/bootx64.efi" -o \
-       -e "$DEBIAN_ISO_TMP/EFI/boot/bootaa64.efi" ]; then
+       -e "$DEBIAN_ISO_TMP/EFI/boot/bootaa64.efi" -o -e "$DEBIAN_ISO_TMP/EFI/boot/bootarm.efi" ]; then
     cp -af $DEBIAN_ISO_TMP/EFI $USB_TMP/
     cp -af $ocs_logo_grub2_img_png $USB_TMP/boot/grub/
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Warning! Missing /EFI/boot/bootia32.efi, /EFI/boot/bootx64.efi or /EFI/boot/bootaa64.efi in the template iso!"
+    echo "Warning! Missing /EFI/boot/bootia32.efi, /EFI/boot/bootx64.efi, /EFI/boot/bootaa64.efi or /EFI/boot/bootarm.efi in the template iso!"
     echo "uEFI booting won't work!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
@@ -976,10 +978,11 @@ if [ -n "$ocs_image" ]; then
     # For isolinux
     ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
   fi
-  # Dir /EFI/boot/ is for x86 and arm64 CPU arch
+  # Dir /EFI/boot/ is for x86, arm64 or armhf CPU arch
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
-    if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" -o -e "$USB_TMP/EFI/boot/bootaa64.efi" ]; then
+    if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" -o \
+	 -e "$USB_TMP/EFI/boot/bootaa64.efi" -o -e "$USB_TMP/EFI/boot/bootarm.efi" ]; then
       ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
@@ -994,10 +997,11 @@ else
     # For isolinux
     ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
   fi
-  # Dir /EFI/boot/ is for x86 and arm64 CPU arch
+  # Dir /EFI/boot/ is for x86, arm64 and armhf CPU arch
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
-    if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" -o -e "$USB_TMP/EFI/boot/bootaa64.efi" ]; then
+    if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" -o \
+	 -e "$USB_TMP/EFI/boot/bootaa64.efi" -o -e "$USB_TMP/EFI/boot/bootarm.efi" ]; then
       ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
