@@ -982,26 +982,27 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
 	   # Add those x86 only packages
 	   pkgs="$pkgs $PKG_FROM_DBN_WHICH_OCS_LIVE_NEED_X86_64_ONLY"
 	   ;;
-    arm64) 
-           $pref lb config --bootloaders grub-efi
-           $pref lb config --binary-images iso
-	   ;;
   esac
   
 
   # This decide_MKSQUASHFS_OPTIONS function will output "export MKSQUASHFS_OPTIONS"
   decide_MKSQUASHFS_OPTIONS
-  $pref lb config --linux-packages "${kernel_pkg}"
 
-  # We force to use the specific CPU kernel.
-  $pref lb config --linux-flavours $cpu_flavor
+  # Options for kernel package version name and flavor, take "linux-image-5.4.0-4-amd64" as an example
+  # "linux-image-5.4.0-4" is assigned by "--linux-packages"
+  # "amd64" is assigned by "--linux-flavours"
+  $pref lb config --linux-packages "${kernel_pkg}"
 
   # For OS arch, we can build amd64 Debian on i386 Debian or vice versus.
   case "$cpu_flavor" in
-    686*|586*|486*) os_arch="i386";;
-    amd64) os_arch="amd64";;
+    686*|586*|486*) os_arch="i386" ;; 
+    amd64)          os_arch="amd64" ;;
   esac
   $pref lb config --architectures $os_arch
+
+  # We force to use the specific Linux kernel, e.g., linux-image-5.4.0-4-amd64, linux-image-5.4.0-4-686-pae
+  $pref lb config --linux-flavours $cpu_flavor
+
   $pref lb config --initsystem $live_initsystem
 
   # No memtest from debian, we will use the one from drbl since it's newer.
