@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.38.4
+Version:	3.38.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.31.1, psmisc, udpcast, partclone >= 0.3.13, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.31.2, psmisc, udpcast, partclone >= 0.3.13, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Mar 14 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.5-drbl1
+  * Add support for creating Clonezilla live in armhf arch.
+
 * Wed Mar 11 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.4-drbl1
   * Bug fixed: To RAM option was not put in the large font+To RAM
     boot menu.
