@@ -11857,8 +11857,23 @@ get_latest_kernel_ver_in_repository() {
     # Package: linux-image-4.9.0-3-amd64-dbg
     # Package: linux-image-5.4.0-4-arm64-unsigned
     # Package: linux-image-5.4.0-4-armmp
+    # Ubuntu amd64:
+    # Package: linux-image-5.4.0-1002-oem
+    # Package: linux-image-5.4.0-14-lowlatency
+    # Package: linux-image-5.4.0-14-generic
+    # Package: linux-image-5.4.0-9-lowlatency
+    # Package: linux-image-5.4.0-9-generic
+    # Ubuntu arm64:
+    # Package: linux-image-5.4.0-14-generic
+    # Package: linux-image-5.4.0-14-snapdragon
+    # Ubuntu armhf:
+    # Package: linux-image-5.4.0-14-generic
+    # Package: linux-image-5.4.0-14-generic-lpae
     # ocs_live_exclude_kernels is from drbl-ocs.conf
-    kver="$(LC_ALL=C xzgrep -E '^Package: linux-image-[[:digit:]]+\.[[:digit:]]+.*-' $ktmp/Packages.xz | sort -r -V | uniq | head -n 1 | sed -r -e 's|^Package: linux-image-||g' | awk -F"-" '{print $1"-"$2}')" 
+    # We only want the kernel: 686, amd64, arm64, armmp, generic, generic-lpae
+    # They are assigned by "ocs_live_only_kernels" in drbl-ocs.conf 
+    ocs_live_kernel_filter="grep -E -- $ocs_live_only_kernels"
+    kver="$(LC_ALL=C xzgrep -E '^Package: linux-image-[[:digit:]]+\.[[:digit:]]+.*-' $ktmp/Packages.xz | $ocs_live_kernel_filter | sort -r -V | uniq | head -n 1 | sed -r -e 's|^Package: linux-image-||g' | awk -F"-" '{print $1"-"$2}')" 
 
     if [ -z "$kver" ]; then
       # Clean Packages.xz to avoid wget using another name like Packages.xz.1 then search the next again

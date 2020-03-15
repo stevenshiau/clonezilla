@@ -108,7 +108,7 @@ build_it(){
   # Since with squeeze or sid, we can use uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
   case "$cpu_flavor" in
     386|amd64) pkgs="$pkgs v86d";;
-    arm86) true;;
+    arm64) true;;
   esac
   # Adding libc6-i386 for AMD64 arch. This will allow 32-bit program to run on AMD64 arch.
   if [ "$cpu_flavor" = "amd64" ]; then
@@ -485,15 +485,25 @@ if [  "$debian_dist" = "xenial" -o \
       # Older Ubuntu linux (12.04-17.10) use linux-image-extra
       kernel_extra_pkg_prefix="linux-image-extra"
 else
-      # Newer Ubuntu linux (>=18.04) use linux-modules-extra
-      kernel_extra_pkg_prefix="linux-modules-extra"
+   case "$cpu_flavor" in
+     amd64|arm64) 
+	    # Newer Ubuntu linux (>=18.04) use linux-modules-extra, 
+	    # and only for i386, amd64 and arm64
+            kernel_extra_pkg_prefix="linux-modules-extra"
+	    ;;
+     386|armhf) true;;
+   esac
 fi
 if [ -n "$live_kernel_ver" ]; then
   kernel_pkg="linux-image-${live_kernel_ver}"
-  kernel_extra_pkg="${kernel_extra_pkg_prefix}-${live_kernel_ver}"
+  if [ -n "$kernel_extra_pkg_prefix" ]; then
+    kernel_extra_pkg="${kernel_extra_pkg_prefix}-${live_kernel_ver}"
+  fi
 else
   kernel_pkg="linux-image"
-  kernel_extra_pkg="${kernel_extra_pkg_prefix}"
+  if [ -n "$kernel_extra_pkg_prefix" ]; then
+    kernel_extra_pkg="${kernel_extra_pkg_prefix}"
+  fi
 fi
 
 # If version_no is not assigned, use date (Ex. 20070409)
