@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.38.5
+Version:	3.38.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 15 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.6-drbl1
+  * Improve get_latest_kernel_ver_in_repository to 
+    make get_latest_kernel_ver_in_repository work for creating
+    Debian-based and Ubuntu-based live system. 
+
 * Sat Mar 14 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.5-drbl1
   * Add support for creating Clonezilla live in armhf arch.
 
