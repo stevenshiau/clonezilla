@@ -10957,18 +10957,21 @@ fsck_partition() {
 #
 decide_MKSQUASHFS_OPTIONS() {
   # This function will output "export MKSQUASHFS_OPTIONS"
-  local sq_comp_opt
-  # exclude some stuffs from the squashfs root, since in Live system, we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
+  local assign_arch="$1"
+  local the_arch sq_comp_opt
+  # Exclude some stuffs from the squashfs root, since in Live system, 
+  # we will only use vmlinuz and initrd in /{casper,live}, not in the /boot/ in the squashfs.
   # "-comp xz -Xbcj x86" can be used when the CONFIG_SQUASHFS_XZ is on in kernel.
   # For "-Xbcj x86", refer to: http://kerneltrap.org/mailarchive/linux-fsdevel/2010/12/9/6887823
   # //NOTE// "-e boot" must be the last option if you want to append more.
   # live-build v5 has default to use "-comp xz", however, if we use "-Xbcj x86", the order must be: "-comp xz -Xbcj x86"
-  case "$(LC_ALL=C uname -m)" in
-     aarch64) 
-	     # ARM64 seems not working for "-Xbcj arm", so keep it blank.
-             sq_comp_opt="-comp xz";;
-     *)    
-             sq_comp_opt="-comp xz -Xbcj x86";;
+  if [ -z "$assign_arch" ]; then
+    the_arch="$(LC_ALL=C uname -m)"
+  fi
+  case "$the_arch" in
+     x86_64|i[346]86)  sq_comp_opt="-comp xz -Xbcj x86";;
+     *)                # ARM64 seems not working for "-Xbcj arm", so keep it blank.
+                       sq_comp_opt="-comp xz";;
   esac
   export MKSQUASHFS_OPTIONS="-b 1024k $sq_comp_opt -e boot"  
 } # end of decide_MKSQUASHFS_OPTIONS
