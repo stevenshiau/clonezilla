@@ -1,0 +1,392 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to swap the Linux kernel and modules 
+# in Clonezilla live.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+# Two types of kernel/modules packages are supported:
+# (1) From Debian or Ubuntu: linux-image & linux-modules debs. This works for Debian or Ubuntu-based Clonezilla live.
+# (2) From Rasbian: raspberrypi-kernel deb. This only works for Debian-based arm64/armhf Clonezilla live.
+# Type 1:
+up_url_prefix_ex="http://ports.ubuntu.com/ubuntu-ports/pool/universe/l/linux-raspi2/"
+lnx_img_mod_armhf_deb_ex="linux-image-5.4.0-1006-raspi2_5.4.0-1006.6_armhf.deb linux-modules-5.4.0-1006-raspi2_5.4.0-1006.6_armhf.deb"
+# Type 2:
+rpi_prefix_ex="http://archive.raspberrypi.org/debian/pool/main/r/raspberrypi-firmware/"
+rpi_ker_mod_deb_ex="raspberrypi-kernel_1.20200212-1_armhf.deb"
+# Type 3:
+uo_url_prefix_ex="http://free.nchc.org.tw/ubuntu/pool/main/l/linux-signed/ http://free.nchc.org.tw/ubuntu/pool/main/l/linux/"
+lnx_img_mod_amd64_deb_ex="linux-image-5.4.0-18-generic_5.4.0-18.22_amd64.deb linux-modules-5.4.0-18-generic_5.4.0-18.22_amd64.deb linux-modules-extra-5.4.0-18-generic_5.4.0-18.22_amd64.deb"
+uocs_zip_armhf_f_ex="clonezilla-live-20200315-focal-armhf.zip"
+uocs_zip_amd64_f_ex="clonezilla-live-20200315-focal-amd64.zip"
+docs_zip_armhf_f_ex="clonezilla-live-2.6.6-6-armhf.zip"
+rm_tmp_dir="no"
+verbose="off"
+# Default to use kernel7l.img which RPI 4.
+rpi_kernel="kernel7l.img"
+
+# //NOTE//
+# The dir list in Clonezilla live zip:
+# ├── boot
+# │   └── grub
+# ├── EFI
+# │   └── boot
+# ├── home
+# │   └── partimag
+# ├── live
+# │   └── squashfs-root -> When filesystem.squashfs is unsquashfsed.
+# ├── syslinux
+# └── utils
+
+#
+USAGE() {
+  echo "$ocs - To swap the Linux kernel and modules in Clonezilla live zip file"
+  echo "Usage:"
+  echo "To run $ocs:"
+  echo "$ocs [OPTION] CLONEZILLA_LIVE_ZIP_FILE KERNEL_DEB [MOD_DEB 1] [MOD_DEB 2]..."
+  echo "Options:"
+  echo "-p, --rpi-kernel KERNEL   Assign the kernel to be swapped as KERNEL (only for the one from Raspbian)."
+  echo "The default is $rpi_kernel."
+  echo "-r, --rm-tmp-dir          Remove all the temp working dirs after the program is finished.."
+  echo "-v, --verbose             Verbose mode."
+  echo "CLONEZILLA_LIVE_ZIP_FILE is the Clonezilla live zip file, KERNEL_DEB is the kernel deb,"
+  echo "and 'MOD_DEB 1' is the 1st module deb file, and etc..."
+  echo "//NOTE// You have to download the kernel and modules deb packages in the working dir. Possible URLs:"
+  echo "$up_url_prefix_ex"
+  echo "$rpi_prefix_ex"
+  echo "$uo_url_prefix_ex"
+  echo "Ex:"
+  echo "To replace the kernel and modules in armhf $uocs_zip_armhf_f_ex by $lnx_img_mod_armhf_deb_ex, run:"
+  echo "   $ocs $uocs_zip_armhf_f_ex $lnx_img_mod_armhf_deb_ex"
+  echo
+  echo "To replace the kernel and modules in armhf $docs_zip_armhf_f_ex by $lnx_img_mod_armhf_deb_ex, run:"
+  echo "   $ocs $docs_zip_armhf_f_ex $lnx_img_mod_armhf_deb_ex"
+  echo
+  echo "To replace the kernel and modules in amd64 $uocs_zip_amd64_f_ex by $lnx_img_mod_amd64_deb_ex, run:"
+  echo "   $ocs $uocs_zip_amd64_f_ex $lnx_img_mod_amd64_deb_ex,"
+  echo
+} # end of USAGE
+#
+check_run_aim_cpu_arch() {
+  local running_arch
+  local aim_arch_zip_f="$1"
+  # Possible results from "uname -m": x86_64, i686, armv7l, aarch64
+  running_arch="$(LC_ALL=C uname -m)"
+  aim_arch_zip_f="$1"
+  case "$aim_arch_zip_f" in
+    *amd64*) aim_arch="x86_64";;
+    *i686*)  aim_arch="i686";;
+    *arm64*) aim_arch="aarch64";;
+    *armhf*) aim_arch="armv7l";;
+  esac
+  
+  if [ "$running_arch" != "$aim_arch" ]; then
+    if ! dpkg -s binfmt-support > /dev/null 2>&1 || \
+       ! dpkg -s qemu-user-static > /dev/null 2>&1; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "The running CPU arch is different from the version you are aiming at."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "Running one: $running_arch"
+      echo "Aiming one:  $aim_arch"
+      echo "You have to setup binfmt & Qemu environment if you want to run the program on different arch."
+      echo "For more info, please refer to: https://wiki.debian.org/QemuUserEmulation"
+      echo "Program terminated."
+      exit_this_program 1
+    fi
+  fi
+} # end of check_run_aim_cpu_arch
+#
+prep_squashfs_chroot() {
+  mkdir -p squashfs-root/boot/
+  mkdir -p squashfs-root/dev
+  mount --bind /dev squashfs-root/dev
+  mount --bind /proc squashfs-root/proc
+  mount --bind /sys squashfs-root/sys
+  if [ -d "squashfs-root/run" ]; then
+    mount --bind /run squashfs-root/run
+  fi
+} # end of prep_squashfs_chroot
+#
+release_squashfs_chroot() {
+  rmdir squashfs-root/boot/
+  umount squashfs-root/dev
+  umount squashfs-root/proc
+  umount squashfs-root/sys
+  umount squashfs-root/run
+} # end of release_squashfs_chroot
+#
+clean_tmp_dir_if_assigned() {
+  if [ "$rm_tmp_dir" = "no" ]; then
+    return 0
+  fi
+  cd $wd
+  if [ -e "$ocs_zip_tmpd" -a \
+       -n "$(echo $ocs_zip_tmpd | grep -Ew "ocs_zipt")" ]; then
+    rm -rf $ocs_zip_tmpd
+  fi
+  if [ -e "$wd_tmp" -a \
+       -n "$(echo $wd_tmp | grep -Ew "ocs_swapk")" ]; then
+    rm -rf $wd_tmp
+  fi
+} # end of clean_tmp_dir_if_assigned
+#
+exit_this_program() {
+  local rc="$1"
+  clean_tmp_dir_if_assigned
+  exit $rc
+} # end of exit_this_program
+#
+do_swap_kernel_and_module(){
+  echo $msg_delimiter_star_line
+  cd $ocs_zip_tmpd/live/
+  echo "Unsquashfs filesystem.squashfs..."
+  [ "$verbose" = "off" ] && unsq_vopt="-n"
+  unsquashfs $unsq_vopt filesystem.squashfs
+  if [ ! -d "squashfs-root" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to unsquashfs filesystem.squashfs."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated."
+    exit_this_program 1
+  fi
+  echo $msg_delimiter_star_line
+  echo "Removing old kernel modules in dir squashfs-root..."
+  lnx_ver_old="$(ls -1d squashfs-root/lib/modules/* | xargs basename)"
+  rm -rf $rm_vopt squashfs-root/lib/modules/*
+  echo "Updating modules in dir squashfs-root..."
+  [ "$verbose" = "on" ] && rsync_vopt="-vP"
+  cp_mod_cmd="rsync -a $rsync_vopt ../../$wd_tmp/lib/modules/ squashfs-root/lib/modules/"
+  echo "Running: $cp_mod_cmd"
+  eval $cp_mod_cmd
+  prep_squashfs_chroot
+  echo "Creating initramfs in dir squashfs-root..."
+  [ "$verbose" = "on" ] && undate_initramfs_vopt="-v"
+  update_initramfs_cmd="chroot squashfs-root update-initramfs $undate_initramfs_vopt -k $lnx_ver -c"
+  echo "Running: $update_initramfs_cmd"
+  eval $update_initramfs_cmd
+  if [ -e "squashfs-root/boot/initrd.img-$lnx_ver" ]; then
+    mv $mv_vopt squashfs-root/boot/initrd.img-$lnx_ver initrd.img
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to create squashfs-root/boot/initrd.img-$lnx_ver."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated."
+    release_squashfs_chroot
+    exit_this_program 1
+  fi
+  release_squashfs_chroot
+  echo $msg_delimiter_star_line
+  echo "Creating new filesystem.squashfs..."
+  mv $mv_vopt filesystem.squashfs ../../filesystem.squashfs-${lnx_ver_old}
+  [ "$verbose" = "off" ] && mksquashfs_vopt="-no-progress"
+  mksq_cmd="mksquashfs squashfs-root filesystem.squashfs $mksquashfs_vopt $MKSQUASHFS_OPTIONS"
+  echo "Running: $mksq_cmd"
+  eval $mksq_cmd
+  echo $msg_delimiter_star_line
+  if [ -e "filesystem.squashfs" ]; then
+    rm -rf $rm_vopt squashfs-root
+    cd ../
+    if [ -e "$wd/$dest_zip_f" ]; then
+      mv $mv_vopt $wd/$dest_zip_f $wd/${dest_zip_f}.orig
+    fi
+    echo "The kernel versions before and after are:" > live/kerel-vers.txt
+    echo "$lnx_ver_old -> $lnx_ver." >> live/kerel-vers.txt
+    echo "Packaging new Clonezilla live zip file..."
+    zip -o -r $wd/$dest_zip_f ./
+  fi
+} # end of do_swap_kernel_and_module
+#
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -r|--rm-tmp-dir)
+	   rm_tmp_dir="yes"
+	   shift;; 
+   -p|--rpi-kernel)
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             rpi_kernel="$1"
+             shift;
+           fi
+           [ -z "$rpi_kernel" ] && USAGE && exit 1
+           ;;
+   -v|--verbose)
+	   verbose="on"
+	   shift;; 
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+ocs_zip_f="$1"
+shift
+lnx_img_deb="$1"
+shift
+lnx_mod_deb="$*"
+
+check_if_root
+ask_and_load_lang_set
+
+if [ -z "$ocs_zip_f" -o -z "$lnx_img_deb" ]; then
+  USAGE
+  exit_this_program 1
+fi
+
+check_run_aim_cpu_arch
+
+wd="$(pwd)"
+ocs_zip_tmpd="$(mktemp -d ocs_zipt.XXXXXX)"
+wd_tmp="$(mktemp -d ocs_swapk.XXXXXX)"
+
+# I. Extact clonezilla zip file
+echo $msg_delimiter_star_line
+if [ -e "$ocs_zip_f" ]; then
+  echo "Unzip $ocs_zip_f..."
+  unzip -q $ocs_zip_f -d $ocs_zip_tmpd
+  # Decide mksquashfs option
+  if [ -n "$(echo $ocs_zip_f | grep -Ew "(686|386|amd64|x86-64)")" ]; then
+    arch="i386" # Use i386, it's the same type with 686/x86-64 in function decide_MKSQUASHFS_OPTIONS
+  elif [ -n "$(echo $ocs_zip_f | grep -Ew "arm.*")" ]; then
+    arch="arm" 
+  fi
+  # This decide_MKSQUASHFS_OPTIONS function will output "export MKSQUASHFS_OPTIONS"
+  decide_MKSQUASHFS_OPTIONS $arch
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Clonezilla zip file $ocs_zip_f was not found."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated."
+  exit_this_program 1
+fi
+
+if [ "$verbose" = "on" ]; then
+ rm_vopt="-v"
+ mv_vopt="-v"
+ cp_vopt="-v"
+fi
+
+# Check the packages and put in temp dir.
+echo $msg_delimiter_star_line
+for ideb in $lnx_img_deb $lnx_mod_deb; do
+  if [ -e "$ideb" ]; then
+    echo "Existing $ideb found. Use it."
+    ln -s -t $wd_tmp ../$ideb
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "File $ideb not found." 
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated."
+    exit_this_program 1
+  fi
+done
+
+# Check the mode
+# E.g.,
+# We have some debs:
+# Raspberry Pi: kernel+modules: raspberrypi-kernel_1.20200212-1_armhf.deb
+# Ubuntu: kernel:  linux-image-5.4.0-1006-raspi2_5.4.0-1006.6_armhf.deb,
+#         modules: linux-modules-5.4.0-1006-raspi2_5.4.0-1006.6_armhf.deb
+#                  linux-modules-extra (x86)
+# Debian kernel+modules: linux-image-5.4.0-4-armmp-lpae_5.4.19-1_armhf.deb
+if [ -n "$(echo $lnx_img_deb | grep -E "raspberrypi-kernel")" ]; then
+  mode="raspbian"
+else
+  mode="debian-ubuntu"
+fi
+
+echo $msg_delimiter_star_line
+# II. Process the kernel and modules debs.
+# A. Extract them.
+for ideb in $lnx_img_deb $lnx_mod_deb; do
+  echo "Extracting modules package $ideb..."
+  if [ -e "$wd_tmp/$ideb" ]; then
+    dpkg -x $wd_tmp/$ideb $wd_tmp/
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "File $ideb not found."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated."
+    exit_this_program 1
+  fi
+done
+
+# B. Find the kernel version
+echo $msg_delimiter_star_line
+case "$mode" in
+  "debian-ubuntu")
+       vmlnz="$(ls -1 $wd_tmp/boot/vmlinuz* | head -n 1)"
+       if [ -n "$vmlnz" ]; then
+         cp $cp_vopt $vmlnz $ocs_zip_tmpd/live/vmlinuz
+         lnx_ver="$(basename $vmlnz | sed -r -e "s/^vmlinuz-//g")"
+       else
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "Failed to find the existing kernel $vmlnz."
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo "Program terminated."
+         exit_this_program 1
+       fi
+       ;;
+  "raspbian")
+       # The content for raspberrypi-kernel_1.20200212-1_armhf.deb is like:
+       # ./boot/kernel.img   -> For Raspberry Pi 1, zero, Compute Module
+       # ./boot/kernel7.img  -> For Raspberry Pi 2, 3, Compute Module 3
+       # ./boot/kernel7l.img -> For Raspberry Pi 4
+       # ./boot/kernel8.img
+       # ./lib/modules/{4.19.97+,4.19.97-v7+,4.19.97-v7l+,4.19.97-v8+}
+       vmlnz="$wd_tmp/boot/$rpi_kernel"
+       rpi_mod_ver="$(echo $rpi_kernel | sed -r -e "s/^kernel//g" -e "s/\.img$//g")"
+       if [ -z "$rpi_mod_ver" ]; then
+         # For Raspberry Pi 1, zero, Compute Module, we want 4.19.97+ for example.
+         rpi_mod_fn_filter="ls -1d $wd_tmp/lib/modules/*[0-9]+ | grep -v -- '-'"
+       else
+         rpi_mod_fn_filter="ls -1d $wd_tmp/lib/modules/*[0-9]*-v${rpi_mod_ver}+"
+       fi
+       if [ -e "$vmlnz" ]; then
+         cp $cp_vopt $vmlnz $ocs_zip_tmpd/live/vmlinuz
+         lnx_ver="$(eval LC_ALL=C $rpi_mod_fn_filter | xargs basename)"
+       else
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "Failed to find the existing kernel $vmlnz."
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo "Program terminated."
+         exit_this_program 1
+       fi
+       ;;
+esac
+
+# E.g.: clonezilla-live-20200318-eoan-zip -> clonezilla-live-20200318-eoan-armhf-k5.3.0-1019-raspi2.zip
+dest_zip_f="$(echo $ocs_zip_f | sed -r -e "s/\.zip$/-k${lnx_ver}.zip/g")"
+do_swap_kernel_and_module
+clean_tmp_dir_if_assigned
+
+echo $msg_delimiter_star_line
+if [ -e "$wd/$dest_zip_f" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+  echo "The new Clonezilla live zip file with swapped kernel and modules was created successfully:"
+  echo "$dest_zip_f"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "The kernel versions before and after are:"
+  echo "$lnx_ver_old -> $lnx_ver."
+  if [ "$rm_tmp_dir" = "no" ]; then
+    if [ -n "$SUDO_USER" ]; then
+      chown -R $SUDO_USER $wd/$dest_zip_f $wd/$ocs_zip_tmpd $wd/$wd_tmp $wd/filesystem.squashfs-${lnx_ver_old}
+    fi
+    echo "The remaining temp working dirs are kept for you:"
+    echo "$ocs_zip_tmpd and $wd_tmp"
+  fi
+fi
