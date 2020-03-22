@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.38.7
+Version:	3.38.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 22 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.8-drbl1
+  * Add a new program ocs-live-swap-kernel which can be used to swap
+    Linux kernel and modules in clonezilla live.
+
 * Sat Mar 21 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.7-drbl1
   * Improve decide_MKSQUASHFS_OPTIONS so that it can be
     optionally assigned with an arg.
