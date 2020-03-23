@@ -11,6 +11,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
 # Settings
+required_programs="rsync unsquashfs mksquashfs zip unzip"
 # Two types of kernel/modules packages are supported:
 # (1) From Debian or Ubuntu: linux-image & linux-modules debs. This works for Debian or Ubuntu-based Clonezilla live.
 # (2) From Rasbian: raspberrypi-kernel deb. This only works for Debian-based arm64/armhf Clonezilla live.
@@ -73,6 +74,17 @@ USAGE() {
   echo
 } # end of USAGE
 #
+check_required_program() {
+  for ipkg in $required_programs; do
+    if ! type $ipkg >/dev/null 2>&1; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Required $ipkg not found."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      exit_this_program 1
+    fi
+  done
+} # end of check_required_program
+#
 check_run_aim_cpu_arch() {
   local running_arch
   local aim_arch_zip_f="$1"
@@ -96,7 +108,6 @@ check_run_aim_cpu_arch() {
       echo "Aiming one:  $aim_arch"
       echo "You have to setup binfmt & Qemu environment if you want to run the program on different arch."
       echo "For more info, please refer to: https://wiki.debian.org/QemuUserEmulation"
-      echo "Program terminated."
       exit_this_program 1
     fi
   fi
@@ -138,6 +149,7 @@ clean_tmp_dir_if_assigned() {
 #
 exit_this_program() {
   local rc="$1"
+  echo "$msg_program_stop!"
   clean_tmp_dir_if_assigned
   exit $rc
 } # end of exit_this_program
@@ -152,7 +164,6 @@ do_swap_kernel_and_module(){
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "Failed to unsquashfs filesystem.squashfs."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "Program terminated."
     exit_this_program 1
   fi
   echo $msg_delimiter_star_line
@@ -176,7 +187,6 @@ do_swap_kernel_and_module(){
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "Failed to create squashfs-root/boot/initrd.img-$lnx_ver."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "Program terminated."
     release_squashfs_chroot
     exit_this_program 1
   fi
@@ -246,8 +256,10 @@ if [ ! -e /etc/debian_version ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "This program only works on Debian/Ubuntu system."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "Program terminated."
+  exit_this_program 1
 fi
+
+check_required_program
 
 if [ -z "$ocs_zip_f" -o -z "$lnx_img_deb" ]; then
   USAGE
@@ -277,7 +289,6 @@ else
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "Clonezilla zip file $ocs_zip_f was not found."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "Program terminated."
   exit_this_program 1
 fi
 
@@ -297,7 +308,6 @@ for ideb in $lnx_img_deb $lnx_mod_deb; do
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "File $ideb not found." 
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "Program terminated."
     exit_this_program 1
   fi
 done
@@ -327,7 +337,6 @@ for ideb in $lnx_img_deb $lnx_mod_deb; do
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "File $ideb not found."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "Program terminated."
     exit_this_program 1
   fi
 done
@@ -344,7 +353,6 @@ case "$mode" in
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
          echo "Failed to find the existing kernel $vmlnz."
          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo "Program terminated."
          exit_this_program 1
        fi
        ;;
@@ -370,7 +378,6 @@ case "$mode" in
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
          echo "Failed to find the existing kernel $vmlnz."
          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo "Program terminated."
          exit_this_program 1
        fi
        ;;
