@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.38.9
+Version:	3.38.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Apr 12 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.10-drbl1
+  * Countdown 10 secs when there is a failure ocs-run-boot-param.
+
 * Mon Apr 06 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.9-drbl1
   * Update USAGE, add  checking required programs & improve exit function
     of ocs-live-swap-kernel.
