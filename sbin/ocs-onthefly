@@ -781,7 +781,15 @@ prepare_local_clone_dev_info() {
   #fi
 
   # change the dev to target in the $pt_tmp and $pt_info
-  [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
+  # Instead of copying the source partition table, we can neglect the line 
+  # "last-lba:..." for the GPT partition table. This allows something like:
+  # 64 GB disk with a 20 GB NTFS partition, disk clone to >= 20 GB disk.
+  # This is harmless when same sizes of disk cloning or smaller to larger
+  # case.
+  # Thanks to panreyes for this idea.
+  # Ref: https://sourceforge.net/p/clonezilla/bugs/342/
+  # [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
+  [ -f "$src_pt_tmp" ] && grep -Ev "^last-lba:" $src_pt_tmp > $tgt_pt_tmp
   [ -f "$src_parted_info" ] && cp -f $src_parted_info $tgt_parted_info
   [ -f "$src_blkdev_info" ] && cp -f $src_blkdev_info $tgt_blkdev_info
   [ -f "$src_pt_info" ] && cp -f $src_pt_info $tgt_pt_info
@@ -1205,7 +1213,15 @@ ADVAN_PARAM_END
     done
 
     # change the dev to target in the $pt_tmp nd $pt_info
-    [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
+    # Instead of copying the source partition table, we can neglect the line 
+    # "last-lba:..." for the GPT partition table. This allows something like:
+    # 64 GB disk with a 20 GB NTFS partition, disk clone to >= 20 GB disk.
+    # This is harmless when same sizes of disk cloning or smaller to larger
+    # case.
+    # Thanks to panreyes for this idea.
+    # Ref: https://sourceforge.net/p/clonezilla/bugs/342/
+    # [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
+    [ -f "$src_pt_tmp" ] && grep -Ev "^last-lba:" $src_pt_tmp > $tgt_pt_tmp
     [ -f "$src_parted_info" ] && cp -f $src_parted_info $tgt_parted_info
     [ -f "$src_blkdev_info" ] && cp -f $src_blkdev_info $tgt_blkdev_info
     [ -f "$src_pt_info" ] && cp -f $src_pt_info $tgt_pt_info
