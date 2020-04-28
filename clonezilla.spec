@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.38.10
+Version:	3.38.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.31.2, psmisc, udpcast, partclone >= 0.3.13, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.31.7, psmisc, udpcast, partclone >= 0.3.13, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,21 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Apr 28 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.12-drbl1
+  * Neglect the line "last-lba:..." for the GPT partition table.
+    This allows something like:
+    64 GB disk with a 20 GB NTFS partition, disk clone to >= 20 GB disk.
+    This is harmless when same sizes of disk cloning or smaller to larger
+    case.
+    The option -icds is required when larger disk is cloned/restored to
+    smaller one, no need to use -k1 in this case.
+    Thanks to panreyes for this idea.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/342/
+
+* Mon Apr 14 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.11-drbl1
+  * Add batch mode, and instead of countdown, pause it when rc is not 0
+    for ocs-run-boot-param.
+
 * Sun Apr 12 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.10-drbl1
   * Countdown 10 secs when there is a failure ocs-run-boot-param.
 
