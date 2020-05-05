@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.38.12
+Version:	3.38.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue May 05 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.13-drbl1
+  * Add support for creating groovy-based live system.
+
 * Tue Apr 28 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.12-drbl1
   * Neglect the line "last-lba:..." for the GPT partition table.
     This allows something like:
