@@ -75,6 +75,9 @@ USAGE() {
     echo "MODE is \"start\" or \"stop\""
     echo "IMAGE_NAME is the image dir name, not absolute path"
     echo "DEVICE is the device name, e.g. sda, sda1, sda2..."
+    echo "Two reserved parameters can be used for image (BT from device mode) or device name (only for whole disk):"
+    echo "\"all\" is for all the available hard drives."
+    echo "\"all-but-usb\" is for all the available hard drives excluding USB ones."
     echo "If \"ask_user\" is used as IMAGE_NAME or DEVICE, a dialog menu will be shown to allow selection."
     echo "If no IMAGE_NAME is specified, a dialog menu will be shown."
     echo "Ex:"
@@ -1060,10 +1063,33 @@ task_start_feed_img_for_cast() {
          exit 1
          ;;
       esac
+    elif [ "$ocs_restore_dev" = "all" -o "$ocs_restore_dev" = "all-but-usb" ]; then
+      # If "all" is used, only whole disk(s), not partitions.
+      # //NOTE// Need to exclude Clonezilla live USB flash drive
+      # Prepare 3 variables: cast_dev_action, target_hd|target_parts for later use with start_ocs_service:
+      # cast_dev_action is required for function start_ocs_service
+      # while target_hd or target_parts is required for function 
+      # multicast|bt_restoredisk and multicast|bt_restoreparts (hence for start_ocs_service)
+      # For BT mode, bt_dev_type is assigned. For multicast/broadcst mode, not yet?
+      cast_dev_action="restoredisk"
+      get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
+      target_hd=""
+      if [ "$ocs_restore_dev" = "all-but-usb" ]; then
+        # Only non-USB device
+        for id in $dev_list; do
+          if ! is_usb_dev $id; then
+	    target_hd="$target_hd $id"
+	  fi
+	done
+      else
+        # Include USB device, i.e., all available disks
+        target_hd="$dev_list"
+      fi
+      ocs_restore_dev="$target_hd" # keep it for later use in run_again prompt
     else
       # "ocs_restore_dev" is already assigned
       if [ -n "$dev_type" ]; then
-        # In interactive mode, we know $dev_type is.
+        # In interactive mode, we know what the $dev_type is.
         case "$dev_type" in
           "disk")  cast_dev_action="restoredisk"
 		   target_hd="$ocs_restore_dev"
