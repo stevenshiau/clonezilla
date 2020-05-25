@@ -72,6 +72,7 @@ check_input_param() {
 #
 create_gpt_part_table_in_onthefly() {
   # The type is GPT
+  local sfdisk_cmd_gpt
   echo $msg_delimiter_star_line
   case "$create_part_type" in
     "proportion")
@@ -154,10 +155,21 @@ create_gpt_part_table_in_onthefly() {
            ocs-lvm2-stop
          fi
          create_gpt_table_if_no_table /dev/$target_hd
-         echo "Running sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp" | tee -a $OCS_LOGFILE
-         LC_ALL=C sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp | tee -a $OCS_LOGFILE
+         # Instead of using the source partition table, we can neglect the line 
+         # "last-lba:..." for the GPT partition table. This allows something like:
+         # 64 GB disk with a 20 GB NTFS partition, disk clone to >= 20 GB disk.
+         # This is harmless when same sizes of disk cloning or smaller to larger
+         # case.
+         # Thanks to panreyes for this idea.
+         # Ref: https://sourceforge.net/p/clonezilla/bugs/342/
+         # //NOTE// This can not be done when "$create_part_type" is "proportion" since the ocs-expand-gpt-pt needs the line "last-lba:..."
+         # Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/68e1be5cfe
+         #      https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/491c9eb9ce
+	 sfdisk_cmd_gpt="LC_ALL=C grep -Ev '^last-lba:' $tgt_pt_tmp | sfdisk $sfdisk_opt /dev/$target_hd 2>&1"
+         echo "Running: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
+	 eval $sfdisk_cmd_gpt | tee -a $OCS_LOGFILE
          RETVAL="${PIPESTATUS[0]}"
-         echo "This was done by \"sfdisk $sfdisk_opt /dev/$target_hd < $tgt_pt_tmp\""
+         echo "This was done by: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
          # This is useless if $sfdisk_opt (--force is used)! Since we always use --force now, so the return value is "0"
          if [ "$RETVAL" -ne 0 ]; then
            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -781,15 +793,7 @@ prepare_local_clone_dev_info() {
   #fi
 
   # change the dev to target in the $pt_tmp and $pt_info
-  # Instead of copying the source partition table, we can neglect the line 
-  # "last-lba:..." for the GPT partition table. This allows something like:
-  # 64 GB disk with a 20 GB NTFS partition, disk clone to >= 20 GB disk.
-  # This is harmless when same sizes of disk cloning or smaller to larger
-  # case.
-  # Thanks to panreyes for this idea.
-  # Ref: https://sourceforge.net/p/clonezilla/bugs/342/
-  # [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
-  [ -f "$src_pt_tmp" ] && grep -Ev "^last-lba:" $src_pt_tmp > $tgt_pt_tmp
+  [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
   [ -f "$src_parted_info" ] && cp -f $src_parted_info $tgt_parted_info
   [ -f "$src_blkdev_info" ] && cp -f $src_blkdev_info $tgt_blkdev_info
   [ -f "$src_pt_info" ] && cp -f $src_pt_info $tgt_pt_info
@@ -1213,15 +1217,7 @@ ADVAN_PARAM_END
     done
 
     # change the dev to target in the $pt_tmp nd $pt_info
-    # Instead of copying the source partition table, we can neglect the line 
-    # "last-lba:..." for the GPT partition table. This allows something like:
-    # 64 GB disk with a 20 GB NTFS partition, disk clone to >= 20 GB disk.
-    # This is harmless when same sizes of disk cloning or smaller to larger
-    # case.
-    # Thanks to panreyes for this idea.
-    # Ref: https://sourceforge.net/p/clonezilla/bugs/342/
-    # [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
-    [ -f "$src_pt_tmp" ] && grep -Ev "^last-lba:" $src_pt_tmp > $tgt_pt_tmp
+    [ -f "$src_pt_tmp" ] && cp -f $src_pt_tmp $tgt_pt_tmp
     [ -f "$src_parted_info" ] && cp -f $src_parted_info $tgt_parted_info
     [ -f "$src_blkdev_info" ] && cp -f $src_blkdev_info $tgt_blkdev_info
     [ -f "$src_pt_info" ] && cp -f $src_pt_info $tgt_pt_info
