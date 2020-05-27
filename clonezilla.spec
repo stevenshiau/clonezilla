@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.38.15
+Version:	3.39.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.31.8, psmisc, udpcast, partclone >= 0.3.14, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.32.1, psmisc, udpcast, partclone >= 0.3.14, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,35 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed May 27 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.1-drbl1
+  * ocs-onthefly: bug fix for missing last-lba line
+    Previous solution neglecting the last-lba line in sfdisk dumped file
+    should not be used in the case that option -k1 is used in ocs-onthefly.
+    Thanks to Alex Hughes and JR Bregante for reporting this issue.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/68e1be5cfe/
+    https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/491c9eb9ce
+  * ocs-function: follow the change linuxefi/initrdefi
+    Follow the change in gen-grub-efi-nb-menu, the grub command in the
+    grub config file is now linuxefi/initrdefi instead of linux/initrd.
+    Hence the corresponding functions have to be
+    changed:
+    remove_runlevel_1_in_grub_efi_cfg_block
+    remove_runlevel_1_in_grub_efi_cfg_block
+  * ocsmgrd: generate grub netboot file with new name.
+    To avoid conflict with the patch of grub in CentOS/Fedora,
+    for GRUB EFI NB MAC/IP config style, the netboot file is now like
+    grub.cfg-drbl-00:50:56:01:01:01
+    and
+    grub.cfg-drbl-192.168.177.2
+    not grub.cfg-01-* anymore.
+
+* Sat May 09 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.16-drbl1
+  * Add reserved words 'all' and 'all-but-usb' for the image and device
+    name. This is especially for using in the BT from device mode in
+    ocs-live-feed-img.
+  * Update USAGE for ocs-sr about the reserved word 'all' for saving mode.
+
 * Fri May 08 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.15-drbl1
   * Update ocs-live-repository so that ram_disk is one of the option.
     It can be done by using ram://.
