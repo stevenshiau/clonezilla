@@ -1,5 +1,5 @@
 #!/bin/bash
-# Steven Shiau <steven _at_ nchc org tw)
+# Steven Shiau <steven _at_ clonezilla org)
 
 # Settings
 PKG="clonezilla"
