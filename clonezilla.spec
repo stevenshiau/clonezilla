@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.39.4
+Version:	3.39.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri May 29 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.5-drbl1
+  * Make my email address consistent at clonezilla org for all the files.
+
 * Fri May 29 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.4-drbl1
   * grub netboot cfg dir is now at /tftpboot/nbi_img/grub/,
     while for backward compatibility, we still link it to
