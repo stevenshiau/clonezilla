@@ -645,10 +645,20 @@ if [ "$cpu_arch_type" = "x86" ]; then
   # rsync -a --exclude f*.txt --exclude boot.cat --exclude isolinux.txt --exclude isolinux.bin --exclude splash.rle --exclude doc $DRBL_SCRIPT_PATH/pkg/syslinux/* $ISOSYSLNX_TMP/isolinux/
   # we have to overwrite isolinux.bin since vesamenu.c32 should be same version with that.
   # Jan/19/2014 For both syslinux and isolinux (unified in one dir)
-  cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file $ISOSYSLNX_TMP/syslinux/
+  syslinux_related_files="$isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file"
+  # If it's in Clonezilla live environment, we have those files. Use that first so the version mismatch can be avoided.
+  for i in $syslinux_related_files; do
+    if [ -e "$DEBIAN_ISO_TMP/syslinux/$(basename $i)" ]; then
+      cp -af "$DEBIAN_ISO_TMP/syslinux/$(basename $i)" $ISOSYSLNX_TMP/syslinux/
+    else
+      cp -af $i $ISOSYSLNX_TMP/syslinux/
+    fi
+  done
   # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
   for i in $sys_pxelinux_v5p_required_c32; do
-    if [ -e "$pxelinux_binsrc_dir/$i" ]; then
+    if [ -e "$DEBIAN_ISO_TMP/syslinux/$i" ]; then
+      cp -af "$DEBIAN_ISO_TMP/syslinux/$i" $ISOSYSLNX_TMP/syslinux/
+    elif [ -e "$pxelinux_binsrc_dir/$i" ]; then
       # syslinux <= 5 
       cp -af $pxelinux_binsrc_dir/$i $ISOSYSLNX_TMP/syslinux/
     elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
@@ -895,8 +905,10 @@ fi
 echo "clonezilla-live-${iso_label_tag}" > $ISOSYSLNX_TMP/Clonezilla-Live-Version
 echo "This Clonezilla live iso file was created by this command:" >> $ISOSYSLNX_TMP/Clonezilla-Live-Version
 echo "$prog $prog_option" >> $ISOSYSLNX_TMP/Clonezilla-Live-Version
-# Copy another one in the live dir. It will be used for toram=live mode.
-cp -a $ISOSYSLNX_TMP/Clonezilla-Live-Version $ISOSYSLNX_TMP/$sys_files_dir/
+if [ ! -e $ISOSYSLNX_TMP/$sys_files_dir/Clonezilla-Live-Version ]; then
+  # Copy another one in the live dir. It will be used for toram=live mode.
+  cp -a $ISOSYSLNX_TMP/Clonezilla-Live-Version $ISOSYSLNX_TMP/$sys_files_dir/
+fi
 
 if [ "$cpu_arch_type" = "x86" ]; then
   # $sys_files_dir maybe /casper, /live or /isolinux. If it is isolinux, we can not list them twice otherwise mkisofs will go wrong.

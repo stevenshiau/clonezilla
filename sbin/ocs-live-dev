@@ -663,6 +663,7 @@ echo -n "Preparing the system files to working dir... This might take a few minu
 case "$img_cp_type" in
   copy) echo "Copying dir $DEBIAN_ISO_TMP/$sys_files_dir to $USB_TMP/"
         rsync -a $DEBIAN_ISO_TMP/$sys_files_dir $USB_TMP/
+        chmod 755 $USB_TMP/$sys_files_dir
         ;;
   link) echo "Linking files from $DEBIAN_ISO_TMP/$sys_files_dir/ to $USB_TMP/$sys_files_dir..."
         mkdir -p $USB_TMP/$sys_files_dir 
@@ -686,10 +687,20 @@ if [ "$cpu_arch_type" = "x86" ]; then
   # replace the original syslinux and related files.
   mkdir -p $USB_TMP/syslinux/
   # For syslinux
-  cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file $USB_TMP/syslinux/
+  syslinux_related_files="$isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $pxelinux_bg_img $ocs_logo_img_png $pxelinux_chain_file"
+  # If it's in Clonezilla live environment, we have those files. Use that first so the version mismatch can be avoided.
+  for i in $syslinux_related_files; do
+    if [ -e "$DEBIAN_ISO_TMP/syslinux/$(basename $i)" ]; then
+      cp -af "$DEBIAN_ISO_TMP/syslinux/$(basename $i)" $USB_TMP/syslinux/
+    else
+      cp -af $i $USB_TMP/syslinux/
+    fi
+  done
   # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
   for i in $sys_pxelinux_v5p_required_c32; do
-    if [ -e "$pxelinux_binsrc_dir/$i" ]; then
+    if [ -e "$DEBIAN_ISO_TMP/syslinux/$i" ]; then
+      cp -af "$DEBIAN_ISO_TMP/syslinux/$i" $USB_TMP/syslinux/
+    elif [ -e "$pxelinux_binsrc_dir/$i" ]; then
       # syslinux <= 5 
       cp -af $pxelinux_binsrc_dir/$i $USB_TMP/syslinux/
     elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
@@ -923,8 +934,11 @@ esac
 echo "clonezilla-live-${zip_label_tag}" > $USB_TMP/Clonezilla-Live-Version
 echo "This Clonezilla live zip file was created by this command:" >> $USB_TMP/Clonezilla-Live-Version
 echo "$prog $prog_option" >> $USB_TMP/Clonezilla-Live-Version
-# Copy another one in the live dir. It will be used for toram=live mode.
-cp -a $USB_TMP/Clonezilla-Live-Version $USB_TMP/$sys_files_dir/
+if [ ! -e $USB_TMP/$sys_files_dir/Clonezilla-Live-Version ]; then
+  # If it's not linked yet (For the mode $img_cp_type=copy)
+  # Copy another one in the live dir. It will be used for toram=live mode.
+  cp -a $USB_TMP/Clonezilla-Live-Version $USB_TMP/$sys_files_dir/
+fi
 
 # Find the boot param $boot_param, also $splash_opt and $quiet_opt will be gotten
 if [ "$template_mode" = "from-booting-live-media" ]; then
