@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.39.7
+Version:	3.39.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 08 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.8-drbl1
+  * When creating recovery iso/zip file, if it's in Clonezilla live environment,
+    we have those syslinux files. Use that first so the version mismatch can be avoided.
+    Ref: https://sourceforge.net/p/clonezilla/support-requests/127/
+
 * Sun Jun 07 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.7-drbl1
   * ocs-sr: ocs-chkimg should not overwrite /var/lib/clonezilla/ocs-vars.
     Hence backup it before running ocs-chkimg in the restoring mode.
