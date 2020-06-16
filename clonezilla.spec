@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.39.8
+Version:	3.39.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,15 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jun 16 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.9-drbl1
+  * Bug fixed: The function is_block_device_with_fs of ocs-function
+    should not treat "LVM2_member" as a file system.
+    Thanks to Carlos Trentini for reporting this.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/726d3dd6a8/
+  * ocs-iso, ocs-live-dev: sync syslinux-related files when copying syslinux
+    exec files.
+
 * Mon Jun 08 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.8-drbl1
   * When creating recovery iso/zip file, if it's in Clonezilla live environment,
     we have those syslinux files. Use that first so the version mismatch can be avoided.
