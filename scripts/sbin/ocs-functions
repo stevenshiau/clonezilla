@@ -11362,10 +11362,13 @@ is_block_device_with_fs() {
   local fs_
   # A bare block device without partitions, e.g., /dev/sda, but with file system
   # However, here dev_ can be /dev/sda1, too.
+  # //NOTE// If it's LVM, then the fs is "LVM2_member" got from ocs-get-part-info -> it's not a file system.
   fs_="$(ocs-get-part-info /dev/$dev_ fs)"
-  if [ -n "$fs_" ]; then
+  if [ -n "$fs_" -a "$fs_" != "LVM2_member" ]; then
+    # Yes, it's a block device with file system.
     return 0
   else
+    # No, it's NOT a block device with file system.
     return 1
   fi
 } # end of is_block_device_with_fs
