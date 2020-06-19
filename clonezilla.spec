@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.39.9
+Version:	3.39.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jun 19 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.10-drbl1
+  * The function get_input_dev_name in ocs-functions should not skip
+    LVM if the device is whole block disk (e.g., /dev/sdb which is PV)
+  * create-gparted-live: use new package name netsurf-gtk instead of old
+    one: netsurf
+
 * Tue Jun 16 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.9-drbl1
   * Bug fixed: The function is_block_device_with_fs of ocs-function
     should not treat "LVM2_member" as a file system.
