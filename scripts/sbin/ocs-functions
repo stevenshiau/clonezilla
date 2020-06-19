@@ -4533,7 +4533,10 @@ get_input_dev_name() {
             [ -n "$(echo $FILE | grep -Eiw "(swap|extended|0x5|0xf)")" ] && continue
           fi
 	  if [ "$skip_lvm" = "yes" ]; then
-            [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
+            # We should not skip LVM if the device is whole block disk (e.g., /dev/sdb which is PV)
+            if ! is_whole_disk /dev/$p; then
+              [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
+	    fi
 	  fi
           NUMDEV=$[NUMDEV+1]
         done
@@ -4594,7 +4597,10 @@ get_input_dev_name() {
          [ -n "$(echo $FILE | grep -Eiw "(swap|extended|0x5|0xf)")" ] && continue
        fi
        if [ "$skip_lvm" = "yes" ]; then
-         [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
+         # We should not skip LVM if the device is whole block disk (e.g., /dev/sdb which is PV)
+         if ! is_whole_disk /dev/$p; then
+           [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
+	 fi
        fi
        get_disk_or_part_hardware_info "$p" default
        rc_g=$?
