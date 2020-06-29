@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.39.10
+Version:	3.39.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.32.6, psmisc, udpcast, partclone >= 0.3.14, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.32.7, psmisc, udpcast, partclone >= 0.3.14, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 29 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.11-drbl1
+  * Add a mechanism to create CPU arch tag file in the release root dir.
+  * A better mechanism to deal with linuxefi/initrdefi or linux/initrd in
+    the grub config.
+
 * Fri Jun 19 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.10-drbl1
   * The function get_input_dev_name in ocs-functions should not skip
     LVM if the device is whole block disk (e.g., /dev/sdb which is PV)
