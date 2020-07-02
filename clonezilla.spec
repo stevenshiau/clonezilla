@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.39.12
+Version:	3.39.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jul 02 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.13-drbl1
+  * Bug fixed: the CPU arch tag file was missing when running
+    ocs-iso, create-gparted-live and create-drbl-live.
+    Thanks to Chuck for reporting this issue.
+
 * Tue Jun 30 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.12-drbl1
   * Bug fixed: wrong commands for parsing $linux_cmd
 
