@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.39.13
+Version:	3.39.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.32.8, psmisc, udpcast, partclone >= 0.3.14, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.32.9, psmisc, udpcast, partclone >= 0.3.14, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jul 03 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.14-drbl1
+  * Export linux_cmd and initrd_cmd in grub.cfg, i.e., make them as global
+    variables so that the submenu can use that, too.
+    Thanks to Chuck for identifying this issue.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/a7b696d13e/
+
 * Thu Jul 02 2020 Steven Shiau <steven _at_ clonezilla org> 3.39.13-drbl1
   * Bug fixed: the CPU arch tag file was missing when running
     ocs-iso, create-gparted-live and create-drbl-live.
