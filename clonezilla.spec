@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.40.1
+Version:	3.40.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Aug 09 2020 Steven Shiau <steven _at_ clonezilla org> 3.40.2-drbl1
+  * Keep ttf-unifont, unifont, xfonts-unifont, xfonts-utils
+    to avoid unifont.pcf.gz being removed in the ocs-live hook when
+    building Clonezilla live.
+
 * Sun Aug 09 2020 Steven Shiau <steven _at_ clonezilla org> 3.40.1-drbl1
   * Add Korean support. Thanks to Hyeonmin Oh and 박규민.
 
