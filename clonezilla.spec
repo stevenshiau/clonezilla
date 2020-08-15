@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.40.2
+Version:	3.40.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 2.33.1, psmisc, udpcast, partclone >= 0.3.14, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 2.33.2, psmisc, udpcast, partclone >= 0.3.14, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Aug 15 2020 Steven Shiau <steven _at_ clonezilla org> 3.40.3-drbl1
+  * Add network-manager-gnome to drbl live since wicd was removed.
+    network-manager for clonezilla/drbl live was wrong, should be
+    NetworkManager. However, it's can be up, so remove it.
+  * Remove qemu-kvm but keep qemu-util, replace xvnc4viewer by
+    xtightvncviewer since the former is broken in Sid.
+
 * Sun Aug 09 2020 Steven Shiau <steven _at_ clonezilla org> 3.40.2-drbl1
   * Keep ttf-unifont, unifont, xfonts-unifont, xfonts-utils
     to avoid unifont.pcf.gz being removed in the ocs-live hook when
