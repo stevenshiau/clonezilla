@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.40.4
+Version:	3.40.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Aug 20 2020 Steven Shiau <steven _at_ clonezilla org> 3.40.5-drbl1
+  * Add support for loop devices: Disk images attaches as block
+    devices. Thanks to MichaIng.
+    Ref: https://gitlab.com/stevenshiau/clonezilla/-/merge_requests/43
+
 * Tue Aug 18 2020 Steven Shiau <steven _at_ clonezilla org> 3.40.4-drbl1
   * Newer zip can create zip file larger than 2 GB. Hence ocs-live-dev
     should use zip to create the recovery zip file, not force to change that
