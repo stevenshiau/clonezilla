@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	3.40.5
+Version:	3.40.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Sep 08 2020 Steven Shiau <steven _at_ clonezilla org> 3.40.6-drbl1
+  * Update wget bterm-unifont and nic-firmware in live-hook since the
+    package might be in new category.
+
 * Thu Aug 20 2020 Steven Shiau <steven _at_ clonezilla org> 3.40.5-drbl1
   * Add support for loop devices: Disk images attaches as block
     devices. Thanks to MichaIng.
