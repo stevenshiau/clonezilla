@@ -709,12 +709,19 @@ get_unifont_bgf() {
   local tmp_wd bterm_unifont_udeb
   [ -z "$target_dir" ] && return 1
   tmp_wd="$(mktemp -d /tmp/unifont.XXXXXX)"
-  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-${darch}/Packages.xz
+  pkg_url="$tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-${darch}/Packages.xz"
+  wget -P $pkg_url
   bterm_unifont_udeb="$(LC_ALL=C xzcat $tmp_wd/Packages.xz | sed -ne 's/^Filename: //p' | grep -Ew bterm-unifont)"
-  # result like: pool/main/b/bterm-unifont/bterm-unifont_1.2_i386.udeb
-  wget -P $tmp_wd $mirror_url/$bterm_unifont_udeb
-  dpkg-deb --extract $tmp_wd/$(basename $bterm_unifont_udeb) $tmp_wd
-  find $tmp_wd -name "unifont.bgf" -exec cp -a {} $target_dir \;
+  if [ -n "$bterm_unifont_udeb" ]; then
+    # result like: pool/main/b/bterm-unifont/bterm-unifont_1.2_i386.udeb
+    wget -P $tmp_wd $mirror_url/$bterm_unifont_udeb
+    dpkg-deb --extract $tmp_wd/$(basename $bterm_unifont_udeb) $tmp_wd
+    find $tmp_wd -name "unifont.bgf" -exec cp -a {} $target_dir \;
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Package bterm-unifont was not found in $pkg_url"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
   if [ -d "$tmp_wd" -a -n "$(echo $tmp_wd | grep -E unifont)" ]; then
     rm -rf $tmp_wd
   fi
@@ -762,7 +769,7 @@ get_non_free_net_firmware_for_ubuntu() {
   # firmware-atheros, firmware-brcm80211, firmware-bnx2, firmware-bnx2x, firmware-ipw2x00, firmware-ipw3945, firmware-iwlwifi
   # $mirror_url and $debian_dist are from hook
   local target_dir="$1"
-  local tmp_wd nic_firmware_udeb firmware_doc
+  local tmp_wd nic_firmware_udeb firmware_doc d_cat flag_done
   if [ -z "$target_dir" ]; then
     echo "XXXXXXXXX! No target_dir in function get_non_free_net_firmware!"
     return 1
@@ -772,16 +779,38 @@ get_non_free_net_firmware_for_ubuntu() {
     return 0
   fi
   tmp_wd="$(mktemp -d /tmp/nic_firmware.XXXXXX)"
-  wget -P $tmp_wd $mirror_url/dists/$debian_dist/main/debian-installer/binary-${darch}/Packages.xz
-  # Find the firmware binary files.
-  nic_firmware_udeb="$(LC_ALL=C xzcat $tmp_wd/Packages.xz | sed -ne 's/^Filename: //p' | grep -Ew "nic-firmware_.")"
-  # result like: pool/main/l/linux-firmware/nic-firmware_1.78_all.udeb
-  wget -P $tmp_wd $mirror_url/$nic_firmware_udeb
-  echo "Install non-free firmware about NICs in Clonezilla live..."
-  # //NOTE// Do not run something like: dpkg-deb --extract $tmp_wd/$(basename $nic_firmware_udeb) $target_dir
-  # It will overwrite the dir permissions. E.g., if /lib/ is a link file, it will be removed and be created as dir.
-  # This will break the usrmerge system (Ubuntu >= 19.04).
-  dpkg -i $tmp_wd/$(basename $nic_firmware_udeb) 
+  # < Ubuntu 20.04, nic-firmware is listed at
+  # http://free.nchc.org.tw/ubuntu/dists/focal/main/binary-amd64/Packages.xz
+  # >= Ubuntu 20.04, nic-firmware is listed at
+  # http://free.nchc.org.tw/ubuntu/dists/groovy/universe/debian-installer/binary-amd64/Packages.xz
+  flag_done="false"
+  for d_cat in universe/debian-installer main; do
+    rm -f $tmp_wd/*
+    wget -P $tmp_wd $mirror_url/dists/$debian_dist/$d_cat/binary-${darch}/Packages.xz
+    # Find the firmware binary files.
+    nic_firmware_udeb="$(LC_ALL=C xzcat $tmp_wd/Packages.xz | sed -ne 's/^Filename: //p' | grep -Ew "nic-firmware_.")"
+    # result like: pool/main/l/linux-firmware/nic-firmware_1.78_all.udeb
+    if [ -n "$nic_firmware_udeb" ]; then
+      wget -P $tmp_wd $mirror_url/$nic_firmware_udeb
+      echo "Install non-free firmware about NICs in Clonezilla live..."
+      # //NOTE// Do not run something like: dpkg-deb --extract $tmp_wd/$(basename $nic_firmware_udeb) $target_dir
+      # It will overwrite the dir permissions. E.g., if /lib/ is a link file, it will be removed and be created as dir.
+      # This will break the usrmerge system (Ubuntu >= 19.04).
+      dpkg -i $tmp_wd/$(basename $nic_firmware_udeb) 
+      if [ "$?" -eq 0 ]; then
+        flag_done="true"
+      fi
+    else
+      echo "Package nic-firmware was not found $mirror_url/dists/$debian_dist/$d_cat/debian-installer/binary-${darch}/Packages.xz"
+      echo "Try next catetory: $d_cat"
+      continue
+    fi
+  done
+  if [ "$flag_done" = "false" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Failed to download the nic-firmware package!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
 
   # Find the license doc and put it. They are from linux-firmware.
   apt-get -d --reinstall install linux-firmware
