@@ -8144,6 +8144,27 @@ check_if_windows_boot_reserve_part() {
   [ -d "$ntfs_mnt" -a -n "$(echo $ntfs_mnt | grep "ntfs_mnt")" ] && rmdir $ntfs_mnt
   return $rv
 } # end of check_if_windows_boot_reserve_part
+#
+clear_ntfs_volume_dirty_flag() {
+  local tgt_parts_="$*" # e.g., sda, sda1...
+  local ipartition p_fs
+  if [ -z "$tgt_parts_" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No \$tgt_parts_ was assigned in function clear_ntfs_volume_dirty_flag!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 1
+  fi
+  for ipartition in $tgt_parts_; do
+    is_whole_disk $ipartition && continue
+    p_fs="$(LC_ALL=C ocs-get-part-info /dev/$ipartition filesystem)"
+    if [ "$p_fs" = "ntfs" ]; then
+      echo "Now clear the NTFS volume dirty flag: /dev/$ipartition..." | tee --append $OCS_LOGFILE
+      echo "Running: ntfsfix -d /dev/$ipartition" | tee --append $OCS_LOGFILE
+      LC_ALL=C ntfsfix -d /dev/$ipartition | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    fi
+  done
+} # end of clear_ntfs_volume_dirty_flag
 
 # task "savedisk"
 # parameter:
@@ -9204,16 +9225,7 @@ task_restoreparts() {
 
   # Clear the NTFS volume dirty flag if the volume can be fixed and mounted.
   if [ "$rm_ntfs_vol_dirty_flag" = "yes" ]; then
-    for ipartition in $target_parts; do
-      is_whole_disk $ipartition && continue
-      p_fs="$(LC_ALL=C ocs-get-part-info /dev/$ipartition filesystem)"
-      if [ "$p_fs" = "ntfs" ]; then
-        echo "Now clear the NTFS volume dirty flag if the volume can be fixed and mounted: /dev/$ipartition..." | tee --append $OCS_LOGFILE
-        echo "Running: ntfsfix -d /dev/$ipartition" | tee --append $OCS_LOGFILE
-        LC_ALL=C ntfsfix -d /dev/$ipartition | tee --append $OCS_LOGFILE
-        echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
-      fi
-    done
+     clear_ntfs_volume_dirty_flag $target_parts
   fi
 
   # Remove the udev MAC address records on the restored GNU/Linux

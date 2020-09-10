@@ -28,6 +28,8 @@ onthefly_2nd_confirm="yes"
 chksum_for_files_in_dev="no"
 # Default not to play sound when job is done.
 ocs_play_sound="no"
+# Default not to remove the ntfs volume dirty flag before cloning
+rm_ntfs_vol_dirty_flag="no"
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -2113,6 +2115,7 @@ USAGE() {
     echo "-i, --filter PROGRAM     Use the PROGRAM (gzip/lzop/bzip2/xz/lz4/zstd/cat) before sending partition data to netcat (only in network clone mode). The default action is gzip. Use \"cat\" if you do not want to compress (Good for fast internode network)."
     echo "-nogui, --nogui          Do not show GUI (TUI) of Partclone or Partimage, use text only"
     echo "-rescue, --rescue        Turn on rescue mode, i.e. try to skip bad sectors."
+    echo "-rvd, --rvd              Remove the NTFS volume dirty flag in source NTFS file system before cloning it."
     echo "-irhr, --irhr            Skip removing the Linux udev hardware records on the restored GNU/Linux."
     echo "-ius, --ius              Skip updating syslinux-related files on the restored GNU/Linux."
     echo "-iui, --iui              Skip updating initramfs file(s) on the restored GNU/Linux."
@@ -2326,6 +2329,7 @@ set_ocs_onthefly_extra_param() {
     "-ius "     "$msg_ocs_onthefly_param_ius" off \
     "-iui "     "$msg_ocs_onthefly_param_iui" off \
     "-icds "    "$msg_ocs_onthefly_param_icds" off \
+    "-rvd "     "$msg_ocs_onthefly_param_rvd" off \
     "-iefi "    "$msg_ocs_onthefly_param_iefi" off \
     "-o "       "$msg_ocs_onthefly_param_o" off \
     "-batch "   "$msg_ocs_onthefly_param_b" off \
@@ -2596,6 +2600,7 @@ parse_ocs_onthefly_cmd_options() {
       -j2|--clone-hidden-data) shift; clone_hidden_data="yes";;
       -rescue|--rescue) shift; rescue_mode="on";;
       -irhr|--irhr) shift; do_rm_hardware_record="no";;
+      -rvd|--rvd) shift; rm_ntfs_vol_dirty_flag="yes";;
       -ius|--ius) shift; do_update_syslinux="no";;
       -iui|--iui) shift;do_update_initrd="no";;
       -icds|--ignore-chk-dsk-size-pt) shift; chk_tgt_disk_size_bf_mk_pt="no";;
@@ -2676,6 +2681,50 @@ do_fsck_in_source_dev_if_assigned() {
     fi
   fi
 } # end of do_fsck_in_source_dev_if_assigned
+#
+do_rm_ntfs_vol_dirty_flag_in_source_dev_if_assigned() {
+  if [ "$rm_ntfs_vol_dirty_flag" = "no" ]; then
+    # Not enabled. Skip this.
+    return 0
+  fi
+  if [ "$mode" = "local" -o "$STATUS" = "clone_server" ]; then
+    case "$source_type" in
+     partition)
+        part_fs="$(grep -Ew "/dev/$src_dev" $src_pt_info | awk -F" " '{print $2}')"
+        if [ -z "$part_fs" ]; then
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+         echo "No file system was found in /dev/$src_dev! Skip removing NTFS volume dirty flag." | tee --append $OCS_LOGFILE
+           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        elif [ "$part_fs" = "ntfs" ]; then
+           clear_ntfs_volume_dirty_flag $src_dev
+        fi
+        ;;
+     disk)
+        echo $msg_delimiter_star_line
+        BACKUP_DEVS=""
+        echo "Searching for data partition(s) in source disk: $source_hd ..." | tee --append $OCS_LOGFILE
+        get_known_partition_proc_format $source_hd data
+        echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+        target_part_list="$(echo $BACKUP_DEVS | replace_disk_name_stdin $source_hd $target_hd)"
+        for target_part in $target_part_list; do
+          # we need to know the source partition, so replace it, ex. hdc1 -> hda1
+          # Ex: target_part: hdc1, hddev: hdc, part_no: 1, src_part: hda1
+          hddev="$(get_diskname $target_part)"
+          part_no="$(get_part_number $target_part)"
+          src_part="$(echo $target_part | replace_disk_name_stdin $hddev $source_hd)"
+          part_fs="$(grep -Ew "/dev/$target_part" $tgt_pt_info | awk -F" " '{print $2}')"
+          if [ -z "$part_fs" ]; then
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+             echo "No file system was found in /dev/$src_part! Skip removing NTFS volume dirty flag." | tee --append $OCS_LOGFILE
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          elif [ "$part_fs" = "ntfs" ]; then
+             clear_ntfs_volume_dirty_flag $src_part 
+          fi
+        done
+        ;;
+    esac
+  fi
+} # end of do_rm_ntfs_vol_dirty_flag_in_source_dev_if_assigned
 #
 disk_to_local_disk_dia_des() {
   disk_to_local_disk_msg_1="disk_to_local_disk"
@@ -3041,6 +3090,9 @@ fi
 
 # Run fsck on the source partition
 do_fsck_in_source_dev_if_assigned
+
+# Remove dirty ntfs volume flag
+do_rm_ntfs_vol_dirty_flag_in_source_dev_if_assigned
 
 #
 if [ "$chksum_for_files_in_dev" = "yes" ]; then
