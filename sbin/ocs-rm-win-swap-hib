@@ -23,12 +23,25 @@ files_to_be_rm="pagefile.sys hiberfil.sys swapfile.sys PAGEFILE.SYS HIBERFIL.SYS
 USAGE() {
   echo "To remove the page file or hibernation file in partition."
   echo "Usage: $0 PARTITION_NAME"
-  echo "Ex: $0 /dev/hda1"
+  echo "PARTITION_NAME can be with or without /dev/, e.g., /dev/sda1 or sda1."
+  echo "Ex: $0 /dev/sda1"
 }
 
-partition_list="$1"
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+partition_list="$(format_dev_name_with_leading_dev $*)"
+
 if [ -z "$partition_list" ]; then
   echo "No partition is assigned!"	 
+  USAGE >& 2
   echo "Program terminated!!!"
   exit 1
 fi
@@ -38,7 +51,11 @@ for part in $partition_list; do
   # Check if it's busy.
   # If the partition is not ntfs or fat, skip. Since normally MS windows only uses ntfs or fat.
   fs="$(ocs-get-part-info $part filesystem)"
-  [ -z "$(echo "$fs" | grep -iE "(ntfs|fat)")" ] && continue
+  echo "$part partition file system: $fs"
+  if [ -z "$(echo "$fs" | grep -iE "(ntfs|fat)")" ]; then
+    echo "Not a FAT or NTFS partition. Skip this partition: $part."
+    continue
+  fi
   case "$fs" in
    ntfs)
      if type ntfs-3g &>/dev/null; then

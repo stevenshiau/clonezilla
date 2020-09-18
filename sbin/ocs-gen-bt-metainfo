@@ -18,17 +18,19 @@ init_port="6969"
 # Settings
 #
 USAGE() {
-    echo "$ocs - To create the Clonezilla bittorrent slices files from existing Clonezilla image"
+    echo "$ocs - To create the BT metainfo (.torrent) file from file system on a partition directly"
     echo "Usage:"
     echo "To run $ocs:"
-    echo "$ocs [OPTION] DEV"
-    echo "Options:"
+    echo "$ocs [OPTION] DEVICE"
+    echo "DEVICE is the device name, can be with or without /dev/, e.g, /dev/sda1 or sda1."
+    echo "If \"DEVICE\" is not assigned, a dialog menu will be shown."
+    echo 
+    echo "OPTION:"
     echo "-d|--output-dir DIR  Specify DIR (absolute path) as the output dir"
-    echo "-i|--image-dir DIR   Specify DIR (absolute path) as the image dir which has existing LVM info file (lvm_vg_dev.list)"
-    echo "DEV is the device name, can be either begin with /dev/ or not."
-    echo "If \"DEV\" is not assigned, a dialog menu will be shown for you to select."
+    echo "-i|--image-dir DIR   Specify DIR (absolute path) as the image dir which has existing LVM info file (lvm_vg_dev.list). This option will help Clonezilla to know the partition has LV so that it can process that instead of processing that as unknown file system."
+    echo 
     echo "Ex:"
-    echo "To create the Clonezilla bittorrent slices files from the partition \"sda1\", run"
+    echo "To create the BT metainfo (.torrent) file from file system on the partition \"sda1\", run"
     echo "   $ocs sda1"
     echo
 } # end of USAGE
@@ -193,7 +195,7 @@ while [ $# -gt 0 ]; do
  esac
 done
 
-target_dev="$*"
+target_parts="$(strip_leading_dev $*)" # No matter the input is like /dev/sda1 or sda1, format it as sda1
 
 force_TERM_as_linux_if_necessary
 
@@ -224,13 +226,6 @@ else
   fi
 fi
 
-target_parts=""
-if [ -n "$target_dev" ]; then
-  # Removing the leading /dev/, make it like: /dev/sda1 -> sda1
-  for idev in $target_dev; do
-    target_parts="${target_parts} ${idev#/dev/*}" 
-  done
-fi
 if [ -z "$target_parts" ]; then
   get_target_parts_name_from_local_machine  # get $target_parts
 fi

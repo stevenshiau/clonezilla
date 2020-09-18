@@ -1852,18 +1852,16 @@ post_process_in_target_dev() {
   if [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then
     echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
     # Find the target_parts for later use in resize and partclone.ntfsfixboot
-    if [ "$resize_partition" = "on" -o "$change_ntfs_boot_chs" = "on" ]; then
-      case "$source_type" in
-        partition) target_parts="$tgt_dev" ;;
-        disk) 
-          #target_parts="$(get_known_partition_sf_format $pt_tmp)" ;;
-          BACKUP_DEVS=""
-          echo "Searching for data partition(s) in target disk for post process: $target_hd..." | tee --append $OCS_LOGFILE
-          get_known_partition_proc_format $target_hd data
-          target_parts="$BACKUP_DEVS"
-          ;;
-      esac
-    fi
+    case "$source_type" in
+      partition) target_parts="$tgt_dev" ;;
+      disk) 
+        #target_parts="$(get_known_partition_sf_format $pt_tmp)" ;;
+        BACKUP_DEVS=""
+        echo "Searching for data partition(s) in target disk for post process: $target_hd..." | tee --append $OCS_LOGFILE
+        get_known_partition_proc_format $target_hd data
+        target_parts="$BACKUP_DEVS"
+        ;;
+    esac
     echo $msg_delimiter_star_line
     if [ "$resize_partition" = "on" ]; then
      resize_ntfsfix_opt=""
@@ -1873,6 +1871,7 @@ post_process_in_target_dev() {
      fi
      for partition in $target_parts; do
        echo "Now tuning the file system size on partition /dev/$partition to fit the partition size..." | tee --append $OCS_LOGFILE
+       echo "Running: ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition" | tee --append $OCS_LOGFILE
        ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition | tee --append $OCS_LOGFILE
        echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
      done
@@ -1905,12 +1904,14 @@ post_process_in_target_dev() {
 
     # Remove the udev MAC address records on the restored GNU/Linux
     if [ "$do_rm_hardware_record" = "yes" ]; then
+      echo "Running: ocs-tux-postprocess $target_parts" | tee --append $OCS_LOGFILE
       ocs-tux-postprocess $target_parts | tee --append $OCS_LOGFILE
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     fi
 
     # re-install syslinux
     if [ "$do_update_syslinux" = "yes" ]; then
+      echo "Running: ocs-update-syslinux -b $target_parts" | tee --append $OCS_LOGFILE
       ocs-update-syslinux -b $target_parts | tee --append $OCS_LOGFILE
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     fi
@@ -2110,7 +2111,7 @@ USAGE() {
     echo "-e1, --change-geometry NTFS-BOOT-PARTITION  Force to change the CHS (cylinders, heads, sectors) value of NTFS boot partitoin after image is restored. NTFS-BOOT-PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the NTFS boot partition automatically)"
     echo "-e2, --load-geometry-from-edd  Force to use the CHS (cylinders, heads, sectors) from EDD (Enhanced Disk Device) when creating partition table by sfdisk"
     echo "-r, --resize-partition   Resize the file system size to fit the partition size in the destination disk. It is normally used when when a small partition image is restored to a larger partition."
-    echo "-f, --source DEV         Specify the source device as DEV (sda, sda1...)"
+    echo "-f, --source DEV         Specify the source device as DEV (can be with or without /dev/, e.g., /dev/sda or sda, /dev/sda1 or sda1...)"
     echo "-g, --grub-install GRUB_PARTITION     Install grub in the MBR of the disk containing partition GRUB_PARTITION with root grub directory in the same GRUB_PARTITION when restoration finishes, GRUB_PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the grub root partition automatically). If \"auto\" is assigned, it will work if grub partition and root partition are not in the same partition."
     echo "-i, --filter PROGRAM     Use the PROGRAM (gzip/lzop/bzip2/xz/lz4/zstd/cat) before sending partition data to netcat (only in network clone mode). The default action is gzip. Use \"cat\" if you do not want to compress (Good for fast internode network)."
     echo "-nogui, --nogui          Do not show GUI (TUI) of Partclone or Partimage, use text only"
@@ -2132,7 +2133,7 @@ USAGE() {
     echo "-pa, --postaction [choose|poweroff|reboot|command|CMD]  When cloning job finishes, the action to be run, e.g. poweroff, reboot, enter command line prompt or run CMD you assign"
     echo "-a, --server             Specify the running machine is in network clone server."
     echo "-s, --source-IP IP       Specify the source IP address (used in target client machine)."
-    echo "-t, --target DEV         Specify the target device as DEV (sda, sda1...)"
+    echo "-t, --target DEV         Specify the target device as DEV (can be with or without /dev/, e.g., /dev/sda or sda, /dev/sda1 or sda1...)"
     echo "-v, --verbose            Prints verbose information"
     echo "-u, --use-nuttcp         Use nuttcp instead of netcat as the network pipe program."
     echo "-x, --interactive        Interactive mode."
@@ -2540,7 +2541,8 @@ parse_ocs_onthefly_cmd_options() {
               shift
               if [ -z "$(echo $1 |grep ^-.)" ]; then
                 # skip the -xx option, in case 
-                src_dev=$1
+		# No matter the input is like /dev/sda or sda, format it as sda
+		src_dev="$(strip_leading_dev $1)"
                 shift
               fi
               [ -z "$src_dev" ] && USAGE && exit 1
@@ -2549,7 +2551,8 @@ parse_ocs_onthefly_cmd_options() {
               shift
               if [ -z "$(echo $1 |grep ^-.)" ]; then
                 # skip the -xx option, in case 
-                tgt_dev=$1
+		# No matter the input is like /dev/sda or sda, format it as sda
+		tgt_dev="$(strip_leading_dev $1)"
                 shift
               fi
               [ -z "$tgt_dev" ] && USAGE && exit 1

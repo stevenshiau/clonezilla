@@ -21,11 +21,13 @@ USAGE() {
     echo "$ocs - To restore the EBR (Extended boot record) from an image to device"
     echo "Usage:"
     echo "To run $ocs:"
-    echo "$ocs [OPTION] IMAGE_NAME DEVICE"
-    echo "Options:"
+    echo "$ocs [OPTION] IMAGE DEVICE"
+    echo "IMAGE is the image dir name, not absolute path"
+    echo "DEVICE name can be with or without /dev/, e.g., /dev/sda1 or sda1."
+    echo
+    echo "OPTION:"
     echo "-or, --ocsroot DIR  Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
-    echo "IMAGE_NAME is the image dir name, not absolute path"
-    echo "DEVICE is the device name, e.g. sda1, sda2..."
+    echo
     echo "Ex:"
     echo "To restore the the EBR saved in the image \"my-image\" to device sda4, run:"
     echo "   $ocs my-image sda4"
@@ -62,7 +64,7 @@ done
 
 target_dir="$1"
 shift
-target_part="$*"
+target_part="$(strip_leading_dev $*)"
 
 force_TERM_as_linux_if_necessary
 
@@ -108,8 +110,10 @@ for ipart in $target_part; do
   fi 
 
   #
-  echo -n "Restoring the first 446 bytes of EBR data for extended partition $ipart... "
-  dd if=$target_dir_fullpath/$(to_filename ${ipart})-ebr of=/dev/$ipart bs=446 count=1 &>/dev/null
+  dd_cmd="dd if=$target_dir_fullpath/$(to_filename ${ipart})-ebr of=/dev/$ipart bs=446 count=1 &>/dev/null"
+  echo "Restoring the first 446 bytes of EBR data for extended partition $ipart by:"
+  echo "$dd_cmd"
+  eval $dd_cmd
   echo "done."
   echo $msg_delimiter_star_line
 done

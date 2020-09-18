@@ -19,16 +19,18 @@ chk_tgt_disk_size_bf_mk_pt="yes"
 cmd_name="$(basename $0)"
 #
 USAGE() {
-    echo "$cmd_name: To create a proportional MBR partition table (not GPT) in a disk based on a existing partition table (sfdisk format)"
+    echo "$cmd_name: To create a proportional GPT partition table in a disk based on an existing partition table (sfdisk format)"
     echo "Usage:"
     echo "  $cmd_name [OPTION] PARTITION_TABLE_FILE TARGET_DEVICE"
+    echo "  TARGET_DEVICE can be with or without /dev/, e.g., /dev/sda or sda."
     echo 
     echo "OPTION:"
-    echo " -b, --batch     Run $cmd_name in batch mode, i.e. without any prompt or wait to press enter. VERY DANGEROUS!"
-    echo "$cmd_name will honor experimental variable EXTRA_SFDISK_OPT and use it as the option for sfdisk."
-    echo " -icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
+    echo "  -b, --batch     Run $cmd_name in batch mode, i.e. without any prompt or wait to press enter. VERY DANGEROUS!"
+    echo "   $cmd_name will honor experimental variable EXTRA_SFDISK_OPT and use it as the option for sfdisk."
+    echo "  -icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
+    echo 
     echo "Example:"
-    echo "  To create a proportional partition table on disk /dev/sda based on /home/partimag/IMAGE/sda-pt.sf, use:"
+    echo "To create a proportional partition table on disk /dev/sda based on /home/partimag/IMAGE/sda-pt.sf, use:"
     echo "$cmd_name /home/partimag/IMAGE/sda-pt.sf /dev/sda"
 }         
           
@@ -50,7 +52,8 @@ done
 
 # Original sfdisk format file
 orig_sf=$1   # orig_sf is like: /home/partimag/IMAGE/sda-pt.sf
-target_disk=$2  # target_disk is like: /dev/sda
+# No matter the input is like /dev/sda or sda, format it as /dev/sda
+target_disk="$(format_dev_name_with_leading_dev $2)"
 
 #
 ask_and_load_lang_set $specified_lang
@@ -386,6 +389,7 @@ echo "Partition table was created by: sfdisk $EXTRA_SFDISK_OPT $target_disk < $n
 # Thanks to Conan for this suggestion.
 # Ref: https://sourceforge.net/p/clonezilla/discussion/
 #      Clonezilla_live/thread/c5e92d87/?limit=25#080c
+echo $msg_delimiter_star_line
 if [ -n "$(LC_ALL=C parted -h | grep -w resizepart)" ]; then
   # Find the last partition number.
   # Firstly we get the line number for "Number  Start   End     Size    
@@ -397,9 +401,11 @@ if [ -n "$(LC_ALL=C parted -h | grep -w resizepart)" ]; then
   last_part_no="$(LC_ALL=C parted -s $target_disk print | \
   tail -n +${line_after} | awk -F" " '{print $1}' | sort -V | tail -n 1)"
   if [ -n "$last_part_no" ]; then
-    echo "Trying to extend the last partition to the end of disk by:"
-    echo "parted -s $target_disk resizepart $last_part_no 100%"
-    LC_ALL=C parted -s $target_disk resizepart $last_part_no 100%
+    resizepart_cmd="LC_ALL=C parted -s $target_disk resizepart $last_part_no 100%"
+    echo "Now trying to extend the last partition to the end of disk by:"
+    echo "$resizepart_cmd"
+    eval $resizepart_cmd
+    echo "Done!"
   fi
 fi
 

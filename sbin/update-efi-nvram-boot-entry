@@ -37,16 +37,21 @@ USAGE() {
     echo "Usage:"
     echo "To run $ocs:"
     echo "$ocs [OPTION] DISK"
-    echo "Options:"
+    echo "DISK name can be with or without /dev/, e.g., /dev/sda or sda."
+    echo
+    echo "OPTION:"
     echo "-l, --label LABEL     Use LABEL when writing label in EFI NVRAM."
     echo "-f, --efi-boot-file-info FNAME Output the EFI system partition and boot file info to file FNAME."
     echo "-r, --full-path-to-efi-file  FULL_PATH_TO_EFI_FILE   Use the label in FULL_PATH_TO_EFI_FILE, which is the output of command \"efibootmgr -v\"."
     echo "-s, --skip-clean-nvram-unused-boot-entry  Skip cleaning unused boot entry in NVRAM. Just keep the way it is."
     echo "//NOTE// The options -l and -r conflict with each other. Use one of them only."
-    echo "DEVICE is the hard drive name, e.g. /dev/sda, /dev/sda..."
+    echo
     echo "Ex:"
-    echo "To update the UEFI NVRAM with existing EFI system partition on hard drive /dev/sda, run"
+    echo "To update the UEFI NVRAM with existing EFI system partition on /dev/sda, run"
     echo "   $ocs /dev/sda"
+    echo
+    echo "To update the UEFI NVRAM with the label in /home/partimag/centos7-efi/efi-nvram.dat on /dev/sda, run"
+    echo "   $ocs -r /home/partimag/centos7-efi/efi-nvram.dat -f /tmp/efi_info.txt /dev/sda"
     echo
 } # end of USAGE
 #
@@ -499,7 +504,8 @@ while [ $# -gt 0 ]; do
  esac
 done
 
-disk_="$1"
+disk_="$(format_dev_name_with_leading_dev $1)"
+
 if [ -z "${disk_}" ]; then
   USAGE
   exit 1

@@ -43,12 +43,21 @@ check_ocs_live="yes"
 
 # Functions
 USAGE() {
-    echo "$ocs - To start feeding image for multicast/bt mode in Clonezilla"
+    echo "$ocs - To start feeding image for multicast/BT mode in Clonezilla"
     echo "Usage:"
     echo "To run $ocs:"
-    echo "$ocs [OPTION] MODE [IMAGE_NAME] [DEVICE]"
-    echo "This program is specially used in Clonezilla live to start feeding multicast/bt packets for clients."
-    echo "Options:"
+    echo "$ocs [OPTION] MODE [IMAGE] [DEVICE]"
+    echo "This program is specially used in Clonezilla live to start feeding multicast/BT packets for clients."
+    echo "MODE is \"start\" or \"stop\""
+    echo "IMAGE is the image dir name, not absolute path"
+    echo "DEVICE name can be with or without /dev/, e.g., /dev/sda or sda."
+    echo "Two reserved parameters can be used for image (BT from device mode) or device name (only for whole disk):"
+    echo "\"all\" is for all the available hard drives."
+    echo "\"all-but-usb\" is for all the available hard drives excluding USB ones."
+    echo "If \"ask_user\" is used as IMAGE or DEVICE, a dialog menu will be shown to allow selection."
+    echo "If no IMAGE is specified, a dialog menu will be shown."
+    echo 
+    echo "OPTION:"
     USAGE_common_restore
     USAGE_common_restore_server
     USAGE_reserved_word_for_restore
@@ -72,14 +81,6 @@ USAGE() {
     echo " -bsdf, --bt-src-dev-fsck  TYPE   Assign the type for fsck the source device: sfsck, fsck, fsck-y. Do not put \"-\" before the TYPE. It will confuse $ocs. Use it like: \"-bsdf fsck-y\""
     echo " -icol, --ignore-check-ocs-live   Skip checking if the working environment is Clonezilla live or not."
     echo
-    echo "MODE is \"start\" or \"stop\""
-    echo "IMAGE_NAME is the image dir name, not absolute path"
-    echo "DEVICE is the device name, e.g. sda, sda1, sda2..."
-    echo "Two reserved parameters can be used for image (BT from device mode) or device name (only for whole disk):"
-    echo "\"all\" is for all the available hard drives."
-    echo "\"all-but-usb\" is for all the available hard drives excluding USB ones."
-    echo "If \"ask_user\" is used as IMAGE_NAME or DEVICE, a dialog menu will be shown to allow selection."
-    echo "If no IMAGE_NAME is specified, a dialog menu will be shown."
     echo "Ex:"
     echo "To start feeding the image \"my-image\" for restoring it in client's device sda, run"
     echo "   $ocs start my-image sda"
@@ -907,7 +908,9 @@ task_start_feed_img_for_cast() {
     fi
     case "$md_source_type" in
       from-image)  ocs_restore_img_name="$ocs_img_name_or_src_dev";;
-      from-device) ocs_source_dev="$ocs_img_name_or_src_dev";;
+      from-device) # No matter the input is like /dev/sda or sda, format it as sda
+		   ocs_source_dev="$(strip_leading_dev $ocs_img_name_or_src_dev)"
+		   ;; 
                *)  echo "Unknown type for md_source_type!"
                    echo "$msg_program_stop!"
                    exit 1
@@ -1631,7 +1634,7 @@ mode="$1"
 shift
 ocs_img_name_or_src_dev="$1"  # Later we will decide it's used as image name or source device (BT onthefly).
 shift
-ocs_restore_dev="$*"
+ocs_restore_dev="$(strip_leading_dev $*)" # No matter the input is like /dev/sda or sda, format it as sda
 
 #
 [ -z "$mode" ] && mode="ask_user"

@@ -117,8 +117,10 @@ check_if_root
 #
 USAGE() {
     echo "Usage:"
-    echo "To save or restore image"
-    echo "$ocs [OPTION] {savedisk|saveparts|restoredisk|restoreparts} IMAGE_NAME DEVICE"
+    echo "To save or restore an image"
+    echo "$ocs [OPTION] {savedisk|saveparts|restoredisk|restoreparts} IMAGE DEVICE"
+    echo "IMAGE is the image dir name in $ocsroot, not absolute path"
+    echo "DEVICE name can be with or without /dev/, e.g., /dev/sda or sda."
     echo 
     echo " Options for saving:"
     USAGE_common_save
@@ -139,20 +141,20 @@ USAGE() {
     echo " -os, --ocs-server SRV Assign the OCS server as SRV."
     echo
     echo "Example:"
-    echo "   To save or restore image in client (Only that DRBL client will join, and its local partitions is NOT mounted). NOTE!!! You should run the command in DRBL client or you have to make sure the target device is NOT busy!."
-    echo "   To save all the data in local first IDE harddrive 'hda' as image 'IMAGE1', use ntfsclone instead of partimage, and lzop compression (NOTE!!! You should run the command in DRBL client or make sure hda is NOT busy/mounted!):"
-    echo "   $ocs --use-ntfsclone -z3 savedisk IMAGE1 hda"
+    echo "   Before saving or restoring an image, you have to make sure the device is NOT mounted!"
+    echo "   To save all the data in local 1st harddrive 'sda' as image 'IMAGE1', use ntfsclone, and lzop compression:"
+    echo "   $ocs --use-ntfsclone -z3 savedisk IMAGE1 sda"
     echo
-    echo "   To save the data in first and second partitions in local first IDE harddrive 'hda' as image 'IMAGE2', use ntfsclone instead of partimage, and lzop compression (NOTE!!! You should run the command in DRBL client, or make sure hda is NOT busy/mounted!):"
-    echo "   $ocs" '--use-ntfsclone -z3 saveparts IMAGE2 "hda1 hda2"'
+    echo "   To save the data in 1st and 2nd partition in local first harddrive 'sda' as image 'IMAGE2', use ntfsclone:"
+    echo "   $ocs" '--use-ntfsclone -z3 saveparts IMAGE2 "sda1 sda2"'
     echo
-    echo "   To restore image "IMAGE1" to local hda. grub-install will be run after cloning (image IMAGE1 is already in DRBL server. NOTE!!!  You should run the command in DRBL client or make sure hda is NOT busy/mounted!):"
-    echo "   $ocs -g auto restoredisk IMAGE1 hda"
+    echo "   To restore the image "IMAGE1" to local sda, and grub-install will be run after cloning:"
+    echo "   $ocs -g auto restoredisk IMAGE1 sda"
     echo
-    echo "   To restore image first and second partitions from "IMAGE2" to local hda1 and hda2. grub-install will be run after cloning (image IMAGE2 is already in DRBL server. NOTE!!!  You should run the command in DRBL client or make sure hda is NOT busy/mounted!):"
-    echo "   $ocs" '-g auto restoreparts IMAGE2 "hda1 hda2"'
+    echo "   To restore the image for the 1st and 2nd partition from "IMAGE2" to local sda1 and sda2, and grub-install will be run after restoring:"
+    echo "   $ocs" '-g auto restoreparts IMAGE2 "sda1 sda2"'
     echo
-    echo "   To save disk(s)/partitition(s) as an image or restore an image to disk(s)/partitition(s) interactively, use:"
+    echo "   To save disk(s)/partition(s) as an image or restore an image to disk(s)/partition(s) interactively, use:"
     echo "   $ocs -x"
 }
 #
@@ -993,9 +995,7 @@ shift ${n_shift}
 ocs_sr_type_assign="$1"
 ocs_sr_img_name="$2"
 shift 2
-ocs_sr_dev="$*"
-# If the inputted dev is: "hda hdb", convert it to hda hdb (so it won't be ""hda hdb"")
-ocs_sr_dev="$(echo $ocs_sr_dev | tr -d \")"
+ocs_sr_dev="$(strip_leading_dev $*)"
 
 # Rotate the log file
 ocs_log_rotate $OCS_LOGFILE

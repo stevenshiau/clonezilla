@@ -32,7 +32,10 @@ USAGE() {
     echo "Usage:"
     echo "To run $ocs:"
     echo "$ocs [OPTION] [start|stop|status] [IMAGE] [DEV1] [DEV1]..."
-    echo "Options:"
+    echo "IMAGE is the image name in \"$ocsroot_btzone\""
+    echo "DEV* name can be with or without /dev/, e.g., /dev/sda or sda."
+    echo
+    echo "OPTION:"
     echo "-b, --brutal-kill            Brutally kill all the related service when stopping."
     echo "-c, --metainfo-creator PROG  Use PROG to create the metainfo (.torrent) file"
     echo "-f, --from-raw-dev           Force to read BT data from raw device. Default is from image"
@@ -41,13 +44,12 @@ USAGE() {
     echo "-p, --bt-srv-ip  IP          Assign the IP address for using in tracker's URL. If not assigned, the IP address detected on the machine will be used"
     echo "-r, --bt-root DIR            Use DIR as the working dir. It's preceded to the files downloaded. Default value is \"$ocsroot_btzone\""
     echo "-t, --bt-client PROG         Use PROG instead of ctorrent as the bittorrent client program. Available PROG: ezio, ctorrent, lftp, btdownloadheadless, aria2c"
-    echo "IMAGE is the image name under \"$ocsroot_btzone\""
-    echo "DEV* is the device name"
+    echo
     echo "Ex:"
     echo "To start the bittorrent service for the image dir \"/home/partimag/btzone/myimg/sda1/\" and \"/home/partimag/btzone/myimg/sda5/\", assign the IP address 192.168.120.183 for the tracker's URL, run"
     echo "  $ocs -p 192.168.120.183 start myimg sda1 sda5"
     echo "To stop the bittorrent service for the image dir \"/home/partimag/btzone/myimg/sda5/\", run"
-    echo "  $ocs stop my sda5"
+    echo "  $ocs stop myimg sda5"
     echo
 } # end of USAGE
 #
@@ -451,7 +453,8 @@ action="$1"
 shift
 img_dir="$1"
 shift
-parts="$*"
+# The partition name, e.g. sda1, sda2
+parts="$(strip_leading_dev $*)" # No matter the input is like /dev/sda1 or sda1, format it as sda1.
 
 # Load deafult values if not specified.
 [ -z "$metainfo_creator" ] && metainfo_creator="$metainfo_creator_def"
@@ -462,9 +465,6 @@ if [ "$bt_slices_from_dev" = "raw-dev" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   bt_client="ezio"
 fi
-
-# Strip the leading /dev/ if it's assigned. Make it like sda1, sdb1, not /dev/sda1, /dev/sdb1.
-parts="$(echo $parts | sed -r -e "s|/dev/||g")"  # partition name, e.g. sda1, sda2
 
 #check_if_root
 ask_and_load_lang_set

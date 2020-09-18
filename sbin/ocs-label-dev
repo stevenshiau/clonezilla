@@ -21,9 +21,10 @@ USAGE() {
     echo "Usage:"
     echo "To run $ocs:"
     echo "$ocs DEVICE LABEL"
-    echo "Options:"
-    echo "DEVICE is the device name, e.g. /dev/sda1, /dev/sda2..."
+    echo
+    echo "DEVICE name can be with or without /dev/, e.g., /dev/sdc1 or sdc1."
     echo "LABEL is the label name, e.g. Clonezilla-USB"
+    echo
     echo "Ex:"
     echo "To label a file system partition /dev/sdc1 as \"Clonezilla-USB\", run"
     echo "   $ocs /dev/sdc1 Clonezilla-USB"
@@ -47,7 +48,7 @@ while [ $# -gt 0 ]; do
  esac
 done
 
-ocs_dev="$1"
+ocs_dev="$(format_dev_name_with_leading_dev $1)"
 ocs_label="$2"
 
 #
@@ -105,5 +106,10 @@ case  "$fs" in
              my_ocs_exit 1
 esac
 rc=$?
+if [ "$rc" -eq 0 ]; then
+  echo $msg_delimiter_star_line
+  echo "The info for device $ocs_dev now:"
+  blkid -o export $ocs_dev
+fi
 
 my_ocs_exit $rc

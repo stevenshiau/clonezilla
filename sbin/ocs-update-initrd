@@ -26,10 +26,13 @@ USAGE() {
     echo "Usage:"
     echo "To run $ocs:"
     echo "$ocs [OPTION] BOOT_PARTITION"
-    echo "Options:"
-    echo "-s, --selected-hd  DISK Assign the disk to search for _only_, i.e. not to search those not in the lists. This is used for not to touch those disk which are not restored. E.g. sda or sdb..." 
-    echo "-p, --selected-parts PARTITION  Assign the partitions to search for _only_, i.e. not to search those not in the lists. This is used for not to touch those partitions which are not restored. E.g. sda1, sda2. For multiple partitions, use something like \"sda1 sda2\""
-    echo "BOOT_PARTITION is the partition has /boot dir where Linux kernel, initramfs (and grub files) are located. E.g. /dev/sda1, /dev/sdb1..."
+    echo "BOOT_PARTITION is the partition has /boot dir where Linux kernel, initramfs (and grub files) are located."
+    echo "It can be with or without /dev/, e.g., /dev/sda1 or sda1. If \"auto\" is assigned, $ocs will try to find the boot partition."
+    echo 
+    echo "OPTION:"
+    echo "-s, --selected-hd  DISK Assign the disk to search for _only_, i.e. not to search those not in the lists. This is used for not to touch those disk which are not restored. It can be with or without /dev/, e.g, /dev/sda or sda." 
+    echo "-p, --selected-parts PARTITION  Assign the partitions to search for _only_, i.e. not to search those not in the lists. This is used for not to touch those partitions which are not restored. It can be with or without /dev/, e.g., /dev/sda1 or sda1. For multiple partitions, use something like \"sda1 sda2\""
+    echo 
     echo "Ex:"
     echo "To update initramfs on /dev/sda with possible boot partitions sda1 and sda2, run"
     echo "   $ocs -p \"sda1 sda2\" -s sda auto"
@@ -55,7 +58,7 @@ while [ $# -gt 0 ]; do
        shift
        if [ -z "$(echo $1 |grep ^-.)" ]; then
          # skip the -xx option, in case 
-         selected_hd="$1"
+	 selected_hd="$(strip_leading_dev $1)"
          shift
        fi
        if [ -z "$selected_hd" ]; then
@@ -69,7 +72,7 @@ while [ $# -gt 0 ]; do
        shift
        if [ -z "$(echo $1 |grep ^-.)" ]; then
          # skip the -xx option, in case 
-         selected_parts="$1"
+	 selected_parts="$(strip_leading_dev $1)"
          shift
        fi
        if [ -z "$selected_parts" ]; then
@@ -87,7 +90,7 @@ while [ $# -gt 0 ]; do
     *)      break ;;
   esac
 done
-grub_partition="$1"
+grub_partition="$(format_dev_name_with_leading_dev $1)"
 
 if [ -z "$grub_partition" ]; then
   USAGE

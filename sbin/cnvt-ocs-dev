@@ -27,6 +27,7 @@ USAGE() {
     echo "Usage:"
     echo "$ocs [OPTION] IMAGE_NAME SOURCE_DEV_NAME TARGET_DEVICE_NAME"
     echo "NOTE! (1) The cloned OS should support the device driver, such as SCSI or SATA if you convert it to SCSI/SATA. (2) If it's GNU/Linux, maybe you have to modify the /etc/fstab in the cloned OS"
+    echo "DEVICE name can be with or without /dev/, e.g., /dev/sda or sda."
     echo 
     echo "OPTION:"
     language_help_prompt_by_idx_no
@@ -90,8 +91,8 @@ while [ $# -gt 0 ]; do
 done
 
 image_name="$1"
-src_dev="$2"
-tgt_dev="$3"
+src_dev="$(strip_leading_dev $2)" # No matter the input is like /dev/sda or sda, format it as sda
+tgt_dev="$(strip_leading_dev $3)" # No matter the input is like /dev/sda or sda, format it as sda
 
 #
 ask_and_load_lang_set $specified_lang
@@ -254,8 +255,8 @@ filenames_2_be_mod_about_swap="$(LC_ALL=C find $ocsroot/$image_name/ -name \
 #      ├── sda1 (dir)
 #      └── sda1.torrent
 #      └── sda1.torrent.info
-filenames_2_be_mod_about_bt_metadata="$(LC_ALL=C find $ocsroot/btzone/$image_name/ \( -name "$(to_filename ${src_dev})*.torrent*" \) -print | sort)"
-filenames_2_be_mod_about_bt_part_dir="$(LC_ALL=C find $ocsroot/btzone/$image_name/ -type d \( -name "$(to_filename ${src_dev})*" \) -print | sort)"
+filenames_2_be_mod_about_bt_metadata="$(LC_ALL=C find $ocsroot/btzone/$image_name/ \( -name "$(to_filename ${src_dev})*.torrent*" \) -print 2>/dev/null | sort)"
+filenames_2_be_mod_about_bt_part_dir="$(LC_ALL=C find $ocsroot/btzone/$image_name/ -type d \( -name "$(to_filename ${src_dev})*" \) -print 2>/dev/null | sort)"
 
 # Process the disk-related file names
 for im in $filenames_2_be_mod_about_disk; do

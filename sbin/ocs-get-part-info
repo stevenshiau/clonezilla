@@ -16,10 +16,12 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 prog="$(basename $0)"
 USAGE() {
    echo "Usage: $prog [OPTION] PARTITION VALUE1 VALUE2..."
-   echo "PARTITION is the partition device name. e.g. /dev/sda1"
-   echo "VALUE is one of these value: start, end, size, type, filesystem or flags"
+   echo "PARTITION can be with or without /dev/. e.g. /dev/sda1 or sda1"
+   echo "VALUE is one of these values: start, end, size, type, filesystem or flags"
+   echo
    echo "OPTION:"
    echo "-u, --unit UNIT     When the VALUE1, VALUE2... is about size, show the size with unit UNIT (s, kB, MB, GB... which parted accepts)."
+   echo
    echo "Ex:" 
    echo "To list the /dev/sda1 size with unit sector"
    echo "  $prog -u s /dev/sda1 size"
@@ -416,7 +418,7 @@ get_fs_from_blkid() {
 } # end of get_fs_from_blkid
 #
 get_fs_from_partclone_fstype() {
-  local part_="$1"  # e.g. sda1, cciss/c0d0p1, dm-1
+  local part_="$1"  # e.g. /dev/sda1, /dev/cciss/c0d0p1, /dev/dm-1
   local fstypeinfo TYPE
   if type partclone.fstype &>/dev/null; then
     fstypeinfo="$(mktemp /tmp/fstypeinfo.XXXXXX)"
@@ -543,7 +545,8 @@ while [ $# -gt 0 ]; do
 done
 # part is like /dev/hda1
 # request is one of start, end, size, type, filesystem or flags.
-part="$1"
+# No matter the input is like /dev/sda1 or sda1, format it as /dev/sda1
+part="$(format_dev_name_with_leading_dev $1)"
 shift
 request="$*"
 

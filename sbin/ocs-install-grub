@@ -27,12 +27,14 @@ USAGE() {
     echo "Usage:"
     echo "To run $ocs:"
     echo "$ocs [OPTION] GRUB_PARTITION"
-    echo "Options:"
+    echo "GRUB_PARTITION is where the partition which grub will be installed."
+    echo "It can be with or without /dev/, e.g., /dev/sda1 or sda1. If \"auto\" is assigned, $ocs will try to find the grub partition."
+    echo
+    echo "OPTION:"
     echo "-g, --grub-version VER  Assign the grub version as VER (1 or 2)"
-    echo "-s, --selected-hd  DISk Assign the disk to search for _only_, i.e. not to search those not in the lists. This is used for not to touch those disk which are not restored. E.g. sda or sdb..." 
-    echo "-p, --selected-parts PARTITION  Assign the partitions to search for _only_, i.e. not to search those not in the lists. This is used for not to touch those partitions which are not restored. E.g. sda1, sda2. For multiple partitions, use something like \"sda1 sda2\""
+    echo "-s, --selected-hd  DISk Assign the disk to search for _only_, i.e. not to search those not in the lists. This is used for not to touch those disk which are not restored. It can be with or without /dev/, e.g, /dev/sda or sda." 
+    echo "-p, --selected-parts PARTITION  Assign the partitions to search for _only_, i.e. not to search those not in the lists. This is used for not to touch those partitions which are not restored. It can be with or without /dev/, e.g., /dev/sda1 or sda For multiple partitions, use something like \"sda1 sda2\""
     echo "-n, --no-check-before-install   By default we check if grub is already in the boot loader. If so, we continue to run grub-install. This option will go without checking."
-    echo "GRUB_PARTITION is where the partition which grub will be installed. E.g. /dev/sda1, /dev/sdb1..."
     echo "Ex:"
     echo "To install grub on /dev/sda with possible grub partitions sda1 and sda2, run"
     echo "   $ocs -p \"sda1 sda2\" -s sda auto"
@@ -268,7 +270,7 @@ while [ $# -gt 0 ]; do
        shift
        if [ -z "$(echo $1 |grep ^-.)" ]; then
          # skip the -xx option, in case 
-         selected_hd="$1"
+	 selected_hd="$(strip_leading_dev $1)"
          shift
        fi
        if [ -z "$selected_hd" ]; then
@@ -282,7 +284,7 @@ while [ $# -gt 0 ]; do
        shift
        if [ -z "$(echo $1 |grep ^-.)" ]; then
          # skip the -xx option, in case 
-         selected_parts="$1"
+	 selected_parts="$(strip_leading_dev $1)"
          shift
        fi
        if [ -z "$selected_parts" ]; then
@@ -305,7 +307,8 @@ while [ $# -gt 0 ]; do
     *)      break ;;
   esac
 done
-grub_partition="$1"
+# No matter the input is like /dev/sda1 or sda1, format it as /dev/sda1
+grub_partition="$(format_dev_name_with_leading_dev $1)"
 
 if [ -z "$grub_partition" ]; then
   USAGE
