@@ -411,7 +411,10 @@ clean_unused_uefi_boot_entry_in_nvram() {
     # We have to convert it as something like: /EFI/fedora/shim.efi
     efi_f="$(get_efi_hd_boot_entry_info -b $ib nvram boot_file | sed -r -e "s|\\\|\/|g")"
     efi_partuuid="$(get_efi_hd_boot_entry_info -b $ib nvram uuid)"
-    efi_part="$(blkid -o full | grep -Ew "PARTUUID=\"${efi_partuuid}\"" | awk -F":" '{print $1}')"
+    # When there are two devices having same UUID, we can only choose one of them so that later mount will work.
+    # Normally this does not happen. However, if it is, we do not know which device will be kept in the machine,
+    # hence assume it is the 1st one after sorting.
+    efi_part="$(blkid -o full | grep -Ew "PARTUUID=\"${efi_partuuid}\"" | awk -F":" '{print $1}' | sort -V | head -n 1)"
     if [ -z "$efi_f" ]; then
       continue
     fi
