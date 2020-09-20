@@ -102,14 +102,15 @@ if [ "$batch_mode" != "yes" ]; then
   esac
 fi
 
-# Check if GPT disk, if yes, exit
-if `is_gpt_partitition_table_disk $target_disk`; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "Disk $target_disk is GPT format. This program only works for MBR format."
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "$msg_program_stop!"
-  exit 1
-fi
+# No need to check since we are creating new partition table and should not care about the destination disk.
+# # Check if GPT disk, if yes, exit
+# if `is_gpt_partitition_table_disk $target_disk`; then
+#   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+#   echo "Disk $target_disk is GPT format. This program only works for MBR format."
+#   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+#   echo "$msg_program_stop!"
+#   exit 1
+# fi
 
 # No size info in sda-pt.sf, we have to use sda-pt.parted.
 orig_parted_tab="${orig_sf/.sf/.parted}"
@@ -161,6 +162,7 @@ if [ "$chk_tgt_disk_size_bf_mk_pt" = "yes" ]; then
     echo "The target disk (size=$tgt_disk_size sectors) is smaller than the source disk (size=$ori_disk_size sectors)!"
     echo "Clonezilla won't be able to restore a partition image to smaller partition!" 
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "If you are sure, use the option \"-icds\" in Clonezilla or $cmd_name to force to write the partition table."
     echo "Program terminated!"
     exit 1
   fi
@@ -227,8 +229,10 @@ perl -pi -e "s/size=/size= /g" $new_sf_tmp
 # Remove ":" in the temp file, since it's only for parsing, won't be used for sfdisk /dev/... < $new_sf_tmp ...
 perl -pi -e "s/://g" $new_sf_tmp
 
-#
-echo "unit: sectors" > $new_sf
+# //NOTE// The output of dos partition table from sfdisk is different from that of GPT.
+# There is no "last-lba:".
+echo "label: dos" > $new_sf
+echo "unit: sectors" >> $new_sf
 echo "" >> $new_sf
 start_no_keep=""
 size_no_keep=""
