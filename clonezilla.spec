@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.0.0
+Version:	4.0.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,17 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Sep 21 2020 Steven Shiau <steven _at_ clonezilla org> 4.0.1-drbl1
+  * Do not suppress the stdout/stderr messages when running dd in
+    ocs-restore-[em]br.
+  * ocs-expand-gpt-pt/ocs-expand-mbr-pt: 
+    No need to check since we are creating new partition table and should
+    not care about the destination disk's format is GPT or MBR.
+    Add prompt about the option -icds when failing to creating the partition
+    table on the smaller disk.
+  * Deal with more than one EFI part in a machine having same UUID.
+    Avoid update-efi-nvram-boot-entry failing in this case.
+
 * Fri Sep 18 2020 Steven Shiau <steven _at_ clonezilla org> 4.0.0-drbl1
   * Format the parameters of ocs-* command about the device name
     so that it can be with or without /dev/, e.g., /dev/sda or sda.
