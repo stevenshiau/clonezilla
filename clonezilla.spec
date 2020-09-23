@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.0.2
+Version:	4.0.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Sep 23 2020 Steven Shiau <steven _at_ clonezilla org> 4.0.3-drbl1
+  * Switch to use nuttcp for net pipe and zstd for filter
+    in ocs-onthefly.
+
 * Tue Sep 22 2020 Steven Shiau <steven _at_ clonezilla org> 4.0.2-drbl1
   * Disable NetworkManager service in the live-hook when
     creating clonezilla live system.
