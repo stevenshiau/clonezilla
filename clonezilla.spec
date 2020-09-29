@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.0.3
+Version:	4.0.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Sep 29 2020 Steven Shiau <steven _at_ clonezilla org> 4.0.4-drbl1
+  * Dump the S.M.A.R.T. data of drive in the image dir.
+    Thanks to KrashDummy for this idea.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/7484b15424/
+  * Update usage message of ocs-sr, about option -sfs.
+  * Show the ocs-sr command in ocs-live-feed-img.
+
 * Wed Sep 23 2020 Steven Shiau <steven _at_ clonezilla org> 4.0.3-drbl1
   * Switch to use nuttcp for net pipe and zstd for filter
     in ocs-onthefly.
