@@ -387,10 +387,20 @@ check_pt_then_run_create_part_table() {
   echo 'done!'
 } # end of check_pt_then_run_create_part_table
 #
-nc_lp_check() {
+netcat_nuttcp_check() {
   # Output NC_CMD, NC_LOCAL_PORT_OPT and NC_CLIENT_EXTRA_OPT
   NC_LOCAL_PORT_OPT=
   nc_tmp="$(mktemp /tmp/nc_tmp.XXXXXX)"
+  # By default netcat is required by Clonezilla, nuttcp is optional. Hence we have to check
+  if [ "$NET_PIPE" = "nuttcp" ]; then
+    if ! type nuttcp &> /dev/null; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Program nuttcp is not found. Switch to use netcat."
+      echo "You have to make sure you have the same netpipe program both in the source and destination machine!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      NET_PIPE="netcat"
+    fi
+  fi
   case "$NET_PIPE" in
   netcat)
     # check if command is nc or netcat
@@ -444,7 +454,7 @@ nc_lp_check() {
     NC_CMD="nuttcp"
     ;;
   esac
-} # end of nc_lp_check
+} # end of netcat_nuttcp_check
 
 #
 kill_clone_prog_nc_process() {
@@ -2997,7 +3007,7 @@ if [ -n "$STATUS" ]; then
   # Advance 3 for the next. For nuttcp both -P and -p are required so at least we need to increase 2.
   NC_PORT=$((NC_PORT + 3))
   # Get the source port option of nc is "-p" or none.
-  nc_lp_check
+  netcat_nuttcp_check
 else
   # It's in local clone mode
   if [ -z "$src_dev" -o -z "$tgt_dev" ]; then 
