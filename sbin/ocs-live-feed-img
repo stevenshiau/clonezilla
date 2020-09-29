@@ -826,6 +826,7 @@ task_start_feed_img_for_cast() {
   local rc_chkimg rc_final bt_metainfo_cmd rc_feed
   local castmode choose_term input_key input_key2 raw_dev_opt
   local pid1_prog
+  local pseudo_img_cmd
 
   #prompt_for_lite_server
 
@@ -1308,7 +1309,9 @@ task_start_feed_img_for_cast() {
         fi
         case "$bt_dev_type" in
         "disk-2-mdisks")
-           ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true savedisk ${target_dir} $target_hd
+           pseudo_img_cmd="ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true savedisk ${target_dir} $target_hd"
+	   echo "Running: $pseudo_img_cmd"
+	   eval $pseudo_img_cmd
            # Need to list all the partitions.
            part_rec_f="$(mktemp /tmp/part_rec_f_bt.XXXXXX)"
            target_parts=""
@@ -1319,15 +1322,13 @@ task_start_feed_img_for_cast() {
            done
            ;;
         "part-2-mparts")
-           ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true saveparts ${target_dir} $target_parts
+           pseudo_img_cmd="ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true saveparts ${target_dir} $target_parts"
+	   echo "Running: $pseudo_img_cmd"
+	   eval $pseudo_img_cmd
            ;;
         esac
       fi
       one_time_image_for_bt="$target_dir"  # Keep the image name for later usage since target_dir is only temporary name.
-      # TODO: Check if the one_time_image_for_bt exists?
-      if [ -d "$imagedir/$one_time_image_for_bt" ]; then
-        echo "Pseudo image for \"BT from device\" mode use only. This image is not really restorable, and it can be safely removed." > "$imagedir/$one_time_image_for_bt/00-pseudo-img-note.txt"
-      fi
       if [ -n "$mdst_img" -a -d "$imagedir/btzone/$mdst_img" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "Assigned image $mdst_img was found. No need to re-generate torrent metainfo file."
