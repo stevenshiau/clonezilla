@@ -400,8 +400,9 @@ output_ocs_related_pkgs() {
 #
 dump_hardware_software_info() {
   local img_dir="$1" 
-  local save_time pkg_to_query installed_pkgs
+  local save_time pkg_to_query installed_pkgs hd_tmp dsk_list
   [ -z "$img_dir" ] && return 1
+  save_time="$(date +%Y%-m%d-%H%M)"
   # lshw does not exist in SuSE, but hwinfo does.
   if type lshw &>/dev/null; then
     echo "Saving hardware info by lshw..."
@@ -425,6 +426,27 @@ dump_hardware_software_info() {
     echo $msg_delimiter_star_line >> $img_dir/Info-lspci.txt
     echo "'lspci -n' results:" >> $img_dir/Info-lspci.txt
     LC_ALL=C lspci -n >> $img_dir/Info-lspci.txt
+  fi
+  if type smartctl &>/dev/null; then
+    # Thanks to KrashDummy for this idea.
+    # Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/7484b15424/
+    echo "Saving S.M.A.R.T. data for the drive..."
+    dsk_list=""
+    # Collect disk info from the file parts of image dir.
+    # Since saveparts does not provide file "disk", 
+    # while file "parts" are common for savedisk and saveparts.
+    for ipart in `cat $img_dir/parts`; do
+      hd_tmp="$(get_diskname $ipart)"
+      if [ -z "$(echo $dsk_list | grep -Ew $hd_tmp)" ]; then
+        dsk_list="$dsk_list $hd_tmp"
+      fi
+    done
+    echo "This image was saved from this machine with hard drive S.M.A.R.T. info at $save_time:" > $img_dir/Info-smart.txt
+    for id in $dsk_list; do
+      echo $msg_delimiter_star_line >> $img_dir/Info-smart.txt
+      echo "For the drive: /dev/$id" >> $img_dir/Info-smart.txt
+      LC_ALL=C smartctl -a /dev/$id >> $img_dir/Info-smart.txt
+    done
   fi
   #
   echo "Saving package info..."
@@ -1698,6 +1720,9 @@ image_save() {
        # Saving mode, always copy error log to image dir.
        copy_error_log
     fi
+  else
+    # File system is not saved, so add a tag file.
+    echo "Pseudo image for \"BT from device\" mode use or other purpose only. This image is not really restorable, and it can be safely removed." > "$tgt_dir/00-pseudo-img-note.txt"
   fi
 
   #
@@ -8650,9 +8675,6 @@ task_saveparts() {
     LC_ALL=C efibootmgr -v 2>/dev/null > $target_dir_fullpath/efi-nvram.dat
   fi
 
-  # Dump hardware info
-  dump_hardware_software_info $target_dir_fullpath
-
   echo "$target_parts" > $target_dir_fullpath/parts
   rc=$?
   if [ "$rc" -gt 0 ]; then
@@ -8803,7 +8825,7 @@ task_bt_restoreparts() {
 # parameter:
 #   $1 target_image
 #   $2 target_parts (hda1, hda2...)
-#   $3 port (if exists, it's multicast mode).
+#   $3 port (if exists, it's multicast/BT mode).
 task_restoreparts() {
   local target_dir="$1"
   local target_parts="$2"

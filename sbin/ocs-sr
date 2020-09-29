@@ -125,6 +125,7 @@ USAGE() {
     echo " Options for saving:"
     USAGE_common_save
     echo " -i, --image-size SIZE    Set the split image file volume size SIZE (MB). When $ocs is run with -x, the default SIZE is set as $VOL_LIMIT_IN_INTERACTIVE, if without -x, we will not split it."
+    echo " -sfs, --skip-fs-save     Do not save the file system for device, just save the rest of files. This is mainly for BT from device massive deployment. A tag file 00-pseudo-img-note.txt will be added in the image dir, too."
     echo " -pe, --passwd-ecryptfs PASSWD  Set the password to encrypt the image. Use with option \"-enc\" when saving, or restoring when the image is encrypted. //NOTE// This is not a safe way to use it because the password is shown in the command line or system processes."
     echo " -pfe, --passwd-file-ecryptfs FILE  Set the password to encrypt the image in the FILE. Use with option -enc, or restoring when the image is encrypted. The file contains the password to encrypt the image. Its format is like: passphrase_passwd=YOURPASSWORD."
     USAGE_reserved_word_for_save
@@ -273,7 +274,7 @@ parse_ocs_sr_cmd_options_with_dash() {
 	    save_restore_error_log="yes"
 	    shift; n_shift=$((n_shift+1));;
     -sfs|--skip-fs-save)
-            # Flag to check if the image is restorable
+            # Flag to save file system
             do_fs_save="no"
 	    shift; n_shift=$((n_shift+1));;
     -w|--wait-time)
@@ -1249,6 +1250,10 @@ case "$ocs_sr_type" in
       fi
       mv -f /var/lib/clonezilla/ocs-vars.before-ocs-chkimg /var/lib/clonezilla/ocs-vars 
     fi
+
+    # Dump hardware info
+    dump_hardware_software_info $ocsroot/$target_dir
+
     echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_hd" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
 
     task_postprocessing "$ocs_sr_type" "$target_dir"
@@ -1416,6 +1421,9 @@ case "$ocs_sr_type" in
       fi
       mv -f /var/lib/clonezilla/ocs-vars.before-ocs-chkimg /var/lib/clonezilla/ocs-vars 
     fi
+    # Dump hardware info
+    dump_hardware_software_info $ocsroot/$target_dir
+
     echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_parts" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
 
     task_postprocessing "$ocs_sr_type" "$target_dir"
