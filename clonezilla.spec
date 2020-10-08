@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.0.4
+Version:	4.1.0
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.0.1, psmisc, udpcast, partclone >= 0.3.15, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 4.1.0, psmisc, udpcast, partclone >= 0.3.15, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,37 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Oct 09 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.0-drbl1
+  * Implement a better mechanism to run ocs-onthefly:
+    Now ocs-onthefly mainly uses ocs-sr to save the pseudo image,
+    and let partclone do the device to device clone. This is similar to that
+    of Clonezilla lite server.
+    Due to this improvement, some major changes for ocs-othefly in order to
+    sync with that of ocs-sr:
+    1. These options have been changed to totally different meanings:
+       -d|--destination|--target was -t|--target
+       -po|--port was -p|--port
+       --net-filter was -i|--filter
+       -p|-pa|--postaction was -pa|--postaction
+       -u|--use-nuttcp was -u|--use-netcat
+    2. New options:
+       -t|--no-restore-mbr
+       -t1|--restore-raw-mbr
+       -t2|--no-restore-ebr
+    
+    By default, the network cloning is changed to use zstd to compress
+    the data instead of gzip, and the network piping program is changed
+    to nuttcp from netcat since the latter has too many diverse versions.
+  * ocs-update-initrd: Remove useless prompt.
+  * cnvt-ocs-dev: dev-fs.list should be converted, too.
+    Add a tag file device_name_converted.info in the converted image.
+  * For drbl-ocs.conf:
+    Remove: PARTCLONE_RESTORE_ONTHEFLY_OPT_INIT
+    Add:
+    ONTHEFLY_NET_PIPE="nuttcp"
+    NC_PORT_DEFAULT="9000"
+    PARTCLONE_LOG="/var/log/partclone.log"
+
 * Tue Sep 29 2020 Steven Shiau <steven _at_ clonezilla org> 4.0.4-drbl1
   * Dump the S.M.A.R.T. data of drive in the image dir.
     Thanks to KrashDummy for this idea.
