@@ -214,6 +214,15 @@ parse_ocs_sr_cmd_options_with_dash() {
 	    create_part="yes"
 	    create_part_type="manual"
             shift; n_shift=$((n_shift+1));;
+    --net-filter)
+            shift; n_shift=$((n_shift+1))
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              net_filter=$1
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$net_filter" ] && USAGE && exit 1
+            ;;
     -noabo|--not-only-access-by-owner)  
             only_access_by_owner="no"
             shift; n_shift=$((n_shift+1));;
@@ -575,6 +584,15 @@ parse_ocs_sr_cmd_options_with_dash() {
             fi
             [ -z "$ocs_sr_mcast_port" ] && USAGE && exit 1
 	    ;;
+    --data-port)
+            shift; n_shift=$((n_shift+1)); 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+              NC_PORT="$1"
+	      shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$NC_PORT" ] && USAGE && exit 1
+	    ;;
     -p|--postaction)  
             shift; n_shift=$((n_shift+1)); 
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -590,6 +608,15 @@ parse_ocs_sr_cmd_options_with_dash() {
     --restore-only)
 	    ocs_x_mode="restore_only"
 	    shift; n_shift=$((n_shift+1));;
+    -s|--source-IP)
+            shift; n_shift=$((n_shift+1)); 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case 
+	      SOURCE_IP="$1"
+	      shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$SOURCE_IP" ] && USAGE && exit 1
+            ;;
     --save-only)
 	    ocs_x_mode="save_only"
 	    shift; n_shift=$((n_shift+1));;
@@ -1000,7 +1027,7 @@ ocs_sr_dev="$(strip_leading_dev $*)"
 
 # Rotate the log file
 ocs_log_rotate $OCS_LOGFILE
-ocs_log_rotate /var/log/partclone.log
+ocs_log_rotate $PARTCLONE_LOG
 
 #
 echo "Starting $0 at "$(LC_ALL=C date +%F' '%T' '%Z)"..." | tee --append ${OCS_LOGFILE}
@@ -1548,6 +1575,42 @@ case "$ocs_sr_type" in
     save_ocs_sr_related_vars
 
     task_bt_restoreparts "$ocs_sr_img_name" "$ocs_sr_dev" "bt"
+    task_postprocessing "$ocs_sr_type" ""
+    ;;
+  "ld2d_restoredisk")
+    # local device to device (disk to disk)
+    task_preprocessing "$ocs_sr_type"
+    task_processing_after_parameters_checked
+    save_ocs_sr_related_vars
+
+    task_d2d_restoredisk "$ocs_sr_img_name" "$ocs_sr_dev" "ld2d"
+    task_postprocessing "$ocs_sr_type" ""
+    ;;
+  "ld2d_restoreparts")
+    # local device to device (part to part)
+    task_preprocessing "$ocs_sr_type"
+    task_processing_after_parameters_checked
+    save_ocs_sr_related_vars
+
+    task_d2d_restoreparts "$ocs_sr_img_name" "$ocs_sr_dev" "ld2d"
+    task_postprocessing "$ocs_sr_type" ""
+    ;;
+  "nd2d_restoredisk")
+    # network device to device (disk to disk)
+    task_preprocessing "$ocs_sr_type"
+    task_processing_after_parameters_checked
+    save_ocs_sr_related_vars
+
+    task_d2d_restoredisk "$ocs_sr_img_name" "$ocs_sr_dev" "nd2d"
+    task_postprocessing "$ocs_sr_type" ""
+    ;;
+  "nd2d_restoreparts")
+    # network device to device (part to part)
+    task_preprocessing "$ocs_sr_type"
+    task_processing_after_parameters_checked
+    save_ocs_sr_related_vars
+
+    task_d2d_restoreparts "$ocs_sr_img_name" "$ocs_sr_dev" "nd2d"
     task_postprocessing "$ocs_sr_type" ""
     ;;
   *)
