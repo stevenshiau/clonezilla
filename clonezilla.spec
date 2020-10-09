@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.1.0
+Version:	4.1.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Oct 09 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.1-drbl1
+  * clonezilla: wrong option for ocs-onthefly in ocs_interactive, now it
+    should be "-d" instead of "-t".
+
 * Fri Oct 09 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.0-drbl1
   * Implement a better mechanism to run ocs-onthefly:
     Now ocs-onthefly mainly uses ocs-sr to save the pseudo image,
