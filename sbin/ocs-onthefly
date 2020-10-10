@@ -295,7 +295,7 @@ local_dev_clone() {
 } # end of local_dev_clone
 #
 clone_over_net() {
-  local fn example_target ipart part_fs size my_ip_one use_netcat_opt
+  local fn example_target ipart part_fs size my_ip_one use_netcat_nuttcp_opt
   local restore_psuedo_img_cmd
   if [ "$STATUS" = "clone_server" ]; then
     case "$source_type" in
@@ -363,8 +363,8 @@ clone_over_net() {
   # Show prompt on the server side
   echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
   [ -n "$net_filter" ] && net_filter_opt="--net-filter $net_filter"
-  if [ "$ONTHEFLY_NET_PIPE" = "netcat" ]; then
-    use_netcat_opt="-u"
+  if [ "$ONTHEFLY_NET_PIPE" != "$ONTHEFLY_NET_PIPE_DEFAULT" ]; then
+    use_netcat_nuttcp_opt="-np $ONTHEFLY_NET_PIPE"
   fi
   if [ "$STATUS" = "clone_server" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -377,16 +377,16 @@ clone_over_net() {
     echo "$msg_now_run_this_cmd_in_target_machine:"
     echo "sudo su -"
     echo "ocs-live-netcfg ($msg_setup_network_first)"
-    echo "$ocs $net_filter_opt $use_netcat_opt -s $my_ip_one -d [TARGET_DEV]"
+    echo "$ocs $net_filter_opt $use_netcat_nuttcp_opt -s $my_ip_one -d [TARGET_DEV]"
     echo "TARGET_DEV example: $example_target"
     case "$source_type" in
     partition)
       echo "$msg_if_clone_the_partition_to_hda1_in_target_machine:" | tee --append $OCS_LOGFILE
-      echo "$ocs $net_filter_opt $use_netcat_opt -s $my_ip_one -d sdc1" | tee --append $OCS_LOGFILE
+      echo "$ocs $net_filter_opt $use_netcat_nuttcp_opt -s $my_ip_one -d sdc1" | tee --append $OCS_LOGFILE
       ;;
     disk)
       echo "$msg_if_clone_the_disk_to_hda_in_target_machine:" | tee --append $OCS_LOGFILE
-      echo "$ocs $net_filter_opt $use_netcat_opt -s $my_ip_one -d sdc" | tee --append $OCS_LOGFILE
+      echo "$ocs $net_filter_opt $use_netcat_nuttcp_opt -s $my_ip_one -d sdc" | tee --append $OCS_LOGFILE
       ;;
     esac
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -483,7 +483,7 @@ USAGE() {
     echo "-t1, --restore-raw-mbr   Restores the prebuilt bootloader from syslinux (For Windows only)"
     echo "-t2, --no-restore-ebr    Do NOT restore the EBR (Extended Boot Record) when restoring image. Default is to restore"
     echo "-v, --verbose            Prints verbose information"
-    echo "-u, --use-netcat         Use netcat instead of nuttcp as the network pipe program."
+    echo "-np --net-pipe  PROGRAM  Use PROGRAM as network pipe program. Available: netcat, nuttcp. Default is $netpipe_default"
     echo "-x, --interactive        Interactive mode."
     echo "Ex:"
     echo "1. To clone local sda to local sdb, run"
@@ -666,33 +666,42 @@ set_ocs_onthefly_extra_param() {
     $DIA --separate-output --backtitle "$msg_nchc_free_software_labs" --title  \
     "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --checklist "$msg_choose_param_to_set:" \
     0 0 0 $DIA_ESC \
-    "-g auto "  "$msg_ocs_onthefly_param_g" $inst_grub_opt \
-    "-e1 auto " "$msg_ocs_onthefly_param_e1" on \
-    "-e2 "      "$msg_ocs_onthefly_param_e2" on \
-    "-j2 "      "$msg_ocs_onthefly_param_j2" on \
-    "-r "       "$msg_ocs_onthefly_param_e" on \
-    "-nogui "   "$msg_ocs_onthefly_param_nogui" off \
-    "-u "       "$msg_ocs_onthefly_param_u" off \
-    "-t "       "$msg_ocs_onthefly_param_t" off \
-    "-t1 "      "$msg_ocs_onthefly_param_t1" off \
-    "-t2 "      "$msg_ocs_onthefly_param_t2" off \
-    "-q1 "      "$msg_ocs_onthefly_param_q1" off \
-    "-m "       "$msg_ocs_onthefly_param_m" off \
-    "-rescue "  "$msg_ocs_onthefly_param_rescue" off \
-    "-irhr "    "$msg_ocs_onthefly_param_irhr" off \
-    "-ius "     "$msg_ocs_onthefly_param_ius" off \
-    "-iui "     "$msg_ocs_onthefly_param_iui" off \
-    "-icds "    "$msg_ocs_onthefly_param_icds" off \
-    "-rvd "     "$msg_ocs_onthefly_param_rvd" off \
-    "-iefi "    "$msg_ocs_onthefly_param_iefi" off \
-    "-o "       "$msg_ocs_onthefly_param_o" off \
-    "-batch "   "$msg_ocs_onthefly_param_b" off \
-    "-cmf "     "$msg_ocs_onthefly_param_cmf" off \
-    "-v "       "$msg_ocs_onthefly_param_v" off \
-    "-ps "      "$msg_ocs_onthefly_param_ps" off \
+    "-g auto "     "$msg_ocs_onthefly_param_g" $inst_grub_opt \
+    "-e1 auto "    "$msg_ocs_onthefly_param_e1" on \
+    "-e2 "         "$msg_ocs_onthefly_param_e2" on \
+    "-j2 "         "$msg_ocs_onthefly_param_j2" on \
+    "-r "          "$msg_ocs_onthefly_param_e" on \
+    "-nogui "      "$msg_ocs_onthefly_param_nogui" off \
+    "-t "          "$msg_ocs_onthefly_param_t" off \
+    "-t1 "         "$msg_ocs_onthefly_param_t1" off \
+    "-t2 "         "$msg_ocs_onthefly_param_t2" off \
+    "-q1 "         "$msg_ocs_onthefly_param_q1" off \
+    "-m "          "$msg_ocs_onthefly_param_m" off \
+    "-rescue "     "$msg_ocs_onthefly_param_rescue" off \
+    "-irhr "       "$msg_ocs_onthefly_param_irhr" off \
+    "-ius "        "$msg_ocs_onthefly_param_ius" off \
+    "-iui "        "$msg_ocs_onthefly_param_iui" off \
+    "-icds "       "$msg_ocs_onthefly_param_icds" off \
+    "-rvd "        "$msg_ocs_onthefly_param_rvd" off \
+    "-iefi "       "$msg_ocs_onthefly_param_iefi" off \
+    "-o "          "$msg_ocs_onthefly_param_o" off \
+    "-batch "      "$msg_ocs_onthefly_param_b" off \
+    "-cmf "        "$msg_ocs_onthefly_param_cmf" off \
+    "-v "          "$msg_ocs_onthefly_param_v" off \
+    "-ps "         "$msg_ocs_onthefly_param_ps" off \
     2> $OCS_PARAM_TMP
     # Ask about compression program for clone server
     if [ "$STATUS" = "clone_server" ]; then
+      $DIA --separate-output --backtitle "$msg_nchc_free_software_labs" --title  \
+      "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_net_pipe_program:" \
+      0 0 0 $DIA_ESC \
+      "netcat"   "$msg_ocs_onthefly_param_netcat" \
+      "nuttcp"   "$msg_ocs_onthefly_param_nuttcp" \
+      2> ${OCS_PARAM_TMP}.a
+      # We need to append a space after this parameter so it won't be connected to next parameter.
+      echo -n "-np $(cat "${OCS_PARAM_TMP}.a") " >> $OCS_PARAM_TMP
+      rm -f ${OCS_PARAM_TMP}.a
+
       $DIA --separate-output --backtitle "$msg_nchc_free_software_labs" --title  \
       "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set_before_sending_data:" \
       0 0 0 $DIA_ESC \
@@ -932,7 +941,16 @@ parse_ocs_onthefly_cmd_options() {
   	        net_filter=$1
                 shift
               fi
-  	    [ -z "$net_filter" ] && USAGE && exit 1
+  	      [ -z "$net_filter" ] && USAGE && exit 1
+  	      ;;
+      -np|--net-pipe)
+              shift
+              if [ -z "$(echo $1 |grep ^-.)" ]; then
+                # skip the -xx option, in case 
+  	        ONTHEFLY_NET_PIPE=$1
+                shift
+              fi
+  	    [ -z "$ONTHEFLY_NET_PIPE" ] && USAGE && exit 1
   	    ;;
       -um|--user-mode)
               shift
@@ -964,7 +982,6 @@ parse_ocs_onthefly_cmd_options() {
       -cmf|--chk-chksum-for-files-in-dev) shift; chksum_for_files_in_dev="yes" ;;
       -ro|--remote-clone-only) shift; show_remote_menu_in_ocs_onthefly="yes";;
       -lo|--local-clone-only)  shift; show_local_menu_in_ocs_onthefly="yes";;
-      -u|--use-netcat) shift; ONTHEFLY_NET_PIPE="netcat" ;;
       -kn|--keep-netpipe) shift; keep_netpipe="yes" ;;
       -v|--verbose) shift; verbose="on" ;;
       -*)     echo "${0}: ${1}: invalid option" >&2
@@ -973,6 +990,8 @@ parse_ocs_onthefly_cmd_options() {
       *)      break ;;
     esac
   done
+
+  [ -z "$ONTHEFLY_NET_PIPE" ] && ONTHEFLY_NET_PIPE="$ONTHEFLY_NET_PIPE_DEFAULT"
 } # End of parse_ocs_onthefly_cmd_options
 # 
 remove_src_dest_etc_opt() {
@@ -1229,7 +1248,8 @@ do_update_syslinux="yes"
 chk_tgt_disk_size_bf_mk_pt="yes"
 # Flag to update EFI NVRAM after restoring a disk
 update_efi_nvram="yes"
-# Load PARTCLONE_RESTORE_OPT_INIT from drbl-ocs.conf
+# Load PARTCLONE_SAVE_OPT & PARTCLONE_RESTORE_OPT_INIT from drbl-ocs.conf
+PARTCLONE_SAVE_OPT="$PARTCLONE_SAVE_OPT_INIT"
 PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT_INIT"
 
 # Clean the previous saved env so if ocs-onthefly is cancelled, won't read the previous env and reboot/poweroff.
@@ -1244,7 +1264,6 @@ echo "Starting $0 at $(LC_ALL=C date +%F' '%T' '%Z)..." | tee --append ${OCS_LOG
 
 #
 ocs_onthefly_all_opts="$*"
-
 parse_ocs_onthefly_cmd_options $ocs_onthefly_all_opts
 
 ask_and_load_lang_set $specified_lang
@@ -1279,10 +1298,8 @@ if [ "$ocs_onthefly_mode" = "interactive" ]; then
 else
   check_source_and_target_type
 fi
-#
-opt_for_ocs_sr_restore_this_run="$(remove_src_dest_etc_opt $ocs_onthefly_all_opts)"
-echo "opt_for_ocs_sr_restore_this_run: $opt_for_ocs_sr_restore_this_run"
 
+#
 if [ -n "$STATUS" ]; then
   # It's in network clone mode
   if [ "$STATUS" = "clone_server" ]; then
@@ -1321,6 +1338,15 @@ else
   echo "$msg_delimiter_star_line"
   mode="local"
 fi
+# //NOTE// ask_user might be used for SOURCE_IP and tgt_dev in the command line options.
+# Hence we have to replace them after they are inputted.
+ocs_onthefly_all_opts="$(echo $ocs_onthefly_all_opts | sed \
+	                 -r -e "s/-s ask_user/-s $SOURCE_IP/g" \
+	                 -r -e "s/--source-IP ask_user/--source-IP $SOURCE_IP/g" \
+			 -r -e "s/-d ask_user/-d $tgt_dev/g" \
+			 -r -e "s/--destination ask_user/--destination $tgt_dev/")"
+opt_for_ocs_sr_restore_this_run="$(remove_src_dest_etc_opt $ocs_onthefly_all_opts)"
+echo "opt_for_ocs_sr_restore_this_run: $opt_for_ocs_sr_restore_this_run"
 
 # Boot parameter ocs_overwrite_postaction has higher priority than the action assigned by option "-pa".
 overwrite_postaction_if_assigned clone
@@ -1360,6 +1386,20 @@ if [ -n "$src_dev" ]; then
 fi
 if [ -n "$tgt_dev" ]; then
   target_hd="$(get_diskname $tgt_dev)"
+fi
+
+if [ "$mode" = "local" -o "$STATUS" = "clone_server" ]; then
+  if is_disk_without_part_and_fs /dev/$source_hd; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Source disk /dev/$source_hd does not have any partition. Clonezilla does not support this type of source disk." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_delimiter_star_line"
+    echo "The layout of /dev/$source_hd:"
+    LC_ALL=C parted -s /dev/$source_hd print
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    copy_error_log
+    exit 1
+  fi
 fi
 
 echo "$msg_delimiter_star_line"

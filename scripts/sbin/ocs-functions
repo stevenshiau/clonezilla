@@ -10170,6 +10170,7 @@ USAGE_common_general() {
     echo " -d, --debug-mode         Enter command mode to debug before saving/restoring"
     echo " --debug=LEVEL            Output the partimage debug log in directory /var/log/ with debug LEVEL (0,1,2... default=0)"
     echo " -m, --module  MODULE     Force to load kernel module MODULE, this is useful when some SCSI device is not detected. NOTE! Use only one module, more than one may cause parsing problem."
+    echo " --use-netcat             Use netcat instead of nuttcp when running ocs-onthefly in the clone over net mode."
     echo " --net-filter PROGRAM     Use the PROGRAM (gzip/lzop/bzip2/xz/lz4/zstd/cat) before sending partition data to netcat (only in network clone mode). The default action is zstd. Use \"cat\" if you do not want to compress (Good for fast internode network)."
     echo " -o0, --run-prerun-dir    Run the script in the directory $OCS_POSTRUN_DIR before clone is started. The command will be run before MBR is created or saved."
     echo " -o1, -o, --run-postrun-dir    Run the script in the directory $OCS_POSTRUN_DIR when clone is finished. The command will be run before that assigned in -p or --postaction."
@@ -14403,10 +14404,10 @@ case "$net_filter" in
        ;;
    *)
        if type zstdmt &>/dev/null; then
-         net_filter_comp="zstdmt -c $extra_zstdmt_opt"
+         net_filter_comp="zstdmt -c $extra_zstdmt_opt_onthefly"
          net_filter_decomp="zstdmt -dc"
        elif type zstd &>/dev/null; then
-         net_filter_comp="zstd -c $extra_zstd_opt"
+         net_filter_comp="zstd -c $extra_zstd_opt_onthefly"
          net_filter_decomp="zstd -cd"
        else
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -14511,11 +14512,11 @@ feed_dev_in_onthefly_server() {
     # Ex: partclone.reiserfs -c -s /dev/hda3 -o -
     echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
     if [ "$pt_fs" != "dd" ]; then
-      cmd_partclone="partclone.${pt_fs} -L $PARTCLONE_LOG -c -s $src_p -o - 2>/dev/null | \
+      cmd_partclone="partclone.${pt_fs} $PARTCLONE_SAVE_OPT -L $PARTCLONE_LOG -c -s $src_p -o - 2>/dev/null | \
       $net_filter_comp | $netpipe_srv_cmd &"
     else
       # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-      cmd_partclone="partclone.${pt_fs} -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
+      cmd_partclone="partclone.${pt_fs} $PARTCLONE_SAVE_OPT -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
       $net_filter_comp | $netpipe_srv_cmd &"
     fi
     echo "Run partclone: $cmd_partclone" | tee --append ${OCS_LOGFILE}
@@ -14541,7 +14542,7 @@ feed_dev_in_onthefly_server() {
       echo "Filesystem in $src_p is not well supported. Use partclone.dd to clone..." | tee --append $OCS_LOGFILE 
       # Ex: partclone.reiserfs -c -s /dev/hda3 -o -
       echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
-      cmd_partclone="partclone.dd -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
+      cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
       $net_filter_comp | $netpipe_srv_cmd &"
       echo "Run partclone: $cmd_partclone" | tee --append ${OCS_LOGFILE}
       LC_ALL=C eval "((${cmd_partclone}) && exit \${PIPESTATUS[0]})"
@@ -14719,3 +14720,17 @@ receive_partition_or_lv_in_client() {
    exec 4<&-
  fi
 } # end of receive_partition_or_lv_in_client
+#
+is_disk_without_part_and_fs() {
+  local dev_=${1#/dev/*} # Input is like /dev/sda, so dev_ becomes sda
+  local rc=1
+  [ -z "$dev_" ] && exit 1
+  part_no="$(LC_ALL=C lsblk -l -n -o TYPE /dev/$dev_ | grep -Ew "^part" | wc -l)"
+  if is_whole_disk $dev_ && [ "$part_no" -eq 0 ] && \
+     ! is_block_device_with_fs $dev_; then
+    rc=0
+  else
+    rc=1
+  fi
+  return $rc
+} # end of is_disk_without_part_and_fs
