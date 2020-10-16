@@ -173,6 +173,11 @@ prepare_network_clone_dev_info() {
     echo "$msg_this_is_for_source_machine." | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "source_type=$source_type" > $hd_src_tmp/target_type.ocs_onthefly
+    # If it's partition to partition over net, we should let client know the file system to be cloned.
+    if [ "$source_type" = "partition" ]; then
+        part_fs="$(grep -Ew "/dev/$src_dev" $src_pt_info | awk -F" " '{print $2}')"
+	echo "source_part_fs=$part_fs" >> $hd_src_tmp/target_type.ocs_onthefly
+    fi
     case $ONTHEFLY_NET_PIPE in
       netcat) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &" ;;
       nuttcp) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) &" ;;
@@ -309,7 +314,7 @@ clone_over_net() {
            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         else
            check_if_dev_busy $src_dev
-           feed_partition_or_lv_in_server $part_fs $src_dev
+           onthefly_feed_partition_or_lv_in_server $part_fs $src_dev
         fi
         example_target="sda1, sda2 or..."
         ;;
@@ -332,7 +337,7 @@ clone_over_net() {
              echo "Skip feeding partition $spart since it is $part_fs..." | tee --append $OCS_LOGFILE
           else
              check_if_dev_busy $spart
-             feed_partition_or_lv_in_server $part_fs $spart
+             onthefly_feed_partition_or_lv_in_server $part_fs $spart
           fi
         done
         exec 5<&-
@@ -1000,7 +1005,6 @@ remove_src_dest_etc_opt() {
   local left_opt
   while [ $# -gt 0 ]; do
     case "$1" in
-      -f|--source) shift; [ -z "$(echo $1 |grep ^-.)" ] && shift;;
       -d|--destination|--target) shift; [ -z "$(echo $1 |grep ^-.)" ] && shift;;
       -p|-pa|--postaction)  shift; [ -z "$(echo $1 |grep ^-.)" ] && shift;;
       -rvd|--rvd)  shift;;
@@ -1346,9 +1350,21 @@ ocs_onthefly_all_opts="$(echo $ocs_onthefly_all_opts | sed \
 			 -r -e "s/-d ask_user/-d $tgt_dev/g" \
 			 -r -e "s/--destination ask_user/--destination $tgt_dev/")"
 opt_for_ocs_sr_restore_this_run="$(remove_src_dest_etc_opt $ocs_onthefly_all_opts)"
+if [ "$mode" = "local" -a "$source_type" = "partition" \
+     -a -z "$(echo $ocs_onthefly_all_opts | grep -Ew -- "-f")" ]; then
+  # For local part to part, if "-f disk/part" (source device) is 
+  # got in interactive mode, not from command line option, we should add it
+  # so that later ocs-sr can have it. This is because in some cases local part
+  # to part don't need to or can not convert the image, 
+  # or it's useless to convert the image. e.g., sda1 -> sda5
+  # While for local disk to disk, the image will be converted, and a tag file
+  # "device_name_converted.info" is added to save the original disk, 
+  # and from its content ($orig_dev) we can find the source device.
+  opt_for_ocs_sr_restore_this_run="$opt_for_ocs_sr_restore_this_run -f $src_dev"
+fi
 echo "opt_for_ocs_sr_restore_this_run: $opt_for_ocs_sr_restore_this_run"
 
-# Boot parameter ocs_overwrite_postaction has higher priority than the action assigned by option "-pa".
+# Boot parameter ocs_overwrite_postaction has higher priority than the action assigned by option "-p".
 overwrite_postaction_if_assigned clone
 
 pre_checking
@@ -1440,6 +1456,10 @@ fi
 # "/dev/$part $filesystem $pt_size" 
 if [ "$mode" != "network" ]; then
   while read ipart part_fs size; do
+    if [ -n "$(echo $ipart | grep -E "^[[:space:]]*#")" ]; then
+       # Skip the comment line
+       continue
+    fi
     check_if_dev_busy $ipart
   done < $src_pt_info
 fi

@@ -186,16 +186,16 @@ parse_ocs_sr_cmd_options_with_dash() {
             shift; n_shift=$((n_shift+1))
             # skip the -xx option, in case 
             if [ -z "$(echo $1 |grep ^-.)" ]; then
-              grub_partition=$1
+	      grub_partition="$(strip_leading_dev $1)"
               shift; n_shift=$((n_shift+1))
             fi
             [ -z "$grub_partition" ] && USAGE && exit 1
             ;;
-    -f|--from-part-in-img)
+    -f|--from-part)
             shift; n_shift=$((n_shift+1))
             # skip the -xx option, in case 
             if [ -z "$(echo $1 |grep ^-.)" ]; then
-              source_part=$1
+	      source_part="$(strip_leading_dev $1)"
               shift; n_shift=$((n_shift+1))
             fi
             [ -z "$source_part" ] && USAGE && exit 1
@@ -256,7 +256,7 @@ parse_ocs_sr_cmd_options_with_dash() {
             shift; n_shift=$((n_shift+1))
             # skip the -xx option, in case 
             if [ -z "$(echo $1 |grep ^-.)" ]; then
-              ntfs_boot_partition=$1
+	      ntfs_boot_partition="$(format_dev_name_with_leading_dev $1)"
               shift; n_shift=$((n_shift+1))
             fi
             [ -z "$ntfs_boot_partition" ] && USAGE && exit 1
@@ -1497,7 +1497,7 @@ case "$ocs_sr_type" in
         get_target_parts_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt  # Obtain target_parts
       else
 	# In this case, it's too complicated to restore partitions to different partitions on destination disk.
-	# Therefore we only allow original partitions to partitions, i.e. e.g., sda1, sda2 from image -> sda1, sda2 on destination disk. Therefore "source_part" is reset to none.
+	# Therefore we only allow original partitions to partitions, i.e. e.g., sda1, sda2 from image -> sda1, sda2 on destination disk. Therefore "source_part" is reset to none, i.e., not to convert the image to different device name's image.
         target_parts="$source_part"
         source_part=""
         if [ "$ocs_batch_mode" != "on" ]; then

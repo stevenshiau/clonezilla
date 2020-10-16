@@ -2387,13 +2387,13 @@ check_if_input_device_exist() {
 #
 check_ntfs_partition_integrity() {
     # Ref: http://mlf.linux.rulez.org/mlf/ezaz/ntfsresize.html#troubleshoot
-    local src_dev="$1"
+    local src_dev_="$1"
     local ntfsfix_ans
     ntfsclone_save_extra_opt=""
-    echo -n "Checking NTFS integrity in $src_dev... "
-    if ! ntfsresize --info --force $src_dev &>/dev/null; then
+    echo -n "Checking NTFS integrity in $src_dev_... "
+    if ! ntfsresize --info --force $src_dev_ &>/dev/null; then
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-       echo "$msg_ntfs_in_this_part_is_corrupt: $src_dev"
+       echo "$msg_ntfs_in_this_part_is_corrupt: $src_dev_"
        echo "$msg_two_options_for_you_now:"
        echo "(1) $msg_boot_win_run_chkdsk"
        echo "(2) $msg_run_ntfsfix_then_force_save"
@@ -2405,7 +2405,7 @@ check_ntfs_partition_integrity() {
 	   # force to save the ntfs filesystem
 	   # ntfsclone_save_extra_opt is a global variable
            ntfsclone_save_extra_opt="--force --rescue"
-	   ntfsfix $src_dev
+	   ntfsfix $src_dev_
 	   ;;
 	 *)
            echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
@@ -2420,16 +2420,16 @@ check_ntfs_partition_integrity() {
     echo "done!"
 } # end of check_ntfs_partition_integrity
 check_partimage_partition_integrity() {
-    local src_dev="$1"
-    echo -n "Checking file system integrity in $src_dev... "
+    local src_dev_="$1"
+    echo -n "Checking file system integrity in $src_dev_... "
     # file (file-4.19 in FC6) will give the results like:
     # /dev/hda2: Linux rev 1.0 ext3 filesystem data (needs journal recovery)
     # /dev/mapper/vg2-lv2: ReiserFS V3.6 block size 4096 (mounted or unclean) num blocks 90112 r5 hash
-    if [ -n "$(file -Ls "$src_dev" | grep -iE "(needs journal recovery|mounted or unclean)")" ]; then
+    if [ -n "$(file -Ls "$src_dev_" | grep -iE "(needs journal recovery|mounted or unclean)")" ]; then
        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
        echo
-       echo "The file system in $src_dev is unclean!"
-       echo "It's recommended to boot the template machine into GNU/Linux to let it be fixed automatically or use fsck (such as fsck.ext3, fsck.reiserfs...) to fix $src_dev! Clonezilla still can save the image, but it is not recommended to continue. If you want to quit now, press Ctrl-C."
+       echo "The file system in $src_dev_ is unclean!"
+       echo "It's recommended to boot the template machine into GNU/Linux to let it be fixed automatically or use fsck (such as fsck.ext3, fsck.reiserfs...) to fix $src_dev_! Clonezilla still can save the image, but it is not recommended to continue. If you want to quit now, press Ctrl-C."
        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
        if [ "$ocs_batch_mode" != "on" ]; then
          echo -n "$msg_press_enter_to_continue..."
@@ -2845,7 +2845,9 @@ do_run_update_initrd_from_restored_os() {
       return 199
     fi
   fi
-  mkdir -p $mnt_pnt/dev
+  # /var/tmp and /var/lib/initramfs-tools are required by update-initramfs.
+  # This is especially when /var/ is in different partition with kernel.
+  mkdir -p $mnt_pnt/dev $mnt_pnt/var/tmp $mnt_pnt/var/lib/initramfs-tools
   mount --bind /dev $mnt_pnt/dev
   mount --bind /proc $mnt_pnt/proc
   mount --bind /sys $mnt_pnt/sys
@@ -6466,35 +6468,35 @@ check_ocs_variables_if_fails_quit() {
 #
 do_d2d_local_restore() {
   local target_d="$1" # full path
-  local src_dev="${2#/dev/*}"
-  local tgt_dev="${3#/dev/*}"  # part is like sda1
+  local src_d="${2#/dev/*}"
+  local tgt_d="${3#/dev/*}"  # part is like sda1
   local hdtmp pt_type rc
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   check_ocs_variables_if_fails_quit do_d2d_local_restore \
-  target_d src_dev tgt_dev | tee --append $OCS_LOGFILE
+  target_d src_d tgt_d | tee --append $OCS_LOGFILE
   rc="${PIPESTATUS[0]}"
   [ "$rc" -gt 0 ] && exit 1
   check_if_dev_busy $part
   echo $msg_delimiter_star_line
-  # //NOTE// Use tgt_dev to get file system since the image might be converted.
-  part_fs="$(grep -Ew "/dev/$tgt_dev" $target_d/dev-fs.list | awk -F" " '{print $2}')"
+  # Local part to part we can get the file system from source part.
+  part_fs="$(ocs-get-part-info /dev/$src_d fs)"
   if [ -z "$part_fs" ]; then
      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-     echo "No file system was found in /dev/$src_dev!" | tee --append $OCS_LOGFILE
+     echo "No file system was found in /dev/$src_d!" | tee --append $OCS_LOGFILE
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-     local_partition_to_partiton_clone dd /dev/$src_dev /dev/$tgt_dev
+     local_partition_to_partiton_clone dd /dev/$src_d /dev/$tgt_d
      # Unknown file system, no way to mount to inspect the checksum. Skip it here.
   else
-     local_partition_to_partiton_clone $part_fs /dev/$src_dev /dev/$tgt_dev
+     local_partition_to_partiton_clone $part_fs /dev/$src_d /dev/$tgt_d
      if [ "$chksum_for_files_in_dev" = "yes" ]; then
        echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-       inspect_chksum_for_files_in_dev /dev/$tgt_dev "$target_d"
+       inspect_chksum_for_files_in_dev /dev/$tgt_d "$target_d"
        echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
      fi
   fi
   sleep 1
   # Informing kernel that the OS that partition table has changed since for BSD system, the partitions info exists in the slice
-  hdtmp="$(get_disk_from_part /dev/$tgt_dev)"
+  hdtmp="$(get_disk_from_part /dev/$tgt_d)"
   pt_type="$(get_partition_table_type_from_disk $hdtmp)"
   inform_kernel_partition_table_changed $pt_type $hdtmp | tee --append ${OCS_LOGFILE}
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
@@ -6503,16 +6505,33 @@ do_d2d_local_restore() {
 #
 do_d2d_network_restore() {
   local target_d="$1"
-  local part_img_dir="$(to_filename $2)"
-  local part="${3#/dev/*}"  # part is like sda1
-  local rc hdtmp pt_type part_fs d2d_recv_cmd
+  local part="${2#/dev/*}"  # part is like sda1
+  local rc hdtmp pt_type part_fs d2d_recv_cmd tgt_pt_info 
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   check_if_dev_busy $part
   echo $msg_delimiter_star_line
   clean_filesystem_header_in_partition $part
   tgt_pt_info="$target_d/dev-fs.list"
-  part_fs="$(grep -Ew "/dev/$part" $tgt_pt_info | awk -F" " '{print $2}')"
-  receive_partition_or_lv_in_client $part_fs $part
+  case "$ocs_sr_type" in
+  "nd2d_restoredisk")
+    # For whole disk clone over net, we support part clone one to one,
+    # i.e., sda1 -> sda1 or sda1 -> sdb1, not sda1 -> sda2 or sda1 -> sdb2.
+    # Hence we can get fs from target device.
+    part_fs="$(grep -Ew "/dev/$part" $tgt_pt_info | awk -F" " '{print $2}')" ;;
+  "nd2d_restoreparts")
+    # For part clone over net, the source and target part maybe different,
+    # so we have to get from the info file
+    . $orig_ocsroot/target_type.ocs_onthefly
+    part_fs="$source_part_fs" ;;
+  esac
+  if [ -z "$part_fs" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Unable to find the file system for partition /dev/$part in function do_d2d_network_restore!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+    exit 1
+  fi
+  onthefly_receive_partition_or_lv_in_client $part_fs $part
   rc=$?
   # Informing kernel that the OS that partition table has changed since for BSD system, the partitions info exists in the slice
   hdtmp="$(get_disk_from_part $part)"
@@ -6721,7 +6740,7 @@ save_logv() {
 # Thanks to Jerome Delamarche (jd@inodes-fr.com)
 restore_logv() {
   # mode is unicast or multicast
-  local tgt_parts="$1"  # tgt_parts is like: hda1 hda2 hda5
+  local tgt_parts="$1"  # tgt_parts is like: sda1 sda2 sda5
   local mode="$2"
   local port="$3"
   local volg is_in_chosen_partition lvm_tmp ipt lsrc_dev rc
@@ -6931,7 +6950,8 @@ restore_logv() {
        # Device to device via network
        netcat_nuttcp_check
        set_onthefly_net_filter_program
-       do_d2d_network_restore $target_dir_fullpath $fn $lv
+       # We use NC_PORT to receive data from onthefly server
+       do_d2d_network_restore $target_dir_fullpath $lv
        rc="$?"
        ;;
    esac
@@ -8125,6 +8145,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # create_temp_img_flag is global variable.
   # Check if target disk/part name exists in the image.
   # It might be the image from disk or partition (including bare block device with file system) that we need to convert
+  # Input: $target_hd (for restoredisk); $target_parts (for restoreparts); dsksname_from_img
   if [ -n "$target_hd" ]; then
     dest_dev_="$target_hd"
   elif [ -n "$target_parts" ]; then
@@ -8152,7 +8173,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # source_part is a global variable.
   # If source_part exists, it means the image of a partition will be restored to different part.
   tmp_img_from_to_opt=""
-  if [ -n "$source_part" ]; then
+  if [ -n "$source_part" -a -n "$target_parts" ]; then
     do_convert_flag="yes"
     tmp_img_from_to_opt="-f $source_part -d $target_parts"
   fi
@@ -8813,7 +8834,7 @@ task_restoredisk() {
   local port="$3"
   local dsksname_from_img src_dsk_no dia_sel_opt tgt_dsk_no partition_table
   local pv_on_dsk
-  # img_cnvt_count is a global variable
+  # img_cnvt_count, orig_ocsroot and orig_target_dir are global variables
 
   if [ "$target_dir" = "ask_user" ]; then
     get_target_dir_name_when_restoring_disk
@@ -8850,6 +8871,8 @@ task_restoredisk() {
 
   #
   create_temp_img_flag=""
+  orig_ocsroot="$ocsroot"
+  orig_target_dir="$target_dir"
   create_temp_image_for_different_target_dev_name_if_necessary
   # Obtain create_temp_img_flag, new ocsroot (/tmp) and target_dir="${target_dir}-tmp-cnvted"
 
@@ -8979,6 +9002,7 @@ task_restoreparts() {
   local efi_info_tmp
   local processed_extended_parts grub_cand_parts
   local lsrc_dev
+  # create_temp_img_flag, orig_ocsroot and orig_target_dir are global variables
 
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -9047,7 +9071,7 @@ task_restoreparts() {
   if [ "$create_temp_img_flag" = "done" ]; then
     if [ -e "$ocsroot/$target_dir/device_name_converted.info" ]; then
       # File device_name_converted.info exists, it means the image was converted.
-      . $ocsroot/$target_dir/device_name_converted.info
+      . $ocsroot/$target_dir/device_name_converted.info # Obtain new_dev & orig_dev
       for jpart in `get_parts_list_from_img $ocsroot/$target_dir`; do
         shd_tmp="$(get_diskname `echo $jpart | replace_disk_name_stdin $new_dev $orig_dev`)"
         if [ -z "$source_hd" ]; then
@@ -9058,6 +9082,12 @@ task_restoreparts() {
       done
       dsksname_from_img="$source_hd"
       src_dsk_no="$(echo $dsksname_from_img | wc -w)"
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Failed to find the file $ocsroot/$target_dir/device_name_converted.info in function task_restoreparts!" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+      my_ocs_exit 1
     fi
   else
     for jpart in `get_parts_list_from_img $ocsroot/$target_dir`; do
@@ -9080,6 +9110,8 @@ task_restoreparts() {
 
   # It might be done in task_restoredisk
   if [ "$create_temp_img_flag" != "done" ]; then
+    orig_ocsroot="$ocsroot"
+    orig_target_dir="$target_dir"
     create_temp_image_for_different_target_dev_name_if_necessary
     # Obtain new ocsroot (/tmp) and target_dir="${target_dir}-tmp-cnvted"
   fi
@@ -9212,7 +9244,14 @@ task_restoreparts() {
      "d2d")
         # //NOTE// source and destination devices is different
 	# partition is destination device.
-	lsrc_dev="$(echo $partition | replace_disk_name_stdin $target_hd $source_hd)"
+	case $ocs_sr_type in
+        "ld2d_restoredisk")
+          # Local disk to local disk only allows same partition name clone, e.g., sda1 -> sdb1
+	  lsrc_dev="$(echo $partition | replace_disk_name_stdin $target_hd $source_hd)" ;;
+        "ld2d_restoreparts")
+          # Local part to local part only allows differents partition name clone, e.g., sda2 -> sdb1
+	  lsrc_dev="$source_part" ;;
+        esac
         do_d2d_local_restore $target_dir_fullpath $lsrc_dev /dev/$partition
         rc="$?"
         ;;
@@ -9220,7 +9259,8 @@ task_restoreparts() {
         # //NOTE// source and destination devices can be different
         netcat_nuttcp_check
         set_onthefly_net_filter_program
-        do_d2d_network_restore $target_dir_fullpath $partition /dev/$partition
+	# We use NC_PORT to receive data from onthefly server
+        do_d2d_network_restore $target_dir_fullpath /dev/$partition
         rc="$?"
         ;;
     esac
@@ -10069,7 +10109,7 @@ check_and_fix_vol_limit_if_required() {
 #
 USAGE_common_restore(){
     # Common restore usage help messages for both drbl-ocs and ocs-sr
-    echo " -f, --from-part-in-img PARTITION      Restore the partition from image. This is especially for \"restoreparts\" to restore the image of partition (only works for one) to different partition, e.g. sda1 of image to sdb6."
+    echo " -f, --from-part     PARTITION      Restore the partition from image or block device. This is especially for \"restoreparts\" to restore the image of partition (only works for one) to different partition, e.g. sda1 of image to sdb6, or partition to partition, e.g, sda1 to sdb2."
     echo " -g, --grub-install GRUB_PARTITION     Install grub in the MBR of the disk containing partition GRUB_PARTITION with root grub directory in the same GRUB_PARTITION when restoration finishes, GRUB_PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the grub root partition automatically). If \"auto\" is assigned, it will work if grub partition and root partition are not in the same partition."
     echo " -r, --resize-partition   Resize the partition when restoration finishes, this will resize the file system size to fit the partition size. It is normally used when when a small partition image is restored to a larger partition."
     echo " -k, --no-fdisk, --no-create-partition   Do NOT create partition in target harddisk. If this option is set, you must make sure there is an existing partition table in the current restored harddisk. Default is to create the partition table."
@@ -10222,11 +10262,11 @@ check_if_source_dev_busy_before_saving() {
 } # end of check_if_source_dev_busy_before_saving
 #
 check_if_dev_busy() {
-  local tgt_dev="${1#/dev/*}" # e.g., sdb1
-  [ -z "$tgt_dev" ] && return 1
-  if [ -n "$(LC_ALL=C mount | grep -Ew "^/dev/${tgt_dev}")" ]; then
+  local tgt_dev_="${1#/dev/*}" # e.g., sdb1
+  [ -z "$tgt_dev_" ] && return 1
+  if [ -n "$(LC_ALL=C mount | grep -Ew "^/dev/${tgt_dev_}")" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$msg_this_dev_is_busy_you_have_to_unmount: $tgt_dev" | tee --append ${OCS_LOGFILE}
+    echo "$msg_this_dev_is_busy_you_have_to_unmount: $tgt_dev_" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
     [ "$save_restore_error_log" = "yes" ] && copy_error_log
@@ -10243,10 +10283,10 @@ check_if_disk_busy() {
   # /dev/md126 is busy due to /dev/md126p1 is mounted.
   # /dev/nbd0 is busy due to /dev/nbd0p1 is mounted.
   # /dev/loop0 is busy due to /dev/loop0p1 is mounted.
-  local src_dev=$1
+  local src_dev_=$1
   local rc_d
-  [ -z "$src_dev" ] && return 1
-  mounted_parts="$(LC_ALL=C mount | grep -Ew -- "^${src_dev}([0-9]*|(p[0-9]+))")"
+  [ -z "$src_dev_" ] && return 1
+  mounted_parts="$(LC_ALL=C mount | grep -Ew -- "^${src_dev_}([0-9]*|(p[0-9]+))")"
   if [ -n "$mounted_parts" ]; then
     rc_d=0
   else
@@ -10264,11 +10304,11 @@ check_if_disk_busy_before_create_partition() {
   # /dev/md126 is busy due to /dev/md126p1 is mounted.
   # /dev/nbd0 is busy due to /dev/nbd0p1 is mounted.
   # /dev/loop0 is busy due to /dev/loop0p1 is mounted.
-  local src_dev=$1
-  [ -z "$src_dev" ] && return 1
-  if check_if_disk_busy "$src_dev"; then
+  local src_dev_=$1
+  [ -z "$src_dev_" ] && return 1
+  if check_if_disk_busy "$src_dev_"; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$src_dev is busy. Some partition is mounted." | tee --append ${OCS_LOGFILE}
+    echo "$src_dev_ is busy. Some partition is mounted." | tee --append ${OCS_LOGFILE}
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     echo "$mounted_parts" | tee --append ${OCS_LOGFILE}
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
@@ -10878,7 +10918,7 @@ check_if_ocsroot_a_mountpoint() {
 } # end of check_if_ocsroot_a_mountpoint
 #
 check_ntfs_boot_partition() {
-  local select_parts="$1"  # select_disk is like hda or sda
+  local select_parts="${1#/dev/*}"  # format select_part as like sda1
   local partition_list=""
   local fs flags
   found_ntfs_boot_partition=""
@@ -11039,7 +11079,7 @@ get_RawCHS_of_HD_from_sfdisk() {
   local selected_hd opt_sf
   # rawcyl rawhead rawsector are global variables
   # 
-  selected_hd="$1"  # e.g. /dev/hda
+  selected_hd="$(format_dev_name_with_leading_dev $1)"  # e.g. /dev/sda
   opt_sf="$2"    # e.g. -g or -G
   [ -z "$selected_hd" ] && echo "You have to assign selected_hd in function get_RawCHS_of_HD_from_hdparm" && exit 1
   rawhead=""
@@ -11067,7 +11107,7 @@ run_ntfsreloc_part() {
              shift
              if [ -z "$(echo $1 |grep ^-.)" ]; then
                # skip the -xx option, in case 
-               selected_hd="$1"
+	       selected_hd="$(format_dev_name_with_leading_dev $1)"
                shift
              fi
              [ -z "$selected_hd" ] && echo "-s is used, but no selected_hd assigned." && exit 1
@@ -11076,7 +11116,7 @@ run_ntfsreloc_part() {
              shift
              if [ -z "$(echo $1 |grep ^-.)" ]; then
                # skip the -xx option, in case 
-               selected_parts="$1"
+	       selected_parts="$(format_dev_name_with_leading_dev $1)"
                shift
              fi
              if [ -z "$selected_parts" ]; then
@@ -11098,7 +11138,7 @@ run_ntfsreloc_part() {
     # if ntfs_boot_partition is not set, set default
     if [ "$ntfs_boot_partition" = "auto" ]; then
        check_ntfs_boot_partition "$selected_parts"
-       ntfs_boot_partition="$found_ntfs_boot_partition"  # e.g. /dev/hda1
+       ntfs_boot_partition="$found_ntfs_boot_partition"  # e.g. /dev/sda1
        if [ -n "$ntfs_boot_partition" ]; then
          echo "Found NTFS boot partition among the restored partition(s): $ntfs_boot_partition"
        else
@@ -14420,9 +14460,9 @@ case "$net_filter" in
 esac
 } # end of set_onthefly_net_filter_program
 #
-receive_partition_from_server_then_write() {
+onthefly_receive_partition_from_server_then_write() {
   local	pt_fs="$1"
-  local tgt_p="$2"  # tgt_p is like /dev/hda1
+  local tgt_p="$2"  # tgt_p is like /dev/sda1
   local ret pt_size
   local cmd_partclone netpipe_cli_cmd
   # $netpipe_cli_cmd | $net_filter_decomp
@@ -14490,7 +14530,7 @@ receive_partition_from_server_then_write() {
      read
   fi
   return $ret
-} # end of receive_partition_from_server_then_write
+} # end of onthefly_receive_partition_from_server_then_write
 #
 feed_dev_in_onthefly_server() {
   local pt_fs="$1"
@@ -14565,13 +14605,13 @@ feed_dev_in_onthefly_server() {
   return $ret
 } # end of feed_dev_in_onthefly_server
 #
-feed_partition_or_lv_in_server() {
+onthefly_feed_partition_or_lv_in_server() {
   local pt_fs="$1"
   local src_p="$2" # src_p is like hda1
   local lv volg is_in_chosen_partition fs
   # $NC_PORT & $LOGV_PARSE_CONF are global variables.
-  [ -z "$pt_fs" ] && echo "pt_fs not found in function feed_partition_or_lv_in_server!" && exit 1
-  [ -z "$src_p" ] && echo "src_p not found in function feed_partition_or_lv_in_server!" && exit 1
+  [ -z "$pt_fs" ] && echo "pt_fs not found in function onthefly_feed_partition_or_lv_in_server!" && exit 1
+  [ -z "$src_p" ] && echo "src_p not found in function onthefly_feed_partition_or_lv_in_server!" && exit 1
   if [ -z "$(echo "$pt_fs" | grep -i lvm)" ]; then
     feed_dev_in_onthefly_server $pt_fs /dev/$src_p
   else
@@ -14605,16 +14645,16 @@ feed_partition_or_lv_in_server() {
     done
     exec 3<&-
   fi
-} # end of feed_partition_or_lv_in_server() {
+} # end of onthefly_feed_partition_or_lv_in_server() {
 #
-receive_partition_or_lv_in_client() {
+onthefly_receive_partition_or_lv_in_client() {
  local pt_fs="$1"
  local tgt_p="$2" # tgt_p is like hda1
  local vg dev uuid lv fs fn uuid_opt label_opt pv_pse_con logv_pse_con lvm_tmp
  local dest_dev
  # $NC_PORT & $hd_tgt_tmp are global variables.
  if [ -z "$(echo "$pt_fs" | grep -i lvm)" ]; then
-   receive_partition_from_server_then_write $pt_fs /dev/$tgt_p
+   onthefly_receive_partition_from_server_then_write $pt_fs /dev/$tgt_p
    # use the next port to avoid being occupied.
    NC_PORT=$((NC_PORT + 6))
  else
@@ -14713,13 +14753,13 @@ receive_partition_or_lv_in_client() {
           continue ;;
       esac
     fi
-    receive_partition_from_server_then_write $fs $lv
+    onthefly_receive_partition_from_server_then_write $fs $lv
     # use the next port to avoid being occupied.
     NC_PORT=$((NC_PORT + 6))
    done
    exec 4<&-
  fi
-} # end of receive_partition_or_lv_in_client
+} # end of onthefly_receive_partition_or_lv_in_client
 #
 is_disk_without_part_and_fs() {
   local dev_=${1#/dev/*} # Input is like /dev/sda, so dev_ becomes sda
