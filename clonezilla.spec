@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.1.1
+Version:	4.1.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.1.0, psmisc, udpcast, partclone >= 0.3.15, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 4.1.1, psmisc, udpcast, partclone >= 0.3.15, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,28 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Oct 16 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.3-drbl1
+  * Improve part to part (local and remote) for ocs-onthefly.
+    The previous version did not work for local part to part in interactive
+    mode, while it works for running in batch command mode. It did not work
+    for local disk to disk in batch command mode, but works for interactive
+    mode.
+  * ocs-sr's option -f|--from-part-in-img is changed as -f|--from-part since
+    it now supports both from an image and a device.
+
+* Sat Oct 10 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.2-drbl1
+  * Use -np|--net-pipe  PROGRAM instead of -u|--use-netcat
+    so that it's easier to switch, and it can be
+    selected in the expert mode.
+  * Revert to use netcat as the default net pipe program since the nuttcp in
+    Debian/Ubuntu repository is to old and buggy (6.1.2, the latest one now
+    is 8.2.2).
+  * If a disk has not any partition, it can not be the source for
+    ocs-onthefly. It will just quit to avoiding confusion.
+  * Add "--rsyncable" for zstd saving.
+    Since zstdmt is equivalent to zstd -T0, remove "-T${cpu_no}" in
+    extra_zstdmt_opt.
+
 * Fri Oct 09 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.1-drbl1
   * clonezilla: wrong option for ocs-onthefly in ocs_interactive, now it
     should be "-d" instead of "-t".
