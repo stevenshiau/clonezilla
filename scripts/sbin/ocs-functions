@@ -452,6 +452,19 @@ dump_hardware_software_info() {
     done
   fi
   #
+  if type os-prober &>/dev/null; then
+    echo "Saving OS info from the device..."
+    echo "This OS-related info was saved from this machine with os-prober at $save_time:" > $img_dir/Info-OS-prober.txt
+    LC_ALL=C os-prober >> $img_dir/Info-OS-prober.txt
+  fi
+  if type linux-boot-prober &>/dev/null; then
+    echo $msg_delimiter_star_line >> $img_dir/Info-OS-prober.txt
+    echo "This Linux boot related info was saved from this machine with linux-boot-prober at $save_time:" >> $img_dir/Info-OS-prober.txt
+    for ipart in `cat $img_dir/parts`; do
+      LC_ALL=C linux-boot-prober /dev/$ipart >> $img_dir/Info-OS-prober.txt
+    done
+  fi
+  #
   echo "Saving package info..."
   if grep -qE "clientdir=" /proc/cmdline; then
     # DRBL SSI or Clonezilla box mode. In this mode, since the /var/lib/rpm is not the original one. If we use "rpm -q drbl", the return value is nothing even if drbl is installed in server. Therefore we have to use the prepared info.
