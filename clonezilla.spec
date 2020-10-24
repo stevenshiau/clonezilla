@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.1.3
+Version:	4.1.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,16 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Oct 24 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.4-drbl1
+  * Bug fixed: cnvt-ocs-dev now can process the image repository path
+    with whitespace.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/cf543265b2
+  * Save OS-related info in the image dir as the file name
+    Info-OS-prober.txt
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Help/thread/7ddac80b9f
+
 * Fri Oct 16 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.3-drbl1
   * Improve part to part (local and remote) for ocs-onthefly.
     The previous version did not work for local part to part in interactive
