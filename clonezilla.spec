@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.1.4
+Version:	4.1.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.1.1, psmisc, udpcast, partclone >= 0.3.15, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 4.1.3, psmisc, udpcast, partclone >= 0.3.15, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Oct 25 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.5-drbl1
+  * Update create-ubuntu-live for hirsute support, and remove the support
+    for eoan.
+
 * Sat Oct 24 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.4-drbl1
   * Bug fixed: cnvt-ocs-dev now can process the image repository path
     with whitespace.
