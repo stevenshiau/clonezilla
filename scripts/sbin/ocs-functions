@@ -3986,7 +3986,7 @@ task_postprocessing() {
       echo "### Image created time: $(date +%Y-%m%d-%H%M)" >> $img_dir/clonezilla-img
       # Generate a checksum for identifying the image later. This is based on the file $img_dir/clonezilla-img.
       echo "Generating a tag file for this image..."
-      echo "# This checksum is only for identifying the image." > $img_dir/Info-img-id.txt
+      echo "# This checksum is only for identifying the image. Created by the command: sha512sum clonezilla-img" > $img_dir/Info-img-id.txt
       echo "IMG_ID=$(LC_ALL=C sha512sum $img_dir/clonezilla-img | awk -F" " '{print $1}')" >> $img_dir/Info-img-id.txt
       # Unmount the encrypted image
       if [ "$encrypt_ocs_img" = "yes" ]; then
@@ -6836,6 +6836,16 @@ restore_logv() {
   # Restore the vg conf
   echo "Restoring the VG config... " | tee --append $OCS_LOGFILE
   while read vg dev uuid; do
+    # //NOTE// VG might exist in more than one PV. If so, we only have to create it once.
+    # E.g.,
+    # centos7 /dev/sda2 UUID
+    # centos7 /dev/sda3 UUID
+    # Ref: https://sourceforge.net/p/clonezilla/discussion/Help/thread/13f8ed6643/?limit=25#4ae4
+    if vgs $vg &>/dev/null; then
+      echo "VG $vg already exists. No need to create it again."
+      vgs $vg
+      continue
+    fi
     if [ "$vg" = "/NOT_FOUND" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "///WARNING/// $dev didn't have the volume group." | tee --append $OCS_LOGFILE
