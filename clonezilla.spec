@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.1.5
+Version:	4.1.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 29 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.6-drbl1
+  * Bug fixed: avoid creating VG more than once.
+    VG might exist in more than one PV. If so, we only have to create it once.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Help/thread/13f8ed6643
+
 * Sun Oct 25 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.5-drbl1
   * Update create-ubuntu-live for hirsute support, and remove the support
     for eoan.
