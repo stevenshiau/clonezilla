@@ -17,7 +17,7 @@ prog="$(basename $0)"
 USAGE() {
    echo "Usage: $prog [OPTION] PARTITION VALUE1 VALUE2..."
    echo "PARTITION can be with or without /dev/. e.g. /dev/sda1 or sda1"
-   echo "VALUE is one of these values: start, end, size, type, filesystem or flags"
+   echo "VALUE is one of these values: start, end, size, type, filesystem, UUID, PARTUUID, PTUUID, or flags"
    echo
    echo "OPTION:"
    echo "-u, --unit UNIT     When the VALUE1, VALUE2... is about size, show the size with unit UNIT (s, kB, MB, GB... which parted accepts)."
@@ -417,6 +417,18 @@ get_fs_from_blkid() {
   fi
 } # end of get_fs_from_blkid
 #
+get_VAR_from_blkid() {
+  local dev_=${1#/dev/*} # Input is like /dev/sda, so dev_ becomes sda
+  local wanted="$2"
+  if [ -z "$dev_" -o -z "$wanted" ]; then
+	  return 1
+  fi
+  if type blkid &>/dev/null; then
+    wanted="$(LC_ALL=C blkid -o export -c /dev/null /dev/$dev_ | grep -E "^${wanted}=.*" | sed -r -e "s|^${wanted}=||")"
+  fi
+  echo $wanted
+} # end oof get_UUID_from_blkid
+#
 get_fs_from_partclone_fstype() {
   local part_="$1"  # e.g. /dev/sda1, /dev/cciss/c0d0p1, /dev/dm-1
   local fstypeinfo TYPE
@@ -588,6 +600,18 @@ for wanted in $request; do
        else
          echo "$ptype"
        fi
+       ;;
+    UUID|uuid)
+       UUID="$(get_VAR_from_blkid $part UUID)"
+       echo "$UUID"
+       ;;
+    PTUUID|ptuuid)
+       PTUUID="$(get_VAR_from_blkid $part PTUUID)"
+       echo "$PTUUID"
+       ;;
+    PARTUUID|partuuid)
+       PARTUUID="$(get_VAR_from_blkid $part PARTUUID)"
+       echo "$PARTUUID"
        ;;
     *)
        get_from_parted
