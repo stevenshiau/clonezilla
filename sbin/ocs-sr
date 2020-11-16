@@ -1245,6 +1245,60 @@ case "$ocs_sr_type" in
     elif [ "$ocs_sr_dev" = "all" ]; then
       get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
       target_hd="$dev_list"
+    elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "(PTUUID=|SERIALNO=)")" ]; then
+      # Input might be multiple devices like: 
+      # PTUUID="f722833a" PTUUID="271e1971" SERIALNO="36000c292124c4d6554f924089bd9b83a"
+      # PTUUID="f722833a" sdb
+
+      # Format the input PTUUID= and SERIALNO= to be uppercase
+      ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/ptuuid=/PTUUID=/g" -e "s/serialno=/SERIALNO=/g")"
+      target_hd=""
+      for id in $ocs_sr_dev; do
+        found_hd=""
+        if [ -n "$(echo "$id" | grep -Ei "^PTUUID=")" ]; then
+          # E.g., PTUUID="f722833a"
+          found_hd="$(get_block_dev_from_PTUUID $id)"
+          if [ -n "$found_hd" ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Found $id is device: $found_hd"
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    if [ -z "$(echo $target_hd | grep -Ewo "$found_hd")" ]; then
+              # Avoid duplication
+	      target_hd="$target_hd $found_hd"
+            else
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+              echo "Assigned device $found_hd is already in the list."
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    fi
+	  fi
+        elif [ -n "$(echo "$id" | grep -Ei "^SERIALNO=")" ]; then
+          # E.g., SERIALNO="36000c292124c4d6554f924089bd9b83a"
+          found_hd="$(get_block_dev_from_SERIALNO $id)"
+          if [ -n "$found_hd" ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Found $id is device: $found_hd"
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    if [ -z "$(echo $target_hd | grep -Ewo "$found_hd")" ]; then
+              # Avoid duplication
+	      target_hd="$target_hd $found_hd"
+            else
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+              echo "Assigned device $found_hd is already in the list."
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    fi
+          fi
+        else
+          # E.g., sdb
+	  if [ -z "$(echo $target_hd | grep -Ewo "$id")" ]; then
+            # Avoid duplication
+	    target_hd="$target_hd $id"
+          else
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Assigned device $id is already in the list."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	  fi
+	fi
+      done
     else
       target_hd="$ocs_sr_dev"
     fi
@@ -1413,6 +1467,61 @@ case "$ocs_sr_type" in
     elif [ "$ocs_sr_dev" = "all" ]; then
       get_not_busy_disks_or_parts partition "" ""  # we will get dev_list
       target_parts="$dev_list"
+    elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "(UUID=|PARTUUID=)")" ]; then
+      # Input might be multiple devices like: 
+      # UUID="B5F8-50F8" UUID="46f141f2-8ea6-47e4-81f0-052cb95a5e79" PARTUUID="271e1971-01"
+      # UUID="B5F8-50F8" sda5 PARTUUID="271e1971-01"
+
+      # Format the input UUID= and PARTUUID= to be uppercase
+      ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/uuid=/UUID=/g" -e "s/partuuid=/PARTUUID=/g")"
+      target_parts=""
+      for id in $ocs_sr_dev; do
+        found_part=""
+        if [ -n "$(echo "$id" | grep -Ei "^UUID=")" ]; then
+          # E.g., UUID="f722833a"
+          found_part="$(LC_ALL=C blkid --uuid ${id/UUID=/})"
+          found_part=${found_part#/dev/*}
+          if [ -n "$found_part" ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Found $id is device: $found_part"
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    if [ -z "$(echo $target_parts | grep -Ewo "$found_part")" ]; then
+              # Avoid duplication
+	      target_parts="$target_parts $found_part"
+            else
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+              echo "Assigned device $found_part is already in the list."
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    fi
+          fi
+        elif [ -n "$(echo "$id" | grep -Ei "^PARTUUID=")" ]; then
+          # E.g., PARTUUID="f722833a-01"
+          found_part="$(get_block_dev_from_PARTUUID $id)"
+          if [ -n "$found_part" ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Found $id is device: $found_part"
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    if [ -z "$(echo $target_parts | grep -Ewo "$found_part")" ]; then
+              # Avoid duplication
+	      target_parts="$target_parts $found_part"
+            else
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+              echo "Assigned device $found_part is already in the list."
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    fi
+          fi
+        else
+          # E.g., sdb
+	  if [ -z "$(echo $target_parts | grep -Ewo "$id")" ]; then
+              # Avoid duplication
+	    target_parts="$target_parts $id"
+          else
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Assigned device $id is already in the list."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	  fi
+	fi
+      done
     else
       target_parts="$ocs_sr_dev"
     fi
