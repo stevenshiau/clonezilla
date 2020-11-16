@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.1.7
+Version:	4.1.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,15 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 16 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.8-drbl1
+  * Support assigning input device using UUID/serial no when saving image:
+    savedisk: PTUUID, SERIALNO
+    saveparts: UUID, PARTUUID
+    E.g.,
+    ocs-sr -q2 -c -j2 -z9p -i 4096 -sfsck -senc -p choose savedisk
+    myimg SERIALNO=36000c292124c4d6554f924089bd9b83a
+    serialno=36000c29045c0eab7f80c902114867c19 PTUUID="f722833a"
+
 * Mon Nov 02 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.7-drbl1
   * Remove gptsync since it's not available in Debian repository,
     and add scsitools blktool safecopy in GParted live packages list.
