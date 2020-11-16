@@ -4248,7 +4248,7 @@ get_input_image_name() {
 #
 get_disk_serial_no() {
   # This is specially for sdx. For hdx, we can get from "cat /sys/block/$p/device/serial 2>/dev/null"
-  local dsk_="$1"  # e.g. sda
+  local dsk_=${1#/dev/*} # Input is like /dev/sda or sda, so dsk_ becomes sda
   serialno=""  # serialno is global variable
   [ -z "$dsk_" ] && echo "No input value for dsk_!" && exit 1
   if type udevadm &>/dev/null; then
@@ -14797,3 +14797,53 @@ is_disk_without_part_and_fs() {
   fi
   return $rc
 } # end of is_disk_without_part_and_fs
+#
+get_block_dev_from_PTUUID(){
+  local r_ptuuid="$1"  # can be PTUUID=... or just PTUUID number.
+  local $rt_dev the_ptuuid
+  [ -z "$r_ptuuid" ] && return 1
+  get_not_busy_disks_or_parts harddisk "" "" 2>&1 >/dev/null # we will get dev_list
+  for id in $dev_list; do
+    rt_dev=""
+    the_ptuuid="$(ocs-get-part-info /dev/$id ptuuid | tr [:upper:] [:lower:])"
+    if [ "$the_ptuuid" = "$(echo $r_ptuuid | sed -r -e "s/PTUUID=//" | tr [:upper:] [:lower:])" ]; then
+      rt_dev="$id"
+      break
+    fi
+  done
+  echo $rt_dev
+} # end of get_block_dev_from_PTUUID
+#
+get_block_dev_from_PARTUUID(){
+  local r_partuuid="$1"  # can be PARTUUID=... or just PARTUUID number.
+  local $rt_dev the_partuuid
+  [ -z "$r_partuuid" ] && return 1
+  get_not_busy_disks_or_parts partition "" "" 2>&1 >/dev/null # we will get dev_list
+  for id in $dev_list; do
+    rt_dev=""
+    the_partuuid="$(ocs-get-part-info /dev/$id partuuid | tr [:upper:] [:lower:])"
+    if [ "$the_partuuid" = "$(echo $r_partuuid | sed -r -e "s/PARTUUID=//" | tr [:upper:] [:lower:])" ]; then
+      rt_dev="$id"
+      break
+    fi
+  done
+  echo $rt_dev
+} # end of get_block_dev_from_PARTUUID
+#
+get_block_dev_from_SERIALNO(){
+  local r_serialno="$1"  # can be SERIALNO=... or just SERIALNO.
+  local $rt_dev the_serialno serialno
+  [ -z "$r_serialno" ] && return 1
+  get_not_busy_disks_or_parts harddisk "" "" 2>&1 >/dev/null # we will get dev_list
+  for id in $dev_list; do
+    rt_dev=""
+    serialno=""
+    get_disk_serial_no /dev/$id # we get "serialno"
+    the_serialno="$(echo $serialno | tr [:upper:] [:lower:])"
+    if [ "$the_serialno" = "$(echo $r_serialno | sed -r -e "s/SERIALNO=//" | tr [:upper:] [:lower:])" ]; then
+      rt_dev="$id"
+      break
+    fi
+  done
+  echo $rt_dev
+} # end of get_block_dev_from_SERIALNO
