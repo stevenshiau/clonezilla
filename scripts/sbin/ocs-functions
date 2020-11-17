@@ -14799,51 +14799,60 @@ is_disk_without_part_and_fs() {
 } # end of is_disk_without_part_and_fs
 #
 get_block_dev_from_PTUUID(){
+  # output variable is blk_dev
   local r_ptuuid="$1"  # can be PTUUID=... or just PTUUID number.
   local $rt_dev the_ptuuid
+  # blk_dev is global variable
+  blk_dev=""
   [ -z "$r_ptuuid" ] && return 1
   get_not_busy_disks_or_parts harddisk "" "" 2>&1 >/dev/null # we will get dev_list
   for id in $dev_list; do
-    rt_dev=""
+    blk_dev=""
     the_ptuuid="$(ocs-get-part-info /dev/$id ptuuid | tr [:upper:] [:lower:])"
     if [ "$the_ptuuid" = "$(echo $r_ptuuid | sed -r -e "s/PTUUID=//" | tr [:upper:] [:lower:])" ]; then
-      rt_dev="$id"
+      blk_dev="$id"
       break
     fi
   done
-  echo $rt_dev
 } # end of get_block_dev_from_PTUUID
 #
 get_block_dev_from_PARTUUID(){
+  # output variable is blk_dev
   local r_partuuid="$1"  # can be PARTUUID=... or just PARTUUID number.
   local $rt_dev the_partuuid
+  # blk_dev is global variable
+  blk_dev=""
   [ -z "$r_partuuid" ] && return 1
   get_not_busy_disks_or_parts partition "" "" 2>&1 >/dev/null # we will get dev_list
   for id in $dev_list; do
-    rt_dev=""
+    blk_dev=""
     the_partuuid="$(ocs-get-part-info /dev/$id partuuid | tr [:upper:] [:lower:])"
     if [ "$the_partuuid" = "$(echo $r_partuuid | sed -r -e "s/PARTUUID=//" | tr [:upper:] [:lower:])" ]; then
-      rt_dev="$id"
+      blk_dev="$id"
       break
     fi
   done
-  echo $rt_dev
 } # end of get_block_dev_from_PARTUUID
 #
 get_block_dev_from_SERIALNO(){
+  # output variable is blk_dev
   local r_serialno="$1"  # can be SERIALNO=... or just SERIALNO.
   local $rt_dev the_serialno serialno
+  # blk_dev is global variable
+  blk_dev=""
   [ -z "$r_serialno" ] && return 1
   get_not_busy_disks_or_parts harddisk "" "" 2>&1 >/dev/null # we will get dev_list
   for id in $dev_list; do
-    rt_dev=""
+    blk_dev=""
     serialno=""
     get_disk_serial_no /dev/$id # we get "serialno"
     the_serialno="$(echo $serialno | tr [:upper:] [:lower:])"
-    if [ "$the_serialno" = "$(echo $r_serialno | sed -r -e "s/SERIALNO=//" | tr [:upper:] [:lower:])" ]; then
-      rt_dev="$id"
+    if [ "$the_serialno" = \
+	 "$(echo $r_serialno | sed -r -e "s/SERIALNO=//" | tr [:upper:] [:lower:] | tr " " "_")" ]
+         # r_serialno might contain white space, but we replace space with "_" in get_disk_serial_no
+    then
+      blk_dev="$id"
       break
     fi
   done
-  echo $rt_dev
 } # end of get_block_dev_from_SERIALNO

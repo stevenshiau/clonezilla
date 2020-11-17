@@ -1252,12 +1252,18 @@ case "$ocs_sr_type" in
 
       # Format the input PTUUID= and SERIALNO= to be uppercase
       ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/ptuuid=/PTUUID=/g" -e "s/serialno=/SERIALNO=/g")"
+      # TODO:
+      # Format the SERIALNO to be without white space. Relpace it with "_", same as function get_disk_serial_no.
+      # E.g., SERIALNO="VMware Virtual NVMe Disk_VMWare NVME_0000" -> 
+      #       SERIALNO="VMware_Virtual_NVMe_Disk_VMWare_NVME_0000"
+
       target_hd=""
       for id in $ocs_sr_dev; do
         found_hd=""
         if [ -n "$(echo "$id" | grep -Ei "^PTUUID=")" ]; then
           # E.g., PTUUID="f722833a"
-          found_hd="$(get_block_dev_from_PTUUID $id)"
+          get_block_dev_from_PTUUID $id    # we will get blk_dev
+          found_hd="$blk_dev"
           if [ -n "$found_hd" ]; then
             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
             echo "Found $id is device: $found_hd"
@@ -1273,7 +1279,8 @@ case "$ocs_sr_type" in
 	  fi
         elif [ -n "$(echo "$id" | grep -Ei "^SERIALNO=")" ]; then
           # E.g., SERIALNO="36000c292124c4d6554f924089bd9b83a"
-          found_hd="$(get_block_dev_from_SERIALNO $id)"
+          get_block_dev_from_SERIALNO $id   # we will get blk_dev
+	  found_hd="$blk_dev"
           if [ -n "$found_hd" ]; then
             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
             echo "Found $id is device: $found_hd"
@@ -1496,7 +1503,8 @@ case "$ocs_sr_type" in
           fi
         elif [ -n "$(echo "$id" | grep -Ei "^PARTUUID=")" ]; then
           # E.g., PARTUUID="f722833a-01"
-          found_part="$(get_block_dev_from_PARTUUID $id)"
+          get_block_dev_from_PARTUUID $id   # we will get blk_dev
+	  found_part="$blk_dev"
           if [ -n "$found_part" ]; then
             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
             echo "Found $id is device: $found_part"
