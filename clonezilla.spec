@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.1.8
+Version:	4.1.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 17 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.9-drbl1
+  * Implement a better mechanism to get block device about UUID.
+
 * Mon Nov 16 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.8-drbl1
   * Support assigning input device using UUID/serial no when saving image:
     savedisk: PTUUID, SERIALNO
