@@ -1254,7 +1254,7 @@ case "$ocs_sr_type" in
       # PTUUID="f722833a" sdb
 
       # Format the input PTUUID= and SERIALNO= to be uppercase
-      ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/ptuuid=/PTUUID=/g" -e "s/serialno=/SERIALNO=/g")"
+      ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/ptuuid=/PTUUID=/gi" -e "s/serialno=/SERIALNO=/gi")"
       # TODO:
       # Format the SERIALNO to be without white space. Relpace it with "_", same as function get_disk_serial_no.
       # E.g., SERIALNO="VMware Virtual NVMe Disk_VMWare NVME_0000" -> 
@@ -1482,15 +1482,16 @@ case "$ocs_sr_type" in
       # UUID="B5F8-50F8" UUID="46f141f2-8ea6-47e4-81f0-052cb95a5e79" PARTUUID="271e1971-01"
       # UUID="B5F8-50F8" sda5 PARTUUID="271e1971-01"
 
-      # Format the input UUID= and PARTUUID= to be uppercase
-      ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/uuid=/UUID=/g" -e "s/partuuid=/PARTUUID=/g")"
+      # Format the input PARTUUID= (must be 1st in sed) and UUID=
+      # to be uppercase
+      ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/partuuid=/PARTUUID=/gi" -e "s/uuid=/UUID=/gi")"
       target_parts=""
       for id in $ocs_sr_dev; do
         found_part=""
-        if [ -n "$(echo "$id" | grep -Ei "^UUID=")" ]; then
-          # E.g., UUID="f722833a"
-          found_part="$(LC_ALL=C blkid --uuid ${id/UUID=/})"
-          found_part=${found_part#/dev/*}
+        if [ -n "$(echo "$id" | grep -Ei "^PARTUUID=")" ]; then
+          # E.g., PARTUUID="f722833a-01"
+          get_block_dev_from_PARTUUID $id   # we will get blk_dev
+	  found_part="$blk_dev"
           if [ -n "$found_part" ]; then
             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
             echo "Found $id is device: $found_part"
@@ -1504,10 +1505,10 @@ case "$ocs_sr_type" in
               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 	    fi
           fi
-        elif [ -n "$(echo "$id" | grep -Ei "^PARTUUID=")" ]; then
-          # E.g., PARTUUID="f722833a-01"
-          get_block_dev_from_PARTUUID $id   # we will get blk_dev
-	  found_part="$blk_dev"
+        elif [ -n "$(echo "$id" | grep -Ei "^UUID=")" ]; then
+          # E.g., UUID="f722833a"
+          found_part="$(LC_ALL=C blkid --uuid ${id/UUID=/})"
+          found_part=${found_part#/dev/*}
           if [ -n "$found_part" ]; then
             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
             echo "Found $id is device: $found_part"
