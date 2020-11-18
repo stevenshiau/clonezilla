@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.1.9
+Version:	4.2.0
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.1.5, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 4.2.0, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,16 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 18 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.0-drbl1
+  * Rename ocs-get-part-info as ocs-get-dev-info.
+  * When ocs-sr is in saving mode, the DEVICE name can also be
+    assigned by:
+    For disk: PTUUID or SERIALNO, e.g., 
+    PTUUID=03c8b280-47aa-4881-aca5-9b9c66fe28c7. 
+    If there are spaces in SERIALNO, replace every space by \"_\"
+    For partition: UUID or PARTUUID, 
+    e.g., UUID=0b51ce79-7bc0-4111-8a40-839461a9b12f"
+
 * Mon Nov 17 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.9-drbl1
   * Implement a better mechanism to get block device about UUID.
 
