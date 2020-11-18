@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.0
+Version:	4.2.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,7 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-* Mon Nov 18 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.0-drbl1
+* Wed Nov 18 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.1-drbl1
+  * Make ptuuid/serialno/uuid/partuuid case insensitive when using 
+    as the input parameter of ocs-sr.
+
+* Wed Nov 18 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.0-drbl1
   * Rename ocs-get-part-info as ocs-get-dev-info.
   * When ocs-sr is in saving mode, the DEVICE name can also be
     assigned by:
