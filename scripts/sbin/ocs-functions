@@ -4248,11 +4248,29 @@ get_input_image_name() {
 #
 get_disk_serial_no() {
   # This is specially for sdx. For hdx, we can get from "cat /sys/block/$p/device/serial 2>/dev/null"
-  local dsk_=${1#/dev/*} # Input is like /dev/sda or sda, so dsk_ becomes sda
+  local dsk_ want_
+  local type_="long"  # Default to use long ID, not ID_SERIAL_SHORT
+  # The serial no udevadm has two types:
+  # root@debian:~# udevadm info -q env -n  /dev/sda |grep ID_SERIAL
+  # ID_SERIAL=VMware_Virtual_SATA_Hard_Drive_02000000000000000001
+  # ID_SERIAL_SHORT=02000000000000000001
   serialno=""  # serialno is global variable
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -s|--short) shift; type_="short" ;;
+      -*)     echo "${0}: ${1}: invalid option in get_disk_serial_no" >&2
+              return 2 ;;
+      *)      break ;;
+    esac
+  done
+  dsk_=${1#/dev/*} # Input is like /dev/sda or sda, so dsk_ becomes sda
   [ -z "$dsk_" ] && echo "No input value for dsk_!" && exit 1
+  case $type_ in
+    short) want_="ID_SERIAL_SHORT";;
+        *) want_="ID_SERIAL";;
+  esac
   if type udevadm &>/dev/null; then
-    serialno="$(LC_ALL=C udevadm info -q env -n /dev/${dsk_} | grep ID_SERIAL= | sed -e 's/ID_SERIAL=//g' | tr " " "_")"
+    serialno="$(LC_ALL=C udevadm info -q env -n /dev/${dsk_} | grep "${want_}=" | sed -e "s/${want_}=//g" | tr " " "_")"
   fi
   if [ -z "$serialno" ]; then
     # lrwxrwxrwx 1 root root   9 2009-01-23 20:18 ata-ST3160815AS-6RX1880B -> ../../sda
@@ -14845,7 +14863,7 @@ get_block_dev_from_SERIALNO(){
   for id in $dev_list; do
     blk_dev=""
     serialno=""
-    get_disk_serial_no /dev/$id # we get "serialno"
+    get_disk_serial_no -s /dev/$id # we get "serialno" (short one)
     the_serialno="$(echo $serialno | tr [:upper:] [:lower:])"
     if [ "$the_serialno" = \
 	 "$(echo $r_serialno | sed -r -e "s/^SERIALNO=//i" | tr [:upper:] [:lower:] | tr " " "_")" ]
