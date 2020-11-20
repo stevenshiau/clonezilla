@@ -12,6 +12,14 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . /etc/drbl/drbl-ocs.conf
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
+# Default settings
+
+# The serial no of a disk that udevadm output has two types:
+# root@debian:~# udevadm info -q env -n  /dev/sda |grep ID_SERIAL
+# ID_SERIAL=VMware_Virtual_SATA_Hard_Drive_02000000000000000001
+# ID_SERIAL_SHORT=02000000000000000001
+serial_type="short"  # Default to show short one.
+
 #
 prog="$(basename $0)"
 USAGE() {
@@ -20,7 +28,8 @@ USAGE() {
    echo "VALUE is one of these values: start, end, size, type, filesystem, UUID, PARTUUID, PTUUID, SERIALNO or flags"
    echo
    echo "OPTION:"
-   echo "-u, --unit UNIT     When the VALUE1, VALUE2... is about size, show the size with unit UNIT (s, kB, MB, GB... which parted accepts)."
+   echo "-l, --long-serial-no  Output the long serial number of a hard drive. By default the short one from udevadm will be given."   
+   echo "-u, --unit UNIT       When the VALUE1, VALUE2... is about size, show the size with unit UNIT (s, kB, MB, GB... which parted accepts)."
    echo
    echo "Ex:" 
    echo "To list the /dev/sda1 size with unit sector"
@@ -549,6 +558,7 @@ while [ $# -gt 0 ]; do
             fi
             [ -z "$unit" ] && USAGE >&2 && exit 1
 	    ;;
+    -l|--long-serial-no) shift; serial_type="long";;
     -*)     echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
             exit 2 ;;
@@ -614,7 +624,11 @@ for wanted in $request; do
        echo "$PARTUUID"
        ;;
     SERIALNO|serialno)
-       get_disk_serial_no $part  # we will get serialno
+       case "$serial_type" in
+         short) serial_opt="-s"; shift;;
+       esac
+       # get_disk_serial_no default to output long one.
+       get_disk_serial_no $serial_opt $part  # we will get serialno
        echo "$serialno"
        ;;
     *)
