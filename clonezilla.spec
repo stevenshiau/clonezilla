@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.1
+Version:	4.2.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Nov 20 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.2-drbl1
+  * ocs-sr: update usage about short serial number
+  * ocs-get-dev-info: add option -l so that the default output about serial
+    no of a disk can be shown in long format. Default is short one.
+    Thanks to LinuxOpa.
+    Ref: https://sourceforge.net/p/clonezilla/support-requests/143/
+
 * Wed Nov 18 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.1-drbl1
   * Make ptuuid/serialno/uuid/partuuid case insensitive when using 
     as the input parameter of ocs-sr.
