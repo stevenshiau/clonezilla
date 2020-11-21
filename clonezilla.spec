@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.2
+Version:	4.2.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Nov 21 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.3-drbl1
+  * create-gparted-live: Replace calcoo with galculator and add yelp.
+
 * Fri Nov 20 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.2-drbl1
   * ocs-sr: update usage about short serial number
   * ocs-get-dev-info: add option -l so that the default output about serial
