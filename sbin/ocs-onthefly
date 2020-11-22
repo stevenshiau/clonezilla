@@ -1215,6 +1215,25 @@ ask_ocs_onthefly_dest_dev() {
       ;;
   esac
 } # end of ask_ocs_onthefly_dest_dev
+#
+convert_serialno_to_blkdev(){
+  local srl_no_="$1"
+  # Only one input device will be mapped since for ocs-onthefly this is the case.
+  # Ouput the variable $blk_dev
+
+  # Format the input SERIALNO= to be uppercase
+  srl_no_="$(echo $srl_no_ | sed -r -e "s/serialno=/SERIALNO=/gi")"
+  if [ -n "$(echo "$srl_no_" | grep -Ei "^SERIALNO=")" ]; then
+    blk_dev=""
+    # E.g., SERIALNO="36000c292124c4d6554f924089bd9b83a"
+    get_block_dev_from_SERIALNO $srl_no_   # we will get blk_dev
+    if [ -n "$blk_dev" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Found $srl_no_ is device: $blk_dev"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    fi
+  fi
+} # end of convert_serialno_to_blkdev
 
 ########################
 ##### MAIN PROGRAM #####
@@ -1277,6 +1296,16 @@ check_DIA_set_ESC $DIA
 
 # Turn off swap and LVM2, unlock the busy partitions.
 turn_off_swap_and_LVM2
+
+# Convert assigned SERIALNO device to block device name
+if [ -n "$(echo "$src_dev" | grep -Ei "SERIALNO=")" ]; then
+  convert_serialno_to_blkdev $src_dev
+  src_dev=$blk_dev
+fi
+if [ -n "$(echo "$tgt_dev" | grep -Ei "SERIALNO=")" ]; then
+  convert_serialno_to_blkdev $tgt_dev
+  tgt_dev=$blk_dev
+fi
 
 #
 if [ "$ocs_onthefly_mode" = "interactive" ]; then
