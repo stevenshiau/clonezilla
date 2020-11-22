@@ -122,8 +122,11 @@ USAGE() {
     echo "IMAGE is the image dir name in $ocsroot, not absolute path"
     echo "DEVICE name can be with or without /dev/, e.g., /dev/sda or sda."
     echo "When in saving mode, the DEVICE name can also be assigned by:"
-    echo "For disk: PTUUID or SERIALNO (short format), e.g., PTUUID=03c8b280-47aa-4881-aca5-9b9c66fe28c7. If there are spaces in SERIALNO, replace every space by \"_\""
+    echo "For disk: PTUUID or SERIALNO (short format), e.g., PTUUID=03c8b280-47aa-4881-aca5-9b9c66fe28c7." 
     echo "For partition: UUID or PARTUUID, e.g., UUID=0b51ce79-7bc0-4111-8a40-839461a9b12f"
+    echo "When in resotoring mode, the DEVICE name can also be assigned by (for disk only):"
+    echo "SERIALNO (short format), e.g., SERIALNO=2YK8XSYD."
+    echo "If there are spaces in SERIALNO, replace every space by \"_\""
     echo 
     echo " Options for saving:"
     USAGE_common_save
@@ -1255,11 +1258,6 @@ case "$ocs_sr_type" in
 
       # Format the input PTUUID= and SERIALNO= to be uppercase
       ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/ptuuid=/PTUUID=/gi" -e "s/serialno=/SERIALNO=/gi")"
-      # TODO:
-      # Format the SERIALNO to be without white space. Relpace it with "_", same as function get_disk_serial_no.
-      # E.g., SERIALNO="VMware Virtual NVMe Disk_VMWare NVME_0000" -> 
-      #       SERIALNO="VMware_Virtual_NVMe_Disk_VMWare_NVME_0000"
-
       target_hd=""
       for id in $ocs_sr_dev; do
         found_hd=""
@@ -1386,6 +1384,44 @@ case "$ocs_sr_type" in
       get_target_hd_name_from_local_machine "$msg_choose_the_disks_to_restore \n$msg_linux_disk_naming $msg_press_space_to_mark_selection" $dia_sel_opt
     elif [ "$ocs_sr_dev" = "all" ]; then
       target_hd="$(get_disk_list_from_img $ocsroot/$target_dir)"
+    elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "SERIALNO=")" ]; then
+      # Input might be multiple devices like: 
+      # SERIALNO="36000c292124c4d6554f924089bd9b83a" sdb
+
+      # Format the input SERIALNO= to be uppercase
+      ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/serialno=/SERIALNO=/gi")"
+      target_hd=""
+      for id in $ocs_sr_dev; do
+        found_hd=""
+        if [ -n "$(echo "$id" | grep -Ei "^SERIALNO=")" ]; then
+          # E.g., SERIALNO="36000c292124c4d6554f924089bd9b83a"
+          get_block_dev_from_SERIALNO $id   # we will get blk_dev
+	  found_hd="$blk_dev"
+          if [ -n "$found_hd" ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Found $id is device: $found_hd"
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    if [ -z "$(echo $target_hd | grep -Ewo "$found_hd")" ]; then
+              # Avoid duplication
+	      target_hd="$target_hd $found_hd"
+            else
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+              echo "Assigned device $found_hd is already in the list."
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    fi
+          fi
+        else
+          # E.g., sdb
+	  if [ -z "$(echo $target_hd | grep -Ewo "$id")" ]; then
+            # Avoid duplication
+	    target_hd="$target_hd $id"
+          else
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Assigned device $id is already in the list."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	  fi
+	fi
+      done
     else
       target_hd="$ocs_sr_dev"
     fi
