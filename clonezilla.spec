@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.4
+Version:	4.2.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Nov 22 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.5-drbl1
+  * ocs-sr: destination disk can be assigned by serialno when restoring.
+  * ocs-onthefly: source and destination device can be assigned by serialno.
+
 * Sat Nov 21 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.4-drbl1
   * GParted live: Update the calculator in the menu as galculator.
 
