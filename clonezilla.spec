@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.5
+Version:	4.2.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.2.0, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 4.2.1, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 23 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.6-drbl1
+  * ocs-sr: run save_ocs_sr_related_vars on all modes. Save more variables
+    in the function save_ocs_sr_related_vars of ocs-functions.
+    This would make some more modes stop before asking the final action by
+    default.
+
 * Sun Nov 22 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.5-drbl1
   * ocs-sr: destination disk can be assigned by serialno when restoring.
   * ocs-onthefly: source and destination device can be assigned by serialno.
