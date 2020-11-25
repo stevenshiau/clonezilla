@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.7
+Version:	4.2.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Nov 24 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.8-drbl1
+  * Bug fixed: save_ocs_sr_related_vars should be replaced with
+    new function name save_ocs_related_vars not used in ocs-chkimg and
+    ocs-live-feed-img.
+
 * Mon Nov 23 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.7-drbl1
   * Bug fixed: in interactive mode, ocs-onthefly and ocs-sr should wait
     for pressing enter before asking final action. It was not working for
