@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.8
+Version:	4.2.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Nov 25 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.9-drbl1
+  * As suggested by ottokang _at gmail com and
+    https://lwn.net/Articles/244829/, noatime implies nodiratime.
+    There remove nodiratime in the option of mount command.
+
 * Tue Nov 24 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.8-drbl1
   * Bug fixed: save_ocs_sr_related_vars should be replaced with
     new function name save_ocs_related_vars not used in ocs-chkimg and
