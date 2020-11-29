@@ -1249,7 +1249,7 @@ task_start_feed_img_for_cast() {
       eth_for_multicast="$eth_for_deploy_packet" # passed to function start_ocs_service
       # Force to make client won't check the image integrity since this is for multicast restoring.
       OCS_OPT="$OCS_OPT -scr"
-      task="multicast_restore" # pass to function get_bt_restore_mode_if_bittorrent
+      task="multicast_restore" # pass to function get_multicast_restore_mode_if_mcast
       OCS_OPT="$OCS_OPT --mcast-port $MULTICAST_PORT"
   
       if [ "$ocs_sr_mode" = "interactive" ]; then
@@ -1271,17 +1271,12 @@ task_start_feed_img_for_cast() {
     elif [ "$castmode" = "bt" ]; then
       # Force to make client won't check the image integrity since this is for BT restoring.
       OCS_OPT="$OCS_OPT -scr"
-      task="bt_restore" # pass to function get_bt_restore_mode_if_bittorrent
-      if [ "$ocs_sr_mode" = "interactive" ]; then
-        if [ -z "$n_clients" ]; then
-          get_bt_restore_mode_if_bittorrent
-          # Obtain n_clients (global variables) to pass to function start_ocs_service
-        fi
-      fi
-      if [ -n "$n_clients" ]; then
-        cast_client_no_opt="-n $n_clients"  # Used for start_ocs_service
-        OCS_OPT_PRE="$OCS_OPT_PRE --clients-to-wait $n_clients"  # For re-run prompt
-      fi
+      # 2020/11/26 No need to ask, since it's BT.
+      #get_bt_restore_mode_if_bittorrent
+      ## Obtain n_clients (global variables) to pass to function start_ocs_service
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "It's BT mode, so no need to assign the client number." | tee -a ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
   
     # Before really starting the feeding service, we can check if the image integrity is OK or not.
