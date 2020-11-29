@@ -6433,19 +6433,16 @@ get_ezio_prog(){
   fi
 } # end of get_ezio_prog
 #
-do_bittorrent_restore() {
+collect_bittorrent_restore_dev() {
+  # This function only collects partition/LV as "all_bt_part_lv". 
+  # Later ocs-btsrv will be used to deploy all the devices.
   local target_d="$1"
   local part_img_dir="$(to_filename $2)"
   local part="$3"  # part is like /dev/sda1
-  local start_time end_time image_name_ split_by dd_report_sig_pid part_size hdtmp pt_type
-  local btimg_name btc_cmd
-  # if the report_msg is empty, put the initial one: image_name_
-  image_name_="$(basename $target_d)"
-  [ -z "$report_msg" ] && report_msg="Bittorrent restored $image_name_,"
+  local btimg_name
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   check_if_dev_busy $part
   echo $msg_delimiter_star_line
-  # time_elapsed, time_elapsed_in_min and speed are global variables
   # target_d is like: /home/partimag/xenial-x86-20161010
   # While the bt files will be: /home/partimag/btzone/xenial-x86-20161010
   btimg_name="$(basename $target_d)"
@@ -6457,22 +6454,9 @@ do_bittorrent_restore() {
     exit 1
   fi
   clean_filesystem_header_in_partition $part
-  # Find if ezio or ezio-static
-  get_ezio_prog  # get the variable ezio_prog
-  # Squeeze multiple spaces to one only
-  btc_cmd="$(echo $ezio_prog $ezio_leecher_opt $ezio_common_opt $ocsroot_btzone/$btimg_name/${part_img_dir}.torrent $part | sed -r -e "s|[[:space:]]+| |g")"
-  echo "Running: $btc_cmd"
-  eval $btc_cmd
-  rc=$?
-  echo "Finished unicast restoring image ${target_d##*/} to $part." | tee --append ${OCS_LOGFILE}
-  sleep 1
-  # Informing kernel that the OS that partition table has changed since for BSD system, the partitions info exists in the slice
-  hdtmp="$(get_disk_from_part $part)"
-  pt_type="$(get_partition_table_type_from_disk $hdtmp)"
-  inform_kernel_partition_table_changed $pt_type $hdtmp | tee --append ${OCS_LOGFILE}
-  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-  return $rc
-} # end of do_bittorrent_restore
+  all_bt_part_lv="$all_bt_part_lv $part"
+  return 0
+} # end of collect_bittorrent_restore_dev
 #
 check_ocs_variables_if_fails_quit() {
   local par_n="$#"
@@ -6967,7 +6951,7 @@ restore_logv() {
        rc="$?"
        ;;
      "bittorrent")
-       do_bittorrent_restore $target_dir_fullpath $fn $lv
+       collect_bittorrent_restore_dev $target_dir_fullpath $fn $lv
        rc="$?"
        ;;
      "d2d")
@@ -9027,7 +9011,7 @@ task_d2d_restoreparts() {
 task_restoreparts() {
   local target_dir="$1"
   local target_parts="$2"
-  local port="$3" # we use the port to identify it's unicast or multicast.
+  local port="$3" # we use the port to identify it's unicast, multicast or BT.
   local dev_to_be_overwrite parts_included target_dir_fullpath source_hd target_logv
   local target_hd=""
   local thd_tmp=""
@@ -9042,8 +9026,8 @@ task_restoreparts() {
   local p_fs ipartition
   local efi_info_tmp
   local processed_extended_parts grub_cand_parts
-  local lsrc_dev
-  # create_temp_img_flag, orig_ocsroot and orig_target_dir are global variables
+  local lsrc_dev bt_cmd_
+  # create_temp_img_flag, orig_ocsroot, orig_target_dir and all_bt_part_lv are global variables
 
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -9245,6 +9229,7 @@ task_restoreparts() {
 
   PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
   do_LVM_restore="no"
+  all_bt_part_lv=""
   for partition in $target_parts; do
     # sda1 -> sda
     hd_tmp="$(get_diskname $partition)"
@@ -9279,7 +9264,7 @@ task_restoreparts() {
         rc="$?"
         ;;
      "bittorrent")
-        do_bittorrent_restore $target_dir_fullpath $partition /dev/$partition
+        collect_bittorrent_restore_dev $target_dir_fullpath $partition /dev/$partition
         rc="$?"
         ;;
      "d2d")
@@ -9436,6 +9421,15 @@ task_restoreparts() {
     # However, we do not put the disk name to $target_parts otherwise it might cause confusion.
     restore_logv "$target_parts" $net_mode $port
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  fi
+
+  # We have collected all the devices to be deployed by BT mechanism
+  # in collect_bittorrent_restore_dev, so now run it
+  if [ -n "$all_bt_part_lv" ]; then
+    echo "The device(s) to be deployed by BT mechanism: $all_bt_part_lv"
+    bt_cmd_="ocs-btsrv --for-leecher -r $ocsroot_btzone start $target_dir $all_bt_part_lv"
+    echo "Running: $bt_cmd_"
+    eval $bt_cmd_
   fi
 
   # Reinstall executable code area (first 446 bytes in MBR)
