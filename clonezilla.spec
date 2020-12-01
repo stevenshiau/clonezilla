@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.11
+Version:	4.2.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Dec 01 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.12-drbl1
+  * Bug fixed: jfbterm was not used in i686 live due to wrong keyword to 
+    be grepped in ocs-lang-kbd-conf. This made no way to choose language
+    for i686 version of Clonezilla live.
+
 * Mon Nov 30 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.11-drbl1
   * Make "service dnsmasq restart" as "systemctl stop dnsmasq; 
     systemctl start dnsmasq" in ocs-live-feed-img.
