@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.12
+Version:	4.2.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Dec 03 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.13-drbl1
+  * Add leecher log: /var/log/ocs-leecher.log.
+
 * Tue Dec 01 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.12-drbl1
   * Bug fixed: jfbterm was not used in i686 live due to wrong keyword to 
     be grepped in ocs-lang-kbd-conf. This made no way to choose language
