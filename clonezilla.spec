@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.13
+Version:	4.2.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Dec 03 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.15-drbl1
+  * Update prompt and usage of ocs-btsrv.
+
+* Thu Dec 03 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.14-drbl1
+  * Output the ezio seeding & leeching logs  in ocs-btsrv,
+    not in function task_restoreparts.
+
 * Thu Dec 03 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.13-drbl1
   * Add leecher log: /var/log/ocs-leecher.log.
 
