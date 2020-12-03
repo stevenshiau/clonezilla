@@ -25,7 +25,8 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 brutal_kill="no"
 # BT_PORT_INIT, p_length_ctorrent, p_length_mktorrent, ocsroot_btzone, btlog_dir are loaded from drbl-ocs.conf.
 # Log file to keep the status of ezio seeding.
-ezio_seeding_log="/var/log/ezio-seeding"
+ezio_seeding_log="/var/log/ezio-seeding.log"
+ezio_leeching_log="/var/log/ezio-leeching.log"
 # Default mode for reading BT data from image
 bt_slices_from_dev="img"
 # Default mode is for seeder
@@ -229,7 +230,7 @@ start_bitorrent_client_program_in_leecher() {
 } # end of start_bitorrent_client_program_in_leecher
 #
 start_bt_srv() {
-  local ipt idir idir_name ezio_log_idir
+  local ipt idir idir_name
   local cpu_no cmd_make_metainfo cmd_update_metainfo
   local existing_ip existing_port 
   local cmd_start_seeding ezio_start_seeding_param ezio_ram_size_KB ct_pid_log_prefix
@@ -322,7 +323,6 @@ start_bt_srv() {
      # Do not use all the free memory. ezio_cache_ratio is from drbl-ocs.conf.
      ezio_ram_size_KB="$(LC_ALL=C printf "%.0f" "$(echo "($ezio_ram_size_KB*$ezio_cache_ratio)" | bc -l)")"
      # Log and pid
-     ezio_log_idir="${ezio_seeding_log}-${ct_pid_log_prefix}.log"
      # Remove the leading ~
      ct_pid_log_prefix="$(echo $ct_pid_log_prefix | sed -e "s/^~//g")"
      ct_pid_log="$btlog_dir/${ct_pid_log_prefix}-torrent.pid"
@@ -333,24 +333,27 @@ start_bt_srv() {
        # raw-dev: ezio -U -T sda1.torrent -L /dev/sda1 -T sda2.torrent -L /dev/sda2
        ezio_seeder_leecher_opt="$ezio_seeder_leecher_opt -f"
      fi
-     cmd_start_seeding="$ezio_prog $ezio_common_opt $ezio_seeder_leecher_opt --cache $ezio_ram_size_KB $ezio_start_seeding_param" 
+     cmd_start_seeding="$ezio_prog $ezio_common_opt $ezio_seeder_leecher_opt --cache $ezio_ram_size_KB $ezio_start_seeding_param 2>&1" 
      # Squeeze multiple spaces to one only
      cmd_start_seeding="$(echo $cmd_start_seeding | sed -r -e "s|[[:space:]]+| |g")"
      if [ "$run_mode" = "seeder" ]; then
        # For seeder:
-       # Run it in the background and redirect the output to log file
-       cmd_start_seeding="$cmd_start_seeding > $ezio_log_idir 2>&1 &"
+       # Run it in the background & redirect the output to log file
+       ocs_log_rotate $ezio_seeding_log
+       cmd_start_seeding="$cmd_start_seeding > $ezio_seeding_log 2>&1 &"
        echo "Start seeding by:"
        echo "$cmd_start_seeding"
        eval $cmd_start_seeding
        ct_pid="$!"
        echo "$ct_pid" > $ct_pid_log
        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-       echo "$ezio_prog seeding status output for ${idir}.torrent will be in \"$ezio_log_idir\". Use \"tail -f $ezio_log_idir\" to check the status."
+       echo "$ezio_prog seeding status output for ${idir}.torrent will be in \"$ezio_seeding_log\". Use \"tail -f $ezio_seeding_log\" to check the status."
        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
      else
        # For leecher:
-       # Just run it in the foreground
+       # Just run it in the foreground & copy the output in the log file
+       ocs_log_rotate $ezio_leeching_log
+       cmd_start_seeding="$cmd_start_seeding | tee $ezio_leeching_log"
        echo "Start leecher by:"
        echo "$cmd_start_seeding"
        eval $cmd_start_seeding
