@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.15
+Version:	4.2.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Dec 08 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.16-drbl1
+  * Reduce ezio_cache_ratio from 0.7 to 0.5 in drbl-ocs.conf.
+
 * Thu Dec 03 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.15-drbl1
   * Update prompt and usage of ocs-btsrv.
 
