@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.16
+Version:	4.2.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Dec 16 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.17-drbl1
+  * ocs-sr: dump md-related info in the image dir.
+  * ocs-live-feed-img: Reduce timeout_max to 120 secs from 300 secs.
+  * ocs-get-dev-info: Partition type is not reset if it's not swap.
+    This allows linux_raid_member to be identified.
+  * ocs-chkimg: skip checking md device's MBR and partition table.
+
 * Tue Dec 08 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.16-drbl1
   * Reduce ezio_cache_ratio from 0.7 to 0.5 in drbl-ocs.conf.
 
