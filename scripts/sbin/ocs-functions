@@ -1895,82 +1895,6 @@ check_specify_part_exists() {
   [ -f "$partition_table" ] && rm -f $partition_table
 } # end of check_specify_part_exists
 #
-get_known_partition_sf_format() {
-    # This function is used with the output format of sfdisk
-    # However, this function is actually not used in Clonezilla.
-    local partition_table="$1"
-    local known_parts="" fuzzy_parts workdir dsk_pt index part_fs dsk_ file_2_parse
-    # Note! https://sourceforge.net/forum/message.php?msg_id=4289601
-    # Thanks to Tom Ed (vi0lam0n) for identifying this bug.
-    # In Ubuntu 6.10, the output sfdisk with 10 or more partitions is like:
-    # -----------------------
-    ## partition table of /dev/hda
-    #unit: sectors
-    #
-    #/dev/hda1 : start=       63, size=   196497, Id=83
-    #/dev/hda2 : start=   196560, size=   196560, Id=83
-    #/dev/hda3 : start=   393120, size=   196560, Id=83
-    #/dev/hda4 : start=   589680, size= 16186905, Id= 5
-    #/dev/hda5 : start=   589743, size=    98217, Id=83
-    #/dev/hda6 : start=   688023, size=   196497, Id=83
-    #/dev/hda7 : start=   884583, size=   196497, Id=83
-    #/dev/hda8 : start=  1081143, size=   196497, Id=83
-    #/dev/hda9 : start=  1277703, size=   196497, Id=83
-    #/dev/hda10: start=  1474263, size=   196497, Id=83
-    #/dev/hda11: start=  1670823, size=   196497, Id=83
-    #/dev/hda12: start=  1867383, size= 14909202, Id=83
-    #
-    # Therefore we have to remove : in the end also (for hda10:, hda11:...)
-    # //NOTE// for sfdisk >= 2.26, the format is different:
-    # label: dos
-    # label-id: 0x000ea753
-    # device: /dev/sda
-    # unit: sectors
-    # 
-    # /dev/sda1 : start=        2048, size=    97654784, type=83, bootable
-    # /dev/sda2 : start=    97656832, size=     1953792, type=82
-    # /dev/sda3 : start=    99612670, size=    26214402, type=5
-    # /dev/sda5 : start=    99612672, size=    26214400, type=83
-
-    [ -z "$partition_table" ] && return 1
-    known_parts="$(LC_ALL=C cat $partition_table | grep -E "(Id=|type=)" | awk -F, '{ if($3!=" (Id= 0|type=0)" && $3!=" (Id= f|type=f)" && $3!=" (Id= 5|type=5)" && $3!=" (Id=85|type=85)") print $1; }' | cut -d" " -f1 | sed -e 's/\/dev\///g' -e 's/:$//g')"
-    # since Id=82 is for swap and Solaris, we have to check it if it's really swap or not. Here we can use the table from parted (ex: sda-pt.parted). First we use the output from parted, if it does not exist (unlikely actually), we test the output of lsblk (file blkdev.list).
-    known_parts="$(echo $known_parts)"  # make it a line
-    if grep -qiEw "(Id=82|type=82)" $partition_table 2>/dev/null; then
-       fuzzy_parts="$(LC_ALL=C grep -iEw "(Id=82|type=82)" $partition_table | cut -d" " -f1 | sed -e 's/:$//g')"
-       # fuzzy_parts is like /dev/sda2
-       workdir="$(dirname $partition_table)"
-       for i in $fuzzy_parts; do
-         dsk_=${i#/dev/*}
-         # /dev/sda2 -> sda2 -> 2
-	 # dsk_pt is like /home/partimag/sarge-r8/sda-pt.parted
-         dsk_pt="$workdir/$(to_filename $(get_diskname $i))-pt.parted"
-         # For cciss partition, e.g. /dev/cciss/c0d0p2 will be "p2" which is got from $(get_part_number /dev/cciss/c0d0p2)", here the part_index we want is only number, hence we need to trip the leading characters.
-         index="$(LC_ALL=C get_part_number $i | sed -r -e "s|^[^[:digit:]]*||g")"  # index is like 2
-         if [ -e "${dsk_pt}" ]; then
-           part_fs="$(LC_ALL=C grep -Ew "^[[:space:]]*$index" ${dsk_pt} | grep -i swap)"
-           if [ -z "$part_fs" ]; then  # No swap keyword in parted table for $index
-             known_parts="$known_parts $dsk_"
-           fi
-         elif [ -e "$workdir/blkdev.list" -o -e "$workdir/tgt-blkdev.list" ]; then
-           # For ocs-onthefly, the file to be checked is tgt-blkdev.list
-           # If blkdev.list exits, we use it first. Since it's more precise when dm exists.
-           # TODO: Check if cciss partition OK or not.
-	   if [ -e "$workdir/tgt-blkdev.list" ]; then
-             file_2_parse="$workdir/tgt-blkdev.list"
-	   else
-             file_2_parse="$workdir/blkdev.list"
-	   fi
-	   if [ -n "$(LC_ALL=C awk -F" " "/^$(to_sysblock_name $(get_diskname ${dsk_}))[[:space:]]+/ {print \$5}" \
-	            $file_2_parse | grep -i swap)" ]; then
-             known_parts="$known_parts $dsk_"
-	   fi
-         fi
-       done
-    fi
-    echo "$known_parts"
-} # end of get_known_partition_sf_format
-#
 get_swap_partition_sf_format() {
     local partition_table="$1"
     local known_parts="" fuzzy_parts workdir dsk_pt index part_fs dev_ file_2_parse
@@ -3088,6 +3012,7 @@ check_integrity_of_partition_table_in_disk() {
               # Saving mode, always copy error log to image dir.
               copy_error_log
               exit 1
+              ;;
       esac
     fi
   fi
@@ -4497,16 +4422,23 @@ get_not_busy_disks_or_parts() {
       fi
     done
 
+    # Strip the linux_raid_member
+    echo "Excluding linux raid member partition..."
+    for ipart in $part_list; do
+      if is_linux_raid_member $ipart; then
+	# strip parititon
+        LC_ALL=C perl -i -ne "print unless m!^.*${ipart}[[:space:]]+!" $partition_table
+      fi
+    done
+
     # Strip those excluding devs
     for ipart in $dev_to_be_exclude; do
       LC_ALL=C perl -i -ne "print unless m!^.*${ipart}[[:space:]]+!" $partition_table
     done
 
     case "$dev_type" in
-      harddisk)
-        dev_list="$(get_disk_list $partition_table)" ;;
-      partition)
-        dev_list="$(get_part_list $partition_table)" ;;
+      harddisk)  dev_list="$(get_disk_list $partition_table)" ;;
+      partition) dev_list="$(get_part_list $partition_table)" ;;
     esac
     dev_list="$(echo $dev_list)"   # convert to 1 line
     [ -f "$mounted_table" ] && rm -f $mounted_table
@@ -8387,18 +8319,6 @@ task_savedisk() {
   target_extended_parts=""
   part_rec_f="$(mktemp /tmp/part_rec_f.XXXXXX)"
   for idisk in $target_hd; do
-    # Since sfdisk does not work with EFI/GPT, we no more use sfdisk to get the partition list. Instead, we use /proc/partitions from kenrel to list them. Thanks to Justin Fitzhugh from mozilla.com.
-    # pt_tmp="$(mktemp /tmp/pt_tmp.XXXXXX)"
-    # sfdisk -d /dev/$idisk > $pt_tmp
-    # # find the available partitions
-    # for partition in `get_known_partition_sf_format $pt_tmp`; do
-    #   target_parts="$target_parts $partition"
-    # done
-    # for partition in `get_swap_partition_sf_format $pt_tmp`; do
-    #   target_swap_parts="$target_swap_parts $partition"
-    # done
-    # [ -f "$pt_tmp" ] && rm -f $pt_tmp
-    
     # Check if mbr and gpt partition table coexist
     check_mbr_gpt_partition_table $idisk
 
@@ -14885,3 +14805,52 @@ get_block_dev_from_SERIALNO(){
     fi
   done
 } # end of get_block_dev_from_SERIALNO
+#
+is_linux_raid_member() {
+  local dev_=${1#/dev/*}
+  local type_ rc
+  rc=1
+  type_="$(LC_ALL=C ocs-get-dev-info /dev/${dev_} type)"
+  if [ "$type_" = "linux_raid_member" ]; then
+    rc=0
+  fi
+  return $rc
+} # end of is_linux_raid_member
+#
+dump_software_raid_info_if_exists() {
+  local img_dir="$1" 
+  local md_devs
+  # /proc/mdstat e.g.,
+  # root@debian:~# cat /proc/mdstat
+  # Personalities : [raid1] [raid0] [linear] [multipath] [raid6] [raid5] [raid4] [raid10]
+  # md125 : active (auto-read-only) raid1 sdb1[1] sda1[0]
+  #       499968 blocks super 1.0 [2/2] [UU]
+  #       bitmap: 0/1 pages [0KB], 65536KB chunk
+  # 
+  # md126 : active raid0 sda3[0] sdb3[1]
+  #       15761408 blocks super 1.2 512k chunks
+  # 
+  # md127 : active (auto-read-only) raid1 sda2[0] sdb2[1]
+  #       12573696 blocks super 1.2 [2/2] [UU]
+  #       bitmap: 0/1 pages [0KB], 65536KB chunk
+  md_devs="$(LC_ALL=C grep -Ewi active /proc/mdstat | awk -F":" '{print $1}')"
+  if [ -n "$md_devs" ]; then
+    cat /proc/mdstat > $img_dir/mdstat.txt
+    mdadm --detail --scan  > $img_dir/mdadm.conf
+    for im in $md_devs; do
+      mdadm --query --detail --export /dev/$im > $img_dir/${im}.txt
+    done
+  fi
+} # end of dump_software_raid_info_if_exists
+#
+is_md_dev() {
+  local dev_=${1#/dev/*}
+  local RE='md[0-9]+p*[0-9]*'
+  local rc
+  rc=1
+  if [ -n "$dev_" ]; then
+    echo $dev_ | grep -Eq "^${RE}$"
+    rc=$?
+  fi
+  return $rc
+} # end of is_md_dev
