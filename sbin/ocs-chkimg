@@ -434,6 +434,12 @@ task_checkimage() {
       fi
       ;;
      unknown)
+      if is_md_dev $ihd; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Found Linux Software RAID: $ihd. Assume no need to check partition table."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	continue
+      fi
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "Unknown partition table format from the file $img_dir_fullpath/$(to_filename ${hdsk})-pt.parted!" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -508,10 +514,21 @@ task_checkimage() {
   echo "Checking the MBR in the image \"$target_dir\"..."
   # Reinstall executable code area (first 446 bytes in MBR)
   for ihd in $target_hd; do
+    p_type="$(get_partition_table_type_from_img "$target_dir_fullpath" "${ihd}")"
     # Ref: http://en.wikipedia.org/wiki/Master_boot_record
     # Master Boot Record (MBR) is the 512-byte boot sector:
     # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
     # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
+    if [ "$p_type" = "gpt" ]; then
+      echo "GPT disk. No need to check MBR."
+      continue
+    fi
+    if is_md_dev $ihd; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Found Linux Software RAID device: $ihd. Assume no need to check MBR."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      continue
+    fi
     if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-mbr" ]; then
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
        echo "$msg_mbr_img_of_this_hd_not_found: ${ihd}"
