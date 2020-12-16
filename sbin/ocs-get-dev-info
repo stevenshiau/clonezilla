@@ -96,7 +96,14 @@ check_col_idx() {
 #
 get_from_parted() {
   local part_info
-  target_hd="/dev/$(get_diskname $part)"
+  target_hd="$(get_diskname $part)" # target_hd now is like: sda
+  if [ -n "$target_hd" ]; then
+    target_hd=/dev/$target_hd
+  else
+    # When disk name is not found. E.g., /dev/md125 is already a block device with file system.
+    # This function will fail.
+    return 1
+  fi
   # For cciss partition, e.g. /dev/cciss/c0d0p2 will be "p2" which is got from $(get_part_number /dev/cciss/c0d0p2)", here the part_index we want is only number, hence we need to trip the leading characters.
   part_index="$(LC_ALL=C get_part_number $part | sed -r -e "s|^[^[:digit:]]*||g")"
   
@@ -467,18 +474,39 @@ get_type_from_lsblk() {
   # This function is intended to get if a parition is swap or extended. 
   # Because the mechanism got from parted is too slow, we use lsblk to simulate it.
   local part_="$1"  # e.g. /dev/sda1, /dev/cciss/c0d0p1
+  local part_type
   if type lsblk &>/dev/null; then
+    # lsblk available output column (from "lsblk --help")
+    # FSTYPE  filesystem type
+    # PARTTYPE  partition type code or UUID
+    # E.g.,
+    # Swap:
+    # root@debian:~# lsblk -n -d -o FSTYPE /dev/sda6
+    # swap
+    # root@debian:~# lsblk -n -d -o PARTTYPE /dev/sda6
+    # 0x82
+
+    # Extended:
+    # root@debian:~# lsblk -n -d -o FSTYPE /dev/sda2
+    #
+    # root@debian:~# lsblk -n -d -o PARTTYPE /dev/sda2
+    # 0x5
+
     # For swap, e.g.
     # lsblk -n -o FSTYPE /dev/sda6
     part_type="$(LC_ALL=C lsblk -n -d -o FSTYPE ${part_} | sed -r -e "s/^[[:space:]]*//g")"
-    if [ "$part_type" != "swap" ]; then
-      # We only care if it's swap or extended. For other file system, just ignore it.
-      part_type=""
-    fi
     if [ -z "$part_type" ]; then
       # For extended, e.g.
       # lsblk -n -o PARTTYPE /dev/sda2
       part_type="$(LC_ALL=C lsblk -n -d -o PARTTYPE ${part_} | sed -r -e "s/^[[:space:]]*//g")"
+      # For msdos type, it's like:
+      # "Extended partition with CHS addressing" 0x5 (05h)
+      # "Extended partition with LBA" 0xf (0Fh)
+      # Ref: https://en.wikipedia.org/wiki/Partition_type
+      # For GPT type, it's like:
+      # "Linux RAID" A19D880F-05FC-4D3B-A006-743F0F84911E 
+      # Ref: https://en.wikipedia.org/wiki/GUID_Partition_Table
+      #      https://wiki.archlinux.org/index.php/GPT_fdisk
       if [ "$part_type" = "0x5" -o \
            "$part_type" = "0xf" ]; then
         # Convert to human readable
