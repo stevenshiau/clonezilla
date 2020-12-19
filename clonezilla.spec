@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.17
+Version:	4.2.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Dec 19 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.18-drbl1
+  * Allow something lie /dev/md126 can be a partition, too.
+  * Show file system and partition size in the TUI when listing partitions
+    in restoreparts.
+  * create-ocs-tmp-img: Use "-f" instead of "-e" to test a normal file in
+    the btzone dir otherwise noise from cp will be shown.
+
 * Wed Dec 16 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.17-drbl1
   * ocs-sr: dump md-related info in the image dir.
   * ocs-live-feed-img: Reduce timeout_max to 120 secs from 300 secs.
