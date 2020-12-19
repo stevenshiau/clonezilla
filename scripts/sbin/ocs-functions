@@ -5005,7 +5005,7 @@ get_existing_partitions_from_img() {
    local tgt_parts ans_
    local ASK_INPUT=1
    local pt_tmp="" TMP prompt_msg_part1
-   local p_list
+   local p_list p_fs_size
 
    # skip_mounted_part is the switch to skip the mounted partition if this is running in clonezilla client. i.e. the selected partition will write to the partition in this machine.
    # On the other hand, if this function is called by DRBL server, it's not necessary to skip the mounted partition, since it's nothing to do with the mounted partition in the server.
@@ -5031,7 +5031,8 @@ get_existing_partitions_from_img() {
        if [ "$skip_mounted_part" = "yes" ]; then
          [ -n "$(mount | grep -Ew "^/dev/$p")" ] && continue
        fi
-       echo "$p" "disk("$(get_diskname $p)")_partition("$(get_part_number $p)")" off
+       p_fs_size="$(grep -Ew "^/dev/$p" $tgt_file/dev-fs.list | awk -F" " '{print $2"_"$3}')"
+       echo "$p" "disk("$(get_diskname $p)")_partition("$(get_part_number $p)")_$p_fs_size" off
      done)"
      if [ "$NUMPARTS" = "1" ]; then
        # If only one dev, turn on it.
@@ -8098,7 +8099,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # (3) Avoid multiple unicast clones to convert the same image.
   # img_cnvt_count is a global variable for removing the temp converted image dir
   local tmp_img_from_to_opt do_convert_flag
-  local dest_dev_
+  local dest_dev_ cnvt_cmd_ md_src_dsk_flag
   # create_temp_img_flag is global variable.
   # Check if target disk/part name exists in the image.
   # It might be the image from disk or partition (including bare block device with file system) that we need to convert
@@ -8128,9 +8129,11 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
     fi
   done
   # source_part is a global variable.
-  # If source_part exists, it means the image of a partition will be restored to different part.
+  # If source_part exists, and it is not the same with target_parts",
+  # it means the image of a partition will be restored to different part.
   tmp_img_from_to_opt=""
-  if [ -n "$source_part" -a -n "$target_parts" ]; then
+  if [ -n "$source_part" -a -n "$target_parts" ] && \
+     [ "$source_part" != "$target_parts" ] ; then
     do_convert_flag="yes"
     tmp_img_from_to_opt="-f $source_part -d $target_parts"
   fi
@@ -8152,11 +8155,26 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
     exit 1
   fi
   if [ "$src_dsk_no" -ge 2 ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$msg_create_cvrt_img_for_more_than_2_disks_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-    exit 1
+    md_src_dsk_flag="no"
+    for id in $dsksname_from_img; do
+      if [ -n "$(echo "$id" | grep -iEw "^md[0-9]+.*")" ]; then
+	md_src_dsk_flag="yes"
+	break
+      fi
+    done
+    if [ "$md_src_dsk_flag" = "yes" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Found Linux software RAID device. It is hard to tell it's disk or partition by its name." \
+      | tee --append ${OCS_LOGFILE}
+      echo "Skip checking the source disk number when converting..."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$msg_create_cvrt_img_for_more_than_2_disks_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+      exit 1
+    fi
   fi
   is_spawned_by_drbl_ocs $ocs_ppid
   rc=$?
@@ -8181,7 +8199,9 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
        -n "${target_dir}-tmp-cnvted" ]; then
     rm -rf "$ocsroot/${target_dir}-tmp-cnvted" 
   fi
-  create-ocs-tmp-img -or $ocsroot $tmp_img_from_to_opt $target_dir ${target_dir}-tmp-cnvted $dsksname_from_img $dest_dev_
+  cnvt_cmd_="create-ocs-tmp-img -or $ocsroot $tmp_img_from_to_opt $target_dir ${target_dir}-tmp-cnvted $dsksname_from_img $dest_dev_"
+  echo "Running: $cnvt_cmd_"
+  eval $cnvt_cmd_
   # Change the ocsroot to /tmp now since create-ocs-tmp-img will create the image in /tmp
   ocsroot="/tmp"
   target_dir="${target_dir}-tmp-cnvted"
@@ -11453,6 +11473,7 @@ is_partition() {
   # Loop device: /dev/loop0, /dev/loop0p1, /dev/loop0p2
   # NVME device: /dev/nvme0n1p1, /dev/nvme0n1p2, /dev/nvme1n1p1, /dev/nvme1n1p2
   # FakeRAID: with nodmraid boot parameter, /dev/md126p1, /dev/md126p2...
+  # 2020/12/18 Allow /dev/md126 can be partition, too.
   # Mylex ExtremeRAID-2000 SCSI RAID controller: /dev/rd/c0d0p1, /dev/rd/c0d1p1...
   # Compaq Smart Array controller: /dev/ida/c0d0p1, /dev/ida/c0d1p2...
   local dev_=${1#/dev/*}
@@ -11460,7 +11481,7 @@ is_partition() {
   local RE2='i2o/hd[a-z]+[0-9]+'
   local RE3='cciss/c[0-9]d[0-9]p[0-9]+'
   local RE4='mmcblk[0-9]+p+[0-9]+'
-  local RE5='md[0-9]+p+[0-9]+'
+  local RE5='md[0-9]+p?[0-9]*'
   local RE6='rd/c[0-9]d[0-9]p[0-9]+'
   local RE7='ida/c[0-9]d[0-9]p[0-9]+'
   local RE8='nvme[0-9]+n[0-9]+p+[0-9]+'
