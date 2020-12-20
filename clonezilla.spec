@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.18
+Version:	4.2.19
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Dec 20 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.19-drbl1
+  * Add a reserverd name autoname-wpfx= for saving.
+  * Change the date-time format for auto*name as like
+    my-2020-1220-0221-img, was my-2020-12-20-0221-img.
+
 * Sat Dec 19 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.18-drbl1
   * Allow something lie /dev/md126 can be a partition, too.
   * Show file system and partition size in the TUI when listing partitions
