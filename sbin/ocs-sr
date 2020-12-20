@@ -1213,7 +1213,7 @@ case "$ocs_sr_type" in
       done
       # If not found, use UUID from MB manufacture
       [ -z "$prefix_mac" ] && prefix_mac="$(LC_ALL=C dmidecode | grep -io "UUID: .*$" | head -n 1 | sed -e "s/^UUID: //g")"
-      target_dir="${prefix_mac}-$(LC_ALL=C date '+%Y-%m-%d-%H%M')-img" 
+      target_dir="${prefix_mac}-$(LC_ALL=C date '+%Y-%m%d-%H%M')-img" 
     elif [ "$ocs_sr_img_name" = "autohostname" ]; then 
       # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
       ip=""
@@ -1225,24 +1225,33 @@ case "$ocs_sr_type" in
       done
       # If not found, give it a default name based on time.
       if [ -z "ip" ]; then
-	prefix_host="autohostname-$(LC_ALL=C date '+%Y-%m-%d-%H%M')" 
+	prefix_host="autohostname-$(LC_ALL=C date '+%Y-%m%d-%H%M')" 
       else
         if LC_ALL=C host $ip &>/dev/null; then
           # FQDN found
           prefix_host="$(LC_ALL=C host $ip | sed -r -e "s/^.*name pointer//g" -e "s/^[[:space:]]*//g" -e "s|\.$||g")"
-	  prefix_host="${prefix_host}-$(LC_ALL=C date '+%Y-%m-%d-%H%M')"
+	  prefix_host="${prefix_host}-$(LC_ALL=C date '+%Y-%m%d-%H%M')"
 	else
           # FQDN not found. Give it a default name based on IP address and time.
-	  prefix_host="autohostname-${ip}-$(LC_ALL=C date '+%Y-%m-%d-%H%M')"
+	  prefix_host="autohostname-${ip}-$(LC_ALL=C date '+%Y-%m%d-%H%M')"
 	fi
       fi
       target_dir="${prefix_host}-img"
     elif [ "$ocs_sr_img_name" = "autoproductname" ]; then 
       # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
       target_dir="$(get_vendor_product_name)-img"
+    elif [ -n "$(echo "$ocs_sr_img_name" | grep -E "autoname-wpfx=")" ]; then 
+      # Ref: https://sourceforge.net/p/clonezilla/support-requests/144/
+      prefix_host="$(echo $ocs_sr_img_name | sed -e "s/autoname-wpfx=//g")"
+      if [ -z "$prefix_host" ]; then
+        # Default prefix as "cz" if nothing is assigned.
+	prefix_host="cz"
+      fi
+      target_dir="${prefix_host}-$(LC_ALL=C date '+%Y-%m%d-%H%M')-img"
     else
       target_dir="$ocs_sr_img_name"
     fi
+    echo "The image name is: $target_dir"
 
     if [ "$ocs_sr_dev" = "ask_user" ]; then
       # To get $target_hd
@@ -1486,7 +1495,7 @@ case "$ocs_sr_type" in
       done
       # If not found, use UUID from MB manufacture
       [ -z "$prefix_mac" ] && prefix_mac="$(LC_ALL=C dmidecode | grep -io "UUID: .*$" | head -n 1 | sed -e "s/^UUID: //g")"
-      target_dir="${prefix_mac}-$(LC_ALL=C date '+%Y-%m-%d-%H%M')-img" 
+      target_dir="${prefix_mac}-$(LC_ALL=C date '+%Y-%m%d-%H%M')-img" 
     elif [ "$ocs_sr_img_name" = "autohostname" ]; then 
       # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
       ip=""
@@ -1498,23 +1507,32 @@ case "$ocs_sr_type" in
       done
       # If not found, give it a default name based on time.
       if [ -z "ip" ]; then
-	prefix_host="autohostname-$(LC_ALL=C date '+%Y-%m-%d-%H%M')" 
+	prefix_host="autohostname-$(LC_ALL=C date '+%Y-%m%d-%H%M')" 
       else
         if LC_ALL=C host $ip &>/dev/null; then
           # FQDN found
           prefix_host="$(LC_ALL=C host $ip | sed -r -e "s/^.*name pointer//g" -e "s/^[[:space:]]*//g" -e "s|\.$||g")"
 	else
           # FQDN not found. Give it a default name based on IP address and time.
-	  prefix_host="autohostname-${ip}-$(LC_ALL=C date '+%Y-%m-%d-%H%M')"
+	  prefix_host="autohostname-${ip}-$(LC_ALL=C date '+%Y-%m%d-%H%M')"
 	fi
       fi
       target_dir="${prefix_host}-img"
     elif [ "$ocs_sr_img_name" = "autoproductname" ]; then 
       # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
       target_dir="$(get_vendor_product_name)-img"
+    elif [ -n "$(echo "$ocs_sr_img_name" | grep -E "autoname-wpfx=")" ]; then 
+      # Ref: https://sourceforge.net/p/clonezilla/support-requests/144/
+      prefix_host="$(echo $ocs_sr_img_name | sed -e "s/autoname-wpfx=//g")"
+      if [ -z "$prefix_host" ]; then
+        # Default prefix as "cz" if nothing is assigned.
+	prefix_host="cz"
+      fi
+      target_dir="${prefix_host}-$(LC_ALL=C date '+%Y-%m%d-%H%M')-img"
     else
       target_dir="$ocs_sr_img_name"
     fi
+    echo "The image name is: $target_dir"
 
     if [ "$ocs_sr_dev" = "ask_user" ]; then
       get_target_parts_name_from_local_machine  # get $target_parts
