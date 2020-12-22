@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.19
+Version:	4.2.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Dec 22 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.20-drbl1
+  * ocs-live-boot-menu: add language setting for grub
+
 * Sun Dec 20 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.19-drbl1
   * Add a reserverd name autoname-wpfx= for saving.
   * Change the date-time format for auto*name as like
