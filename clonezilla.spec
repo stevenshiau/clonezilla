@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.20
+Version:	4.2.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,16 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 28 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.21-drbl1
+  * ocs-sr: Support customized auto-gen image name.
+    Key name: productname + FQDN + UUID + MAC + year + date + time
+    It can be any combination, just beginning with autoname-
+    Ff key name is not shown, it will be shown as itself.
+    E.g., autoname-fox-year-date-time-uuid ->
+          fox-2020-1227-2336-564d41fc-9d80-20ac-c844-bda6a392d4c6
+  * Due to the above new feature, the "autoname-wpfx=" mechanism
+    is dropped.
+
 * Tue Dec 22 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.20-drbl1
   * ocs-live-boot-menu: add language setting for grub
 
