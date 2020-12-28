@@ -14875,3 +14875,123 @@ is_md_dev() {
   fi
   return $rc
 } # end of is_md_dev
+#
+cnvt_img_key_name_for_saving_mode(){
+  local key_v="$1"
+  local ip
+  # return value is global variable "tgt_part_name"
+  tgt_part_name=""
+  [ -z "$key_v" ] && return 1
+  case "$key_v" in
+    year|YEAR) tgt_part_name="$(LC_ALL=C date '+%Y')" ;;
+    date|DATE) tgt_part_name="$(LC_ALL=C date '+%m%d')" ;;
+    time|TIME) tgt_part_name="$(LC_ALL=C date '+%H%M')" ;;
+    productname|PRODUCTNAME) tgt_part_name="$(get_vendor_product_name)" ;;
+    uuid|UUID) tgt_part_name="$(LC_ALL=C dmidecode 2>/dev/null | 
+	       grep -Eio "UUID: .*$" | head -n 1 | sed -e "s/^UUID: //g")" ;;
+    mac|MAC)
+      for i in `LC_ALL=C get-nic-devs`; do
+        tgt_part_name="$(LC_ALL=C drbl-get-macadd $i)"
+        if [ -n "$tgt_part_name" ]; then
+          tgt_part_name="$(LC_ALL=C echo $tgt_part_name | sed -e 's/://g')"
+          break
+        fi
+      done
+      ;;
+    fqdn|FQDN|hostname|HOSTNAME)
+      for i in `LC_ALL=C get-nic-devs`; do
+        ip="$(drbl-get-ipadd $i)"
+        if [ -n "$ip" ]; then
+          break
+        fi
+      done
+      # If not found, give it a default name based on time.
+      if [ -n "ip" ]; then
+        if LC_ALL=C host $ip &>/dev/null; then
+          # FQDN found
+          tgt_part_name="$(LC_ALL=C host $ip | sed -r -e "s/^.*name pointer//g" -e "s/^[[:space:]]*//g" -e "s|\.$||g")"
+        else
+          # FQDN not found. Give it a default name based on IP address and time.
+          tgt_part_name="${ip}"
+        fi
+      fi
+      ;;
+    *) tgt_part_name="$key_v";;
+  esac
+} # end of cnvt_img_key_name_for_saving_mode
+#
+parse_target_dir_with_reserved_name_saving_mode() {
+  # This only works for saving mode in ocs-sr
+  # ocs_sr_img_name is the input global variable
+  # target_dir is the returned global variable
+  local total_nm asg_nm
+  declare -a asg_nm
+  target_dir=""
+  if [ "$ocs_sr_img_name" = "ask_user" ]; then
+    get_target_dir_name_when_saving  # get $target_dir
+  elif [ "$ocs_sr_img_name" = "autoname" ]; then 
+    # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/799287/topic/4815557
+    # We need something unique, so MAC address is a good choice
+    for i in `LC_ALL=C get-nic-devs`; do
+      prefix_mac="$(LC_ALL=C drbl-get-macadd $i)"
+      if [ -n "$prefix_mac" ]; then
+        prefix_mac="$(LC_ALL=C echo $prefix_mac | sed -e 's/://g')"
+        break
+      fi
+    done
+    # If not found, use UUID from MB manufacture
+    if [ -z "$prefix_mac" ]; then
+      prefix_mac="$(LC_ALL=C dmidecode 2>/dev/null | \
+                  grep -Eio "UUID: .*$" | head -n 1 | sed -e "s/^UUID: //g")"
+    fi
+    target_dir="${prefix_mac}-$(LC_ALL=C date '+%Y-%m%d-%H%M')-img" 
+  elif [ "$ocs_sr_img_name" = "autohostname" ]; then 
+    # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
+    ip=""
+    for i in `LC_ALL=C get-nic-devs`; do
+      ip="$(drbl-get-ipadd $i)"
+      if [ -n "$ip" ]; then
+        break
+      fi
+    done
+    # If not found, give it a default name based on time.
+    if [ -z "ip" ]; then
+      prefix_host="autohostname-$(LC_ALL=C date '+%Y-%m%d-%H%M')" 
+    else
+      if LC_ALL=C host $ip &>/dev/null; then
+        # FQDN found
+        prefix_host="$(LC_ALL=C host $ip | sed -r -e "s/^.*name pointer//g" -e "s/^[[:space:]]*//g" -e "s|\.$||g")"
+        prefix_host="${prefix_host}-$(LC_ALL=C date '+%Y-%m%d-%H%M')"
+      else
+        # FQDN not found. Give it a default name based on IP address and time.
+        prefix_host="autohostname-${ip}-$(LC_ALL=C date '+%Y-%m%d-%H%M')"
+      fi
+    fi
+    target_dir="${prefix_host}-img"
+  elif [ "$ocs_sr_img_name" = "autoproductname" ]; then 
+    # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
+    target_dir="$(get_vendor_product_name)-img"
+  elif [ -n "$(echo "$ocs_sr_img_name" | grep -E "^autoname-")" ]; then 
+    # autoname + productname + hostname (FQDN) + name (UUID, MAC) + year + date + time
+    # productname is from vendor+produce name in BIOS
+    # FQDN is from DNS
+    # UUID is from BIOS
+    # MAC is from NIC
+    # It can be any combination, just beginning with autoname-
+    # if key name is not shown, it will be shown as itself.
+    # E.g., autoname-fox-year-date-time-uuid -> fox-2020-1228-0706-564d41fc-9d80-20ac-c844-bda6a392d4c6
+    total_nm="$(LC_ALL=C echo $ocs_sr_img_name | cut  -d"-" -f1- --output-delimiter=" " | wc -w)"
+    for i in `seq 2 $total_nm`; do
+      asg_nm[$i]="$(LC_ALL=C echo $ocs_sr_img_name | cut  -d"-" -f $i)"
+      cnvt_img_key_name_for_saving_mode ${asg_nm[$i]} # obtain tgt_part_name
+      if [ -n "$tgt_part_name" ]; then
+        target_dir="${target_dir}-$tgt_part_name"
+      fi
+    done
+    # strip the leading "-"
+    target_dir="$(echo $target_dir | sed -r -e "s/^-//g")"
+  else
+    target_dir="$ocs_sr_img_name"
+  fi
+  echo "The image name is: $target_dir"
+} # end of parse_target_dir_with_reserved_name_saving_mode
