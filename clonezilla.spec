@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.21
+Version:	4.2.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.2.3, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 4.2.10, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jan 01 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.22-drbl1
+  * prep-ocsroot: add options for auto and 3.1.1 SMB protocol. Default
+    choice is "auto".
+  * Add support for scheme smb1, smb2, smb3 in ocs-live-repository so that
+    the cifs version can be assigned. Thanks to ottokang for this idea.
+    Ref:
+    https://groups.google.com/g/ocs-clonezilla/c/M0eEV9ClO4k/m/FlW06koMBwAJ
+
 * Mon Dec 28 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.21-drbl1
   * ocs-sr: Support customized auto-gen image name.
     Key name: productname + FQDN + UUID + MAC + year + date + time
