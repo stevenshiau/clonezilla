@@ -8,10 +8,11 @@
 # https://en.wikipedia.org/wiki/Uniform_Resource_Identifier
 # scheme:[//[user:password@]host[:port]][/]path[?query][#fragment]
 # General URI in Clonezilla:
-# [dev|smb|ssh|nfs|nfs4|http|https|ram]:[//[user:password@]host[:port]][/]path
+# [dev|smb|smb1|smb2|smb3|ssh|nfs|nfs4|http|https|ram]:[//[user:password@]host[:port]][/]path
 # local_dev:     dev:///dev/partition, dev:///LABEL|UUID|PARTLABEL|PARTUUID=uuid|label
 # nfs_server:    nfs|nfs4://host/path
 # samba_server:  smb://[domain;user:password@]host/path
+# samba_server with version assigned:  smb[123]://[domain;user:password@]host/path
 # ssh_server:    ssh://[user@]host[:port]/path  (No password can be assigned in URI)
 # webdav_server: http|https://host[:port]/path  (No username and password can be assigned in URI)
 # ram:           ram://
@@ -21,7 +22,9 @@
 # ocs_repository="nfs://192.168.100.254/home/partimag/"
 # ocs_repository="nfs4://192.168.100.254/partimag/"
 # ocs_repository="smb://administrator:mypasswd@192.168.100.175/images/"
-# ocs_repository="smb://my_domain;jack:mypasswd@192.168.1.1:445/images/"
+# ocs_repository="smb1://my_domain;jack:mypasswd@192.168.1.1:445/images/"
+# ocs_repository="smb2://my_domain;jack:mypasswd@192.168.1.1:445/images/"
+# ocs_repository="smb3://my_domain;jack:mypasswd@192.168.1.1:445/images/"
 # ocs_repository="ssh://jack@192.168.100.211/home/partimag/"
 # ocs_repository="http://192.168.100.180/share"
 # ocs_repository="ram://"
@@ -55,6 +58,7 @@ USAGE() {
     echo "local_dev:     dev:///dev/partition"
     echo "nfs_server:    nfs|nfs4://host/path"
     echo "samba_server:  smb://[domain;user:password@]host/path"
+    echo "samba_server with version assigned:  smb1|smb2|smb3://[domain;user:password@]host/path"
     echo "ssh_server:    ssh://[user@]host[:port]/path  (No password can be assigned in URI)"
     echo "webdav_server: http|https://host[:port]/path  (No username and password can be assigned in URI)"
     echo "ram:           ram:// (Especially for RAM disk, no need to assign the path)"
@@ -62,6 +66,7 @@ USAGE() {
     echo "ocs_repository=\"dev:///dev/sdf1\""
     echo "ocs_repository=\"nfs4://192.168.100.254/partimag/\""
     echo "ocs_repository=\"smb://administrator:mypasswd@192.168.100.175/images/\""
+    echo "ocs_repository=\"smb3://administrator:mypasswd@192.168.100.175/images/\""
     echo "Ex:"
     echo "To parse the boot parameter in my-cmdline and mount the one assigned in boot parameter \"ocs_live_repository\" with URI format as $ocsroot, run"
     echo "   $ocs -c my-cmdline"
@@ -87,15 +92,15 @@ set_ocs_batch_mode() {
 get_ocsroot_src_from_ocs_repository_if_assigned() {
   parse_cmdline_option -c $cmdl_file "ocs_repository"
   case "$ocs_repository" in
-    dev://*)             ocsroot_src="local_dev" ;;
-    smb://*)             ocsroot_src="samba_server" ;; 
-    ssh://*)             ocsroot_src="ssh_server" ;; 
-    nfs://*)             ocsroot_src="nfs_server" ;;
-    nfs4://*)            ocsroot_src="nfs4_server" ;;
-    http://*|https://*)  ocsroot_src="webdav_server" ;;
-    ram://*)             ocsroot_src="ramfs";;
-    "")                  ocsroot_src="none";;
-    *)                   ocsroot_src="unknown";;
+    dev://*)              ocsroot_src="local_dev" ;;
+    smb://*|smb[123]://*) ocsroot_src="samba_server" ;; 
+    ssh://*)              ocsroot_src="ssh_server" ;; 
+    nfs://*)              ocsroot_src="nfs_server" ;;
+    nfs4://*)             ocsroot_src="nfs4_server" ;;
+    http://*|https://*)   ocsroot_src="webdav_server" ;;
+    ram://*)              ocsroot_src="ramfs";;
+    "")                   ocsroot_src="none";;
+    *)                    ocsroot_src="unknown";;
   esac
 }
 #
@@ -121,11 +126,19 @@ do_uri_mount_samba_server(){
   # The URI for samba:
   # smb://[[domain;]username[:password]@]server[/share[/path]]
   # TODO: Security mode option (smb_sec_opt)? e.g. sec=ntlm, sec=ntlmv2 or auto
-  local rc ask_ run_again_ans
+  # smb_ver_opt is gloable variable, and will be used in load_ocsroot_mnt_cmd
+  local smb_scheme rc ask_ run_again_ans
+  smb_scheme="$(drbl-uriparse "$ocs_repository" scheme)"
   smb_srv="$(drbl-uriparse "$ocs_repository" domain)"
   smbfs_dir="$(drbl-uriparse "$ocs_repository" path)"
   smb_username="$(drbl-uriparse "$ocs_repository" username)"
   smb_password="$(drbl-uriparse "$ocs_repository" password)"
+  case "$smb_scheme" in
+    smb1) smb_ver_opt=",vers=1.0";;
+    smb2) smb_ver_opt=",vers=2.0";;
+    smb3) smb_ver_opt=",vers=3.0";;
+    smb)  smb_ver_opt="";;
+  esac
   # smb_username from URI might contain domain, like: "mygroup;jack"
   if [ -n "$(echo $smb_username | grep ";")" ]; then
     smb_domain="$(echo $smb_username | awk -F";" '{print $1}')"
