@@ -8,7 +8,7 @@
 # https://en.wikipedia.org/wiki/Uniform_Resource_Identifier
 # scheme:[//[user:password@]host[:port]][/]path[?query][#fragment]
 # General URI in Clonezilla:
-# [dev|smb|smb1|smb2|smb3|ssh|nfs|nfs4|http|https|ram]:[//[user:password@]host[:port]][/]path
+# [dev|smb|smb1|smb1.0|smb2|smb2.0|smb2.1|smb3|smb3.0|smb3.11|smb3.1.1|ssh|nfs|nfs4|http|https|ram]:[//[user:password@]host[:port]][/]path
 # local_dev:     dev:///dev/partition, dev:///LABEL|UUID|PARTLABEL|PARTUUID=uuid|label
 # nfs_server:    nfs|nfs4://host/path
 # samba_server:  smb://[domain;user:password@]host/path
@@ -58,7 +58,7 @@ USAGE() {
     echo "local_dev:     dev:///dev/partition"
     echo "nfs_server:    nfs|nfs4://host/path"
     echo "samba_server:  smb://[domain;user:password@]host/path"
-    echo "samba_server with version assigned:  smb1|smb2|smb3://[domain;user:password@]host/path"
+    echo "samba_server with version assigned:  smb1|smb1.0|smb2|smb2.0|smb2.1|smb3|smb3.0|smb3.11|smb3.1.1://[domain;user:password@]host/path"
     echo "ssh_server:    ssh://[user@]host[:port]/path  (No password can be assigned in URI)"
     echo "webdav_server: http|https://host[:port]/path  (No username and password can be assigned in URI)"
     echo "ram:           ram:// (Especially for RAM disk, no need to assign the path)"
@@ -92,15 +92,15 @@ set_ocs_batch_mode() {
 get_ocsroot_src_from_ocs_repository_if_assigned() {
   parse_cmdline_option -c $cmdl_file "ocs_repository"
   case "$ocs_repository" in
-    dev://*)              ocsroot_src="local_dev" ;;
-    smb://*|smb[123]://*) ocsroot_src="samba_server" ;; 
-    ssh://*)              ocsroot_src="ssh_server" ;; 
-    nfs://*)              ocsroot_src="nfs_server" ;;
-    nfs4://*)             ocsroot_src="nfs4_server" ;;
-    http://*|https://*)   ocsroot_src="webdav_server" ;;
-    ram://*)              ocsroot_src="ramfs";;
-    "")                   ocsroot_src="none";;
-    *)                    ocsroot_src="unknown";;
+    dev://*)             ocsroot_src="local_dev" ;;
+    smb*://*)            ocsroot_src="samba_server" ;; 
+    ssh://*)             ocsroot_src="ssh_server" ;; 
+    nfs://*)             ocsroot_src="nfs_server" ;;
+    nfs4://*)            ocsroot_src="nfs4_server" ;;
+    http://*|https://*)  ocsroot_src="webdav_server" ;;
+    ram://*)             ocsroot_src="ramfs";;
+    "")                  ocsroot_src="none";;
+    *)                   ocsroot_src="unknown";;
   esac
 }
 #
@@ -134,10 +134,12 @@ do_uri_mount_samba_server(){
   smb_username="$(drbl-uriparse "$ocs_repository" username)"
   smb_password="$(drbl-uriparse "$ocs_repository" password)"
   case "$smb_scheme" in
-    smb1) smb_ver_opt=",vers=1.0";;
-    smb2) smb_ver_opt=",vers=2.0";;
-    smb3) smb_ver_opt=",vers=3.0";;
-    smb)  smb_ver_opt="";;
+    smb1|smb1.0)       smb_ver_opt=",vers=1.0";;
+    smb2|smb2.0)       smb_ver_opt=",vers=2.0";;
+    smb2.1)            smb_ver_opt=",vers=2.1";;
+    smb3|smb3.0)       smb_ver_opt=",vers=3.0";;
+    smb3.11|smb3.1.1)  smb_ver_opt=",vers=3.1.1";;
+    smb)               smb_ver_opt="";;
   esac
   # smb_username from URI might contain domain, like: "mygroup;jack"
   if [ -n "$(echo $smb_username | grep ";")" ]; then
