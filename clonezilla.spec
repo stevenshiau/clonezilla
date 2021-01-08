@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.23
+Version:	4.2.24
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jan 08 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.24-drbl1
+  * Add more keyname about the image name: "autoname-":
+    month, day, hour, minute, date_F_*
+    date_F_* is like: date_F_y, where y is the format from program "date",
+    e.g., date_F_y is the value got from "date +%y",
+    i.e., last two digits of year (00..99).
+
 * Tue Jan 05 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.23-drbl1
   * ocs-live-repository: 
     Expand samba_server with version assigned as: smb1, smb1.0, smb2,
