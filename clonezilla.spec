@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.22
+Version:	4.2.23
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jan 05 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.23-drbl1
+  * ocs-live-repository: 
+    Expand samba_server with version assigned as: smb1, smb1.0, smb2,
+    smb2.0, smb2.1, smb3, smb3.0, smb3.11, and smb3.1.1.
+
 * Fri Jan 01 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.22-drbl1
   * prep-ocsroot: add options for auto and 3.1.1 SMB protocol. Default
     choice is "auto".
