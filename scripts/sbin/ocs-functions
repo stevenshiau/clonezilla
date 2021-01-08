@@ -14878,14 +14878,26 @@ is_md_dev() {
 #
 cnvt_img_key_name_for_saving_mode(){
   local key_v="$1"
-  local ip
+  local ip date_fmt
   # return value is global variable "tgt_part_name"
   tgt_part_name=""
   [ -z "$key_v" ] && return 1
   case "$key_v" in
-    year|YEAR) tgt_part_name="$(LC_ALL=C date '+%Y')" ;;
-    date|DATE) tgt_part_name="$(LC_ALL=C date '+%m%d')" ;;
-    time|TIME) tgt_part_name="$(LC_ALL=C date '+%H%M')" ;;
+    year|YEAR)     tgt_part_name="$(LC_ALL=C date '+%Y')" ;;
+    date|DATE)     tgt_part_name="$(LC_ALL=C date '+%m%d')" ;;
+    time|TIME)     tgt_part_name="$(LC_ALL=C date '+%H%M')" ;;
+    month|MONTH)   tgt_part_name="$(LC_ALL=C date '+%m')" ;;
+    day|DAY)       tgt_part_name="$(LC_ALL=C date '+%d')" ;;
+    hour|HOUR)     tgt_part_name="$(LC_ALL=C date '+%H')" ;;
+    minute|MINUTE) tgt_part_name="$(LC_ALL=C date '+%M')" ;;
+    date_F_*)      date_fmt="$(echo "$key_v" | cut -d"_" -f 3)"
+	         if [ -n "$date_fmt" ]; then
+                   # Force the format with "/" be replaced by "-", e.g.,
+		   # 12/31/99 -> 12-31-99
+	           tgt_part_name="$(LC_ALL=C date "+%${date_fmt}" | \
+			          sed -r -e "s|/|-|g")"
+		 fi
+		 ;;
     productname|PRODUCTNAME) tgt_part_name="$(get_vendor_product_name)" ;;
     uuid|UUID) tgt_part_name="$(LC_ALL=C dmidecode 2>/dev/null | 
 	       grep -Eio "UUID: .*$" | head -n 1 | sed -e "s/^UUID: //g")" ;;
@@ -14973,11 +14985,13 @@ parse_target_dir_with_reserved_name_saving_mode() {
     target_dir="$(get_vendor_product_name)-img"
   elif [ -n "$(echo "$ocs_sr_img_name" | grep -E "^autoname-")" ]; then 
     # key name: productname, hostname (FQDN), UUID, MAC, year, date, time,
+    # month, day, hour, minute, date_F_* (where * is the format for "date")
     # (case insensitive, but must be all uppercase or lowercase)
     # productname is from vendor+produce name in BIOS
     # FQDN is from DNS
     # UUID is from BIOS
     # MAC is from NIC
+    # date_F_* is like: date_F_y -> date +%y: last two digits of year (00..99)
     # It can be any combination, just make it begin with "autoname-"
     # and separate that with "-".
     # If key name is not any one of the above, it will be shown as itself.
