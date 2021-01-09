@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.24
+Version:	4.2.25
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jan 09 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.25-drbl1
+  * Use datefmt_* instead of date_F_* for "autoname-", and let user assign
+    %, so that it's easier to assign. E.g.,
+    autoname-fox-datefmt_%Y%m%d -> fox-20210109
+    autoname-fox-datefmt_%Y-datefmt_%m%d -> fox-2021-0109
+
 * Fri Jan 08 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.24-drbl1
   * Add more keyname about the image name: "autoname-":
     month, day, hour, minute, date_F_*
