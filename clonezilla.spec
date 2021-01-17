@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.25
+Version:	4.2.26
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jan 17 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.26-drbl1
+  * Better mechanism to find LIVE_MEDIA in function get_live_media_mnt_point
+    of ocs-functions.
+  * Update comment about "autoname-" in ocs-functions.
+
 * Sat Jan 09 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.25-drbl1
   * Use datefmt_* instead of date_F_* for "autoname-", and let user assign
     %, so that it's easier to assign. E.g.,
