@@ -10600,12 +10600,10 @@ get_live_media_mnt_point() {
   # Besids $live_sys_files_dir_list, user might assign his/her own live_sys_files_dir_list in the media (e.g. /live-hd). We can try to find it from the boot parameter "live-media-path" (//NOTE// Function parse_cmdline_option in drbl-functions is not working for this varialbe live-media-path, since it can not be a shell script variable.
   extra_live_media_path="$(LC_ALL=C grep -oE "live-media-path=([[:alnum:]]|_|-|\.|\/)*([[:space:]]|$)+" /proc/cmdline | sed -e "s/live-media-path=//g")"
   for i in $live_media_path_chklist; do
-    for j in $live_sys_files_dir_list $extra_live_media_path; do
-      if [ -f "$i/$j/$squash_f" ]; then
-        LIVE_MEDIA="$i"
-        break
-      fi
-    done
+    if test -n "$(find $i -maxdepth 3 -name "$squash_f" -print 2>/dev/null)" ; then
+      LIVE_MEDIA="$i"
+      break
+    fi
     [ -n "$LIVE_MEDIA" ] && break
   done
   if [ -z "$LIVE_MEDIA" ]; then
