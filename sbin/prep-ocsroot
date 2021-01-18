@@ -34,7 +34,7 @@ USAGE() {
 #
 do_mount_local_dev() {
    local target_part part_fs # target_part is like hda1, sda1...
-   local mount_cmd
+   local mount_cmd fsck_repo fsck_extra_opt
 
    prepare_mnt_point_ocsroot
    if [ "$ocs_prompt_mode" = "tui" ]; then
@@ -66,6 +66,26 @@ do_mount_local_dev() {
    # check if $target_part is ntfs or others
    part_fs="$(LANG=C ocs-get-dev-info /dev/$target_part filesystem)"
    echo "/dev/$target_part filesystem: $part_fs"
+
+   # Question about fsck the repo partition.
+   $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+   "$msg_nchc_clonezilla" --menu "$msg_choose_if_fsck_the_repo_part" \
+   0 0 0 $DIA_ESC \
+   ""       "$msg_skip_check_repo_fs" \
+   "fsck"   "$msg_ocs_param_fsck_repo_part" \
+   "fsck-y" "$msg_ocs_param_fsck_repo_part_yes" \
+   2> $ANS_TMP
+
+   fsck_repo="$(cat $ANS_TMP)"
+   if [ -n "$fsck_repo" ]; then
+     if [ "$fsck_repo" = "fsck-y" ]; then
+        # It's auto (actually say "yes" to all), so we add "-y" for fsck.
+        fsck_extra_opt="-y"
+     fi
+     fsck_partition $part_fs /dev/$target_part "$fsck_extra_opt"
+   fi
+   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+
    # If ocs_prep_ocsroot_ask_dir is not "no", we just mount the partition as $ocsroot. Otherwise it's a little confusing.
    case "$part_fs" in 
      ntfs) 
