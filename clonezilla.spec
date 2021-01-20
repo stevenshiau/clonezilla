@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.28
+Version:	4.2.29
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jan 20 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.29-drbl1
+  * prep-ocsroot: Make fsck dialog to be different from the saving mode.
+
 * Tue Jan 19 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.28-drbl1
   * ocs-sr: make --rescue work for ocs-onthefly to call ocs-sr.
     Thanks to huh for reporting this issue:
