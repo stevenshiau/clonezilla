@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.29
+Version:	4.2.30
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jan 20 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.30-drbl1
+  * Bug fixed: missing TUI when -rescue is used for partclone in device to
+    device cloning. Thanks to huh for reporting this.
+
 * Wed Jan 20 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.29-drbl1
   * prep-ocsroot: Make fsck dialog to be different from the saving mode.
 
