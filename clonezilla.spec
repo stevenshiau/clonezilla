@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.30
+Version:	4.2.31
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Feb 13 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.31-drbl1
+  * Exclude loop device as 1st-disk is used for device name in ocs-sr,
+    since /dev/loop0 is for filesystem.squashfs from Clonezilla live.
+
 * Wed Jan 20 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.30-drbl1
   * Bug fixed: missing TUI when -rescue is used for partclone in device to
     device cloning. Thanks to huh for reporting this.
