@@ -1,14 +1,14 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.2.31
-Release:	drbl1
+Version:	4.2.32
+Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.2.15, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 4.2.17, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 16 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.32-drbl2
+  * Repacket due to temp file existing in the deb. 
+
+* Tue Feb 16 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.32-drbl1
+  * create-gparted-live: include package nwipe in GParted live. 
+    Thanks to bruno.forcier for asking this.
+    Ref: http://gparted-forum.surf4.info/viewtopic.php?id=17972
+
 * Sat Feb 13 2021 Steven Shiau <steven _at_ clonezilla org> 4.2.31-drbl1
   * Exclude loop device as 1st-disk is used for device name in ocs-sr,
     since /dev/loop0 is for filesystem.squashfs from Clonezilla live.
