@@ -659,15 +659,10 @@ check_portmap_nfs_common_daemon() {
     # http://sourceforge.net/tracker/?func=detail&atid=671650&aid=2936441&group_id=115473
     modprobe nfs
   fi
-  pid_portmap="$(LC_ALL=C pidof portmap)"
   pid_rpcbind="$(LC_ALL=C pidof rpcbind)"
-  if [ -z "$pid_portmap" -a -z "$pid_rpcbind" ]; then
-    echo "Service portmap or rpcbind is necesary for NFS client. Start it now..."
-    if [ -e "/etc/init.d/portmap" ]; then
-      /etc/init.d/portmap start
-    else
-      /etc/init.d/rpcbind start
-    fi
+  if [ -z "$pid_rpcbind" ]; then
+    echo "Service rpcbind is necesary for NFS client. Start it now..."
+    systemctl start rpcbind
   fi
   # We assume nfs-common only runs rpc.statd (for NFS3), no rpc.lockd. This is true for modern kernel (>=2.4).
   pid_rpc_statd="$(LC_ALL=C pidof rpc.statd)"
@@ -788,17 +783,9 @@ do_mount_nfs_server(){
    echo "$ocsroot_mnt_cmd_nfs"
    eval $ocsroot_mnt_cmd_nfs
    [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
-   if LC_ALL=C dpkg -L unfs3 &>/dev/null; then
-     # A workaround to make unfs3 service work well. It seems that after nfs-common is started, the rpcbind does not work with unfs3 which will be started later, therefore here we force to restart rpcbind
-     if [ -e "/etc/init.d/portmap" ]; then
-       /etc/init.d/portmap stop
-       sleep 1
-       /etc/init.d/portmap start
-     else
-       /etc/init.d/rpcbind stop
-       sleep 1
-       /etc/init.d/rpcbind start
-     fi
+   if LC_ALL=C dpkg -L nfs-ganesha &>/dev/null; then
+     # A workaround to make service work well. It seems that after nfs-common is started, the rpcbind does not work with unfs3 which will be started later, therefore here we force to restart rpcbind. We do that same thing for nfs-ganesha.
+     systemctl restart rpcbind
    fi
 } # end of do_mount_nfs_server
 
