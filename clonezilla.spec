@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.2
+Version:	4.3.3
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 23 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.3-drbl1
+  * ocs-live-hook-functions: Add prompt in function set_ntp_off
+
 * Sat Feb 20 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.2-drbl1
   * Bug fixed: Set ntp off in live-hook for Clonezilla/DRBL/GParted live.
     The previous method does not work.
