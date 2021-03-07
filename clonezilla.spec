@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.3
+Version:	4.3.4
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.3.1, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc
+Requires:	bash, perl, drbl >= 4.3.3, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 07 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.4-drbl1
+  * Add -ssnf, --skip-set-netboot-first in the dcs, i.e., drbl-ocs so that the 
+    variable efi_netboot_1st_in_nvram in drbl-ocs.conf can be changed
+    when running dcs.
+  * Add the option -sspt, --skip-save-part-table for ocs-sr & drbl-ocs.
+  * ocs_chkimg: do not exit if no partition table. This allows the image
+    saved for whole disk as a file system (e.g., /dev/sda) by saving saveparts.
+
 * Tue Feb 23 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.3-drbl1
   * ocs-live-hook-functions: Add prompt in function set_ntp_off
 
@@ -130,7 +138,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
     my-2020-1220-0221-img, was my-2020-12-20-0221-img.
 
 * Sat Dec 19 2020 Steven Shiau <steven _at_ clonezilla org> 4.2.18-drbl1
-  * Allow something lie /dev/md126 can be a partition, too.
+  * Allow something like /dev/md126 can be a partition, too.
   * Show file system and partition size in the TUI when listing partitions
     in restoreparts.
   * create-ocs-tmp-img: Use "-f" instead of "-e" to test a normal file in
