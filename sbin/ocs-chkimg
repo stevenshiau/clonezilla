@@ -388,6 +388,7 @@ task_checkimage() {
   # Start checking partition table.
   echo "Checking the partition table in the image \"$target_dir\"..."
   for ihd in $target_hd; do
+    echo "Checking $ihd..."
     # Get the partition type
     p_type="$(get_partition_table_type_from_img "$target_dir_fullpath" "${ihd}")"
     # Only check mbr or gpt, skip pv_disk.
@@ -440,21 +441,27 @@ task_checkimage() {
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 	continue
       fi
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Unknown partition table format from the file $img_dir_fullpath/$(to_filename ${hdsk})-pt.parted!" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      if [ -e "target_dir_fullpath/$(to_filename ${hdsk})-pt.parted" ]; then
+        echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${hdsk})-pt.parted!" | tee --append ${OCS_LOGFILE}
+      else
+        echo "File $target_dir_fullpath/$(to_filename ${hdsk})-pt.parted not found!" | tee --append ${OCS_LOGFILE}
+	echo "Assume it's for whole disk as a file system or RAID cases..."
+      fi
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      my_ocs_exit 1
+      continue
       ;;
     esac
   done
 
+  echo $msg_delimiter_star_line
   # When Clonezilla does not save a whole disk image (i.e. use the mode saveparts), the swap partition will be skipped. Therefore only check if swap info files exist when it is savedisk.
   if [ "$image_type" = "disk" ]; then
     echo $msg_delimiter_star_line
     echo "Checking the swap partition info in the image \"$target_dir\"..."
     # Check swap partition
     for ihd in $target_hd; do
+      echo "Checking $ihd..."
       p_type="$(get_partition_table_type_from_img "$target_dir_fullpath" "${ihd}")"
       # Only check mbr or gpt, skip pv_disk.
       case "$p_type" in
