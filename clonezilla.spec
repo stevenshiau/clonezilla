@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.4
+Version:	4.3.5
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 07 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.5-drbl1
+  * Bug fixed: wrong info was saved to Info-saved-by-cmd.txt when ocs-sr
+    is run in non-interactive mode.
+  * A typo was fixed:
+    msg_continue_with_weired_partition_table ->
+    msg_continue_with_weird_partition_table.
+
 * Sun Mar 07 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.4-drbl1
   * Add -ssnf, --skip-set-netboot-first in the dcs, i.e., drbl-ocs so that the 
     variable efi_netboot_1st_in_nvram in drbl-ocs.conf can be changed
