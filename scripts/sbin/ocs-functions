@@ -2985,7 +2985,7 @@ check_integrity_of_partition_table_in_disk() {
     if [ "$pv_on_dsk_flag" = "false" ]; then
       # No PV on disk, it does not make sense for this bare disk.
       disk_name="$(basename $disk_file)"
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "$msg_the_partition_table_in_disk_is_illegal: $disk_file" | tee --append ${OCS_LOGFILE}
       echo "$msg_parted_detect_as_wrong" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -2997,7 +2997,7 @@ check_integrity_of_partition_table_in_disk() {
         rm -f $dsk_chk_tmp
       fi
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "$msg_continue_with_weired_partition_table"      | tee --append ${OCS_LOGFILE}
+      echo "$msg_continue_with_weried_partition_table"      | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo -n "$msg_are_u_sure_u_want_to_continue (y/N) " | tee --append ${OCS_LOGFILE}
       read continue_confirm_ans
@@ -8704,12 +8704,14 @@ task_saveparts() {
         fi
       done
       if [ "$pv_on_dsk_flag" = "false" ]; then
-        # No PV on disk, it does not make sense to save this bare disk, and sfdisk definitely should fail.
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "Unknown partition table format on disk /dev/$ihd." | tee --append ${OCS_LOGFILE}
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-        exit 1
+        if [ "$do_save_part_table" = "yes" ]; then
+          # No PV on disk, it does not make sense to save this bare disk, and sfdisk definitely should fail.
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "Unknown partition table format on disk /dev/$ihd." | tee --append ${OCS_LOGFILE}
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+          exit 1
+	fi
       fi
     fi
   done

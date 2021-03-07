@@ -101,6 +101,8 @@ do_update_initrd="yes"
 ocs_play_sound="no"
 # Default to set netboot as 1st priority if run by drbl client ->
 # efi_netboot_1st_in_nvram is from drbl-ocs.conf.
+# By default the partition table is saved.
+do_save_part_table="yes"
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -136,11 +138,13 @@ USAGE() {
     echo " -sfs, --skip-fs-save     Do not save the file system for device, just save the rest of files. This is mainly for BT from device massive deployment. A tag file 00-pseudo-img-note.txt will be added in the image dir, too."
     echo " -pe, --passwd-ecryptfs PASSWD  Set the password to encrypt the image. Use with option \"-enc\" when saving, or restoring when the image is encrypted. //NOTE// This is not a safe way to use it because the password is shown in the command line or system processes."
     echo " -pfe, --passwd-file-ecryptfs FILE  Set the password to encrypt the image in the FILE. Use with option -enc, or restoring when the image is encrypted. The file contains the password to encrypt the image. Its format is like: passphrase_passwd=YOURPASSWORD."
+    echo " -sspt, --skip-save-part-table  Skip saving the partition table of the source disk."
     USAGE_reserved_word_for_save
     echo
     echo " Options for restoring:"
     USAGE_common_restore
     echo " --mcast-port   NO     Assign the udp port number for multicast restore. This is used by clonezilla server. Normally it's not necessary to manually assign this option."
+    echo " -ssnf, --skip-set-netboot-first    Skip setting 1st boot device as network in uEFI NVRAM of the restored machine."
     USAGE_reserved_word_for_restore
     echo
     echo " General options:"
@@ -298,6 +302,10 @@ parse_ocs_sr_cmd_options_with_dash() {
     -srel|--save-restore-error-log)
             # Flag to save restoring log
 	    save_restore_error_log="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -sspt|--skip-save-part-table)
+            # Flag to save partition table of the source disk
+            do_save_part_table="no"
 	    shift; n_shift=$((n_shift+1));;
     -sfs|--skip-fs-save)
             # Flag to save file system
