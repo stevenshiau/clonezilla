@@ -28,65 +28,82 @@ unmount_wait_and_try() {
   done
 } # end of unmount_wait_and_try
 #
-gen_md5_sha1_sums_for_img_if_assigned() {
+gen_checksums_for_img_if_assigned() {
   local img_dir="$1"  # absolute path
-  # Generate MD5SUMS, SHA1SUMS
-  if [ "$gen_md5sum" = "yes" ]; then
-    echo "Generating MD5SUMS for image $target_dir. This might take a while..."
-    (cd $img_dir; time md5sum * > MD5SUMS)
-  fi
-  if [ "$gen_sha1sum" = "yes" ]; then
-    echo "Generating SHA1SUMS for image $target_dir. This might take a while..."
-    (cd $img_dir; time sha1sum * > SHA1SUMS)
-  fi
-} # end of gen_md5_sha1_sums_for_img_if_assigned
+  local imtd check_mtd_flag out_f
+  # checksum_method_for_img is from drbl-ocs.conf.
+  # Generate MD5SUMS, SHA1SUMS, B2SUMS...
+  # E.g.,
+  # if [ "$gen_b2sum" = "yes" ]; then
+  #   echo "Generating B2SUMS for image $target_dir. This might take a while..."
+  #   (cd $img_dir; time b2sum * > B2SUMS)
+  # fi
+  for imtd in $checksum_method_for_img; do
+    eval check_mtd_flag="\$gen_$imtd"
+    out_f="$(echo $imtd | tr "[a-z]" "[A-Z]")S" # e.g., b2sum -> B2SUMS
+    if [ "$check_mtd_flag" = "yes" ]; then
+      echo "Generating $out_f for image $target_dir. This might take a while..."
+      (cd $img_dir; time $imtd * > $out_f)
+    fi
+  done
+} # end of gen_checksums_for_img_if_assigned
 #
-check_md5_sha1_sums_for_img() {
+check_checksums_for_img() {
   local img_dir="$1"  # absolute path
   local rc ans_continue
+  local imtd check_mtd_flag out_f out_err_var
   # chk_checksum_for_img_flag is global variable
-  # Check MD5SUMS, SHA1SUMS
-  if [ "$check_md5sum" = "yes" ]; then
-    if [ -e "$img_dir/MD5SUMS" ]; then
-      echo $msg_delimiter_star_line
-      echo "Checking MD5SUMS for image $img_dir. This might take a while..."
-      (cd $img_dir; LC_ALL=C md5sum -c MD5SUMS)
-      rc=$?
-      if [ "$rc" -gt 0 ]; then
+  # checksum_method_for_img is from drbl-ocs.conf.
+  # Check MD5SUMS, SHA1SUMS, B2SUMS...
+  # e.g.,
+  # if [ "$check_sha1sum" = "yes" ]; then
+  #   if [ -e "$img_dir/SHA1SUMS" ]; then
+  #     echo $msg_delimiter_star_line
+  #     echo "Checking SHA1SUMS for image $img_dir. This might take a while..."
+  #     (cd $img_dir; LC_ALL=C sha1sum -c SHA1SUMS)
+  #     rc=$?
+  #     if [ "$rc" -gt 0 ]; then
+  #       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  #       echo "$msg_SHA1SUMS_check_failed"
+  #  confirm_continue_or_not_default_quit
+  #       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  #     fi
+  #     chk_checksum_for_img_flag="done"
+  #     echo $msg_delimiter_star_line
+  #   else
+  #     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  #     echo "SHA1SUMS was not found in image $img_dir. Skip checking SHA1 checksums."
+  #     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  #   fi
+  # fi
+  for imtd in $checksum_method_for_img; do
+    out_f=""
+    out_err_var=""
+    eval check_mtd_flag="\$check_$imtd"
+    out_f="$(echo $imtd | tr "[a-z]" "[A-Z]")S" # e.g., b2sum -> B2SUMS
+    if [ "$check_mtd_flag" = "yes" ]; then
+      if [ -e "$img_dir/$out_f" ]; then
+        echo $msg_delimiter_star_line
+        echo "Checking $out_f for image $img_dir. This might take a while..."
+        (cd $img_dir; LC_ALL=C $imtd -c $out_f)
+        rc=$?
+        if [ "$rc" -gt 0 ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	  eval out_err_var="msg_${out_f}_check_failed"
+          echo "$out_err_var"
+          confirm_continue_or_not_default_quit
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        fi
+        chk_checksum_for_img_flag="done"
+        echo $msg_delimiter_star_line
+      else
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "$msg_MD5SUMS_check_failed"
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	confirm_continue_or_not_default_quit
-      fi
-      chk_checksum_for_img_flag="done"
-      echo $msg_delimiter_star_line
-    else
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "MD5SUMS was not found in image $img_dir. Skip checking MD5 checksums."
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    fi
-  fi
-  if [ "$check_sha1sum" = "yes" ]; then
-    if [ -e "$img_dir/SHA1SUMS" ]; then
-      echo $msg_delimiter_star_line
-      echo "Checking SHA1SUMS for image $img_dir. This might take a while..."
-      (cd $img_dir; LC_ALL=C sha1sum -c SHA1SUMS)
-      rc=$?
-      if [ "$rc" -gt 0 ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "$msg_SHA1SUMS_check_failed"
-	confirm_continue_or_not_default_quit
+        echo "$out_f was not found in image $img_dir. Skip checking $imtd checksums."
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       fi
-      chk_checksum_for_img_flag="done"
-      echo $msg_delimiter_star_line
-    else
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "SHA1SUMS was not found in image $img_dir. Skip checking SHA1 checksums."
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
-  fi
-} # end of check_md5_sha1_sums_for_img
+  done
+} # end of check_checksums_for_img
 #
 get_disk_from_part() {
   # Function to get disk name from partition name, e.g. /dev/sda1 -> /dev/sda
@@ -8409,7 +8426,7 @@ task_savedisk() {
   if [ "$rc" -gt 0 ]; then
     show_warning_about_write_failed $ocsroot/$target_dir
   else
-    gen_md5_sha1_sums_for_img_if_assigned $ocsroot/$target_dir
+    gen_checksums_for_img_if_assigned $ocsroot/$target_dir
   fi
   rc_task_savedisk="$(($rc_task_savedisk + $?))"
 
@@ -8780,7 +8797,7 @@ task_saveparts() {
   if [ "$rc" -gt 0 ]; then
     show_warning_about_write_failed $target_dir_fullpath
   else
-    gen_md5_sha1_sums_for_img_if_assigned $target_dir_fullpath
+    gen_checksums_for_img_if_assigned $target_dir_fullpath
   fi
 
   # TODO: show error message if failing; check image?
@@ -8835,7 +8852,7 @@ task_restoredisk() {
   
   # Check MD5SUMS, SHA1SUMS before the image is converted in case
   chk_checksum_for_img_flag=""
-  check_md5_sha1_sums_for_img "$ocsroot/$target_dir"
+  check_checksums_for_img "$ocsroot/$target_dir"
 
   #
   create_temp_img_flag=""
@@ -9073,7 +9090,7 @@ task_restoreparts() {
   # It might be done in task_restoredisk
   # Check MD5SUMS, SHA1SUMS
   if [ "$chk_checksum_for_img_flag" != "done" ]; then
-    check_md5_sha1_sums_for_img "$ocsroot/$target_dir"
+    check_checksums_for_img "$ocsroot/$target_dir"
   fi
 
   # It might be done in task_restoredisk
@@ -9743,7 +9760,7 @@ do_startdisk() {
     get_bt_restore_mode_if_bittorrent
 
     # Check MD5SUMS, SHA1SUMS
-    check_md5_sha1_sums_for_img "$imagedir/$target_image"
+    check_checksums_for_img "$imagedir/$target_image"
 
     #
     [ -n "$n_clients" ] && mcast_client_no_opt="-n $n_clients"
@@ -9881,7 +9898,7 @@ do_startparts () {
     get_bt_restore_mode_if_bittorrent
 
     # Check MD5SUMS, SHA1SUMS
-    check_md5_sha1_sums_for_img "$imagedir/$target_image"
+    check_checksums_for_img "$imagedir/$target_image"
 
     #
     [ -n "$n_clients" ] && mcast_client_no_opt="-n $n_clients"
