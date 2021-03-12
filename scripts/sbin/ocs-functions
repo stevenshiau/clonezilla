@@ -8326,9 +8326,9 @@ task_savedisk() {
   local target_dir=$1
   local target_hd=$2
   local target_parts target_swap_parts target_extended_parts
-  local gen_md5sum_status gen_sha1sum_status rc_task_savedisk
+  local gen_md5sum_status gen_sha1sum_status gen_b2sum_status rc_task_savedisk
   local pv_on_dsk
-  local part_rec_f
+  local part_rec_f imtd
 
   screen_not_blank
   active_proc_partitions
@@ -8395,13 +8395,26 @@ task_savedisk() {
   if [ -n "$target_extended_parts" ]; then
     echo "The extended partition to be saved: $target_extended_parts" | tee --append $OCS_LOGFILE
   fi
-  # Let task_saveparts do the real job. However, we do not generate md5sums, sha1sums in task_saveparts, since there are some files will be created later. We will generate them in the end of this function.
-  gen_md5sum_status="$gen_md5sum"; gen_sha1sum_status="$gen_sha1sum" # save values
-  gen_md5sum="no"; gen_sha1sum="no"
+  # Let task_saveparts do the real job. However, we do not generate MD5SUMS/SHA1SUMS/B2SUMS... in task_saveparts, since there are some files will be created later. We will generate them in the end of this function.
+  # Save checksum status
+  for imtd in $checksum_method_for_img; do
+    # e.g., gen_md5sum_status="$gen_md5sum" 
+    eval gen_${imtd}_status="\$gen_${imtd}"
+  done
+  # Set checksum flag to no
+  for imtd in $checksum_method_for_img; do
+    # e.g., gen_md5sum="no"
+    eval gen_${imtd}="no"
+  done
+
   task_saveparts $target_dir "$target_parts"
   rc_task_savedisk="$(($rc_task_savedisk + $?))"
-
-  gen_md5sum="$gen_md5sum_status"; gen_sha1sum="$gen_sha1sum_status" # restore values
+  
+  # Restore checksum flag
+  for imtd in $checksum_method_for_img; do
+    # e.g., gen_md5sum="$gen_md5sum_status"
+    eval gen_${imtd}="\$gen_${imtd}_status"
+  done
 
   # save swap partition UUID/LABEL if it exists.
   echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
@@ -8817,7 +8830,7 @@ task_restoredisk() {
   # we use the port to identify it's unicast or multicast.
   local port="$3"
   local dsksname_from_img src_dsk_no dia_sel_opt tgt_dsk_no partition_table
-  local pv_on_dsk
+  local pv_on_dsk imtd
   # img_cnvt_count, orig_ocsroot and orig_target_dir are global variables
 
   if [ "$target_dir" = "ask_user" ]; then
@@ -8892,8 +8905,12 @@ task_restoredisk() {
   # Strip the single white space which should be nothing. Thanks to Borksoft.
   target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
   # Let task_restoreparts do the real job
-  # However, we do not check md5sums, sha1sums in task_restoreparts, since maybe there are some files (like create-ocs-tmp-img will convert hda img to sda...) will be created later. We have to check them before the image was converted.
-  check_md5sum="no"; check_sha1sum="no"
+  # However, we do not check MD5SUMS/SHA1SUMS/B2SUMS... in task_restoreparts, since maybe there are some files (like create-ocs-tmp-img will convert hda img to sda...) will be created later. We have to check them before the image was converted.
+  # Reset checksum flag to no
+  for imtd in $checksum_method_for_img; do
+    # e.g., check_md5sum="no"
+    eval check_${imtd}="no"
+  done
   echo "Running: task_restoreparts \"$target_dir\" \"$target_parts\" \"$port\"" >> $OCS_LOGFILE
   task_restoreparts "$target_dir" "$target_parts" "$port"
 
@@ -8909,8 +8926,12 @@ task_multicast_restoredisk() {
   local target_dir="$1"
   local target_hd="$2"
   local port=$3
-  # For multicast, we check md5/sha1 sums on DRBL server, not clients. Force to set check_md5sum and check_sha1sum as no
-  check_md5sum="no"; check_sha1sum="no"
+  local imtd
+  # For multicast, we check md5/sha1/b2 sums on DRBL server, not clients. Force to set check_md5sum/check_sha1sum/check_b2sum as no
+  for imtd in $checksum_method_for_img; do
+    # e.g., check_md5sum="no"
+    eval check_${imtd}="no"
+  done
   # To do backward compatability, we still keep task_multicast_restoredisk function, but let task_restoredisk do the real job.
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_multicast_restoredisk
@@ -8924,8 +8945,12 @@ task_bt_restoredisk() {
   local target_dir="$1"
   local target_hd="$2"
   local port=$3  # for BT, the port is assigned as "bt" from ocs-sr
-  # For bt, we check md5/sha1 sums on DRBL server, not clients. Force to set check_md5sum and check_sha1sum as no
-  check_md5sum="no"; check_sha1sum="no"
+  local imtd
+  # For bt, we check md5/sha1/b2 sums on DRBL server, not clients. Force to set check_md5sum, check_sha1sum and check_b2sum as no
+  for imtd in $checksum_method_for_img; do
+    # e.g., check_md5sum="no"
+    eval check_${imtd}="no"
+  done
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_bt_restoredisk
 #
@@ -8938,9 +8963,13 @@ task_bt_restoreparts() {
   local target_dir="$1"
   local target_parts="$2"
   local port=$3  # for BT, the port is assigned as "bt" from ocs-sr
-  # For bt, we check md5/sha1 sums on DRBL server, not clients. Force to set check_md5sum and check_sha1sum as no
+  local imtd
+  # For bt, we check md5/sha1/b2 sums on DRBL server, not clients. Force to set check_md5sum, check_sha1sum and check_b2sum as no
+  for imtd in $checksum_method_for_img; do
+    # e.g., check_md5sum="no"
+    eval check_${imtd}="no"
+  done
   # To do backward compatability, we still keep task_bt_restoreparts function, but let task_restoreparts do the real job.
-  check_md5sum="no"; check_sha1sum="no"
   task_restoreparts "$target_dir" "$target_parts" "$port"
 } # end of task_bt_restoreparts
 #
@@ -8948,8 +8977,12 @@ task_d2d_restoredisk() {
   local target_dir="$1"
   local target_hd="$2"
   local port=$3  # for device to device, the port is assigned as "ld2d" or "nd2d" from ocs-sr
-  # For d2d, we check md5/sha1 sums on DRBL server, not clients. Force to set check_md5sum and check_sha1sum as no
-  check_md5sum="no"; check_sha1sum="no"
+  local imtd
+  # For d2d, we check md5/sha1/b2 sums on DRBL server, not clients. Force to set check_md5sum, check_sha1sum and check_b2sum as no
+  for imtd in $checksum_method_for_img; do
+    # e.g., check_md5sum="no"
+    eval check_${imtd}="no"
+  done
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_d2d_restoredisk
 #
@@ -8957,9 +8990,13 @@ task_d2d_restoreparts() {
   local target_dir="$1"
   local target_parts="$2"
   local port=$3  # for device to device, the port is assigned as "ld2d" or "nd2d" from ocs-sr
-  # For d2d, we check md5/sha1 sums on DRBL server, not clients. Force to set check_md5sum and check_sha1sum as no
+  local imtd
+  # For d2d, we check md5/sha1/b2 sums on DRBL server, not clients. Force to set check_md5sum, check_sha1sum and check_b2sum as no
+  for imtd in $checksum_method_for_img; do
+    # e.g., check_md5sum="no"
+    eval check_${imtd}="no"
+  done
   # To do backward compatability, we still keep task_bt_restoreparts function, but let task_restoreparts do the real job.
-  check_md5sum="no"; check_sha1sum="no"
   task_restoreparts "$target_dir" "$target_parts" "$port"
 } # end of task_d2d_restoreparts 
 
@@ -9572,9 +9609,14 @@ task_multicast_restoreparts() {
   local target_dir="$1"
   local target_parts="$2"
   local port="$3"
-  # For multicast, we check md5/sha1 sums on DRBL server, not clients. Force to set check_md5sum and check_sha1sum as no
+  local imtd
+  # For multicast, we check md5/sha1/b2 sums on DRBL server, not clients. Force to set check_md5sum, check_sha1sum and check_b2sum as no
+  # Set checksum flag/status values to no
+  for imtd in $checksum_method_for_img; do
+    # e.g., check_md5sum="no"
+    eval check_${imtd}="no"
+  done
   # To do backward compatability, we still keep task_multicast_restoreparts function, but let task_restoreparts do the real job.
-  check_md5sum="no"; check_sha1sum="no"
   task_restoreparts "$target_dir" "$target_parts" "$port"
 }
 
