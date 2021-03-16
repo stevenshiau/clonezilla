@@ -103,8 +103,8 @@ do_update_initrd="yes"
 ocs_play_sound="no"
 # Default to set netboot as 1st priority if run by drbl client ->
 # efi_netboot_1st_in_nvram is from drbl-ocs.conf.
-# By default the partition table is saved.
-do_save_part_table="yes"
+# By default we will check the partition table is MBR or GPT. If not one of them, quit.
+do_check_part_table="yes"
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -140,7 +140,7 @@ USAGE() {
     echo " -sfs, --skip-fs-save     Do not save the file system for device, just save the rest of files. This is mainly for BT from device massive deployment. A tag file 00-pseudo-img-note.txt will be added in the image dir, too."
     echo " -pe, --passwd-ecryptfs PASSWD  Set the password to encrypt the image. Use with option \"-enc\" when saving, or restoring when the image is encrypted. //NOTE// This is not a safe way to use it because the password is shown in the command line or system processes."
     echo " -pfe, --passwd-file-ecryptfs FILE  Set the password to encrypt the image in the FILE. Use with option -enc, or restoring when the image is encrypted. The file contains the password to encrypt the image. Its format is like: passphrase_passwd=YOURPASSWORD."
-    echo " -sspt, --skip-save-part-table  Skip saving the partition table of the source disk."
+    echo " -scpt, --skip-check-part-table  Skip checking the partition table of the source disk, i.e., just save it without checking it is MBR or GPT format."
     USAGE_reserved_word_for_save
     echo
     echo " Options for restoring:"
@@ -305,9 +305,9 @@ parse_ocs_sr_cmd_options_with_dash() {
             # Flag to save restoring log
 	    save_restore_error_log="yes"
 	    shift; n_shift=$((n_shift+1));;
-    -sspt|--skip-save-part-table)
+    -scpt|--skip-check-part-table)
             # Flag to save partition table of the source disk
-            do_save_part_table="no"
+            do_check_part_table="no"
 	    shift; n_shift=$((n_shift+1));;
     -sfs|--skip-fs-save)
             # Flag to save file system
@@ -1462,8 +1462,16 @@ case "$ocs_sr_type" in
 
     parse_target_dir_with_reserved_name_saving_mode # obtain target_dir
 
+    if [ "$ocs_user_mode" = "expert" ]; then
+      ask_list_device_mode  # get $list_local_dev_mode
+    fi
     if [ "$ocs_sr_dev" = "ask_user" ]; then
-      get_target_parts_name_from_local_machine  # get $target_parts
+      if [ "$list_local_dev_mode" = "both_type_dev" ]; then
+        get_target_device_name_from_local_machine # get $tgt_devs
+	target_parts="$tgt_devs"
+      else
+	get_target_parts_name_from_local_machine  # get $target_parts
+      fi
     elif [ "$ocs_sr_dev" = "all" ]; then
       get_not_busy_disks_or_parts partition "" ""  # we will get dev_list
       target_parts="$dev_list"
@@ -1615,7 +1623,15 @@ case "$ocs_sr_type" in
       src_parts_no="$(LC_ALL=C echo $source_part | wc -w)"
       if [ "$src_parts_no" -eq 1 ]; then
         dia_sel_opt="menu"
-        get_target_parts_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt  # Obtain target_parts
+        if [ "$ocs_user_mode" = "expert" ]; then
+          ask_list_device_mode  # get $list_local_dev_mode
+        fi
+        if [ "$list_local_dev_mode" = "both_type_dev" ]; then
+          get_target_device_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt  # Obtain tgt_devs
+	  target_parts="$tgt_devs"
+        else
+          get_target_parts_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt  # Obtain target_parts
+        fi
       else
 	# In this case, it's too complicated to restore partitions to different partitions on destination disk.
 	# Therefore we only allow original partitions to partitions, i.e. e.g., sda1, sda2 from image -> sda1, sda2 on destination disk. Therefore "source_part" is reset to none, i.e., not to convert the image to different device name's image.
