@@ -4456,6 +4456,7 @@ get_not_busy_disks_or_parts() {
     case "$dev_type" in
       harddisk)  dev_list="$(get_disk_list $partition_table)" ;;
       partition) dev_list="$(get_part_list $partition_table)" ;;
+      device) dev_list="$(get_disk_list $partition_table) $(get_part_list $partition_table)" ;;
     esac
     dev_list="$(echo $dev_list)"   # convert to 1 line
     [ -f "$mounted_table" ] && rm -f $mounted_table
@@ -4557,6 +4558,13 @@ get_input_dev_name() {
         done
         echo ""
 	echo "Partition number: $NUMDEV"
+        ;;
+      device)
+        # all devices, including disk and partitions
+	[ -z "$msg_choose_dev_to_what" ] && msg_choose_dev_to_what="$msg_choose_disks_to_save $msg_linux_disk_naming $msg_press_space_to_mark_selection"
+	msg_not_mounted_dev_found="$msg_no_umounted_disks_found"
+        NUMDEV="$(LC_ALL=C echo $dev_list | wc -w)"
+	echo "Device number: $NUMDEV"
         ;;
     esac
 
@@ -7995,6 +8003,25 @@ get_target_parts_name_from_local_machine() {
   check_input_partition $target_parts
 } # end of get_target_parts_name_from_local_machine
 #
+get_target_device_name_from_local_machine() {
+  # tgt_devs is a global variable
+  local input_dev_prompt="$1"
+  local input_selection_opt="$2"
+  local ANS_TMP
+  local ASK_DEV_NAME=1
+  ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+  trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+  [ -z "$input_selection_opt" ] && input_selection_opt="default"
+  while [ "$ASK_DEV_NAME" -ne 0 ]; do
+    get_input_dev_name $ANS_TMP device $input_selection_opt default "$input_dev_prompt"
+    # we have to remove " (comes with checklist in dialog) so that for loop
+    # will work (Specially for FC3/4...)
+    tgt_devs="$(cat $ANS_TMP | tr -d \")"
+    [ -n "$tgt_devs" ] && ASK_DEV_NAME=0
+  done
+  [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
+} # end of get_target_device_name_from_local_machine
+#
 get_target_dir_name_when_restoring_disk() {
   # target_dir and ocsroot are gloable variables
   local ANS_TMP
@@ -8734,7 +8761,7 @@ task_saveparts() {
         fi
       done
       if [ "$pv_on_dsk_flag" = "false" ]; then
-        if [ "$do_save_part_table" = "yes" ]; then
+        if [ "$do_check_part_table" = "yes" ]; then
           # No PV on disk, it does not make sense to save this bare disk, and sfdisk definitely should fail.
           [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
           echo "Unknown partition table format on disk /dev/$ihd." | tee --append ${OCS_LOGFILE}
@@ -15075,3 +15102,26 @@ parse_target_dir_with_reserved_name_saving_mode() {
   fi
   echo "The image name is: $target_dir"
 } # end of parse_target_dir_with_reserved_name_saving_mode
+#
+ask_list_device_mode() {
+  local TMP mode
+  TMP="$(mktemp /tmp/menu-ocs.XXXXXX)"
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+  "$msg_nchc_clonezilla" --menu "$msg_list_local_device_mode" \
+  0 0 0 \
+  "disk_or_part"  "$msg_list_disk_or_part_mode" \
+  "both_type_dev" "$msg_list_both_type_device_mode" \
+  2> $TMP
+  mode="$(cat $TMP)"
+  [ -e "$TMP" ] && rm -f $TMP
+  case "$mode" in
+    "disk_or_part")  list_local_dev_mode="disk_or_part" ;;
+    "both_type_dev") list_local_dev_mode="both_type_dev" ;;
+    *)
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$msg_program_stop!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      exit 1
+  esac
+} # end of ask_list_device_mode
