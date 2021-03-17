@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.7
+Version:	4.3.8
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Mar 17 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.8-drbl1
+  * ocs-live-boot-menu: comment "rmmod tpm".
+
 * Tue Mar 16 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.7-drbl1
   * ocs-sr: change -sspt as -scpt. Add option to force choosing disk name in
     saveparts mode in expert mode.
