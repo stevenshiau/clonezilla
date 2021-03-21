@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.8
+Version:	4.3.9
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 21 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.9-drbl1
+  * Bug fixed: forgot to put "shift;;" in drbl-ocs.
+
 * Wed Mar 17 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.8-drbl1
   * ocs-live-boot-menu: comment "rmmod tpm".
 
