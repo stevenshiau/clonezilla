@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.9
+Version:	4.3.10
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Mar 23 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.10-drbl1
+  * Move image checking to be after creating Info-* files.
+  * Add "To RAM" in the 1st layer of live boot menu.
+    Thanks to Lord65 for this suggestion.
+
 * Sun Mar 21 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.9-drbl1
   * Bug fixed: forgot to put "shift;;" in drbl-ocs.
 
