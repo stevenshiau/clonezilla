@@ -3947,6 +3947,26 @@ task_postprocessing() {
       ;;
   esac
 
+  # Check the saved image
+  if [ "$chk_img_restoreable_mod_save" = "yes" ]; then
+    if [ "$ocs_sr_type" = "savedisk"  -a "$rc_savedisk"  -eq 0 ] ||
+       [ "$ocs_sr_type" = "saveparts" -a "$rc_saveparts" -eq 0 ]; then
+      # To avoid the /var/lib/clonezilla/ocs-vars is overwritten by ocs-chkimg, backup it first.
+      if [ -e /var/lib/clonezilla/ocs-vars ]; then
+        mv -f /var/lib/clonezilla/ocs-vars /var/lib/clonezilla/ocs-vars.before-ocs-chkimg
+      fi
+      check_image_if_restorable "$ocsroot"
+      rc_chkimg="$?"
+      if [ "$rc_chkimg" -ne 0 ]; then
+        echo "$msg_program_stop!"
+        my_ocs_exit 1
+      fi
+      if [ -e /var/lib/clonezilla/ocs-vars.before-ocs-chkimg ]; then
+        mv -f /var/lib/clonezilla/ocs-vars.before-ocs-chkimg /var/lib/clonezilla/ocs-vars
+      fi
+    fi
+  fi
+
   #
   echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}
   sync;sync;sync | tee --append ${OCS_LOGFILE}
