@@ -817,12 +817,19 @@ wrap_up_opt_after_interactive_selection() {
   wrap_up_opt
   # For case when interactive mode the option "-scr" or "-scs" is used.
   # i.e. command like: "ocs-sr -x -scr" or "ocs-sr -x "-scs"
-  if [ -z "$chk_img_restoreable_mod_save" ]; then
-    chk_img_restoreable_mod_save="$chk_img_restoreable_mod_save_def"
-  fi
-  if [ -z "$chk_img_restoreable_mod_restore" ]; then
-    chk_img_restoreable_mod_restore="$chk_img_restoreable_mod_restore_def"
-  fi
+
+  case "$ocs_sr_type" in
+    "savedisk"|"saveparts")
+      if [ -z "$chk_img_restoreable_mod_save" ]; then
+        chk_img_restoreable_mod_save="$chk_img_restoreable_mod_save_def"
+      fi
+      ;;
+    "restoredisk"|"restoreparts")
+      if [ -z "$chk_img_restoreable_mod_restore" ]; then
+        chk_img_restoreable_mod_restore="$chk_img_restoreable_mod_restore_def"
+      fi
+      ;;
+  esac
   # Shall we set default postaction if empty here?
   #[ -z "$postaction" ] && postaction="$POSTACTION_DEF"
 
@@ -1303,13 +1310,13 @@ case "$ocs_sr_type" in
     get_extra_param_when_type_is_ask_user_and_interactive_mode
     wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
 
-    task_processing_after_parameters_checked
-
     run_ocs_sr_again_prompt "$target_dir" "$target_hd"
 
     # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
     # The original ones will be kept as ocsroot_orig and target_dir_orig.
     prepare_ecryptfs_mount_point_if_necessary
+
+    task_processing_after_parameters_checked
 
     ocs-run-boot-param ocs_savedisk_prerun
     rc_savedisk=""
@@ -1407,29 +1414,13 @@ case "$ocs_sr_type" in
     get_extra_param_when_type_is_ask_user_and_interactive_mode
     wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
 
-    task_processing_after_parameters_checked
-
     run_ocs_sr_again_prompt "$target_dir" "$target_hd"
 
     # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
     # The original ones will be kept as ocsroot_orig and target_dir_orig.
     prepare_ecryptfs_mount_point_if_necessary
 
-    if [ -d "$ocsroot/$target_dir" -a "$chk_img_restoreable_mod_restore" = "yes" ]; then
-      # To avoid the /var/lib/clonezilla/ocs-vars is overwritten by ocs-chkimg, backup it first.
-      if [ -e /var/lib/clonezilla/ocs-vars ]; then
-        mv -f /var/lib/clonezilla/ocs-vars /var/lib/clonezilla/ocs-vars.before-ocs-chkimg
-      fi
-      check_image_if_restorable "$ocsroot"
-      rc_chkimg="$?"
-      if [ "$rc_chkimg" -ne 0 ]; then
-        echo "$msg_program_stop!"
-        my_ocs_exit 1
-      fi
-      if [ -e /var/lib/clonezilla/ocs-vars.before-ocs-chkimg ]; then
-        mv -f /var/lib/clonezilla/ocs-vars.before-ocs-chkimg /var/lib/clonezilla/ocs-vars 
-      fi
-    fi
+    task_processing_after_parameters_checked
 
     ocs-run-boot-param ocs_restoredisk_prerun
     task_restoredisk "$target_dir" "$target_hd"
@@ -1533,13 +1524,13 @@ case "$ocs_sr_type" in
     get_extra_param_when_type_is_ask_user_and_interactive_mode
     wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
 
-    task_processing_after_parameters_checked
-
     run_ocs_sr_again_prompt "$target_dir" "$target_parts"
 
     # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
     # The original ones will be kept as ocsroot_orig and target_dir_orig.
     prepare_ecryptfs_mount_point_if_necessary
+
+    task_processing_after_parameters_checked
 
     ocs-run-boot-param ocs_saveparts_prerun
     rc_saveparts=""
@@ -1638,22 +1629,6 @@ case "$ocs_sr_type" in
     prepare_ecryptfs_mount_point_if_necessary
 
     task_processing_after_parameters_checked
-
-    if [ -d "$ocsroot/$target_dir" -a "$chk_img_restoreable_mod_restore" = "yes" ]; then
-      # To avoid the /var/lib/clonezilla/ocs-vars is overwritten by ocs-chkimg, backup it first.
-      if [ -e /var/lib/clonezilla/ocs-vars ]; then
-        mv -f /var/lib/clonezilla/ocs-vars /var/lib/clonezilla/ocs-vars.before-ocs-chkimg
-      fi
-      check_image_if_restorable "$ocsroot"
-      rc_chkimg="$?"
-      if [ "$rc_chkimg" -ne 0 ]; then
-        echo "$msg_program_stop!"
-        my_ocs_exit 1
-      fi
-      if [ -e /var/lib/clonezilla/ocs-vars.before-ocs-chkimg ]; then
-        mv -f /var/lib/clonezilla/ocs-vars.before-ocs-chkimg /var/lib/clonezilla/ocs-vars 
-      fi
-    fi
 
     ocs-run-boot-param ocs_restoreparts_prerun
     task_restoreparts "$target_dir" "$target_parts"

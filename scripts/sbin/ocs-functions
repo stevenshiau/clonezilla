@@ -3790,6 +3790,24 @@ task_processing_after_parameters_checked() {
     echo "Enter shell...Use \"exit\" to back to the original program."
     sulogin
   fi
+
+  # Check the image if restorable for restoring mode.
+  if [ "$chk_img_restoreable_mod_restore" = "yes" -a -d "$ocsroot/$target_dir" ]; then
+    # To avoid the /var/lib/clonezilla/ocs-vars is overwritten by ocs-chkimg, backup it first.
+    if [ -e /var/lib/clonezilla/ocs-vars ]; then
+      mv -f /var/lib/clonezilla/ocs-vars /var/lib/clonezilla/ocs-vars.before-ocs-chkimg
+    fi
+    rc_chkimg=""
+    check_image_if_restorable "$ocsroot"
+    rc_chkimg="$?"
+    if [ "$rc_chkimg" -ne 0 ]; then
+      echo "$msg_program_stop!"
+      my_ocs_exit 1
+    fi
+    if [ -e /var/lib/clonezilla/ocs-vars.before-ocs-chkimg ]; then
+      mv -f /var/lib/clonezilla/ocs-vars.before-ocs-chkimg /var/lib/clonezilla/ocs-vars 
+    fi
+  fi
 } # end of task_processing_after_parameters_checked
 #
 run_post_cmd_when_clone_end() {
@@ -3955,6 +3973,7 @@ task_postprocessing() {
       if [ -e /var/lib/clonezilla/ocs-vars ]; then
         mv -f /var/lib/clonezilla/ocs-vars /var/lib/clonezilla/ocs-vars.before-ocs-chkimg
       fi
+      rc_chkimg=""
       check_image_if_restorable "$ocsroot"
       rc_chkimg="$?"
       if [ "$rc_chkimg" -ne 0 ]; then
