@@ -14091,7 +14091,7 @@ ask_nic_dev() {
     checklist) dia_def_status="on";;
   esac
 
-  NETDEVICES="$(cat /proc/net/dev | awk -F: '/eth.*:|tr.*:|wlan.*:|en.*:/{print $1}' | sort)"
+  NETDEVICES="$(cat /proc/net/dev | awk -F: '/eth.*:|tr.*:|wlan.*:|wl.*:|en.*:/{print $1}' | sort)"
   # make it in a single line
   NETDEVICES="$(echo $NETDEVICES)"
 
@@ -14159,6 +14159,10 @@ ask_nic_dev() {
         echo "Reading link status from cache file ${link_status_cache_pref}.${DEVICE}..."
         . ${link_status_cache_pref}.${DEVICE}
       else
+	if [ -n "$(echo $DEVICE | grep -Ew "(^wl.*|^wlan.*)")" ]; then
+          echo "$DEVICE is a wireless device. No need to detect its linking status."
+	  continue
+        fi
         echo -n "Getting the linking status of $DEVICE. Timeout in $ocs_netlink_timeout secs."
         TIMEOUT="$ocs_netlink_timeout"
         while [ "$link_status" = "no" -o -z "$link_status" ]; do
