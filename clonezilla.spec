@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.11
+Version:	4.3.12
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Apr 02 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.12-drbl1
+  * Remove words "Default settings" from the boot menu.
+    Thanks to Lord65 for this suggestion.
+  * Update netboot menu only when /tftpboot/nbi_img exists. This would avoid
+    giving error messages when running in singularity container for data
+    move.
+
 * Sun Mar 28 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.11-drbl1
   * Move image check of the restoring mode to
     task_processing_after_parameters_checked of ocs-functions.
