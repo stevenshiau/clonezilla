@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.12
+Version:	4.3.15
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,18 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Apr 02 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.15-drbl1
+  * ocs-live-feed-img: make timeout_max shorter as "60".
+
+* Fri Apr 02 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.14-drbl1
+  * ask_nic_dev of ocs-functions: not to detect wifi device linking status.
+    Add wl.* to net device list.
+
+* Fri Apr 02 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.13-drbl1
+  * ocs-live-boot-menu: Switch KMS+To RAM and To RAM between 1st and 2nd
+    level of menus. Drop grub 1 support. Make grub to use grub 2, 
+    not grub 1 anymore.
+
 * Fri Apr 02 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.12-drbl1
   * Remove words "Default settings" from the boot menu.
     Thanks to Lord65 for this suggestion.
