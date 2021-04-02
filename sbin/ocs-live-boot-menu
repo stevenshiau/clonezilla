@@ -42,7 +42,7 @@ prog="$(basename $0)"
 USAGE() {
     echo "Usage:"
     echo "To create syslinux or isolinux menu for clonezilla live:"
-    echo "$prog [OPTION] [isolinux|syslinux|grub|grub2-efi|grub2-efi-ia32|grub2-efi-x64] OUTPUT-DIR" 
+    echo "$prog [OPTION] [isolinux|syslinux|grub-efi|grub2-efi|grub2-efi-ia32|grub2-efi-x64] OUTPUT-DIR" 
     echo "OPTION:"
     language_help_prompt_by_idx_no
     echo "-a, --splash                       Assign boot parameter 'splash'"
@@ -142,15 +142,16 @@ label $output_title
   $boot_menu_pkg_disclaimer
   ENDTEXT
 
-label $output_title KMS & To RAM
+label $output_title (To RAM)
   # MENU DEFAULT
   # MENU HIDE
-  MENU LABEL $output_title (KMS & To RAM)
+  MENU LABEL $output_title (To ^RAM. Boot media can be removed later)
   # MENU PASSWD
   kernel $kernel_file
-  append initrd=$initrd_file $boot_param_rm_nomodeset $vga_mode_1024x768 $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt
+  append initrd=$initrd_file $boot_param $vga_default_mode $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt $vga_blacklist_opt
   TEXT HELP
-  KMS mode. OK for ATI, Intel and NVIDIA VGA cards.
+  All the programs will be copied to RAM, so you can
+  remove boot media (CD or USB flash drive) later
   ENDTEXT
 
 label $output_title HiDPI
@@ -226,16 +227,15 @@ label $output_title KMS
   KMS mode. OK for ATI, Intel and NVIDIA VGA cards.
   ENDTEXT
 
-label $output_title (To RAM)
+label $output_title KMS & To RAM
   # MENU DEFAULT
   # MENU HIDE
-  MENU LABEL $output_title (To ^RAM. Boot media can be removed later)
+  MENU LABEL $output_title (KMS & To RAM)
   # MENU PASSWD
   kernel $kernel_file
-  append initrd=$initrd_file $boot_param $vga_default_mode $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt $vga_blacklist_opt
+  append initrd=$initrd_file $boot_param_rm_nomodeset $vga_mode_1024x768 $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt
   TEXT HELP
-  All the programs will be copied to RAM, so you can
-  remove boot media (CD or USB flash drive) later
+  KMS mode. OK for ATI, Intel and NVIDIA VGA cards.
   ENDTEXT
 
 BOOT_MENU_END
@@ -454,162 +454,6 @@ BOOT_MENU_END
 fi
 } # end of gen_config_syslinux
 #
-gen_config_grub_1(){
-  local grub_conf=$1
-  local bg_img output_file
-  [ -z "$grub_conf" ] && grub_conf=menu.lst
-  bg_img="$(basename $ocs_logo_img_xpm)"
-  output_file="$output_dir/$grub_conf"
-  # the timeout is in unit 1/10 sec, convert to sec for grub
-  timeout_sec="$(echo "scale=0; $timeout /10" | bc -l)"
-  echo "Adding grub menus for $output_title..."
-  cat <<-BOOT_MENU_END > $output_file
-default	0
-timeout $timeout_sec
-color cyan/blue white/blue
-splashimage=/boot/grub/$bg_img
-# since no network setting in the squashfs image, therefore if ip= net.ifnames=0, the network is disabled.
-
-title $output_title ($vga_default_prompt)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_default_mode ip= net.ifnames=0 $vga_blacklist_opt
-  initrd $initrd_file
-
-BOOT_MENU_END
-if [ "$show_vga_mode" = "3" ]; then
-  cat <<-BOOT_MENU_END >> $output_file
-title $output_title ($vga_1024x768_prompt)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_mode_1024x768 ip= net.ifnames=0 $vga_blacklist_opt
-  initrd $initrd_file
-
-title $output_title ($vga_640x480_prompt)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_mode_640x480 ip= net.ifnames=0 $vga_blacklist_opt
-  initrd $initrd_file
-
-BOOT_MENU_END
-fi
-  cat <<-BOOT_MENU_END >> $output_file
-title $output_title (KMS)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param_rm_nomodeset $vga_mode_1024x768 ip= net.ifnames=0 
-  initrd $initrd_file
-
-title $output_title (KMS & To RAM)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param_rm_nomodeset $vga_mode_1024x768 $toram_opt ip= net.ifnames=0
-  initrd $initrd_file
-
-title $output_title (KMS with large font & To RAM)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param_rm_nomodeset $vga_mode_1024x768 $toram_opt ip= net.ifnames=0 live_console_font_size=16x32
-  initrd $initrd_file
-
-title $output_title (To RAM, boot media can be removed later)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_default_mode $toram_opt ip= net.ifnames=0 $vga_blacklist_opt
-  initrd $initrd_file
-
-BOOT_MENU_END
-
-if [ -n "$lang_locale" ]; then
-  cat <<-BOOT_MENU_END >> $output_file
-title $output_title ($lang_locale, default settings$vga_default_prompt)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_default_mode locale=$lang_locale ip= net.ifnames=0 $vga_blacklist_opt
-  initrd $initrd_file
-
-BOOT_MENU_END
-if [ "$show_vga_mode" = "3" ]; then
-  cat <<-BOOT_MENU_END >> $output_file
-title $output_title ($lang_locale, default settings$vga_1024x768_prompt)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_mode_1024x768 locale=$lang_locale ip= net.ifnames=0 $vga_blacklist_opt
-  initrd $initrd_file
-
-title $output_title ($lang_locale, default settings$vga_640x480_prompt)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_mode_640x480 locale=$lang_locale ip= net.ifnames=0 $vga_blacklist_opt
-  initrd $initrd_file
-
-BOOT_MENU_END
-fi
-
-  cat <<-BOOT_MENU_END >> $output_file
-title $output_title ($lang_locale, default settings, KMS)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param_rm_nomodeset $vga_mode_1024x768 locale=$lang_locale ip= net.ifnames=0
-  initrd $initrd_file
-
-title $output_title ($lang_locale. To RAM. Boot media can be removed later)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param $vga_default_mode locale=$lang_locale $toram_opt ip= net.ifnames=0 $vga_blacklist_opt
-  initrd $initrd_file
-
-BOOT_MENU_END
-fi
-
-  cat <<-BOOT_MENU_END >> $output_file
-title $output_title Safe graphic settings (vga=normal)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param ip= net.ifnames=0 nomodeset vga=normal nosplash
-  initrd $initrd_file
-
-title $output_title (Failsafe mode)
-  root ($op_hd_dev_grub,$op_part_no_grub)
-  kernel $kernel_file root=$output_dev_grub ro $boot_param acpi=off irqpoll noapic noapm nodma nomce nolapic nosmp ip= net.ifnames=0 nomodeset vga=normal nosplash
-  initrd $initrd_file
-
-BOOT_MENU_END
-
-if [ -e "$tmp_sys_files_path/$memtest_filename" ]; then
-  cat <<-BOOT_MENU_END >> $output_file
-# Note! *.bin is specially purpose for syslinux, 
-# Do NOT use memtest.bin, use memtest instead of memtest.bin
-title memtest
-  kernel $sys_files_dir/$memtest_filename
-
-BOOT_MENU_END
-fi
-
-# The following depends on the image exists or not 
-
-if [ -e "$tmp_sys_files_path/freedos.img" ]; then
-  cat <<-BOOT_MENU_END >> $output_file
-title FreeDOS
-  kernel memdisk
-  initrd $sys_files_dir/freedos.img
-
-BOOT_MENU_END
-fi
-if [ -e "$tmp_sys_files_path/eb.zli" ]; then
-  cat <<-BOOT_MENU_END >> $output_file
-title etherboot
-  kernel $sys_files_dir/eb.zli
-BOOT_MENU_END
-fi
-if [ -e "$tmp_sys_files_path/gpxe.lkn" ]; then
-  cat <<-BOOT_MENU_END >> $output_file
-title gPXE
-  kernel $sys_files_dir/gpxe.lkn
-BOOT_MENU_END
-fi
-if [ -e "$tmp_sys_files_path/ipxe.lkn" ]; then
-  cat <<-BOOT_MENU_END >> $output_file
-title iPXE
-  kernel $sys_files_dir/ipxe.lkn
-BOOT_MENU_END
-fi
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "$msg_modify_grub_config_if_necessary:"
-  echo "$msg_delimiter_star_line"
-  echo "root ($op_hd_dev_grub,$op_part_no_grub)"
-  echo "kernel $kernel_file root=$output_dev_grub ro $boot_param"
-  echo "$msg_delimiter_star_line"
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-} # end of gen_config_grub_1
-#
 gen_config_grub_2_efi(){
 local grub_conf="$1"
 local bg_img output_file
@@ -691,9 +535,9 @@ menuentry "$output_title ($vga_default_prompt)" --id live-default {
   \$initrd_cmd $initrd_file
 }
 
-menuentry --hotkey=r "$output_title (KMS & To RAM)" --id live-kms-toram {
+menuentry --hotkey=r "$output_title (To RAM)" --id live-toram {
   search --set -f $kernel_file
-  \$linux_cmd $kernel_file $boot_param_rm_nomodeset $vga_mode_1024x768 $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt
+  \$linux_cmd $kernel_file $boot_param $vga_default_mode $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt $vga_blacklist_opt
   \$initrd_cmd $initrd_file
 }
 
@@ -744,9 +588,9 @@ fi
     \$initrd_cmd $initrd_file
   }
 
-  menuentry --hotkey=R "$output_title (To RAM, boot media can be removed later)"{
+  menuentry --hotkey=R "$output_title (KMS & To RAM)" {
     search --set -f $kernel_file
-    \$linux_cmd $kernel_file $boot_param $vga_default_mode $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt $vga_blacklist_opt
+    \$linux_cmd $kernel_file $boot_param_rm_nomodeset $vga_mode_1024x768 $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt
     \$initrd_cmd $initrd_file
   }
   
@@ -785,7 +629,7 @@ fi
     \$initrd_cmd $initrd_file
   }
   
-  menuentry "$output_title ($lang_locale. To RAM. Boot media can be removed later)"{
+  menuentry "$output_title ($lang_locale. To RAM)"{
     search --set -f $kernel_file
     \$linux_cmd $kernel_file $boot_param $vga_default_mode locale=$lang_locale $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt $vga_blacklist_opt
     \$initrd_cmd $initrd_file
@@ -1225,9 +1069,7 @@ case "$output_format" in
       gen_config_syslinux isolinux ;;
    syslinux|SYSLINUX)
       gen_config_syslinux syslinux ;;
-   grub|GRUB)
-      gen_config_grub_1 menu.lst ;;
-   grub2-efi|GRUB2-EFI|grub2-efi-ia32|GRUB2-EFI-IA32|grub2-efi-x64|GRUB2-EFI-X64)
+   grub-efi|GRUB-EFI|grub2-efi|GRUB2-EFI|grub2-efi-ia32|GRUB2-EFI-IA32|grub2-efi-x64|GRUB2-EFI-X64)
       # For grub2, no matter it's ia32 or x86-64, the config file is grub.cfg.
       gen_config_grub_2_efi grub.cfg ;;
 esac
