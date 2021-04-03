@@ -38,6 +38,7 @@ mkiso_exclude_list_1="isolinux syslinux md5sum.txt doc live etc pkg ocs-live.d u
 mkiso_exclude_list_2="home"  # This should not be a duplicated count.
 mkiso_exclude_list="$mkiso_exclude_list_1 $mkiso_exclude_list_2"
 live_boot_menu_opt_raw=""
+live_boot_menu_opt_timeout=""
 
 #
 prog="$(basename $0)"
@@ -62,6 +63,7 @@ USAGE() {
     echo "-n, --ocs-live-boot-menu-option EXTRA_OPTION Assign an extra option for ocs-live-boot-menu. //NOTE// Do not put '-' in this EXTRA_OPTION, $0 will add that automatically. e.g. if you want to add -s1 for ocs-live-boot-menu to run, use 's1' only."
     echo "-o, --normal-menu  When a clonezilla image is inserted, by default only restore menu will be shown in the created ISO file. If you want to show normal menu, i.e. with save and restore menu, use this one."
     echo "-p, --image-path   Assign the clonezilla image path where CLONEZILLA_IMAGE_NAME exists. Default = $ocsroot"
+    echo "-r, --ocs-live-boot-menu-timeout PARAM  Set live boot menu timeout argument for ocs-live-boot-menu to PARAM."
     echo "-s, --skip-image   Do not include any clonezilla image. The is used to created a live CD with DRBL/Clonezilla programs only."
     echo "-t, --ocs-live-batch  Set clonezilla live to run in batch mode, usually it's for restoring. If this mode is set, some dialog question will be ignored."
     echo "-u, --include-dir DIR   Include a dir in the target iso file."
@@ -261,6 +263,14 @@ while [ $# -gt 0 ]; do
             fi
 	    [ -z "$live_boot_menu_opt_raw" ] && USAGE && exit 1
             ;;
+    -r|--ocs-live-boot-menu-timeout)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              live_boot_menu_opt_timeout="$1"
+              shift
+            fi
+	    [ -z "$live_boot_menu_opt_timeout" ] && USAGE && exit 1
+            ;;
     -u|--include-dir)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -298,6 +308,9 @@ if [ -n "$live_boot_menu_opt_raw" ]; then
    for i in $live_boot_menu_opt_raw; do
      ocs_live_boot_menu_option="$ocs_live_boot_menu_option -$i"
    done
+fi
+if [ -n "$live_boot_menu_opt_timeout" ]; then
+   ocs_live_boot_menu_timeout_option="--timeout $live_boot_menu_opt_timeout"
 fi
 md5_file_url="$DEBIAN_ISO_ETC_PATH/$md5_file"
 
@@ -844,38 +857,38 @@ if [ -n "$ocs_image" ]; then
   # For isolinux
   if [ "$cpu_arch_type" = "x86" ]; then
     # Dir syslinux only for x86 CPU arch
-    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/syslinux/
+    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/syslinux/
     # For syslinux
-    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for BIOS machine" syslinux $ISOSYSLNX_TMP/syslinux/
+    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for BIOS machine" syslinux $ISOSYSLNX_TMP/syslinux/
   fi
   # Dir /EFI/boot/ is for x86, arm64 or armhf CPU arch
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
     if [ -e "$ISOSYSLNX_TMP/EFI/boot/bootia32.efi" -o -e "$ISOSYSLNX_TMP/EFI/boot/bootx64.efi" -o \
 	 -e "$ISOSYSLNX_TMP/EFI/boot/bootaa64.efi" -o -e "$ISOSYSLNX_TMP/EFI/boot/bootarm.efi" ]; then
-      ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for EFI machine" grub2-efi $ISOSYSLNX_TMP/boot/grub/
+      ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for EFI machine" grub2-efi $ISOSYSLNX_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for EFI machine" syslinux $ISOSYSLNX_TMP/boot/grub/
+    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for EFI machine" syslinux $ISOSYSLNX_TMP/boot/grub/
   fi
 else
   # No image is included
   # For isolinux
   if [ "$cpu_arch_type" = "x86" ]; then
     # Dir syslinux only for x86 CPU arch
-    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/syslinux/
+    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/syslinux/
     # For syslinux
-    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for BIOS machine" syslinux $ISOSYSLNX_TMP/syslinux/
+    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for BIOS machine" syslinux $ISOSYSLNX_TMP/syslinux/
   fi
   # Dir /EFI/boot/ is for x86, arm64 or armhf CPU arch
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
     if [ -e "$ISOSYSLNX_TMP/EFI/boot/bootia32.efi" -o -e "$ISOSYSLNX_TMP/EFI/boot/bootx64.efi" -o \
 	 -e "$ISOSYSLNX_TMP/EFI/boot/bootaa64.efi" -o -e "$ISOSYSLNX_TMP/EFI/boot/bootarm.efi" ]; then
-      ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for EFI machine" grub2-efi $ISOSYSLNX_TMP/boot/grub/
+      ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_grub2_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for EFI machine" grub2-efi $ISOSYSLNX_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
-    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for EFI machine" syslinux $ISOSYSLNX_TMP/boot/grub/
+    ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for EFI machine" syslinux $ISOSYSLNX_TMP/boot/grub/
   fi
 fi
 
@@ -1031,3 +1044,5 @@ if [ -e "$target_iso" ]; then
   echo "$msg_burn_clonezilla_img_iso: $target_iso"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 fi
+
+exit 0
