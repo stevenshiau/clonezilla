@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.15
+Version:	4.3.16
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,16 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Apr 03 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.16-drbl1
+  * ocs-live-boot-menu: update "framebuffer To RAM" menu prompt as
+    "VGA 800x600 & To RAM"
+  * Manually applied the patches for timeout and exit code for ocs-iso and
+    ocs-live-dev.
+    Ref:
+    https://gitlab.com/stevenshiau/clonezilla/-/merge_requests/44
+    https://gitlab.com/stevenshiau/clonezilla/-/merge_requests/45
+    Thanks to Vitaly for these MRs.
+
 * Fri Apr 02 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.15-drbl1
   * ocs-live-feed-img: make timeout_max shorter as "60".
 
