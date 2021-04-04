@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.16
+Version:	4.3.17
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Apr 04 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.17-drbl1
+  * Disable sleep and hibernate for live system.
+    Ref: https://gitlab.gnome.org/GNOME/gparted/-/issues/149
+
 * Sat Apr 03 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.16-drbl1
   * ocs-live-boot-menu: update "framebuffer To RAM" menu prompt as
     "VGA 800x600 & To RAM"
