@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.17
+Version:	4.3.18
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Apr 05 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.18-drbl1
+  * Set default prompt for boot menu of gparted/drbl live. Previous changes
+    affected those 3 modes of boot menus.
+
 * Sun Apr 04 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.17-drbl1
   * Disable sleep and hibernate for live system.
     Ref: https://gitlab.gnome.org/GNOME/gparted/-/issues/149
