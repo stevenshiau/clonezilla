@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.18
+Version:	4.3.19
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Apr 13 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.19-drbl1
+  * Add boot parameter echo_ocs_repository, so that when
+    it's assigned as "no", the prompt about mounting image repository
+    can be hidden.
+    Thanks to ottokang for asking this.
+  * Update singularity-debian-ocs.def: include ezio instead of ezio-static
+
 * Mon Apr 05 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.18-drbl1
   * Set default prompt for boot menu of gparted/drbl live. Previous changes
     affected those 3 modes of boot menus.
