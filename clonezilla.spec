@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.19
+Version:	4.3.20
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Apr 21 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.20-drbl1
+  * Add "--force" for vgcfgrestore to force metadata restore
+    even with thin pool LVs.
+
 * Tue Apr 13 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.19-drbl1
   * Add boot parameter echo_ocs_repository, so that when
     it's assigned as "no", the prompt about mounting image repository
