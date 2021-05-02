@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.21
+Version:	4.3.22
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun May 02 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.22-drbl1
+  * Improve to process the volume header of Veracrypt.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/76c9794d/
+    Add two files: ocs-save-veracrypt-vh & ocs-restore-veracrypt-vh
+
 * Wed Apr 28 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.21-drbl1
   * Put --archive-areas in the same command with --distribution for
     create-*-live. This should work with live-build 202104 version, a
