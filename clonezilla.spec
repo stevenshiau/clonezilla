@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.20
+Version:	4.3.21
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Apr 28 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.21-drbl1
+  * Put --archive-areas in the same command with --distribution for
+    create-*-live. This should work with live-build 202104 version, a
+    workaround to avoid lb config --archive-areas "main non-free" failing
+    in create-gparted-live.
+
 * Wed Apr 21 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.20-drbl1
   * Add "--force" for vgcfgrestore to force metadata restore
     even with thin pool LVs.

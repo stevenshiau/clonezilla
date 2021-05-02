@@ -1,0 +1,88 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# License: GPL
+# Description: Program to dump the volume header of Veracrypt disk
+# Only for uEFI/GPT mode
+# Ref: https://sourceforge.net/p/veracrypt/discussion/technical/thread/fe03328c/
+#      https://habr.com/ru/post/150209/
+
+#
+export LC_ALL=C
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+USAGE() {
+    echo "$cmd_name: To dump the volume header of Veracrypt disk"
+    echo "Usage:"
+    echo "  $cmd_name DISK DIR"
+    echo "  DISK can be with or without /dev/, e.g., /dev/sda or sda. The output file is DISK-veracrypt-vh.bin under the path DIR."
+    echo 
+    echo "Example:"
+    echo "To dump the volume header of Veracrypt disk /dev/sda to the path /tmp/ as the file sda-veracrypt-vh.bin, use:"
+    echo "$cmd_name /dev/sda /tmp"
+}         
+
+####################
+### Main program ###
+####################
+
+cmd_name="$(basename $0)"
+
+ocs_disk="$(strip_leading_dev $1)"
+ocs_out_d="$2"
+
+ask_and_load_lang_set $specified_lang
+if [ -z "$ocs_disk" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No disk was assigned!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  echo "$msg_program_stop!"
+  exit 1
+fi
+if [ ! -b "/dev/$ocs_disk" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Disk \"/dev/$ocs_disk\" was _NOT_ found"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+if [ -z "$ocs_out_d" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No output dir was assigned!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+if [ ! -d "$ocs_out_d" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Output dir $ocs_out_d does not exist!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  USAGE
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+# If we found the partition is EFI System partition, check if Veracrypt boot file exists.
+# EFI System partition (ESP): C12A7328-F81F-11D2-BA4B-00A0C93EC93B,
+# Ref: https://en.wikipedia.org/wiki/GUID_Partition_Table
+esp_part="$(LC_ALL=C sfdisk -d /dev/$ocs_disk | grep -iE type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B | awk -F" " '{print $1}')"
+if [ -n "$esp_part" ]; then
+  # Found ESP, check if /EFI/VeraCrypt/DcsBoot.efi exists
+  esptmp="$(mktemp -d /tmp/ocs_esp.XXXXXX || exit 1)"
+  mount -o ro $esp_part $esptmp
+  if [ -e $esptmp/EFI/VeraCrypt/DcsBoot.efi ]; then
+    run_cmd="dd if=/dev/$ocs_disk of=$ocs_out_d/${ocs_disk}-veracrypt-vh.bin bs=512 count=1 skip=62"
+    echo "Running: $run_cmd"
+    eval $run_cmd
+  fi
+  umount $esptmp
+  rmdir $esptmp
+fi
