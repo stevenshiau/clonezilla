@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.22
+Version:	4.3.23
 Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat May 08 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.23-drbl1
+  * Add ocs-park-disks before rebooting/halting in Clonezilla live.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/364/
+    Thanks DDD for this requesting.
+  * ocs_*veracrypt-vh: add check if root.
+
 * Sun May 02 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.22-drbl1
   * Improve to process the volume header of Veracrypt.
     Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/76c9794d/
