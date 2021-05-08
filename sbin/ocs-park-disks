@@ -1,0 +1,79 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# License: GPL
+# Description: Program to park the local disks
+# (1) sync; sync; sync
+# (2) unmount all the mounted partitions
+# (3) hdparm -y /dev/sdx
+
+#
+export LC_ALL=C
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+USAGE() {
+    echo "$cmd_name: To park disks"
+    echo "Usage:"
+    echo "  $cmd_name DISK"
+    echo "  DISK can be with or without /dev/, e.g., /dev/sda or sda. If it's not assigned, all the disks will be parked."
+    echo 
+    echo "Example:"
+    echo "To park all the disks, run:"
+    echo "$cmd_name"
+}         
+
+####################
+### Main program ###
+####################
+
+cmd_name="$(basename $0)"
+
+ocs_disk="$(strip_leading_dev $*)"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+#
+if [ -n "$ocs_disk" ]; then
+  if [ ! -b "/dev/$ocs_disk" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Disk \"/dev/$ocs_disk\" was _NOT_ found"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+  all_disks="$ocs_disk"
+else
+  # Not assigned, so find all the disks
+  all_disks="$(get_harddisk_list)"
+fi
+
+echo -n "Synchronizing cached writes to persistent storage... "
+sync; sync; sync
+echo "done!"
+
+for idisk in $all_disks; do
+   # (1) unmount partitions if mounted.
+   # (2) hdparm -y /dev/sdx
+   if check_if_disk_busy /dev/$idisk; then
+     mounted_parts="$(LC_ALL=C mount | grep -Ew -- "^/dev/${idisk}([0-9]*|(p[0-9]+))" | awk -F" " '{print $1}')"
+     for mp in $mounted_parts; do
+       echo -n "Unmounting busy partition $mp... "
+       umount $mp
+       echo "done!"
+     done
+   fi
+   if [ -n "$(smartctl -a /dev/$idisk | grep 'Rotation Rate')" ]; then
+     echo -n "Parking the normal hard disk drive /dev/$idisk... "
+     hdparm -q -y /dev/$idisk
+     echo "done!"
+   else
+     echo "Disk /dev/$idisk is not a normal hard disk drive. No need to park it."
+   fi
+done
