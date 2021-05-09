@@ -1,7 +1,7 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.23
-Release:	drbl2
+Version:	4.3.24
+Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.xz
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun May 09 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.24-drbl1
+  * Add ocs-park-disks in do_ocs_live_run_final of ocs-live-final-action.
+
 * Sat May 08 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.23-drbl1
   * Add ocs-park-disks before rebooting/halting in Clonezilla live.
     Ref: https://sourceforge.net/p/clonezilla/bugs/364/
