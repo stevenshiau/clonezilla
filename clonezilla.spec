@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.25
+Version:	4.3.26
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue May 11 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.26-drbl1
+  * ocs-live-boot-menu: add big font using nomodeset. 
+
 * Tue May 11 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.25-drbl1
   * Add "VGA with large font & To RAM" (using nomodeset) in the boot menu,
     and move "KMS with large font & To RAM" to submenu. 
