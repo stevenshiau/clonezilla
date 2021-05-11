@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.24
+Version:	4.3.25
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue May 11 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.25-drbl1
+  * Add "VGA with large font & To RAM" (using nomodeset) in the boot menu,
+    and move "KMS with large font & To RAM" to submenu. 
+    This can be an alternative solution for jfbterm not working in
+    KMS mode for some VGA cards.
+
 * Sun May 09 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.24-drbl1
   * Add ocs-park-disks in do_ocs_live_run_final of ocs-live-final-action.
 

@@ -157,12 +157,13 @@ label $output_title (To RAM)
 label $output_title HiDPI
   # MENU DEFAULT
   # MENU HIDE
-  MENU LABEL $output_title (KMS with ^large font & To RAM)
+  MENU LABEL $output_title (VGA with ^large font & To RAM)
   # MENU PASSWD
   kernel $kernel_file
-  append initrd=$initrd_file $boot_param_rm_nomodeset $vga_mode_1024x768 $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt live_console_font_size=16x32
+  append initrd=$initrd_file $boot_param nomodeset $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt live_console_font_size=16x32
   TEXT HELP
-  KMS mode. OK for ATI, Intel and NVIDIA VGA cards.
+  Large font, all the programs will be copied to RAM, so you can
+  remove boot media (CD or USB flash drive) later
   ENDTEXT
 
 BOOT_MENU_END
@@ -234,6 +235,17 @@ label $output_title KMS & To RAM
   # MENU PASSWD
   kernel $kernel_file
   append initrd=$initrd_file $boot_param_rm_nomodeset $vga_mode_1024x768 $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt
+  TEXT HELP
+  KMS mode. OK for ATI, Intel and NVIDIA VGA cards.
+  ENDTEXT
+
+label $output_title KMS, To RAM & large font
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL $output_title (KMS with ^large font & To RAM)
+  # MENU PASSWD
+  kernel $kernel_file
+  append initrd=$initrd_file $boot_param_rm_nomodeset $vga_mode_1024x768 $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt live_console_font_size=16x32
   TEXT HELP
   KMS mode. OK for ATI, Intel and NVIDIA VGA cards.
   ENDTEXT
@@ -541,9 +553,9 @@ menuentry --hotkey=r "$output_title ($vga_default_prompt & To RAM)" --id live-to
   \$initrd_cmd $initrd_file
 }
 
-menuentry --hotkey=l "$output_title (KMS with large font & To RAM)" --id live-kms-large-font-toram {
+menuentry --hotkey=l "$output_title (VGA with large font & To RAM)" --id live-vga-large-font-toram {
   search --set -f $kernel_file
-  \$linux_cmd $kernel_file $boot_param_rm_nomodeset $vga_mode_1024x768 $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt live_console_font_size=16x32
+  \$linux_cmd $kernel_file $boot_param nomodeset $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt live_console_font_size=16x32
   \$initrd_cmd $initrd_file
 }
 
@@ -594,6 +606,12 @@ fi
     \$initrd_cmd $initrd_file
   }
   
+  menuentry "$output_title (KMS with large font & To RAM)" --id live-kms-large-font-toram {
+    search --set -f $kernel_file
+    \$linux_cmd $kernel_file $boot_param_rm_nomodeset $vga_mode_1024x768 $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt live_console_font_size=16x32
+    \$initrd_cmd $initrd_file
+  }
+
 BOOT_MENU_END
 
 if [ -n "$lang_locale" ]; then
@@ -1072,4 +1090,10 @@ case "$output_format" in
    grub-efi|GRUB-EFI|grub2-efi|GRUB2-EFI|grub2-efi-ia32|GRUB2-EFI-IA32|grub2-efi-x64|GRUB2-EFI-X64)
       # For grub2, no matter it's ia32 or x86-64, the config file is grub.cfg.
       gen_config_grub_2_efi grub.cfg ;;
+   *)
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Unknown mode for output format!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      my_ocs_exit 1
 esac
