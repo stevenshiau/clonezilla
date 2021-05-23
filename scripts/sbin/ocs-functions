@@ -3969,8 +3969,8 @@ task_postprocessing() {
 
   # Check the saved image
   if [ "$chk_img_restoreable_mod_save" = "yes" ]; then
-    if [ "$ocs_sr_type" = "savedisk"  -a "$rc_savedisk"  -eq 0 ] ||
-       [ "$ocs_sr_type" = "saveparts" -a "$rc_saveparts" -eq 0 ]; then
+    if [ "$ocs_sr_type" = "savedisk"  -a "x$rc_savedisk"  = "x0" ] ||
+       [ "$ocs_sr_type" = "saveparts" -a "x$rc_saveparts" = "x0" ]; then
       # To avoid the /var/lib/clonezilla/ocs-vars is overwritten by ocs-chkimg, backup it first.
       if [ -e /var/lib/clonezilla/ocs-vars ]; then
         mv -f /var/lib/clonezilla/ocs-vars /var/lib/clonezilla/ocs-vars.before-ocs-chkimg
@@ -8539,7 +8539,7 @@ task_savedisk() {
 task_saveparts() {
   local target_dir="$1"
   local target_parts="$2"
-  local disk_size_sec to_skip dev_to_be_saved_shown_in_warning rc_saveparts
+  local disk_size_sec to_skip dev_to_be_saved_shown_in_warning rc_savepts
   local target_dir_fullpath
   local minix_subpt_start minix_subpt_end minix_subpt_size cmd_save_minix_sub_parts_table
   local pv_on_dsk pv_on_dsk_flag
@@ -8845,7 +8845,7 @@ task_saveparts() {
     fi
     # not LVM, normal partition
     image_save /dev/$partition $target_dir_fullpath $partition
-    rc_saveparts="$(($rc_saveparts + $?))"
+    rc_savepts="$(($rc_savepts + $?))"
     # Tag the partition info. This is special for NTFS boot reserved partiition
     rc_boot_reserve=""
     check_if_windows_boot_reserve_part /dev/$partition
@@ -8873,7 +8873,7 @@ task_saveparts() {
   # We have to do save LVM (PV/VG/LV) together, not follow every partition
   if [ "$do_LVM_save" = "yes" ]; then
     save_logv "$target_parts"
-    rc_saveparts="$(($rc_saveparts + $?))"
+    rc_savepts="$(($rc_savepts + $?))"
   fi
 
   # Save EFI NVRAM info. What we need is actually the label
@@ -8893,8 +8893,8 @@ task_saveparts() {
   # TODO: show error message if failing; check image?
   echo "End of saveparts job for image $target_dir_fullpath." | tee --append $OCS_LOGFILE
 
-  rc_saveparts="$(($rc_saveparts + $rc))"
-  return $rc_saveparts
+  rc_savepts="$(($rc_savepts + $rc))"
+  return $rc_savepts
 } # end of task_saveparts
 
 # task "restoredisk" 
