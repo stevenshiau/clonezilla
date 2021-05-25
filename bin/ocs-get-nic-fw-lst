@@ -1,0 +1,134 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# License: GPL
+# Description: This program gets the latest nic-firmware.lst from linux-firmware tar ball.
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+force_download="no"
+exist_nic_fw_lst_def="/usr/share/drbl/setup/files/ocs/live-hook/nic-firmware.lst"
+# Functions
+USAGE() {
+    echo "$ocs - To download the latest nic firmware list from Ubuntu repository"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION]"
+    echo
+    echo "Options:"
+    echo "-f, --force   Force to download"
+    echo "-n, --nic-fw  FILE  Compare the existing NIC firmware file FILE instead of the default one \"$exist_nic_fw_lst_def\""
+    echo
+    echo "Ex:"
+    echo "To download the latest NIC firmware list file \"nic-firmware.lst\" in this working dir, run"
+    echo "   $ocs"
+    echo
+} # end of USAGE
+#
+do_download_and_extract() {
+  # New version is available
+  firmware_tmp="$(mktemp -d /tmp/firmware_ocs.XXXXXX)"
+  LC_ALL=C curl -o $firmware_tmp/$pkg $ubuntu_mirror_url_def/pool/main/l/linux-firmware/$pkg
+  if [ -e "$firmware_tmp/$pkg" ]; then
+    if [ -e nic-firmware.lst ]; then
+      mv -fv nic-firmware.lst nic-firmware.lst.orig
+    fi
+    ( cd $firmware_tmp/
+    case $pkg in
+      *.tar.xz) tar --strip-components=2 -xvJf $firmware_tmp/$pkg linux-firmware/debian/nic-firmware.lst;;
+      *.tar.gz) tar --strip-components=2 -xvzf $firmware_tmp/$pkg linux-firmware/debian/nic-firmware.lst;;
+    esac
+    )
+  fi
+  if [ -e "$firmware_tmp/nic-firmware.lst" ]; then
+    echo "Found extracted nic firmware list file: $firmware_tmp/nic-firmware.lst"
+    time_now="$(date +%Y/%m/%d" "%T)"
+    cat <<-FIRMWARE_END > nic-firmware.lst
+# Version: $repo_ver
+# Data from the package linux-firmware on Ubuntu repository
+# at $time_now
+FIRMWARE_END
+  cat $firmware_tmp/nic-firmware.lst >> nic-firmware.lst
+      echo "Updated nic firmware list file: nic-firmware.lst"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "nic firmware file list file not found!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+  
+  if [ -d "$firmware_tmp" -a \
+       -n "$(echo "$firmware_tmp" | grep "firmware_ocs")" ]; then
+    rm -rf $firmware_tmp
+  fi
+} # end of do_download_and_extract
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -f|--force) force_download="yes"; shift;;
+   -n|--nic-fw)
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             exist_nic_fw_lst="$1"
+             shift;
+           fi
+           [ -z "$exist_nic_fw_lst" ] && USAGE && exit 1
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+#
+[ -z "$exist_nic_fw_lst" ] && exist_nic_fw_lst="$exist_nic_fw_lst_def"
+#
+ask_and_load_lang_set
+#
+pkg="$(LC_ALL=C curl $ubuntu_mirror_url_def/pool/main/l/linux-firmware/ 2>/dev/null \
+       | html2text | grep -Eo linux-firmware.*.tar.[gx]z | sort -Vr | head -n 1)"
+# pkg is like: linux-firmware_1.197.tar.xz
+if [ -n "$pkg" ]; then
+  repo_ver="$(echo $pkg | awk -F"_" '{print $2}' | sed -r -e "s/\.tar.[gx]z//g")"
+  echo "linux-firmware version on $ubuntu_mirror_url_def/pool/main/l/linux-firmware: $repo_ver"
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "The latest linux-firmware tarball was not found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+exist_ver="$(grep -Er "^# Version:" $exist_nic_fw_lst | awk -F":" '{print $2}')"
+exist_ver="$(echo $exist_ver)"  # strip white space
+echo "$exist_nic_fw_lst version: $exist_ver"
+
+do_it=""
+if [ "$force_download" = "yes" ]; then
+  do_it="yes"
+else
+  if dpkg --compare-versions "$repo_ver" "<=" "$exist_ver"; then
+    echo "Existing version is the latest one. No need to download and update."
+    do_it="no"
+  else
+    do_it="yes"
+  fi
+fi
+
+if [ "$do_it" = "yes" ]; then
+  do_download_and_extract
+fi
+
+exit 0
