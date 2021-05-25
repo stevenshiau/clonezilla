@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.27
+Version:	4.3.28
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,16 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue May 25 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.28-drbl1
+  * ocs-live-hook-functions: Update get_non_free_net_firmware_for_ubuntu
+    to use new mechanism to get NIC firmware.
+  * create-ubuntu-live: add support Ubuntu impish
+  * ocs-get-nic-fw-lst: new added program for get nic-firmware.lst.
+  * nic-firmware.lst: new added for putting nic firmware on Ubuntu-based
+    Clonezilla live.
+  * ocs-functions: variable rc_saveparts/rc_savepts.
+    Improve test for variable rc_saveparts/rc_savedisk.
+
 * Thu May 13 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.27-drbl1
   * ocs-live-final-action: Move ocs-park-disks before "countdown 7".
   * Depends on smartmontools.
