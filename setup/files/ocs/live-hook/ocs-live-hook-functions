@@ -764,61 +764,51 @@ remove_grpck_opt_p() {
 #
 get_non_free_net_firmware_for_ubuntu() {
   # This function is used to get non-free network firmware from ubuntu.
-  # The reason we do not use the package "linux-firmware" is because it's too large. For Ubuntu 12.04, it's about 27 MB. While we only need part of them. Thererefor nic-firmware udeb is a better one.
   # //NOTE// "linux-firmware" only exists on Ubuntu, while for Debian there are separate packages for those non-free firmware, e.g.
   # firmware-atheros, firmware-brcm80211, firmware-bnx2, firmware-bnx2x, firmware-ipw2x00, firmware-ipw3945, firmware-iwlwifi
   # $mirror_url and $debian_dist are from hook
   local target_dir="$1"
-  local tmp_wd nic_firmware_udeb firmware_doc d_cat flag_done
+  local DISTRIB_ID tmp_wd f inst_cmd
   if [ -z "$target_dir" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "XXXXXXXXX! No target_dir in function get_non_free_net_firmware!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     return 1
   fi
-  if [ -z "$(echo $mirror_url | grep -i "ubuntu")" ]; then
+  [ -e /etc/lsb-release ] && . /etc/lsb-release
+  if [ "$DISTRIB_ID" != "Ubuntu" ]; then
     echo "No need to download non-free firmware for non-ubuntu distribution."
     return 0
   fi
   tmp_wd="$(mktemp -d /tmp/nic_firmware.XXXXXX)"
-  # < Ubuntu 20.04, nic-firmware is listed at
-  # http://free.nchc.org.tw/ubuntu/dists/focal/main/binary-amd64/Packages.xz
-  # >= Ubuntu 20.04, nic-firmware is listed at
-  # http://free.nchc.org.tw/ubuntu/dists/groovy/universe/debian-installer/binary-amd64/Packages.xz
-  flag_done="false"
-  for d_cat in universe/debian-installer main; do
-    rm -f $tmp_wd/*
-    wget -P $tmp_wd $mirror_url/dists/$debian_dist/$d_cat/binary-${darch}/Packages.xz
-    # Find the firmware binary files.
-    nic_firmware_udeb="$(LC_ALL=C xzcat $tmp_wd/Packages.xz | sed -ne 's/^Filename: //p' | grep -Ew "nic-firmware_.")"
-    # result like: pool/main/l/linux-firmware/nic-firmware_1.78_all.udeb
-    if [ -n "$nic_firmware_udeb" ]; then
-      wget -P $tmp_wd $mirror_url/$nic_firmware_udeb
-      echo "Install non-free firmware about NICs in Clonezilla live..."
-      # //NOTE// Do not run something like: dpkg-deb --extract $tmp_wd/$(basename $nic_firmware_udeb) $target_dir
-      # It will overwrite the dir permissions. E.g., if /lib/ is a link file, it will be removed and be created as dir.
-      # This will break the usrmerge system (Ubuntu >= 19.04).
-      dpkg -i $tmp_wd/$(basename $nic_firmware_udeb) 
-      if [ "$?" -eq 0 ]; then
-        flag_done="true"
-      fi
-    else
-      echo "Package nic-firmware was not found $mirror_url/dists/$debian_dist/$d_cat/debian-installer/binary-${darch}/Packages.xz"
-      echo "Try next catetory: $d_cat"
-      continue
-    fi
-  done
-  if [ "$flag_done" = "false" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Failed to download the nic-firmware package!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  fi
-
-  # Find the license doc and put it. They are from linux-firmware.
+  # >= Ubuntu 21.04, nic-firmware is not available anymore in udeb format.
+  # Hence we have to extract them from linux-firmware.
+  # Find the license doc and firmware then put them.
   apt-get -d --reinstall install linux-firmware
+  rc=$?
+  if [ "$rc" -gt 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "XXXXXXXXX! Unable to download linux-firmware!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 1
+  fi
   echo "Extracting non-free firmware doc and puting it in Clonezilla live..."
-  mkdir -p $tmp_wd/doc_tmp/
-  dpkg --extract /var/cache/apt/archives/linux-firmware_*.deb $tmp_wd/doc_tmp/
+  mkdir -p $tmp_wd/firm_tmp/
+  dpkg --extract /var/cache/apt/archives/linux-firmware_*.deb $tmp_wd/firm_tmp/
   mkdir -p $target_dir/usr/share/doc/linux-firmware/
-  cp -a $tmp_wd/doc_tmp/usr/share/doc/linux-firmware/* $target_dir/usr/share/doc/linux-firmware/
+  cp -a $tmp_wd/firm_tmp/usr/share/doc/linux-firmware/* $target_dir/usr/share/doc/linux-firmware/
+  while read -r f; do
+    [ -n "$(echo "$f" | grep -E "^[[:space:]]*#")" ] && continue
+    if [ -e "$tmp_wd/firm_tmp/lib/firmware/$f" ]; then
+      inst_cmd="install -m644 -D $tmp_wd/firm_tmp/lib/firmware/$f $target_dir/lib/firmware/$f"
+      echo "Running: $inst_cmd"
+      eval $inst_cmd
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "File $tmp_wd/firm_tmp/$f not found. Skip putting it."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    fi
+  done <<< "$(cat /usr/share/drbl/setup/files/ocs/live-hook/nic-firmware.lst)"
 
   # Clean unnecessary files
   apt-get clean
