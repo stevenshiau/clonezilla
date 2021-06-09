@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.3.28
+Version:	4.3.29
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.3.6, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc, smartmontools
+Requires:	bash, perl, drbl >= 4.3.10, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc, smartmontools
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jun 09 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.29-drbl1
+  * Bug fixed: image checking should be before encrypted image is unmounted.
+    Thanks to Brian Connolly for reporting this issue.
+
 * Tue May 25 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.28-drbl1
   * ocs-live-hook-functions: Update get_non_free_net_firmware_for_ubuntu
     to use new mechanism to get NIC firmware.
