@@ -3950,6 +3950,28 @@ task_postprocessing() {
       echo "Generating a tag file for this image..."
       echo "# This checksum is only for identifying the image. Created by the command: sha512sum clonezilla-img" > $img_dir/Info-img-id.txt
       echo "IMG_ID=$(LC_ALL=C sha512sum $img_dir/clonezilla-img | awk -F" " '{print $1}')" >> $img_dir/Info-img-id.txt
+
+      # Check the saved image before unmounting the encrypted image
+      if [ "$chk_img_restoreable_mod_save" = "yes" ]; then
+        if [ "$ocs_sr_type" = "savedisk"  -a "x$rc_savedisk"  = "x0" ] ||
+           [ "$ocs_sr_type" = "saveparts" -a "x$rc_saveparts" = "x0" ]; then
+          # To avoid the /var/lib/clonezilla/ocs-vars is overwritten by ocs-chkimg, backup it first.
+          if [ -e /var/lib/clonezilla/ocs-vars ]; then
+            mv -f /var/lib/clonezilla/ocs-vars /var/lib/clonezilla/ocs-vars.before-ocs-chkimg
+          fi
+          rc_chkimg=""
+          check_image_if_restorable "$ocsroot"
+          rc_chkimg="$?"
+          if [ "$rc_chkimg" -ne 0 ]; then
+            echo "$msg_program_stop!"
+            my_ocs_exit 1
+          fi
+          if [ -e /var/lib/clonezilla/ocs-vars.before-ocs-chkimg ]; then
+            mv -f /var/lib/clonezilla/ocs-vars.before-ocs-chkimg /var/lib/clonezilla/ocs-vars
+          fi
+        fi
+      fi
+
       # Unmount the encrypted image
       if [ "$encrypt_ocs_img" = "yes" ]; then
 	# Before unmounting ecryptfs img, we have to keep something for later to be saved in the file ecryptfs.info.
@@ -3966,27 +3988,6 @@ task_postprocessing() {
       umount_ecryptfs_mount_point_if_necessary
       ;;
   esac
-
-  # Check the saved image
-  if [ "$chk_img_restoreable_mod_save" = "yes" ]; then
-    if [ "$ocs_sr_type" = "savedisk"  -a "x$rc_savedisk"  = "x0" ] ||
-       [ "$ocs_sr_type" = "saveparts" -a "x$rc_saveparts" = "x0" ]; then
-      # To avoid the /var/lib/clonezilla/ocs-vars is overwritten by ocs-chkimg, backup it first.
-      if [ -e /var/lib/clonezilla/ocs-vars ]; then
-        mv -f /var/lib/clonezilla/ocs-vars /var/lib/clonezilla/ocs-vars.before-ocs-chkimg
-      fi
-      rc_chkimg=""
-      check_image_if_restorable "$ocsroot"
-      rc_chkimg="$?"
-      if [ "$rc_chkimg" -ne 0 ]; then
-        echo "$msg_program_stop!"
-        my_ocs_exit 1
-      fi
-      if [ -e /var/lib/clonezilla/ocs-vars.before-ocs-chkimg ]; then
-        mv -f /var/lib/clonezilla/ocs-vars.before-ocs-chkimg /var/lib/clonezilla/ocs-vars
-      fi
-    fi
-  fi
 
   #
   echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}
