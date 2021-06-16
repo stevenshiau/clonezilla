@@ -52,12 +52,21 @@ partition="$(format_dev_name_with_leading_dev $1)"
 ######
 ## main script
 ######
+check_if_root
+ask_and_load_lang_set
 #
-#
-check_input_partition ${partition#/dev/*}
+if [ ! -b "$partition" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Block device \"$partition\" not found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  my_ocs_exit 1
+fi
 
 if [ -n "$(grep -Ew "^$partition" /proc/mounts)" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "Partition $partition is already mounted! You must unmount it first! Program terminated!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   [ -f "$part_info" ] && rm -f $part_info
   exit 1
 fi
@@ -65,7 +74,9 @@ fi
 # "parted $partition p" will hang
 part_fs="$(ocs-get-dev-info $partition filesystem)"
 if [ -z "$part_fs" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "Unknown or unsupported partition ($partition) found! Skip this partition ${partition}."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   exit 1
 fi
 
@@ -125,6 +136,7 @@ case "$part_fs" in
 	      if [ "$rc" -eq 0 ]; then
                 echo "Runninig \"xfs_growfs ${partition}\"..."
                 xfs_growfs ${partition}
+		sleep 1
 		umount ${partition}
 		rcm=$?
 	        if [ "$rcm" -eq 0 ]; then
@@ -147,6 +159,7 @@ case "$part_fs" in
 	      if [ "$rc" -eq 0 ]; then
                 echo -n "Resizing jfs ${partition}\"... "
 		mount -o remount,resize ${partition}
+		sleep 1
 		echo "done!"
 		umount ${partition}
 		rcm=$?
@@ -172,6 +185,7 @@ case "$part_fs" in
                 # Was: btrfsctl -r max ${BTRFS_TMP}
 		echo "Running \"btrfs filesystem resize max ${BTRFS_TMP}\"..."
 		btrfs filesystem resize max ${BTRFS_TMP}
+		sleep 1
 		umount ${partition}
 		rcm=$?
 	        if [ "$rcm" -eq 0 ]; then
@@ -194,6 +208,7 @@ case "$part_fs" in
 	      if [ "$rc" -eq 0 ]; then
 		echo "Running \"nilfs-resize -y ${partition}\"..."
 		nilfs-resize -y ${partition}
+		sleep 1
 		umount ${partition}
 		rcm=$?
 	        if [ "$rcm" -eq 0 ]; then
