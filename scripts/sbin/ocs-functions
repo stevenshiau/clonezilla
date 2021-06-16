@@ -2079,7 +2079,7 @@ get_known_partition_proc_format() {
 
     # BACKUP_DEVS is a global variable
     # Return the results to variable $BACKUP_DEVS
-    local chosen_disk="$1"   # chosen_disk is like: "sda", "hda"...
+    local chosen_disk="${1#/dev/*}" # Input is like /dev/sda, so chosen_disk becomes sda
     local chosen_mode="$2"   # chosen_mode is like: data or swap
     local out_part_info_f="$3"   # If assigned, show results in the file
     local dev_list=""
@@ -8304,7 +8304,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
 #
 check_mbr_gpt_partition_table() {
   # With fdisk, sfdisk and sgdisk, we can decide the partition type is MBR or GPT, or corrupt
-  local tdisk=$1  # e.g. sda
+  local tdisk="${1#/dev/*}" # Input is like /dev/sda, so tdisk becomes sda
 
   # Different cases
   # (1) Only MBR
@@ -9541,6 +9541,12 @@ task_restoreparts() {
       echo "Now tuning the file system size on partition /dev/$partition to fit the partition size..." | tee --append $OCS_LOGFILE
       echo "Running: ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition" | tee --append $OCS_LOGFILE
       ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    done
+    echo "Processing the PV/LV if necessary..." | tee --append $OCS_LOGFILE
+    for partition in $target_parts; do
+      echo "Running: ocs-expand-lvm -b /dev/$partition" | tee --append $OCS_LOGFILE
+      ocs-expand-lvm -b /dev/$partition | tee --append $OCS_LOGFILE
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     done
   fi
@@ -14302,7 +14308,7 @@ format_dev_name_with_leading_dev() {
   local devs_="$*"
   local ret_devs_
   # ocs_reserved_dev_name is from drbl-ocs.conf.
-  devs_="$(strip_leading_dev $devs_)" # target_disk is like: sda now
+  devs_="$(strip_leading_dev $devs_)" # devs_ is like: sda now
   # For reserved word, do not replace it: auto, ask_user, all
   # While: autoname, autohostname, autoproductname are for image name, not for device.
   # devs_="$(echo $devs_ | sed -r -e "s|^|/dev/|" -e "s| | /dev/|g")" # devs_ is like: "/dev/sda /dev/sdb" now
@@ -14317,6 +14323,18 @@ format_dev_name_with_leading_dev() {
   done
   echo $ret_devs_
 } # end of format_dev_name_with_leading_dev
+#
+format_dev_name_without_leading_dev() {
+  # No matter the input is like /dev/sda or sda, format it as sda, then make it as /dev/sda
+  # This function works for multiple devices
+  # //NOTE// There are some reserved word for device name, we collect them in drbl-ocs.conf as ocs_reserved_dev_name.
+  # The returned value is like: /dev/sda /dev/sdb auto ask_user
+  local devs_="$*"
+  local ret_devs_
+  # ocs_reserved_dev_name is from drbl-ocs.conf.
+  devs_="$(strip_leading_dev $devs_)" # devs_ is like: sda now
+  echo $devs_
+} # end of format_dev_name_without_leading_dev
 #
 local_lvm_clone_warning() {
   if [ "$part_fs" = "lvm" ]; then
