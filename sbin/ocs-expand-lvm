@@ -1,0 +1,228 @@
+#!/bin/bash
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# License: GPL
+# The program to expand the PV and LV by size ratio.
+
+# Load DRBL setting and functions
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Settings
+verbose="off" 
+dry_run="no"
+# Use 0.999, i.e., 0.001 as the buffer. Otherwise it might too close and might fail when expanding.
+expand_limit_ratio="0.999"
+
+#
+cmd_name="$(basename $0)"
+#
+USAGE() {
+    echo "$cmd_name: To expand the PV and LV by size ratio"
+    echo "Usage:"
+    echo "  $cmd_name [OPTION] TARGET_DEVICE"
+    echo "  TARGET_DEVICE can be with or without /dev/, e.g., /dev/sda or sda."
+    echo 
+    echo "OPTION:"
+    echo "  -b, --batch     Run $cmd_name in batch mode, i.e. without any prompt or wait to press enter."
+    echo "  -d, --dry-run   Perform $cmd_name in a trial run, i.e., don not actually do any changes."
+    echo "  -v, --verbose   Prints verbose information"
+    echo "   $cmd_name will honor experimental variable EXTRA_SFDISK_OPT and use it as the option for sfdisk."
+    echo 
+    echo "Example:"
+    echo "To expand LV in a proportional way on the disk /dev/sda, use:"
+    echo "$cmd_name /dev/sda"
+}         
+#
+expand_LV_in_VG() {
+  local lv_size_f lv_size_tmp_f lv size ilv total_size total_free_size extend_size
+  local vg_="$1"
+  local total_free_size="$2"
+  if [ -z "$vg_" ]; then
+    echo "Error! No VG assigned in function expand_LV_in_VG."
+    return 1
+  fi
+  if [ -z "$total_free_size" ]; then
+    echo "Error! No total_free_size assigned in function expand_LV_in_VG."
+    return 1
+  fi
+  echo $msg_delimiter_star_line
+  lv_size_f="$(mktemp /tmp/lv_size_f.XXXXXX)" || exit 1
+  lv_size_tmp_f="$(mktemp /tmp/lv_size_ratio.XXXXXX)" || exit 1
+  # If there are more than 1 PV?
+  all_LV="$(LC_ALL=C vgs --noheadings -o lv_name ${vg_} | xargs echo)"
+  total_size="0"
+  for ilv in $all_LV; do
+    fs="$(ocs-get-dev-info /dev//${vg_}/$ilv fs)"
+    # Skip expanding swap LV.
+    if [ "$fs" != "swap" ]; then
+      size="$(LC_ALL=C lvs --units m --noheadings --nosuffix -o size /dev/${vg_}/$ilv)"
+      echo "/dev/${vg_}/$ilv $size" >> $lv_size_f
+      total_size="$(LC_ALL=C printf "%.0f" "$(echo "($total_size + $size)" | bc -l)")"
+    fi
+  done
+  if [ "$total_size" -eq 0 ]; then
+    echo "No need to expand since no LV was found."
+    return 2
+  fi
+  if [ "$verbose" = "on" ]; then
+    echo "total_size $total_size MiB"
+  fi
+  
+  rm -f $lv_size_tmp_f
+  while read lv size; do
+    ratio="$(LC_ALL=C echo "scale=9; $size / $total_size" | bc -l)"
+    # Use expand_limit_ratio to keep some buffer. Otherwise it might too close and might fail.
+    extend_size="$(LC_ALL=C printf "%.0f" "$(echo "scale=9; $total_free_size * $ratio *$expand_limit_ratio" | bc -l)")"
+    echo "$lv $size $ratio $extend_size" >> $lv_size_tmp_f
+  done < $lv_size_f
+  if [ "$verbose" = "on" ]; then
+    echo $msg_delimiter_star_line
+    echo "File: $lv_size_f"
+    cat $lv_size_f
+    echo $msg_delimiter_star_line
+    echo "File: $lv_size_tmp_f"
+    cat $lv_size_tmp_f
+    echo $msg_delimiter_star_line
+  fi
+  while read lv size ratio ext_size; do
+    if [ "$ext_size" -eq 0 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "No space to extend LV \"$lv\". Skip it."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      continue
+    fi
+    cmd="lvresize -L +${ext_size}m $lv"
+    echo "Running: $cmd"
+    $dry_run_prefix eval $cmd
+    echo $msg_delimiter_star_line
+    $dry_run_prefix ocs-resize-part --batch $lv
+  done < $lv_size_tmp_f
+  
+  [ -e "$lv_size_f" ] && rm -f $lv_size_f
+  [ -e "$lv_size_tmp_f" ] && rm -f $lv_size_tmp_f
+} # end of expand_LV_in_VG
+          
+# Parse command-line options
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -b|--batch)   batch_mode="yes"; shift;;
+    -d|--dry-run) dry_run="yes"; shift;;
+    -v|--verbose) verbose="on"; shift;;
+    -*)     echo "${0}: ${1}: invalid option" >&2
+            USAGE >& 2
+            exit 2 ;;
+    *)      break ;;
+  esac
+done
+
+# No matter the input is like /dev/sda or sda, format it as /dev/sda
+input_dev="$*"
+dest_dev="$(format_dev_name_without_leading_dev $*)"
+
+#
+ask_and_load_lang_set $specified_lang
+
+if [ -z "$dest_dev" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No destination device was assigned!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  USAGE
+  exit 1
+fi
+
+for idev in $dest_dev; do
+  if [ ! -b "/dev/$idev" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "The destination device \"/dev/$idev\" does not exist!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+done
+
+#
+if [ "$batch_mode" != "yes" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "This program will expand LV in $dest_dev"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n "$msg_are_u_sure_u_want_to_continue ? (y/N) "
+  read continue_confirm_ans
+  case "$continue_confirm_ans" in
+       y|Y|[yY][eE][sS])
+          echo "$msg_ok_let_do_it!"
+          ;;
+       *)
+          echo "$msg_program_stop!"
+          exit 1
+  esac
+fi
+
+if [ "$dry_run" = "yes" ]; then
+  dry_run_prefix="echo"
+fi
+
+part_rec_f="$(mktemp /tmp/part_rec_f.XXXXXX)"
+cand_pv_dev=""
+for idev in $dest_dev; do
+  if is_whole_disk $idev; then
+    # Check if mbr and gpt partition table coexist
+    check_mbr_gpt_partition_table $idev
+    if [ -z "$(echo $cand_pv_dev | grep -Ew $idev)" ]; then
+      cand_pv_dev="$cand_pv_dev /dev/$idev" # Include the whole disk, it can be a PV.
+    fi
+    echo "Searching for data/extended partition(s)..." | tee --append $OCS_LOGFILE
+    get_known_partition_proc_format $idev all $part_rec_f
+    collected_dev="$(awk -F":" '/(^data_dev:|^extended_dev:)/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
+    if [ -n "$collected_dev" ]; then
+      for isd in $collected_dev; do
+        cand_pv_dev="$cand_pv_dev /dev/$isd"
+      done
+    fi
+  elif is_partition $idev; then
+    cand_pv_dev="$cand_pv_dev /dev/$idev"
+  fi
+done
+
+echo "Found the disk(s) and partition(s) list for input device $input_dev: $cand_pv_dev"
+echo $msg_delimiter_star_line
+all_vgs="$(LC_ALL=C pvs --noheadings -o vg_name $cand_pv_dev 2>/dev/null | xargs echo)"
+if [ -z "$all_vgs" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "No any VG on $cand_pv_dev was found."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Skip processing $cand_pv_dev."
+  exit 3
+fi
+echo "Found VG(s): $all_vgs"
+# Expand the PV after enlarging the partition.
+ocs-lvm2-start
+for ivg in $all_vgs; do
+  # Get the PV from VG
+  pv_resize_flag=""
+  ipv="$(LC_LL=C vgs --noheadings -o pv_name $ivg | xargs echo)"
+  devsize_="$(LC_ALL=C pvs --units m --nosuffix --noheadings -o dev_size $ipv 2>/dev/null)"
+  pvsize_="$(LC_ALL=C pvs --units m --nosuffix --noheadings -o pv_size $ipv 2>/dev/null)"
+  if [ "$(LC_ALL=C echo "$pvsize_ < $devsize_" | bc -l)" = "1" ]; then
+    echo "PV size ($pvsize_ MiB) is smaller than device size ($devsize_ MiB)"
+    expand_cmd="pvresize $ipv"
+    echo "Running: $expand_cmd"
+    $dry_run_prefix eval $expand_cmd
+  fi
+  vg_free_size="$(LC_ALL=C vgs --units m --nosuffix --noheadings -o pv_free $ivg)"
+  echo "VG $ivg is in $ipv. Expand $ipv with free space: $vg_free_size MiB"
+  # If vg_free_size is 0, skip it. Otherwise it can be like 1500.00 MiB, so we use bc to judge it.
+  if [ "$(LC_ALL=C echo "$vg_free_size == 0" | bc -l)" = "1" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "No space to extend the LV(s) in VG \"$ivg\". Skip it."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    continue
+  fi
+  expand_LV_in_VG $ivg $vg_free_size
+  echo $msg_delimiter_star_line
+done
+
+[ -e "$part_rec_f" ] && rm -f $part_rec_f
