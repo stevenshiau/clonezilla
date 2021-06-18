@@ -1,0 +1,83 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to clean the file system/LVM info in every partition on the assigned disk.
+# This program is used before writing partition table, to clean every
+# file system and LV info in every partition. Otherwise, when partition
+# table is created, the residual info, like LVM might be detected by
+# kernel and instantly enabled. This will make some device is busy.
+# Ref: https://sourceforge.net/p/clonezilla/bugs/254/
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Functions
+USAGE() {
+    echo "$ocs - To clean the file system/LVM info in every partition on the assigned disk."
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] DISK"
+    echo "DISK is the disk device name, e.g. /dev/sda, /dev/sdb..."
+    echo "Ex:"
+    echo "To clean the file system/LVM info in every partition on disk /dev/sdg, including /dev/sdg itself, run"
+    echo "   $ocs /dev/sdg"
+    echo
+} # end of USAGE
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+dev_clean="$1" # like /dev/sdg
+if [ -z "$dev_clean" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No destination disk is assigned."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  my_ocs_exit 1
+fi
+
+dev_clean_name="${dev_clean#/dev/*}"  # like sdg
+
+BACKUP_DEVS=""
+# Return the available partitions on disk in variable $BACKUP_DEVS
+get_known_partition_proc_format $dev_clean_name all
+
+# Check if PV of LVM is listed in the BACKUP_DEVS. If so, stop LVM first.
+pv_dev="$(LC_ALL=C pvs --noheadings | awk -F" " '{print $1}')" # results e.g. /dev/sdg1 /dev/sdg2
+for ip in $pv_dev; do
+  if [ -n "$(echo $BACKUP_DEVS | grep -Ew "${ip#/dev/*}")" ]; then
+     ocs-lvm2-stop
+     break
+  fi
+done
+
+for ipart in $BACKUP_DEVS; do
+  clean_filesystem_header_in_dev /dev/$ipart
+done
+
+if [ -b "/dev/$dev_clean_name" ]; then
+  # Clean the raid metadata in the disk first.
+  clean_raid_metadata_in_disk /dev/$dev_clean_name
+  clean_filesystem_header_in_dev /dev/$dev_clean_name
+fi
+
+exit 0
