@@ -3543,7 +3543,7 @@ create_partition() {
   # the residual info, like LVM might be detected by kernel and instantly
   # enabled. This will make some device is busy.
   # Ref: https://sourceforge.net/p/clonezilla/bugs/254/
-  ocs-clean-part-fs $tgt_hd_file
+  ocs-clean-disk-part-fs $tgt_hd_file
 
   clean_mbr_gpt_part_table $tgt_hd_file
 
@@ -5239,12 +5239,12 @@ find_multicast_ethernet_port() {
     echo "Will use ethernet port $eth_for_multicast for $multi_broad_cast_prompt seed in this clonezilla server."
 } # end of find_multicast_ethernet_port
 #
-clean_filesystem_header_in_partition() {
-  # function to clean the filesystem header in partition, normally 1MB is enough. For ext3 it's 65536 bytes.
+clean_filesystem_header_in_dev() {
+  # function to clean the filesystem header in partition/disk, normally 1MB is enough. For ext3 it's 65536 bytes.
   # If we do not clean it, for some filesystem, partimage or clone program might not overwrite that part,
   # and blkid, parted or partimage might give wrong info.
   local part_="${1#/dev/*}" # e.g., sdb1
-  if [ -n "$part_" -a -e "/dev/$part_" ]; then
+  if [ -n "$part_" -a -b "/dev/$part_" ]; then
     echo "Clean filesystem header in device /dev/$part_..."
     wipefs -a -f /dev/$part_
     dd if=/dev/zero of="/dev/$part_" bs=1M count=1 &>/dev/null
@@ -5253,7 +5253,7 @@ clean_filesystem_header_in_partition() {
     echo "$part_ NOT found!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
-} # end of clean_filesystem_header_in_partition
+} # end of clean_filesystem_header_in_dev
 # get ntfs restore statistics
 get_ntfs_image_info() {
   local report_info=$1
@@ -5941,20 +5941,20 @@ do_unicast_stdin_restore() {
        -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" -o \
        -f "$target_d/$img_file" ]; then
     # The saved image is from partimage
-    clean_filesystem_header_in_partition $part
+    clean_filesystem_header_in_dev $part
     unicast_restore_by_partimage
   elif [ -f "$target_d/$img_file.ntfs-img" -o \
 	 -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
     # The saved image is from ntfsclone
-    clean_filesystem_header_in_partition $part
+    clean_filesystem_header_in_dev $part
     unicast_restore_by_ntfsclone
   elif is_partclone_image $target_d $img_file; then
     # The saved image is from partclone
-    clean_filesystem_header_in_partition $part
+    clean_filesystem_header_in_dev $part
     unicast_restore_by_partclone
   elif is_dd_image $target_d $img_file; then
     # The saved image is from dd
-    clean_filesystem_header_in_partition $part
+    clean_filesystem_header_in_dev $part
     unicast_restore_by_dd
   fi
   echo "Finished unicast restoring image ${target_d##*/} to $part." | tee --append ${OCS_LOGFILE}
@@ -5986,20 +5986,20 @@ do_multicast_udpcast_restore() {
        -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" -o \
        -f "$target_d/$img_file" ]; then
     # The saved image is from partimage
-    clean_filesystem_header_in_partition $part
+    clean_filesystem_header_in_dev $part
     multicast_restore_by_partimage
   elif [ -f "$target_d/$img_file.ntfs-img" -o \
 	 -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
     # The saved image is from ntfsclone
-    clean_filesystem_header_in_partition $part
+    clean_filesystem_header_in_dev $part
     multicast_restore_by_ntfsclone
   elif is_partclone_image $target_d $img_file; then
     # The saved image is from partclone
-    clean_filesystem_header_in_partition $part
+    clean_filesystem_header_in_dev $part
     multicast_restore_by_partclone
   elif is_dd_image $target_d $img_file; then
     # The saved image is from dd
-    clean_filesystem_header_in_partition $part
+    clean_filesystem_header_in_dev $part
     multicast_restore_by_dd
   fi
   echo "Finished restoring image ${target_d##*/} to $part." | tee --append ${OCS_LOGFILE}
@@ -6453,7 +6453,7 @@ collect_bittorrent_restore_dev() {
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
   fi
-  clean_filesystem_header_in_partition $part
+  clean_filesystem_header_in_dev $part
   all_bt_part_lv="$all_bt_part_lv $part"
   return 0
 } # end of collect_bittorrent_restore_dev
@@ -6525,7 +6525,7 @@ do_d2d_network_restore() {
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   check_if_dev_busy $part
   echo $msg_delimiter_star_line
-  clean_filesystem_header_in_partition $part
+  clean_filesystem_header_in_dev $part
   tgt_pt_info="$target_d/dev-fs.list"
   case "$ocs_sr_type" in
   "nd2d_restoredisk")
@@ -6787,7 +6787,7 @@ restore_logv() {
      if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
        # Found the chosen partitions is in the VG
        if check_LVM_partition /dev/$ipt; then
-         clean_filesystem_header_in_partition /dev/$ipt
+         clean_filesystem_header_in_dev /dev/$ipt
        fi
      fi
    done
@@ -14389,7 +14389,7 @@ local_partition_to_partiton_clone() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
   echo "Cloning the $src_p to $tgt_p..." | tee --append $OCS_LOGFILE
-  clean_filesystem_header_in_partition $tgt_p
+  clean_filesystem_header_in_dev $tgt_p
   # From partimage 0.6.6, batch mode won't stop if checkInodeForDevice is not run. Therefore comment it.
   # checkInodeForDevice $tgt_p
   # Before we start to clone, check if kernel can find /dev/$partition
@@ -14637,7 +14637,7 @@ onthefly_receive_partition_from_server_then_write() {
   # $netpipe_cli_cmd | $net_filter_decomp
   echo "$msg_delimiter_star_line"
   echo "Restoring $tgt_p from $SOURCE_IP:$NC_PORT..."
-  clean_filesystem_header_in_partition $tgt_p
+  clean_filesystem_header_in_dev $tgt_p
   case "$ONTHEFLY_NET_PIPE" in
     netcat) netpipe_cli_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT" ;;
     nuttcp) netpipe_cli_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log" ;;
@@ -14848,7 +14848,7 @@ onthefly_receive_partition_or_lv_in_client() {
     for ipt in $tgt_p; do
       if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $pv_pse_con | grep -E "\<$volg\>")" ]; then
         # Found the chosen partitions is in the VG
-        clean_filesystem_header_in_partition /dev/$ipt
+        clean_filesystem_header_in_dev /dev/$ipt
       fi
     done
    done < $logv_pse_con
@@ -15215,3 +15215,23 @@ ask_list_device_mode() {
       exit 1
   esac
 } # end of ask_list_device_mode
+#
+clean_raid_metadata_in_disk() {
+  # Function to clean the RAID metadata in disk.
+  # Ref: https://www.slac.stanford.edu/grp/cd/soft/unix/RAIDmetadata.html
+  local disk_="${1#/dev/*}" # e.g., sdb
+  local clean_cmd
+  if [ -n "$disk_" -a -e "/dev/$disk_" ]; then
+    echo "Cleaning RAID metadata in device /dev/$disk_..."
+    clean_cmd="dmraid -r -E /dev/$disk_"
+    echo "Running: $clean_cmd"
+    eval $clean_cmd
+    clean_cmd="dd if=/dev/zero of=/dev/$disk_ bs=512 seek=$(( $(blockdev --getsz /dev/$disk_) - 1024 )) count=1024"
+    echo "Running: $clean_cmd"
+    eval $clean_cmd
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "disk_ ($disk_) NOT assigned or found in function clean_raid_metadata_in_disk!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+} # end of clean_raid_metadata_in_disk
