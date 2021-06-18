@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.4.1
+Version:	4.4.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.3.10, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc, smartmontools
+Requires:	bash, perl, drbl >= 4.3.10, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jun 18 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.2-drbl1
+  * ocs-clean-part-fs is renamed as ocs-clean-disk-part-fs.
+  * Add the mechanism to clean the RAID metadata in disk in
+    ocs-clean-disk-part-fs.
+
 * Wed Jun 16 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.1-drbl1
   * Improve the mechanism to expand LVM when -k1 (hence -r) is enabled.
   * ocs-expand-lvm: add a new program to expand LVM.
