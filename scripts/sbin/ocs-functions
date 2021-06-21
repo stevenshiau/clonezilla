@@ -3989,6 +3989,8 @@ task_postprocessing() {
       ;;
   esac
 
+  unmount_dislocker_mount_point_if_necessary
+
   #
   echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}
   sync;sync;sync | tee --append ${OCS_LOGFILE}
@@ -15235,3 +15237,34 @@ clean_raid_metadata_in_disk() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
 } # end of clean_raid_metadata_in_disk
+#
+unmount_dislocker_mount_point_if_necessary(){
+  # Function to unmount dislocker (bitlocker) device
+  local im dir_2_umount cmd_ rc
+  # root@debian:~# mount |grep -Ew /home/partimag
+  # /tmp/ocsroot_bitlocker_root/dislocker-file on /home/partimag type fuseblk (rw,noatime,user_id=0,group_id=0,allow_other,blksize=4096)
+  if [ -z "$(LC_ALL=C mount | grep -Ew "${ocsroot}/*" |\
+	  grep -Ewo "dislocker-file")" ]; then
+    # Not a dislocker device for ocsroot.
+    echo "The mounted bitlocker device was not found. Skip unmounting it."
+    return 3
+  fi
+  dir_2_umount=" $ocsroot $pre_ocsroot_path $pre_bitlocker_path"
+  for im in $dir_2_umount; do
+    if mountpoint $im &>/dev/null; then
+      cmd_="umount $im"
+      echo "Running: $cmd_"
+      eval $cmd_
+      rc=$?
+      if [ "$rc" -ne 0 ]; then
+        # Try to use umount -l to unmount it
+	# pkill -9 mount.ntfs
+	# pkill -9 ntfs-3g
+	# sleep 1
+        cmd_="umount -l $im"
+        echo "Running: $cmd_"
+        eval $cmd_
+      fi
+    fi
+  done
+} # end of unmount_dislocker_mount_point_if_necessary

@@ -129,6 +129,44 @@ do_mount_local_dev() {
              esac
            fi
 	   ;;
+     bitlocker|BitLocker) 
+	   # $pre_bitlocker_path is from drbl-ocs.conf.
+	   mkdir -p $pre_bitlocker_path
+           ask_="true"
+           while [ "$ask_" = "true" ]; do
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+             echo "Mounting BitLocker partition by:"
+	     cmd="dislocker /dev/$target_part -u -- $pre_bitlocker_path"
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	     echo "Running: $cmd"
+	     eval $cmd
+             rc=$?
+	     if [ "$rc" -eq 0 ]; then
+	       cmd="mount -o loop $pre_bitlocker_path/dislocker-file $ocsroot"
+	       echo "Running: $cmd"
+	       eval $cmd
+               rc=$?
+	     fi
+             if [ "$rc" -ne 0 ]; then
+               echo $msg_delimiter_star_line
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+               echo "$msg_unable_to_mnt_ocsroot. $msg_do_u_want_to_do_it_again"
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+               echo -n "[Y/n] "
+               read run_again_ans
+               case "$run_again_ans" in
+                 n|N|[nN][oO]) ask_="false" ;;
+                            *) ask_="true" 
+			       umount $ocsroot 2>/dev/null
+			       umount /dev/$target_part
+			       ;;
+               esac
+             else
+               ask_="false"
+             fi
+           done
+           [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+	   ;;
      hfsplus) 
            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
            echo "$msg_warning_mount_hfsplus_writable"
