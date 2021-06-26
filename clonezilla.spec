@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.4.3
+Version:	4.4.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jun 26 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.4-drbl1
+  * Add short options -bm & -em for the beginner/expert modes in:
+    drbl-ocs, ocs-live-feed-img, ocs-onthefly, ocs-restore-mdisks,
+    and ocs-sr.
+
 * Mon Jun 21 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.3-drbl1
   * Support mounting bitlocker device as image repository.
     Thanks to fiddyschmitt for requesting this.
