@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.4.4
+Version:	4.4.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jul 01 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.5-drbl1
+  * Bug fixed: ntfsclone without compression image was not detected
+    correctly.
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/560dea1695
+
 * Sat Jun 26 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.4-drbl1
   * Add short options -bm & -em for the beginner/expert modes in:
     drbl-ocs, ocs-live-feed-img, ocs-onthefly, ocs-restore-mdisks,
