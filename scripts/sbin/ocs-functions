@@ -9303,6 +9303,10 @@ task_restoreparts() {
         echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
       fi
     done
+  elif [ "$clone_hidden_data" = "yes" -a -n "$(echo "$ocs_sr_type" | grep -Ei "restoreparts")" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Skip restoring hidden data after MBR in the \"restoreparts\" mode. It is only done in the \"restoredisk\" mode." | tee --append $OCS_LOGFILE
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
 
   PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
@@ -10269,7 +10273,7 @@ USAGE_common_restore(){
     echo " -j, --create-part-by-sfdisk Use sfdisk to create partition table instead of using dd to dump the partition table from saved image (This is default)"
     echo " -j0, --create-part-by-dd  Use dd to dump the partition table from saved image instead of sfdisk. ///Note/// This does NOT work when logical drives exist."
     echo " -j1, --dump-mbr-in-the-end  Use dd to dump the MBR (total 512 bytes, i.e. 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes) after disk image was restored. This is an insurance for some hard drive has different numbers of cylinder, head and sector between image was saved and restored."
-    echo " -j2, --clone-hidden-data  Use dd to clone the image of the data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool."
+    echo " -j2, --clone-hidden-data  Use dd to clone the image of the data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool. When this option is used, it only works for restoredisk mode, not the restoreparts one"
     echo " -hn0 PREFIX     Change the hostname of MS Windows based on the combination of hostname prefix and IP address, i.e. PREFIX-IP"
     echo " -hn1 PREFIX     Change the hostname of MS Windows based on the combination of hostname prefix and NIC MAC address, i.e. PREFIX-MAC"
     # This --max-time-to-wait exists both in drbl-ocs and ocs-sr is because
