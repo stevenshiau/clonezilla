@@ -33,7 +33,7 @@ USAGE() {
     echo "Usage:"
     echo "$prog [OPTION] IMAGE DEVICE"
     echo "IMAGE is the image in $ocsroot."
-    echo "DEVICE can be with or without /dev/, e.g., /dev/sda or sda."
+    echo "DEVICE can be with or without /dev/, e.g., /dev/sda or sda. If \"all\" is used, all the non-busy local disks will be used. //NOTE// Please use it very carefully!"
     echo
     echo "OPTION:"
     echo "-a, --last-action ACTION    Assign the last action as ACTION when $prog is finished, ACTION including: poweroff, reboot, cmd, choose, or a command like \"true\"."
@@ -200,6 +200,14 @@ if [ "$tgt_dsks" = "ask_user" ]; then
   get_target_hd_name_from_local_machine "$msg_choose_the_disks_to_restore \n$msg_linux_disk_naming $msg_press_space_to_mark_selection" checklist
   tgt_dsks="$target_hd"
   run_again_flag="true"
+elif [ "$tgt_dsks" = "all" ]; then
+  get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
+  tgt_dsks="$dev_list"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Destination disks: $tgt_dsks"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Countdown to start deploying disks: $tgt_dsks. $msg_press_ctrl_c_stop"
+  countdown 7
 fi
 
 #
