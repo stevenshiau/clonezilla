@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.4.6
+Version:	4.4.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jul 13 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.7-drbl1
+  * ocs-restore-mdisks: "all" can be used as all non-busy local disks
+
 * Mon Jul 05 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.6-drbl1
   * Update USAGE about the option -j2 for ocs-sr. 
     Add warning messages about skipping option "-j2" (clone_hidden_data)
