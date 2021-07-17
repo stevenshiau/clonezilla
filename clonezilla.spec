@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.4.7
+Version:	4.4.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,17 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jul 17 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.8-drbl1
+  * update-efi-nvram-boot-entry: should test if shimx64.efi exists before
+    grubx64.efi.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/0fcee8469a/
+  * ocs-restore-mdisks: countdown 15 secs, not 7 secs,
+    before going on for the device name is assigned as "all"
+  * create-gparted-live: include gvfs to address the issue that yelp does
+    not open GParted help manual.
+    Ref: https://sourceforge.net/p/gparted/mailman/message/37321623/
+
 * Tue Jul 13 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.7-drbl1
   * ocs-restore-mdisks: "all" can be used as all non-busy local disks
 
