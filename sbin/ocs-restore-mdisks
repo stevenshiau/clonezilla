@@ -208,6 +208,20 @@ elif [ "$tgt_dsks" = "all" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "Countdown to start deploying disks: $tgt_dsks. $msg_press_ctrl_c_stop"
   countdown 15
+elif [ -n "$(echo "$tgt_dsks" | grep -Ei "\*")" ]; then
+  # For device with wildcard
+  tgt_dsks_match=""
+  for id in /dev/$tgt_dsks; do
+    if is_whole_disk $id; then
+      tgt_dsks_match="$tgt_dsks_match ${id#/dev/*}"
+    fi
+  done
+  tgt_dsks="$(echo $tgt_dsks_match)"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Destination disks: $tgt_dsks"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Countdown to start deploying disks: $tgt_dsks. $msg_press_ctrl_c_stop"
+  countdown 15
 fi
 
 #
