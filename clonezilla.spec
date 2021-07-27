@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.4.8
+Version:	4.4.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jul 27 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.9-drbl1
+  * ocs-restore-mdisks: support wildcard for device name.
+    E.g.,
+    ocs-restore-mdisks -b -a choose -p "-g auto -e1 auto -e2 -r -j2 -c -scr
+    -p true" focal-mbr-20210531 sd*
+
 * Sat Jul 17 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.8-drbl1
   * update-efi-nvram-boot-entry: should test if shimx64.efi exists before
     grubx64.efi.
