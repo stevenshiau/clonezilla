@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.4.9
+Version:	4.4.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Aug 08 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.10-drbl1
+  * is_partition of ocs-functions: /dev/md is not partition if md?p? exists.
+    E.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/8627eabf99
+
 * Tue Jul 27 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.9-drbl1
   * ocs-restore-mdisks: support wildcard for device name.
     E.g.,
