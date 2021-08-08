@@ -11662,15 +11662,22 @@ is_partition() {
   # we treat it as a partition in Clonezilla.
   # When there is file system on a bare block device (/dev/sda, /dev/md0, not /dev/sda1, /dev/nvme0n1p1...)
   # -> It's a partition.
-  if [ -n "$(echo "$ocs_sr_type" | grep -Ei "save")" ] && \
-     is_block_device_with_fs $dev_; then
-    # File system on a bare block device when saving. Treat it as a partition.
-    rc=0
+  if [ -n "$(echo "$ocs_sr_type" | grep -Ei "save")" ]; then
+    if is_block_device_with_fs $dev_; then
+      # File system on a bare block device when saving. Treat it as a partition.
+      rc=0
+    elif [ -n "$(echo $dev_ | grep -E "md[0-9]+$")" ]; then
+      # Especially for /dev/md, e.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition.
+      if grep -Eq "${dev_}p[1-9]+" /proc/partitions; then
+        rc=1
+      else
+        rc=0
+      fi
+    fi
   else
     echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9|$RE10)$"
     rc=$?
   fi
-
   return $rc
 } # end of is_partition
 #
