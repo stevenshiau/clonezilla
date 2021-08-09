@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.4.10
+Version:	4.4.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Aug 09 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.11-drbl1
+  * prep-ocsroot: pass ocs_sr_type to is_partition so that it can judge for
+    disk/partition of /dev/md*
+    Suppress stderr when running ocs-get-dev-info in is_block_device_with_fs.
+
 * Sun Aug 08 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.10-drbl1
   * is_partition of ocs-functions: /dev/md is not partition if md?p? exists.
     E.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition.
