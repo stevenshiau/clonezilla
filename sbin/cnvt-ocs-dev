@@ -179,8 +179,8 @@ fi
 # In this example, just modify: disk parts pt.sf hda-pt.sf, actually pt.sf only exists in clonezilla 1.x, and hda-pt.sf only exists in clonezilla 2.x. Anyway, if it is found, just modify that.
 # files_2_be_mod_about_disk means the content of file contains disk name, e.g. sda, cciss/c0d0
 # files_2_be_mod_about_parts means the content of file contains partition name, e.g. sda1, cciss/c0d0p1
-files_2_be_mod_about_disk="disk $(to_filename ${src_dev})-pt.parted $(to_filename ${src_dev})-pt.parted.compact"
-files_2_be_mod_about_parts="parts pt.sf $(to_filename ${src_dev})-pt.sf dev-fs.list"
+files_2_be_mod_about_disk="disk $(to_filename ${src_dev})-pt.parted $(to_filename ${src_dev})-pt.parted.compact blkdev.list blkid.list"
+files_2_be_mod_about_parts="parts pt.sf $(to_filename ${src_dev})-pt.sf dev-fs.list blkdev.list blkid.list"
 
 if [ "$force_mode" = "no" ]; then
   if [ -n "$(unalias ls 2>/dev/null; ls "$ocsroot/$image_name/$(to_filename ${tgt_dev})"* 2>/dev/null)" ]; then
@@ -190,12 +190,25 @@ if [ "$force_mode" = "no" ]; then
     wait_for_confirm
   fi
 fi
-for ifile in $files_2_be_mod_about_disk; do
-  [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
-  echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
-  LC_ALL=C perl -pi -e "s|$src_dev|$tgt_dev|g" "$ocsroot/$image_name/$ifile"
-  echo "done!"
-done
+# We process parts before disk since blkdev.list & blkid.list contain both disk and parts, e.g.,
+# ===========
+# md127     `-md127        30G raid0                                                                  
+# md127p1     |-md127p1     4G part  ext4                                                             
+# md127p2     `-md127p2    26G part  btrfs           
+# ===========
+# If we process disk and parts, it will become:
+# ===========
+# sdd     `-sdd        30G raid0                                                                  
+# sddp1     |-sddp1     4G part  ext4                                                             
+# sddp2     `-sddp2    26G part  btrfs                   
+# ===========
+# if we process parts first, then disk, and it will be correct:
+# ===========
+# sdd     `-sdd        30G raid0                                                                  
+# sdd1     |-sdd1       4G part  ext4                                                             
+# sdd2     `-sdd2      26G part  btrfs                   
+# ===========
+# (1) Parts before disk
 for ifile in $files_2_be_mod_about_parts; do
   [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
   echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
@@ -214,6 +227,14 @@ for ifile in $files_2_be_mod_about_parts; do
   esac
   echo "done!"
 done
+# (2) Process disk after parts
+for ifile in $files_2_be_mod_about_disk; do
+  [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
+  echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
+  LC_ALL=C perl -pi -e "s|$src_dev|$tgt_dev|g" "$ocsroot/$image_name/$ifile"
+  echo "done!"
+done
+
 # There are 3 files (lvm_etch.conf  lvm_logv.list  lvm_vg_dev.list) about LVM devices in Clonezilla image, and only lvm_vg_dev.list is necessary to be modified. We separate this from the above is because it's format is like "/dev/hda" instead of "hda".
 if [ -f "$ocsroot/$image_name/lvm_vg_dev.list" ]; then
   echo -n "Change /dev/$src_dev to /dev/$tgt_dev in $ocsroot/$image_name/lvm_vg_dev.list... "
