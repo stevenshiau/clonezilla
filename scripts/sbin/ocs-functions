@@ -1160,7 +1160,7 @@ output_swap_partition_uuid_label() {
     echo "Program blkid is NOT found! Without it, we can not find the UUID of swap partition! In some GNU/Linux, if it's /etc/fstab is based on UUID, swap partition maybe not be on after it's cloned! Since the swap partition is recreated by mkswap!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
-  sp_size="$(ocs-get-dev-info $swap_dev size)"
+  sp_size="$(ocs-get-dev-info $swap_dev size 2>/dev/null)"
   echo "$swap_dev swap $sp_size" >> "$(LC_ALL=C dirname $output_swap_info)"/dev-fs.list
   echo $msg_delimiter_star_line
 } # end of output_swap_partition_uuid_label
@@ -1539,7 +1539,7 @@ save_part_by_dd() {
   case "$s2s_img_prog_for_save" in
   dd)
     dd_img_info_tmp="$(mktemp /tmp/dd_info.XXXXXX)"
-    part_size="$(ocs-get-dev-info $source_dev size)"
+    part_size="$(ocs-get-dev-info $source_dev size 2>/dev/null)"
     echo "Partition size: $part_size" | tee --append ${OCS_LOGFILE}
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     # since dd does not report status with any option, we have to send SIGUSR1 to tell dd to report every some secs...
@@ -1691,8 +1691,8 @@ image_save() {
   echo $msg_delimiter_star_line
   
   # get the filesystem and size
-  part_fs="$(ocs-get-dev-info $source_dev filesystem)"
-  part_size="$(ocs-get-dev-info $source_dev size)"
+  part_fs="$(ocs-get-dev-info $source_dev filesystem 2>/dev/null)"
+  part_size="$(ocs-get-dev-info $source_dev size 2>/dev/null)"
 
   if [ "$rm_win_swap_hib" = "yes" ]; then
     # page and hibernation files should only exist in fat or ntfs partition.
@@ -4304,10 +4304,10 @@ get_disk_or_part_hardware_info() {
     if [ "$flag_skip_lvm" = "yes" ]; then
       [ -n "$(echo "$part_type" | grep -Ei "LVM")" ] && return 8
     fi
-    dsize="$(LC_ALL=C ocs-get-dev-info /dev/$p size)"
+    dsize="$(LC_ALL=C ocs-get-dev-info /dev/$p size 2>/dev/null)"
     [ -n "$dsize" ] && DEV_MODEL="${dsize}"
     # File system
-    part_fst="$(LC_ALL=C ocs-get-dev-info /dev/$p filesystem)"
+    part_fst="$(LC_ALL=C ocs-get-dev-info /dev/$p filesystem 2>/dev/null)"
     [ -n "$part_fst" ] && DEV_MODEL="${DEV_MODEL}_${part_fst}"
     # Volume name
     part_v="$(LC_ALL=C get_part_vol_name /dev/$p $part_fst)"
@@ -4390,7 +4390,7 @@ get_disk_or_part_hardware_info() {
          dsize="Unknown_size_"
       fi
       # File system. It might be disk block device with file system
-      part_fst="$(LC_ALL=C ocs-get-dev-info /dev/$p filesystem)"
+      part_fst="$(LC_ALL=C ocs-get-dev-info /dev/$p filesystem 2>/dev/null)"
       # Append it
       [ -n "$part_fst" ] && dsize="${dsize}${part_fst}_"
       # Serial #
@@ -6497,7 +6497,7 @@ do_d2d_local_restore() {
   check_if_dev_busy $part
   echo $msg_delimiter_star_line
   # Local part to part we can get the file system from source part.
-  part_fs="$(ocs-get-dev-info /dev/$src_d fs)"
+  part_fs="$(ocs-get-dev-info /dev/$src_d fs 2>/dev/null)"
   if [ -z "$part_fs" ]; then
      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
      echo "No file system was found in /dev/$src_d!" | tee --append $OCS_LOGFILE
@@ -6567,7 +6567,7 @@ check_LVM_partition() {
   # Check if the partition is LVM, if so, return 0, else 1
   # Ceasar suggested to use ocs-get-dev-info:
   # if [ -n "$(file -Ls $part | grep -i "LVM" 2>/dev/null)" ]; then
-  if [ -n "$(ocs-get-dev-info $part filesystem | grep -i "LVM" 2>/dev/null)" ]; then
+  if [ -n "$(ocs-get-dev-info $part filesystem 2>/dev/null | grep -i "LVM")" ]; then
     return 0
   else 
     return 1
@@ -8360,7 +8360,7 @@ check_if_windows_boot_reserve_part() {
     return 1
   fi
   rv=1
-  tfs="$(LC_ALL=C ocs-get-dev-info $tpart fs)"
+  tfs="$(LC_ALL=C ocs-get-dev-info $tpart fs 2>/dev/null)"
   if [ "$tfs" = "ntfs" ]; then
     ntfs_mnt="$(mktemp -d /tmp/ntfs_mnt.XXXXXX)"
     # ntfs-3g -o ro $tpart $ntfs_mnt
@@ -8387,7 +8387,7 @@ clear_ntfs_volume_dirty_flag() {
   fi
   for ipartition in $tgt_parts_; do
     is_whole_disk $ipartition && continue
-    p_fs="$(LC_ALL=C ocs-get-dev-info /dev/$ipartition filesystem)"
+    p_fs="$(LC_ALL=C ocs-get-dev-info /dev/$ipartition filesystem 2>/dev/null)"
     if [ "$p_fs" = "ntfs" ]; then
       echo "Now clear the NTFS volume dirty flag: /dev/$ipartition..." | tee --append $OCS_LOGFILE
       echo "Running: ntfsfix -d /dev/$ipartition" | tee --append $OCS_LOGFILE
@@ -10576,7 +10576,7 @@ set_boot_loader() {
   local fs
   [ -z "$output_dev" ] && echo "output_dev must be assigned in set_boot_loader!" && exit 1
   echo -n "Finding the filesystem in $output_dev... "
-  fs="$(ocs-get-dev-info $output_dev filesystem)"
+  fs="$(ocs-get-dev-info $output_dev filesystem 2>/dev/null)"
   case "$fs" in
   fat*|vfat*|FAT*|VFAT*)
      echo "FAT, use syslinux as boot loader."
@@ -11073,9 +11073,9 @@ check_ntfs_boot_partition() {
   for ipartition in $partition_list; do
     ntfs_boot_partition="/dev/$ipartition"
     # If the partition is not ntfs, skip it.
-    fs="$(ocs-get-dev-info $ntfs_boot_partition filesystem)"
+    fs="$(ocs-get-dev-info $ntfs_boot_partition filesystem 2>/dev/null)"
     [ -z "$(echo "$fs" | grep -i "ntfs")" ] && continue
-    flags="$(ocs-get-dev-info $ntfs_boot_partition flags)"
+    flags="$(ocs-get-dev-info $ntfs_boot_partition flags 2>/dev/null)"
     if [ -n "$(echo "$flags" | grep -E "boot")" ]; then
       found_ntfs_boot_partition="$ntfs_boot_partition"
       break;
@@ -11318,7 +11318,7 @@ run_ntfsreloc_part() {
       ntfslock_chsopt=""
     fi
     # Find the start sector of the NTFS partition
-    ntfs_start_sector="$(LC_ALL=C ocs-get-dev-info -u s $ntfs_boot_partition start | sed -e "s/s$//g")"
+    ntfs_start_sector="$(LC_ALL=C ocs-get-dev-info -u s $ntfs_boot_partition start 2>/dev/null | sed -e "s/s$//g")"
     if [ -n "$ntfs_start_sector" ]; then
       echo "The start sector of NTFS partition $ntfs_boot_partition: $ntfs_start_sector"
       ntfslock_chsopt="$ntfslock_chsopt -s $ntfs_start_sector"
@@ -11641,6 +11641,7 @@ is_partition() {
   # 2020/12/18 Allow /dev/md126 can be a partition, too.
   # Mylex ExtremeRAID-2000 SCSI RAID controller: /dev/rd/c0d0p1, /dev/rd/c0d1p1...
   # Compaq Smart Array controller: /dev/ida/c0d0p1, /dev/ida/c0d1p2...
+  # rc=0: is a partition; rc=1: is _not_ a partition
   local dev_=${1#/dev/*}
   local RE1='x?[hsv]d[a-z]+[0-9]+'
   local RE2='i2o/hd[a-z]+[0-9]+'
@@ -11653,10 +11654,10 @@ is_partition() {
   local RE9='nbd[0-9]+p+[0-9]+'
   local RE10='loop[0-9]+p+[0-9]+'
   local rc=1
-  local fs_
+  local fs_ src_dk
 
   if [ -z "$dev_" ]; then
-    return 1
+    return 2
   fi
   # The rule is: when saving, if there is file system on the bare block device,
   # we treat it as a partition in Clonezilla.
@@ -11667,12 +11668,34 @@ is_partition() {
       # File system on a bare block device when saving. Treat it as a partition.
       rc=0
     elif [ -n "$(echo $dev_ | grep -E "md[0-9]+$")" ]; then
-      # Especially for /dev/md, e.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition.
+      # Especially for /dev/md, e.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition (rc=1).
       if grep -Eq "${dev_}p[1-9]+" /proc/partitions; then
         rc=1
       else
         rc=0
       fi
+    else
+      echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9|$RE10)$"
+      rc=$?
+    fi
+  elif [ -n "$(echo "$ocs_sr_type" | grep -Ei "restore")" ]; then
+    if [ -n "$(echo $dev_ | grep -E "md[0-9]+$")" ]; then
+      src_dk="$(cat $ocsroot/$target_dir/disk 2>/dev/null)"
+      # TODO: what if there are 2 or more source disks?
+      if [ "$src_dk" != "${dev_}" ]; then
+        # Since the testing dev_ is not the same as source disk, we can not check blkdev.list. Just show it as a disk.
+        rc=1
+      else
+        # Especially for /dev/md, e.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition (rc=1).
+        if grep -Eq "^${dev_}p[1-9]+" $ocsroot/$target_dir/blkdev.list; then
+          rc=1
+        else
+          rc=0
+        fi
+      fi
+    else
+      echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9|$RE10)$"
+      rc=$?
     fi
   else
     echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9|$RE10)$"
@@ -14366,7 +14389,7 @@ force_to_dd_clone_local_part() {
    dd)
     echo "Filesystem in $src_p is not well supported. Use dd to clone..." | tee --append $OCS_LOGFILE
     dd_img_info_tmp="$(mktemp /tmp/dd_info.XXXXXX)"
-    pt_size="$(LC_ALL=C ocs-get-dev-info $tgt_p size)"
+    pt_size="$(LC_ALL=C ocs-get-dev-info $tgt_p size 2>/dev/null)"
     trigger_dd_status_report $tgt_p $pt_size &
     dd_report_sig_pid=$!
     start_time="$(date +%s%N)"
@@ -14971,7 +14994,7 @@ get_block_dev_from_PTUUID(){
   get_not_busy_disks_or_parts harddisk "" "" 2>&1 >/dev/null # we will get dev_list
   for id in $dev_list; do
     blk_dev=""
-    the_ptuuid="$(ocs-get-dev-info /dev/$id ptuuid | tr [:upper:] [:lower:])"
+    the_ptuuid="$(ocs-get-dev-info /dev/$id ptuuid 2>/dev/null | tr [:upper:] [:lower:])"
     if [ "$the_ptuuid" = "$(echo $r_ptuuid | sed -r -e "s/^PTUUID=//i" | tr [:upper:] [:lower:])" ]; then
       blk_dev="$id"
       break
@@ -14989,7 +15012,7 @@ get_block_dev_from_PARTUUID(){
   get_not_busy_disks_or_parts partition "" "" 2>&1 >/dev/null # we will get dev_list
   for id in $dev_list; do
     blk_dev=""
-    the_partuuid="$(ocs-get-dev-info /dev/$id partuuid | tr [:upper:] [:lower:])"
+    the_partuuid="$(ocs-get-dev-info /dev/$id partuuid 2>/dev/null | tr [:upper:] [:lower:])"
     if [ "$the_partuuid" = "$(echo $r_partuuid | sed -r -e "s/^PARTUUID=//i" | tr [:upper:] [:lower:])" ]; then
       blk_dev="$id"
       break
@@ -15024,7 +15047,7 @@ is_linux_raid_member() {
   local dev_=${1#/dev/*}
   local type_ rc
   rc=1
-  type_="$(LC_ALL=C ocs-get-dev-info /dev/${dev_} type)"
+  type_="$(LC_ALL=C ocs-get-dev-info /dev/${dev_} type 2>/dev/null)"
   if [ "$type_" = "linux_raid_member" ]; then
     rc=0
   fi
