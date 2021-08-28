@@ -4193,7 +4193,7 @@ get_input_image_name() {
         tgt_name_default="$img_name_assign"
       fi
       $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-         --inputbox "$msg_input_name_to_save_the_img $tgt_name" 0 0 "$tgt_name_default" 2> $TMP
+         --inputbox "$msg_input_name_to_save_the_img.\n$msg_reserved_img_names" 0 0 "$tgt_name_default" 2> $TMP
       tgt_img_name="$(cat $TMP)"
       if [ -n "$(echo $tgt_img_name | grep -Eo "[^.[:alnum:]_-]")" ]; then
         # we just accept those image name is alpha, digit, _, - and dot (.)
@@ -7997,19 +7997,19 @@ get_target_dir_name_when_saving() {
   while [ "$ASK_IMG_NAME" -ne 0 ]; do
     get_input_image_name $ANS_TMP $img_name_prompt
     target_dir="$(cat $ANS_TMP)"
-    if [ "$target_dir" = "ask_user" ]; then
-       $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-      --msgbox "$msg_ask_user_is_reserved_for_save_mode\n$msg_please_do_it_again!!!" 0 0 
-    elif [ "$target_dir" = "autoname" ]; then
-       $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-      --msgbox "$msg_autoname_is_reserved_for_save_mode\n$msg_please_do_it_again!!!" 0 0 
-    elif [ "$target_dir" = "autohostname" ]; then
-       $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-      --msgbox "$msg_autohostname_is_reserved_for_save_mode\n$msg_please_do_it_again!!!" 0 0 
-    elif [ "$target_dir" = "autoproductname" ]; then
-       $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-      --msgbox "$msg_autoproductname_is_a_reserved\n$msg_please_do_it_again!!!" 0 0 
-    else
+    # if [ "$target_dir" = "ask_user" ]; then
+    #   $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+    #  --msgbox "$msg_ask_user_is_reserved_for_save_mode\n$msg_please_do_it_again!!!" 0 0 
+    # elif [ "$target_dir" = "autoname" ]; then
+    #    $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+    #   --msgbox "$msg_autoname_is_reserved_for_save_mode\n$msg_please_do_it_again!!!" 0 0 
+    # elif [ "$target_dir" = "autohostname" ]; then
+    #    $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+    #   --msgbox "$msg_autohostname_is_reserved_for_save_mode\n$msg_please_do_it_again!!!" 0 0 
+    # elif [ "$target_dir" = "autoproductname" ]; then
+    #    $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
+    #   --msgbox "$msg_autoproductname_is_a_reserved\n$msg_please_do_it_again!!!" 0 0 
+    if [ -n "$target_dir" ]; then
        ASK_IMG_NAME=0
     fi
   done
@@ -8558,7 +8558,7 @@ task_saveparts() {
   # ask user about target_dir and target_parts #
   #######################################################
   if [ "$target_dir" = "ask_user" ]; then
-    get_target_dir_name_when_saving
+    get_target_dir_name_when_saving  # get $target_dir
   fi
    
   # set absolute path, i.e. put leading $ocsroot.
@@ -15158,7 +15158,13 @@ parse_target_dir_with_reserved_name_saving_mode() {
   target_dir=""
   if [ "$ocs_sr_img_name" = "ask_user" ]; then
     get_target_dir_name_when_saving  # get $target_dir
-  elif [ "$ocs_sr_img_name" = "autoname" ]; then 
+    if [ -n "$target_dir" ]; then
+      ocs_sr_img_name="$target_dir"
+      target_dir=""  # Reset it
+    fi
+  fi
+  # Parse the ocs_sr_img_name for reserved image names.
+  if [ "$ocs_sr_img_name" = "autoname" ]; then 
     # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/799287/topic/4815557
     # We need something unique, so MAC address is a good choice
     for i in `LC_ALL=C get-nic-devs`; do
