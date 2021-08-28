@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.4.12
+Version:	4.4.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.3.12, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
+Requires:	bash, perl, drbl >= 4.4.2, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Aug 28 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.13-drbl1
+  * Allow reserved image names to be used in TUI.
+    The description about reserved image names is shown in TUI.
+
 * Tue Aug 17 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.12-drbl1
   * Improved is_partition from ocs-functions  to judge /dev/md*
     is disk or partition when restoring an image.
