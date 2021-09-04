@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.0
+Version:	4.5.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Sep 04 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.1-drbl1
+  * Bug fixed: not searching live-media-path from boot parameters.
+    Thanks to JDFandango for reporting this issue.
+    Ref: https://github.com/stevenshiau/clonezilla/issues/59
+
 * Sun Aug 29 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.0-drbl1
   * Change version number since some major changes were done.
 
