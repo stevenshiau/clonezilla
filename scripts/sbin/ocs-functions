@@ -4448,9 +4448,12 @@ get_not_busy_disks_or_parts() {
     # sda1 sda11 sda12 sda2 sda3...
     # XXX part_list="$(LC_ALL=C awk '/[hsv]d[a-z][0-9]+($| )/ { print $4; }' $partition_table | sort)"
     # To overcome the sorting problem, we use "-V" option. //NOTE// This won't work for older sort... e.g. the one in RHEL4?
+    echo -n "Finding all disks and partitions.."
     part_list="$(get_part_list $partition_table)"
+    echo -n "."
     dsk_list="$(get_disk_list $partition_table)"
-    echo "Excluding busy partition or disk..."
+    echo
+    echo -n "Excluding busy $dev_type..."
     # Convert by uuid to traditional list in /proc/mounts so it's easier for us to exclude.
     # The format of /proc/mounts with uuid is like:
     # rootfs / rootfs rw 0 0
@@ -4474,8 +4477,9 @@ get_not_busy_disks_or_parts() {
     # (1) Remove busy partitions (hence those busy disks, like sda1 busy, so sda is busy, too)
     # (2) Remove busy disks (disk as block device contains file system, e.g. /dev/sdc is formated with ext4)
     for ipart in $part_list $dsk_list; do
+      echo -n "."
       if grep -qEw "^/dev/$ipart" $mounted_table; then
-        # hda1 -> hda
+        # sda1 -> sda
         hdtmp="$(get_diskname $ipart)"
 	# strip disk
         LC_ALL=C perl -i -ne "print unless m!^.*${hdtmp}[[:space:]]+!" $partition_table
@@ -4483,15 +4487,18 @@ get_not_busy_disks_or_parts() {
         LC_ALL=C perl -i -ne "print unless m!^.*${ipart}[[:space:]]+!" $partition_table
       fi
     done
+    echo ""
 
     # Strip the linux_raid_member
-    echo "Excluding linux raid member partition..."
+    echo -n "Excluding linux raid member partition..."
     for ipart in $part_list; do
+      echo -n "."
       if is_linux_raid_member $ipart; then
 	# strip parititon
         LC_ALL=C perl -i -ne "print unless m!^.*${ipart}[[:space:]]+!" $partition_table
       fi
     done
+    echo ""
 
     # Strip those excluding devs
     for ipart in $dev_to_be_exclude; do
@@ -4501,7 +4508,7 @@ get_not_busy_disks_or_parts() {
     case "$dev_type" in
       harddisk)  dev_list="$(get_disk_list $partition_table)" ;;
       partition) dev_list="$(get_part_list $partition_table)" ;;
-      device) dev_list="$(get_disk_list $partition_table) $(get_part_list $partition_table)" ;;
+      device)    dev_list="$(get_disk_list $partition_table) $(get_part_list $partition_table)" ;;
     esac
     dev_list="$(echo $dev_list)"   # convert to 1 line
     [ -f "$mounted_table" ] && rm -f $mounted_table
@@ -11865,7 +11872,6 @@ get_part_list() {
       part_list="$part_list $dev"
     fi
   done
-
   echo $part_list | tr ' ' '\n' | sort -V | tr '\n' ' '
 } # end of get_part_list
 #
@@ -11881,7 +11887,6 @@ get_disk_list() {
       disk_list="$disk_list $dev"
     fi
   done
-
   echo $disk_list | tr ' ' '\n' | sort -V | tr '\n' ' '
 } # end of get_disk_list
 #
