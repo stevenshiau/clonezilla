@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.2
+Version:	4.5.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Sep 15 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.3-drbl1
+  * Add a cache mechanism to speed up the device scan.
+    This makes get_not_busy_disks_or_parts run faster.
+
 * Fri Sep 10 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.2-drbl1
   * Improve the progress messages when searching disk or partition.
 
