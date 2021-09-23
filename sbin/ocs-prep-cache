@@ -1,0 +1,149 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to prepare some cache files
+# (1) disk and partition list.
+# (2) File system, size, type for disk(s) and partition(s).
+# Output e.g.:
+# root@debian:/tmp/ocs_cache# cat dev_fs_size_type.cache
+# # dev filesystem size type
+# /dev/loop0, squashfs, 253M, squashfs
+# /dev/nvme0n1, , 500G,
+# /dev/nvme0n2, , 20G,
+# /dev/sda, , 8G,
+# /dev/sdb, , 10G,
+# /dev/sdc, , 20G,
+# /dev/nvme0n1p1, ext4, 500G, ext4
+# /dev/sda1, vfat, 512M, vfat
+# /dev/sda2, , 1K, extended
+# /dev/sda5, ext4, 7.5G, ext4
+# /dev/sdb1, xfs, 500M, xfs
+# /dev/sdb2, LVM2_member, 7.5G, LVM2_member
+# /dev/sdc1, ntfs, 100M, ntfs
+# /dev/sdc2, ntfs, 7.9G, ntfs
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Functions
+USAGE() {
+    echo "$ocs - To prepare the disk, partition list and file system related cache files"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION]"
+    echo
+    echo "Options:"
+    echo "-m, --mode MODE Specify MODE (dev-list, fs-list) cache files to be generated."
+    echo "If MODE option is not assigned, both dev-list and fs-list cache files will be generated."
+    echo
+    echo "Ex:"
+    echo "To generate the disk and partition list cache files only, run"
+    echo "   $ocs -m dev-list"
+    echo
+} # end of USAGE
+#
+gen_dev_list_file() {
+  if [ -e "$dev_list_cache_dir/pttable_for_disk.txt" ]; then
+    if [ -n "$(diff $dev_list_cache_dir/pttable_for_disk.txt /proc/partitions)" ]; then
+      echo "Finding all disks..."
+      dsk_list="$(get_disk_list /proc/partitions)"
+    else
+      echo "The file /proc/partitions remains the same. Skip generating disk(s) list file."
+      # Still we need dsk_list for later use in gen_dev_fs_cache_file_job
+      dsk_list="$(cat $dev_list_cache_dir/disk_list.cache)"
+    fi
+  else
+    echo "Finding all disks..."
+    dsk_list="$(get_disk_list /proc/partitions)"
+  fi
+  if [ -e "$dev_list_cache_dir/pttable_for_part.txt" ]; then
+    if [ -n "$(diff $dev_list_cache_dir/pttable_for_part.txt /proc/partitions)" ]; then
+       echo "Finding all partitions..."
+       prt_list="$(get_part_list /proc/partitions)"
+    else
+      echo "The file /proc/partitions remains the same. Skip generating partitions(s) list file."
+      # Still we need dsk_list for later use in gen_dev_fs_cache_file_job
+      prt_list="$(cat $dev_list_cache_dir/part_list.cache)"
+    fi
+  else
+    echo "Finding all partitions..."
+    prt_list="$(get_part_list /proc/partitions)"
+  fi
+} # end of gen_dev_list_file
+#
+gen_dev_fs_cache_file_job() {
+  echo "Generating dev filesystem/size/type info cache files..."
+  echo "# dev filesystem size type" >$dev_list_cache_dir/dev_fs_size_type.cache
+  for idsk in $dsk_list; do
+     fs="$(ocs-get-dev-info /dev/$idsk fs)"
+     size="$(ocs-get-dev-info /dev/$idsk size)"
+     type="$(ocs-get-dev-info /dev/$idsk type)"
+     echo /dev/$idsk, $fs, $size, $type >> $dev_list_cache_dir/dev_fs_size_type.cache
+  done
+  for ipart in $prt_list; do
+     fs="$(ocs-get-dev-info /dev/$ipart fs)"
+     size="$(ocs-get-dev-info /dev/$ipart size)"
+     type="$(ocs-get-dev-info /dev/$ipart type)"
+     echo /dev/$ipart, $fs, $size, $type >> $dev_list_cache_dir/dev_fs_size_type.cache
+  done
+  (LC_ALL=C cat /proc/partitions; blkid)> $dev_list_cache_dir/pttable_blkid_for_dev.txt
+} # end of gen_dev_fs_cache_file_job
+#
+gen_dev_fs_cache_file() {
+if [ -e $dev_list_cache_dir/pttable_blkid_for_dev.txt ]; then
+  if [ -n "$(diff <(LC_ALL=C cat /proc/partitions; blkid) \
+	  <(cat $dev_list_cache_dir/pttable_blkid_for_dev.txt))" ]; then
+    # The kept partition table file+blkid output is not the same with current one
+    gen_dev_fs_cache_file_job
+  else
+    echo "Both /proc/partitions and blkid output do not change. Skip generating file system cache file related to the dev(s)."
+  fi
+else
+    gen_dev_fs_cache_file_job
+fi
+} # end of gen_dev_fs_cache_file
+#
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -m|--mode)
+        shift; 
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+          mode="$1"
+          shift;
+        fi
+        [ -z "$mode" ] && USAGE && exit 1
+        ;;
+   -*)  echo "${0}: ${1}: invalid option" >&2
+        USAGE >& 2
+        exit 2 ;;
+   *)   break ;;
+ esac
+done
+
+mkdir -p $dev_list_cache_dir
+partprobe 2>/dev/null
+
+case "$mode" in
+  dev-list) gen_dev_list_file ;;
+  fs-list)  gen_dev_list_file # dsk_list & prt_list are required
+	    gen_dev_fs_cache_file ;;
+  *)        gen_dev_list_file
+	    gen_dev_fs_cache_file ;;
+esac
+
+exit 0
