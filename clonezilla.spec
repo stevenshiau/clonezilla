@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.4
+Version:	4.5.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.5.0, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
+Requires:	bash, perl, drbl >= 4.5.1, psmisc, udpcast, partclone >= 0.3.17, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Sep 25 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.5-drbl1
+  * S03prep-gparted-live: Skip starting gparted if no-gparted-start
+    is assigned in the boot parameters.
+    Ref: http://gparted-forum.surf4.info/viewtopic.php?pid=35995
+
 * Thu Sep 23 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.4-drbl1
   * Improve the cache mechanism to speed up the device scan and file
     system/size/type.
