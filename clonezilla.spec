@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.6
+Version:	4.5.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Oct 03 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.7-drbl1
+  * Replace "which" with "command -v" in the script because "which"
+    command is deprecated.
+
 * Sat Oct 02 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.6-drbl1
   * Bug fixed: missing disk-related processing in get_not_busy_disks_or_parts.
     Those linux_raid_member and assigned excluding devices about disks were
