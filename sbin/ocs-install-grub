@@ -181,11 +181,11 @@ do_run_grub2_from_running_os() {
   rc_grub_check=$?
   if [ "$rc_grub_check" -eq 0 ]; then
     # Before running grub-install, we need to patch it if grub2_boot_dir="/boot/grub2/", since in Debian/Ubuntu, grub2 boot dir is /boot/grub, while for Fedora 16 it's /boot/grub2. Will report a wishlist on grub website. We only patch the grub-install on Clonezilla live since if not, it's difficult.
-    if [ -e "$(which $grub_install_exec)" -a \
+    if [ -e "$(command -v $grub_install_exec)" -a \
          -n "$(grep boot=live /proc/cmdline)" -a \
          -n "$(echo $grub2_boot_dir | grep "/boot/grub2")" ]; then
-      cp -a "$(which $grub_install_exec)" "$(which $grub_install_exec)".orig
-      perl -pi -e 's|(^grubdir=.*)/grub(\".*)|$1/grub2$2|g' "$(which $grub_install_exec)"
+      cp -a "$(command -v $grub_install_exec)" "$(command -v $grub_install_exec)".orig
+      perl -pi -e 's|(^grubdir=.*)/grub(\".*)|$1/grub2$2|g' "$(command -v $grub_install_exec)"
       grub2_patch_flag="true"
     fi
     if [ -n "$rootp_installed_grub" ]; then
@@ -200,7 +200,7 @@ do_run_grub2_from_running_os() {
     rc="$?"
     # Revert
     if [ "$grub2_patch_flag" = "true" ]; then
-      mv -f "$(which $grub_install_exec)".orig "$(which $grub_install_exec)"
+      mv -f "$(command -v $grub_install_exec)".orig "$(command -v $grub_install_exec)"
     fi
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -554,7 +554,7 @@ if [ ! -d "$hd_img/boot/" ]; then
      elif [ -n "$(find $hd_img/boot/grub2/ -iname "*.mod" -print 2>/dev/null)" ]; then
        grub_ver_in_restored_os="2"
        grub2_boot_dir="/boot/grub2/"
-     elif [ -d "$hd_img/boot/grub2" -a -n "$(chroot $hd_img/ which grub2-install 2>/dev/null)" ]; then
+     elif [ -d "$hd_img/boot/grub2" -a -n "$(chroot $hd_img/ command -v grub2-install 2>/dev/null)" ]; then
 	# For OpenSUSE 42.1 , use grub2 vy " grub2-install" without *.mod 
        grub_ver_in_restored_os="2"
        grub2_boot_dir="/boot/grub2/"
@@ -629,7 +629,7 @@ else
    elif [ -n "$(find $hd_img/boot/grub2/ -iname "*.mod" -print 2>/dev/null)" ]; then
      grub_ver_in_restored_os="2"
      grub2_boot_dir="/boot/grub2/"
-     elif [ -d "$hd_img/boot/grub2" -a -n "$(chroot $hd_img/ which grub2-install 2>/dev/null)" ]; then
+     elif [ -d "$hd_img/boot/grub2" -a -n "$(chroot $hd_img/ command -v grub2-install 2>/dev/null)" ]; then
 	# For OpenSUSE 42.1 , use grub2 vy " grub2-install" without *.mod 
        grub_ver_in_restored_os="2"
        grub2_boot_dir="/boot/grub2/"
