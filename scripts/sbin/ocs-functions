@@ -2069,7 +2069,7 @@ conv_uuid_mount_to_tradpart() {
     # /dev/disk/by-uuid/7fc9980a-88c6-4132-aa26-2aa05f288956: symbolic link to `../../sda2'
     src_part="$(file -hs $i | sed -e "s/symbolic link to//g" -e "s/'//g" | awk -F":" '{print $2}')"
     src_part="$(basename $src_part)"
-    LC_ALL=C perl -pi -e "s|^$i|/dev/$src_part|g" $mounted_table
+    LC_ALL=C perl -pi -e "s|^$i|$src_part|g" $mounted_table
   done
 } # end of conv_uuid_mount_to_tradpart
 #
@@ -4488,13 +4488,19 @@ get_not_busy_disks_or_parts() {
     esac
   fi
 
-  # Strip those busy/mounted partitions and disk.
   echo -n "Finding all disks and partitions.."
-  dsk_list="$(get_disk_list $partition_table)"
-  echo -n "."
-  prt_list="$(get_part_list $partition_table)"
+  case "$dev_type" in
+    harddisk|device)  
+      dsk_list="$(get_disk_list $partition_table)" ;;
+    partition|device)
+      prt_list="$(get_part_list $partition_table)" ;;
+  esac
   echo
 
+  # For the rest, we do not separate dsk_list or prt_list, process both of them.
+  # If dev_type is only harddisk, then prt_list is empty, and its for loop
+  # won't run actually.
+  # Strip those busy/mounted partitions and disk.
   echo -n "Excluding busy $dev_type..."
   # Convert by uuid to traditional list in /proc/mounts so it's easier for us to exclude.
   # The format of /proc/mounts with uuid is like:
@@ -4506,29 +4512,32 @@ get_not_busy_disks_or_parts() {
   # ...
   mounted_table="$(mktemp /tmp/mnt_table.XXXXXX)"
   if grep -Eq 'by-uuid' /proc/mounts 2>/dev/null; then
-     # with uuid format in /proc/mounts, good!
-     cat /proc/mounts > $mounted_table
+     # With uuid format in /proc/mounts, good!
+     cat /proc/mounts | grep -E "^/dev/" | awk -F" " '{print $1}' | sort | \
+     uniq  > $mounted_table
      conv_uuid_mount_to_tradpart $mounted_table
   else
-     # no uuid format in /proc/mounts, good!
-     # We' better not use "cp -a /proc/partitions $mounted_table", use cat to get the kernel param
-     cat /proc/mounts > $mounted_table
+     # No uuid format in /proc/mounts, good!
+     cat /proc/mounts | grep -E "^/dev/" | awk -F" " '{print $1}' | sort | \
+     uniq | sed -r -e "s|^/dev/||" > $mounted_table
   fi
 
   # Two cases:
   # (1) Remove busy partitions (hence those busy disks, like sda1 busy, so sda is busy, too)
   # (2) Remove busy disks (disk as block device contains file system, e.g. /dev/sdc is formated with ext4)
-  for ipart in $prt_list $dsk_list; do
+  # E.g., $mounted_table now has the following busy devices:
+  # loop0
+  # nvme0n1p1
+  # sr0
+  while read ipart; do
     echo -n "."
-    if grep -qEw "^/dev/$ipart" $mounted_table; then
-      # sda1 -> sda
-      hdtmp="$(get_diskname $ipart)"
-      # Strip disk
-      dsk_list="$(echo $dsk_list | sed -r -e "s/(^|[[:space:]])+${hdtmp}([[:space:]]|$)+/ /")"
-      # Strip partition
-      prt_list="$(echo $prt_list | sed -r -e "s/(^|[[:space:]])+${ipart}([[:space:]]|$)+/ /")"
-    fi
-  done
+    # sda1 -> sda
+    hdtmp="$(get_diskname $ipart)"
+    # Strip disk
+    dsk_list="$(echo $dsk_list | sed -r -e "s/(^|[[:space:]])+${hdtmp}([[:space:]]|$)+/ /")"
+    # Strip partition
+    prt_list="$(echo $prt_list | sed -r -e "s/(^|[[:space:]])+${ipart}([[:space:]]|$)+/ /")"
+  done < $mounted_table
   echo ""
 
   # Strip the linux_raid_member
@@ -11828,12 +11837,14 @@ get_diskname() {
   # Disk name type: 
   local dev_=${1#/dev/*}
   # /dev/sda1 -> /dev/sda
-  # /dev/cciss/c0d0p1 -> /dev/c0d0
+  # /dev/cciss/c0d0p1 -> /dev/cciss/c0d0
+  # /dev/rd/c0d0p1 -> /dev/rd/c0d0...
   # /dev/mmcblk0p1 -> /dev/mmcblk0
   # /dev/nbd0p1 -> /dev/nbd0
   # /dev/nvme0n1p1 -> /dev/nvme0n1
   # /dev/md126p1 -> /dev/md126
   # /dev/loop0p1 -> /dev/loop0
+  # /dev/sr0 -> /dev/sr0 (no partition for this first SCSI CD-ROM device)
   # However, for device mapper...
   # /dev/dm-1, /dev/dm-2 -> /dev/dm-0 rules?
   # /dev/dm-0 is not always the disk name, e.g. for LVM:
@@ -11858,6 +11869,7 @@ get_diskname() {
     nvme*)   echo "$dev_" | sed -r -e 's/^([^0-9]*e[0-9]+n[0-9]+)p[0-9]*$/\1/g' ;;
     md*)     echo "$dev_" | sed -r -e 's/^([^0-9]*d[0-9]+)p[0-9]*$/\1/g' ;;
     loop*)   echo "$dev_" | sed -r -e 's/^([^0-9]*p[0-9]+)p[0-9]*$/\1/g' ;;
+    sr*)     echo "$dev_" ;;
     *)       if [[ "$dev_" =~ "/" ]]; then
 	       # e.g., lv name: /dev/host-vg/swap_1
                echo "$dev_"
@@ -11978,8 +11990,9 @@ get_disk_list() {
       devs="$(LC_ALL=C comm -12 <(echo $devs | tr " " "\n"| sort) <(echo $devs_cand | tr " " "\n"| sort))"
     fi
     for dev in $devs; do
-      dev="$(to_dev_name $dev)"
-      if is_supported_dev "$dev" && ! is_partition "$dev"; then
+      dev="$(get_diskname $dev)"
+      if [ -z "$(echo "$disk_list" | grep -Ew "$dev")" ] && \
+	   is_supported_dev "$dev"; then
         disk_list="$disk_list $dev"
       fi
     done
