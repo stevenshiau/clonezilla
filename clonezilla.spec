@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.8
+Version:	4.5.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Oct 06 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.9-drbl1
+  * Avoid duplication in cache file dev_fs_size_type.cache
+    by ocs-prep-cache.
+    E.g., /dev/sdb is a block device with fs.
+
 * Wed Oct 06 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.8-drbl1
   * Optimize get_not_busy_disks_or_parts so that ocs-scan-disk runs
     faster 1st time.
