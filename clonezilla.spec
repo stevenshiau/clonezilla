@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.7
+Version:	4.5.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Oct 06 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.8-drbl1
+  * Optimize get_not_busy_disks_or_parts so that ocs-scan-disk runs
+    faster 1st time.
+
 * Sun Oct 03 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.7-drbl1
   * Replace "which" with "command -v" in the script because "which"
     command is deprecated.
