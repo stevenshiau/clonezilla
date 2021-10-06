@@ -84,13 +84,20 @@ gen_dev_fs_cache_file_job() {
      fs="$(ocs-get-dev-info /dev/$idsk fs)"
      size="$(ocs-get-dev-info /dev/$idsk size)"
      type="$(ocs-get-dev-info /dev/$idsk type)"
-     echo /dev/$idsk, $fs, $size, $type >> $dev_list_cache_dir/dev_fs_size_type.cache
+     if [ -z "$(grep -E "^/dev/$idsk," $dev_list_cache_dir/dev_fs_size_type.cache 2>/dev/null)" ]; then
+       # Avoid duplication. E.g., /dev/sdb is a block device with fs.
+       echo /dev/$idsk, $fs, $size, $type >> $dev_list_cache_dir/dev_fs_size_type.cache
+     fi
   done
   for ipart in $prt_list; do
      fs="$(ocs-get-dev-info /dev/$ipart fs)"
      size="$(ocs-get-dev-info /dev/$ipart size)"
      type="$(ocs-get-dev-info /dev/$ipart type)"
-     echo /dev/$ipart, $fs, $size, $type >> $dev_list_cache_dir/dev_fs_size_type.cache
+     if [ -z "$(grep -E "^/dev/$ipart," $dev_list_cache_dir/dev_fs_size_type.cache 2>/dev/null)" ]; then
+       # Avoid duplication. E.g., /dev/sdb is a block device with fs.
+       # It will be written in the previous dsk_list.
+       echo /dev/$ipart, $fs, $size, $type >> $dev_list_cache_dir/dev_fs_size_type.cache
+     fi
   done
   (LC_ALL=C cat /proc/partitions; blkid)> $dev_list_cache_dir/pttable_blkid_for_dev.txt
 } # end of gen_dev_fs_cache_file_job
