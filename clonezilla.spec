@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.9
+Version:	4.5.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 07 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.10-drbl1
+  * Function get_not_busy_disks_or_parts: a bug was fixed, which
+    failed to process dev with /dev/mapper, e.g., /dev/mapper/ventoy.
+    Thanks to yellowsoar for reporting this issue.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/b5d15a6edf
+
 * Wed Oct 06 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.9-drbl1
   * Avoid duplication in cache file dev_fs_size_type.cache
     by ocs-prep-cache.
