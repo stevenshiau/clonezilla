@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.10
+Version:	4.5.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Oct 08 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.11-drbl1
+  * Bug fixed. The get_disk_list from ocs-functions: 
+    need to check if is_partition. Otherwise if sda, e.g.,
+    has a file system, it will be listed in both disks and partitions.
+
 * Thu Oct 07 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.10-drbl1
   * Function get_not_busy_disks_or_parts: a bug was fixed, which
     failed to process dev with /dev/mapper, e.g., /dev/mapper/ventoy.
