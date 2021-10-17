@@ -12476,15 +12476,6 @@ get_efi_hd_boot_entry_info() {
   # To get the label from the saved file (it's from the saved image full_path_to_efi_nvram_data_file/efi-nvram.dat):
   # get_efi_hd_boot_entry_info full_path_to_efi_nvram_data_file label
 
-  # A normal output for "efibootmgr -v" (version <= 0.11):
-  # root@debian:~# efibootmgr -v
-  # BootCurrent: 0001
-  # BootOrder: 0004,0000,0001,0002,0003
-  # Boot0000* EFI VMware Virtual SCSI Hard Drive (0.0)      ACPI(a0341d0,0)PCI(10,0)SCSI(0,0)
-  # Boot0001* EFI VMware Virtual IDE CDROM Drive (IDE 1:0)  ACPI(a0341d0,0)PCI(7,1)ATAPI(1,0,0)
-  # Boot0002* EFI Network   ACPI(a0341d0,0)PCI(11,0)PCI(1,0)MAC(000c297f5675,0)
-  # Boot0003* EFI Internal Shell (Unsupported option)       MM(b,3f055000,3f3b5fff)
-  # Boot0004* CentOS 6	HD(1,800,64000,e8d785ed-a65f-4ea1-adf0-cc61e75677eb)File(\EFI\redhat\grub.efi)
   # For efibootmgr >= 0.12, the output format has been changed to something like (note! "GPT"):
   # BootCurrent: 0003
   # BootOrder: 0003,0004,0001,0000,0002,0005
@@ -12510,8 +12501,8 @@ get_efi_hd_boot_entry_info() {
   # Boot0005* EFI Internal Shell    MemoryMapped(11,0x13f7c2000,0x13fbc3c3f)/FvFile(7c04a583-9e3e-4f1c-ad65-e05268d0b4d1)
   # Boot0006* Debian        PciRoot(0x0)/Pci(0x1,0x0)/HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
   local type_ term_ filt_case
-  local cmd_ boot_num label part_no uuid boot_file boot_num filter_entery dev_uuid dev_nam
-  local efibootmgr_v=""
+  local cmd_ boot_num label part_no uuid boot_file boot_num filter_entery dev_uuid dev_nam itm
+  local nvram_tmp append_ch rt_var rt_var_all
   filt_case="fbo-only" # Default to filter 1st boot entry only
   # Input boot_num is like 000C, later it will be prepended "Boot" so that it will like: Boot000C
   while [ $# -gt 0 ]; do
@@ -12563,6 +12554,20 @@ get_efi_hd_boot_entry_info() {
          fi
 	 filt_case="dev-name"
          ;;
+      -p|--append) 
+         shift
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+	   append_ch="$1"
+           shift
+         fi
+         if [ -z "$append_ch" ]; then
+           echo "-p is used, but no append_ch was assigned."
+           echo "$msg_program_stop"
+           [ "$save_restore_error_log" = "yes" ] && copy_error_log
+           exit 1
+         fi
+         ;;
       -*)     echo "${0}: ${1}: invalid option"
               echo "$msg_program_stop"
               [ "$save_restore_error_log" = "yes" ] && copy_error_log
@@ -12571,119 +12576,101 @@ get_efi_hd_boot_entry_info() {
     esac
   done
   type_="$1" # nvram or full_path_to_efi_nvram_data_file
-  term_="$2" # boot_num, label, no, uuid, boot_file or boot_file_full_path
+  shift
+  term_="$*" # boot_num, label, no, uuid, boot_file or boot_file_full_path
 
+  nvram_tmp="$(mktemp /tmp/nvram_tmp.XXXXXX)"
   # efibootmgr output has different formats for different versions. Therefore we have to separate them.
   case "$type_" in
     nvram) 
-	   # From nvram in the running system
-	   cmd_="efibootmgr -v 2>/dev/null"
-	   # We only need to get the major version number here, i.e. e.g. 0.11.0 -> 0.11
-	   # Otherwise the following version number comparision in bash won't work (0.11.0 vs 0.11)
-           efibootmgr_v="$(LC_ALL=C efibootmgr --version | awk -F " " '{print $2}' | awk -F"." '{print $1,"."$2}' | sed -r -e "s/[[:space:]]//g")"
-	   ;;
+      # From nvram in the running system. Only those related to boot file
+      LC_ALL=C efibootmgr -v | grep -E "^Boot.*/File\(" > $nvram_tmp
+      ;;
     *)  
-	   # From saved nvram file in the image dir.
-           if [ -e "${type_}" ]; then
-              cmd_="cat ${type_}"
-	      # Try to find the efibootmgr version in "${type_}"
-	      # We used to parse the file by "grep -o -iE "\([[:digit:]]+,GPT,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\"
-	      # However, this is wrong. If there is GPT no boot entry in the efi-nvram.dat, this will make efibootmgr_v=0.11
-	      # It's not easy to identify the efibootmgr version. So just set it as > 0.11, i.e., 0.12 since it's newer.
-	      efibootmgr_v=0.12
-           else
-              return 2
-           fi
-	   ;;
+      # From saved nvram file in the image dir.
+      if [ -e "${type_}" ]; then
+         cat ${type_} | grep -E "^Boot.*/File\(" > $nvram_tmp
+      else
+         return 2
+      fi
+      ;;
   esac
+  # File $nvram_tmp might contain something like:
+  #  Boot0000* CentOS Linux  HD(1,GPT,fdd78f33-3c25-48b0-9fc7-c5dc7f1b1eff,0x800,0x12c000)/File(\EFI\centos\shimx64.efi)
+  #  Boot0007* CentOS Linux  HD(1,GPT,fdd78f33-3c25-48b0-9fc7-c5dc7f1b1eff,0x800,0x12c000)/File(\EFI\centos\grubx64.efi)
+  #  Boot0000* Windows Boot Manager  HD(2,GPT,a9427f00-e1d1-4bc5-9cd0-e23833e6fe62,0xe1800,0x31800)/File(\EFI\Microsoft\Boot\bootmgfw.efi)
 
-  # Because bash like "if [[ "$efibootmgr_v" < 0.12 ]]" won't be able to compare version number,
-  # we have to use sort to make this.
-  if [ "$(LC_ALL=C echo -ne "$efibootmgr_v\n0.11" | sort -Vr | head -n1)" = "0.11" ]; then
-    # efibootmgr_v < 0.12 (so we use 0.11 in the above)
-    case "$term_" in
-      boot_num)
-        LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g"
-        ;;
-      label)
-        LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)FILE\(.*\)" | sed -r -e "s|^Boot[[:alnum:]]+[*][[:space:]]+||g" -e "s|[[:space:]]+HD\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]]+,[[:alnum:]-]+\).*||g" | sort | uniq
-        ;;
-      part_no)
-        LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]]+,[[:alnum:]-]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $1}' | sort | uniq
-        ;;
-      uuid)
-        LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]]+,[[:alnum:]-]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $4}' | tr '[:upper:]' '[:lower:]' | sort | uniq
-        ;;
-      boot_file)
-        LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+HD\(.*\)FILE\(.*\)" | grep -o -iE "FILE\(.*\)" | sed -r -e "s/^File\(//g" -e "s/\)$//g" | sort | uniq
-        ;;
-    esac
-  else
-    # for efibootmgr version >= 0.12
-    case "$filt_case" in
-      fbo-only)
-          # Get the 1st boot order. When multiple items are available, we only refer to first boot order.
-          # boot_num e.g.,: Boot000C
-          boot_num="Boot$(LC_ALL=C ${cmd_} | grep -Eiw "^BootOrder:" | awk -F" " '{print $2}' | awk -F"," '{print $1}')"
-	  filter_entery="grep -Ew ^${boot_num}" 
+  # Only for efibootmgr version >= 0.12
+  case "$filt_case" in
+    fbo-only)
+      # Get the 1st boot order. When multiple items are available, we only refer to first boot order.
+      # boot_num e.g.,: Boot000C
+      boot_num="Boot$(LC_ALL=C cat $nvram_tmp | grep -Eiw "^BootOrder:" | awk -F" " '{print $2}' | awk -F"," '{print $1}')"
+      filter_entery="grep -Ew ^${boot_num}" 
+      ;;
+    boot-num)
+      boot_num="Boot${boot_num}" # Prepend "Boot" so that it's like Boot000C
+      filter_entery="grep -Ew ^${boot_num}" 
+      ;;
+    dev-uuid)
+      # The case when -d|--show-dev-uuid-only) is used
+      # Boot0004* opensuse  HD(1,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\opensuse\grubx64.efi)
+      filter_entery="grep -E ,${dev_uuid}," 
+      ;;
+    dev-name)
+      # The case when -n|--show-dev-name-only) is used
+      # Boot0004* opensuse  HD(1,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\opensuse\grubx64.efi)
+      dev_uuid="$(get_part_uuid_in_harddrive $dev_nam)"
+      filter_entery="grep -E ,${dev_uuid}," 
+      ;;
+    all) 
+      # no any filter
+      filter_entery="cat"
+      ;;
+  esac
+  while read -r line; do
+    rt_var_all=""
+    for itm in $term_; do
+      case "$itm" in
+        boot_num)
+	  rt_var="$(echo $line | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g")"
           ;;
-      boot-num)
-          boot_num="Boot${boot_num}" # Prepend "Boot" so that it's like Boot000C
-	  filter_entery="grep -Ew ^${boot_num}" 
+        label)
+          # Must be only one result. E.g., this contains at least two label, but we can only return one label
+          # BootCurrent: 000E
+          # Timeout: 1 seconds
+          # BootOrder: 0000,0001,0003,0002,0001,0004,0005
+          # Boot0000* opensuse  HD(1,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\opensuse\grubx64.efi)
+          # Boot0001* Windows Boot Manager  HD(2,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\Microsoft\Boot\bootmgfw.efi)
+          # Boot0002* EFI Network   PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x1,0x0)/MAC(000c291d9ad1,0)
+          # Boot0003* EFI Internal Shell (Unsupported option)       MemoryMapped(11,0xef9d018,0xf3f7017)/FvFile(c57ad6b7-0515-40a8-9d21-551652854e37)
+          # Boot0004* EFI VMware Virtual SCSI Hard Drive (1.0)      PciRoot(0x0)/Pci(0x10,0x0)/SCSI(1,0)
+	  rt_var="$(echo $line | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)\/*FILE\(.*\)" | sed -r -e "s|^Boot[[:alnum:]]+[*][[:space:]]+||g" -e "s|[[:space:]]+HD\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\).*||g")"
           ;;
-      dev-uuid)
-          # The case when -d|--show-dev-uuid-only) is used
-          # Boot0004* opensuse  HD(1,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\opensuse\grubx64.efi)
-	  filter_entery="grep -E ,${dev_uuid}," 
+        part_no)
+	  rt_var="$(echo $line | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $1}')"
           ;;
-      dev-name)
-          # The case when -n|--show-dev-name-only) is used
-          # Boot0004* opensuse  HD(1,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\opensuse\grubx64.efi)
-	  dev_uuid="$(get_part_uuid_in_harddrive $dev_nam)"
-	  filter_entery="grep -E ,${dev_uuid}," 
+        uuid)
+	  rt_var="$(echo $line | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $3}' | tr '[:upper:]' '[:lower:]')"
           ;;
-      all) 
-          # no any filter
-	  filter_entery="cat"
+        boot_file)
+          # e.g., Boot0006* Debian   PciRoot(0x0)/Pci(0x1,0x0)/HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
+	  rt_var="$(echo $line | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)\/*FILE\(.*\)" | grep -o -iE "FILE\(.*\)" | sed -r -e "s/^File\(//g" -e "s/\)$//g")"
           ;;
-    esac
-    case "$term_" in
-      boot_num)
-        # Can be multiple ones
-        LC_ALL=C ${cmd_} | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g"
-        ;;
-      label)
-        # Must be only one result. E.g., this contains at least two label, but we can only return one label
-        # BootCurrent: 000E
-        # Timeout: 1 seconds
-        # BootOrder: 0000,0001,0003,0002,0001,0004,0005
-        # Boot0000* opensuse  HD(1,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\opensuse\grubx64.efi)
-	# Boot0001* Windows Boot Manager  HD(2,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\Microsoft\Boot\bootmgfw.efi)
-	# Boot0002* EFI Network   PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x1,0x0)/MAC(000c291d9ad1,0)
-	# Boot0003* EFI Internal Shell (Unsupported option)       MemoryMapped(11,0xef9d018,0xf3f7017)/FvFile(c57ad6b7-0515-40a8-9d21-551652854e37)
-	# Boot0004* EFI VMware Virtual SCSI Hard Drive (1.0)      PciRoot(0x0)/Pci(0x10,0x0)/SCSI(1,0)
-        LC_ALL=C ${cmd_} | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)\/*FILE\(.*\)" | sed -r -e "s|^Boot[[:alnum:]]+[*][[:space:]]+||g" -e "s|[[:space:]]+HD\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\).*||g"
-        ;;
-      part_no)
-        LC_ALL=C ${cmd_} | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $1}'
-        ;;
-      uuid)
-        # uniq it since it might have same uuid:
-	# root@debian:~# efibootmgr -v | grep efi
-	# Boot0004* Windows Boot Manager  HD(2,GPT,a9427f00-e1d1-4bc5-9cd0-e23833e6fe62,0xe1800,0x31800)/File(\EFI\Microsoft\Boot\bootmgfw.efi)WINDOWS.........x...B.C.D.O.B.J.E.C.T.=.{.9.d.e.a.8.6.2.c.-.5.c.d.d.-.4.e.7.0.-.a.c.c.1.-.f.3.2.b.3.4.4.d.4.7.9.5.}...,................
-	# BootDC5B* VeraCrypt BootLoader (DcsBoot)        HD(2,GPT,a9427f00-e1d1-4bc5-9cd0-e23833e6fe62,0xe1800,0x31800)/File(\EFI\VeraCrypt\DcsBoot.efi)
-        LC_ALL=C ${cmd_} | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $3}' | tr '[:upper:]' '[:lower:]' | uniq
-        ;;
-      boot_file)
-        # e.g., Boot0006* Debian        PciRoot(0x0)/Pci(0x1,0x0)/HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
-        LC_ALL=C ${cmd_} | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)\/*FILE\(.*\)" | grep -o -iE "FILE\(.*\)" | sed -r -e "s/^File\(//g" -e "s/\)$//g"
-        ;;
-      boot_file_full_path)
-        # e.g., HD(1,GPT,aff8ff57-5b02-4d9b-8945-35fb0e5a905f,0x800,0x100000)/File(\EFI\ubuntu\shimx64.efi)
-	LC_ALL=C ${cmd_} | $filter_entery | grep -iE -o "HD\(.*\)\/*FILE\(.*\)"
-        ;;
-    esac
-  fi
+        boot_file_full_path)
+          # e.g., HD(1,GPT,aff8ff57-5b02-4d9b-8945-35fb0e5a905f,0x800,0x100000)/File(\EFI\ubuntu\shimx64.efi)
+	  rt_var="$(echo $line | $filter_entery | grep -iE -o "HD\(.*\)\/*FILE\(.*\)")"
+          ;;
+      esac
+      if [ -n "$rt_var" ]; then
+        rt_var_all="${rt_var_all} ${rt_var}${append_ch}"
+      fi
+    done
+    if [ -n "$rt_var_all" ]; then
+      echo $rt_var_all
+    fi
+  done < $nvram_tmp
+  [ -e "$nvram_tmp" ] && rm -f $nvram_tmp
 } # end of get_efi_hd_boot_entry_info
 #
 get_part_uuid_in_harddrive() {
@@ -12696,8 +12683,21 @@ get_part_uuid_in_harddrive() {
   # For old udevadm info output format: UDISKS_PARTITION_UUID=B5BC1DC2-779B-4895-AD7D-6606D7841A5C
   # For new udevadm info output format: ID_PART_ENTRY_UUID=e8d785ed-a65f-4ea1-adf0-cc61e75677eb
   uuid_ret="$(LC_ALL=C blkid -o export ${part_} 2>/dev/null | grep -E "^PARTUUID=" | awk -F"=" '{print $2}' | tr '[:upper:]' '[:lower:]')"
-  echo $uuid_ret
+  echo "$uuid_ret"
 } # end of get_uuid_in_harddrive
+#
+get_part_name_from_uuid_in_harddrive() {
+  # Function to get partition name from PART UUID in hard drive.
+  local puuid_in="$1"
+  local part_ret=""  # return value is like /dev/nvme0n1p1
+  [ -z "${puuid_in}" ] && return 2
+  # Use "blkid -o export" to get that.
+  # Another way is to use udevadm to get that:
+  # For old udevadm info output format: UDISKS_PARTITION_UUID=B5BC1DC2-779B-4895-AD7D-6606D7841A5C
+  # For new udevadm info output format: ID_PART_ENTRY_UUID=e8d785ed-a65f-4ea1-adf0-cc61e75677eb
+  part_ret="$(LC_ALL=C blkid 2>/dev/null | grep -iE "PARTUUID=\"${puuid_in}\"" | awk -F":" '{print $1}')"
+  echo "$part_ret"
+} # end of get_part_name_from_uuid_in_harddrive
 #
 get_best_console_font_size() {
   # console_prefer_cols (input, from drbl-ocs.conf) and console_font_size (output) are  global variables.
