@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.11
+Version:	4.5.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Oct 17 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.12-drbl1
+  * update-efi-nvram-boot-entry: improved to refer to saved nvram data
+    (efi-nvram.dat). In addition, multiple boot entries can be processed,
+    too.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/9ffa31f838
+
 * Fri Oct 08 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.11-drbl1
   * Bug fixed. The get_disk_list from ocs-functions: 
     need to check if is_partition. Otherwise if sda, e.g.,
