@@ -230,130 +230,88 @@ check_if_nvram_efi_boot_entry_exist() {
   return $ret_code
 } # end of check_if_nvram_efi_boot_entry_exist
 #
-find_efi_boot_loader_file() {
+check_efi_boot_loader_file() {
   # Function to find the EFI boot loader file
-  # 1.
-  # For GNU/Linux (Fedora 19), from EFI NVRAM we could find the file:
-  # root@f19:~# efibootmgr -v
-  # BootCurrent: 0001
-  # BootOrder: 0004,0000,0001,0002,0003
-  # Boot0000* EFI VMware Virtual SCSI Hard Drive (0.0)      ACPI(a0341d0,0)PCI(10,0)SCSI(0,0)
-  # Boot0001* EFI VMware Virtual IDE CDROM Drive (IDE 1:0)  ACPI(a0341d0,0)PCI(7,1)ATAPI(1,0,0)
-  # Boot0002* EFI Network   ACPI(a0341d0,0)PCI(11,0)PCI(1,0)MAC(000c291866c1,0)
-  # Boot0003* EFI Internal Shell (Unsupported option)       MM(b,3f055000,3f3b5fff)
-  # Boot0004* Fedora        HD(1,800,64000,55a8b515-52ef-4fdc-affd-80d5b441e028)File(\EFI\fedora\shim.efi)
-  # For For GNU/Linux (Fedora 19), possible files on EFI system partition:
-  # /EFI/fedora/gcdx64.efi
-  # /EFI/fedora/grubx64.efi
-  # /EFI/fedora/MokManager.efi
-  # /EFI/fedora/shim-fedora.efi
-  # /EFI/fedora/shim.efi <-- This is the one we want.
-
-  # 2.
-  # For MS Windows, from EFI NVRAM we could find the file:
-  # root@debian:/tmp# efibootmgr -v
-  # BootCurrent: 0001
-  # Timeout: 0 seconds
-  # BootOrder: 0000,0001
-  # Boot0000* Windows       HD(2,96800,31800,e72dce29-ea6a-4235-9eaa-fc11605559ca)File(\EFI\Boot\bootx64.efi) <--
-
-  # For MS Windows, possible files on EFI system partition:
-  # /EFI/Microsoft/Boot/bootmgfw.efi
-  # /EFI/Microsoft/Boot/bootmgr.efi
-  # /EFI/Microsoft/Boot/memtest.efi
-  # /EFI/Boot/bootx64.efi <-- This is the one we want.
-
-  # For ARM64 device:
-  # root@debian:~# efibootmgr -v
-  # BootCurrent: 0004
-  # Timeout: 3 seconds
-  # BootOrder: 0007,0000,0001,0002,0003,0004,0005,0006
-  # Boot0000* EFI Misc Device       VenHw(f9b94ae2-8ba6-409b-9d56-b9b417f53cb3)
-  # Boot0001* EFI Misc Device 1     VenHw(8047db4b-7e9c-4c0c-8ebc-dfbbaacace8f)
-  # Boot0002* EFI Misc Device 2     PciRoot(0x0)/Pci(0x1,0x0)
-  # Boot0003* EFI Misc Device 3     PciRoot(0x0)/Pci(0x2,0x0)
-  # Boot0004* EFI Misc Device 4     PciRoot(0x0)/Pci(0x3,0x0)
-  # Boot0005* EFI Network   VenHw(837dca9e-e874-4d82-b29a-23fe0e23d1e2,003e000a00000000)/MAC(525400123456,1)
-  # Boot0006* EFI Internal Shell    MemoryMapped(11,0x13f7c2000,0x13fbc3c3f)/FvFile(7c04a583-9e3e-4f1c-ad65-e05268d0b4d1)
-  # Boot0007* Debian ARM64          HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
-  #
-  # The return variables are: esp_boot_f, esp_boot_os
-   
-  local efi_sys_part_="$1"
+  # File nvram_chklist_table contains something like:
+  # # label; uuid; boot_file
+  # CentOS Linux; fdd78f33-3c25-48b0-9fc7-c5dc7f1b1eff; \EFI\centos\grubx64.efi;
+  # CentOS Linux; fdd78f33-3c25-48b0-9fc7-c5dc7f1b1eff; \EFI\centos\shimx64.efi;
+  local lb_ uud_ bt_f_ esp_p_
   local mnt_pnt obreak efi_boot efi_boot_append dirs_list
-
-  [ -z "$efi_sys_part_" ] && return 1
-  esp_boot_f_in_nvram="$(get_efi_hd_boot_entry_info -n $efi_sys_part_ nvram boot_file)"
-
-  if [ -n "$(LC_ALL=C mount | awk -F" " '{print $1}' | grep -Ew ${efi_system_part})" ]; then
-    umount ${efi_system_part}
-    if [ "$?" -gt 0 ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Failed to umount ${efi_system_part}."
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!"
-      exit 1
-    fi
-  fi
   mnt_pnt="$(mktemp -d /tmp/efi_sys_part.XXXXXX)"
-  mount -o ro $efi_system_part $mnt_pnt
-  esp_boot_f=""
-  if [ -n "$esp_boot_f_in_nvram" ]; then
-    # Revert the \ as / e.g. \EFI\fedora\shim.efi -> /EFI/fedora/shim.efi
-    esp_boot_f_unix_format="$(echo "$esp_boot_f_in_nvram" | sed -r -e "s/\\\/\//g")"
-    # Force to convert it for make sure it meet the requirement for EFI NVRAM, as the one got from EFI NVRAM might be "/" format. 
-    # i.e. UEFI uses backward slash \ as path separator (similar to DOS paths)
-    # Ref: https://wiki.archlinux.org/index.php/Unified_Extensible_Firmware_Interface#Booting_an_OS_using_UEFI
-    # //NOTE// The efibootmgr-0.6.0-3 and above pkgs support passing unix-style paths with forward-slash / as path-separator for the -l option. 
-    esp_boot_f_in_nvram="$(echo $esp_boot_f_in_nvram | sed -r -e "s|\/|\\\|g")"
-    if [ -e "$mnt_pnt/$esp_boot_f_unix_format" ]; then
-      esp_boot_f="$esp_boot_f_in_nvram"
-    fi
-  else
-    # No reference one from EFI NVRAM, we have to find or guess...
-    # Possible files examples:
-    # Ubuntu Quantal: /EFI/ubuntu/grubx64.efi
-    # Fedora 19: /EFI/fedora/shim.efi
-    # MS Windows: /EFI/Boot/bootx64.efi
-    obreak="no"
-    efi_boot="no"
-    efi_boot_append=""
-    dirs_list=""
-    for idir in $mnt_pnt/EFI/*; do
-      # We only need dir in 2nd level of path
-      if [ ! -d "$idir" ]; then
-        continue
+  while read -r line; do
+    [ -n "$(echo "$line" | grep -E "^[[:space:]]*#")" ] && continue
+    lb_="$(echo "$line" | awk -F";" '{print $1}')"; lb_="$(echo $lb_)"
+    uud_="$(echo "$line" | awk -F";" '{print $2}')"; uud_="$(echo $uud_)"
+    bt_f_="$(echo "$line" | awk -F";" '{print $3}')"; bt_f_="$(echo $bt_f_)"
+    esp_p_="$(get_part_name_from_uuid_in_harddrive $uud_)"
+    if [ -n "$esp_p_" -a -b "$esp_p_" ]; then
+      # Make sure the boot file exists in the ESP partition.
+      if [ -n "$(LC_ALL=C mount | awk -F" " '{print $1}' | grep -Ew ${esp_p_})" ]; then
+        umount ${esp_p_}
+        if [ "$?" -gt 0 ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "Failed to umount ${esp_p_}."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "$msg_program_stop!"
+          exit 1
+        fi
       fi
-      if [ -n "$(echo "$idir" | grep -i "$mnt_pnt/EFI/boot")" ]; then
-        # Should not add /EFI/{boot,Boot,BOOT} now, make it as the last one later.
-        efi_boot="yes"
-        efi_boot_append="$idir"
-        continue
-      fi
-      dirs_list="$dirs_list $idir"
-    done
-    if [ "$efi_boot" = "yes" ]; then
-      dirs_list="$dirs_list $efi_boot_append"
-    fi
-    for dir in $dirs_list; do
-      for file in $efiblfiles; do
-          if test -f $dir/$file; then
-            echo "Found EFI boot loader: $dir/$file"
-            # esp_boot_f example: \EFI\Boot\bootx64.efi
-	    esp_boot_f="$(LC_ALL=C echo $dir/$file | sed -r -e "s|$mnt_pnt||g" | sed -r -e "s|\/|\\\|g")"
-	    esp_boot_os="$(LC_ALL=C echo $dir/$file | sed -r -e "s|$mnt_pnt/EFI/||g" | xargs dirname)"
-            obreak="yes"
+      mount -o ro $esp_p_ $mnt_pnt
+      # Revert the \ as / e.g. \EFI\fedora\shim.efi -> /EFI/fedora/shim.efi
+      esp_boot_f_unix_format="$(echo "$bt_f_" | sed -r -e "s/\\\/\//g")"
+      # Force to convert it for make sure it meet the requirement for EFI NVRAM, as the one got from EFI NVRAM might be "/" format. 
+      # i.e. UEFI uses backward slash \ as path separator (similar to DOS paths)
+      # Ref: https://wiki.archlinux.org/index.php/Unified_Extensible_Firmware_Interface#Booting_an_OS_using_UEFI
+      # //NOTE// The efibootmgr-0.6.0-3 and above pkgs support passing unix-style paths with forward-slash / as path-separator for the -l option. 
+      esp_p_="$(echo $esp_p_ | sed -r -e "s|\/|\\\|g")"
+      if [ -e "$mnt_pnt/$esp_boot_f_unix_format" ]; then
+	echo "${lb_}; ${uud_}; ${bt_f_}" >> $nvram_2_update_table
+      else
+        # No reference one from EFI NVRAM, we have to find or guess...
+        # Possible files examples:
+        # Ubuntu Quantal: /EFI/ubuntu/grubx64.efi
+        # Fedora 19: /EFI/fedora/shim.efi
+        # MS Windows: /EFI/Boot/bootx64.efi
+        obreak="no"
+        efi_boot="no"
+        efi_boot_append=""
+        dirs_list=""
+        for idir in $mnt_pnt/EFI/*; do
+          # We only need dir in 2nd level of path
+          if [ ! -d "$idir" ]; then
+            continue
+          fi
+          if [ -n "$(echo "$idir" | grep -i "$mnt_pnt/EFI/boot")" ]; then
+            # Should not add /EFI/{boot,Boot,BOOT} now, make it as the last one later.
+            efi_boot="yes"
+            efi_boot_append="$idir"
+            continue
+          fi
+          dirs_list="$dirs_list $idir"
+        done
+        if [ "$efi_boot" = "yes" ]; then
+          dirs_list="$dirs_list $efi_boot_append"
+        fi
+        for dir in $dirs_list; do
+          for file in $efiblfiles; do
+              if test -f $dir/$file; then
+                echo "Found EFI boot loader: $dir/$file"
+                # esp_boot_f example: \EFI\Boot\bootx64.efi
+                esp_boot_f="$(LC_ALL=C echo $dir/$file | sed -r -e "s|$mnt_pnt||g" | sed -r -e "s|\/|\\\|g")"
+                esp_boot_os="$(LC_ALL=C echo $dir/$file | sed -r -e "s|$mnt_pnt/EFI/||g" | xargs dirname)"
+                obreak="yes"
+                break
+              fi
+          done
+          if [ "$obreak" = "yes" ]; then
             break
           fi
-      done
-      if [ "$obreak" = "yes" ]; then
-        break
+        done
+	echo "${esp_boot_os}; ${uud_}; ${esp_boot_f}" >> $nvram_2_update_table
       fi
-    done
-  fi
-  if [ -n "$esp_boot_f" ]; then
-    echo "EFI boot file \"$esp_boot_f\" in partition $efi_system_part was found."
-  fi
+    fi
+  done < $nvram_chklist_table
 
   # Clean stale dir
   if mountpoint ${mnt_pnt} &>/dev/null; then
@@ -361,28 +319,42 @@ find_efi_boot_loader_file() {
   fi
   if [ -d "${mnt_pnt}" -a \
        -n "$(echo $mnt_pnt | grep -i "efi_sys_part")" ]; then
-    rm -rf "${mnt_pnt}" 
+    rmdir "${mnt_pnt}" 
   fi
+} # end of check_efi_boot_loader_file
+#
+output_efi_boot_info() {
   # Output the info so that later other program can reuse.
   # efi_os_label, efi_system_part_no and esp_boot_f (global variables) are for reporting to ocsmgrd.
   # We give initial value instead of none so that it's easier for ocsmgrd to cut.
+  local lb_ boot_f_ lb_all boot_f_all
   efi_os_label="NO_EFI_OS_LABEL"
   efi_system_part_no="NO_EFI_PART"
   efi_sys_part_boot_file="NO_EFI_BOOT_FILE"
   if [ -n "$efi_boot_file_info" ]; then
-    if [ -n "$label" ]; then
-      echo "efi_os_label=\"$label\"" > $efi_boot_file_info
+    while read -r line; do
+      [ -n "$(echo "$line" | grep -E "^[[:space:]]*#")" ] && continue
+      lb_="$(echo "$line" | awk -F";" '{print $1}')"; lb_="$(echo $lb_)"
+      boot_f_="$(echo "$line" | awk -F";" '{print $3}')"; boot_f_="$(echo $boot_f_)"
+      [ -n "$lb_" ] && lb_all="$lb_all $lb_"
+      [ -n "$boot_f_" ] && boot_f_all="$boot_f_all $boot_f_"
+    done < $nvram_2_update_table
+    if [ -n "$lb_all" ]; then
+      lb_all="$(echo $lb_all)"
+      echo "efi_os_label=\"$lb_all\"" > $efi_boot_file_info
     fi
     if [ -n "$esp_no" ]; then
+      esp_no="$(echo $esp_no)"
       echo "efi_system_part_no=\"$esp_no\"" >> $efi_boot_file_info
     fi
-    if [ -n "$esp_boot_f" ]; then
-      # The esp_boot_f got is not Unix path format. We have to convert it like:
+    if [ -n "$boot_f_all" ]; then
+      boot_f_all="$(echo $boot_f_all)"
+      # The boot_f_all got is not Unix path format. We have to convert it like:
       # \EFI\fedora\shim.efi -> /EFI/fedora/shim.efi
-      echo "efi_sys_part_boot_file=\"$(echo "$esp_boot_f" | sed -r -e "s|\\\|\/|g")\"" >> $efi_boot_file_info
+      echo "efi_sys_part_boot_file=\"$(echo "$boot_f_all" | sed -r -e "s|\\\|\/|g")\"" >> $efi_boot_file_info
     fi
   fi
-} # end of find_efi_boot_loader_file
+} # end of output_efi_boot_info
 #
 do_clean_EFI_boot_entry_job() {
   local boot_num_2_remove="$1"
@@ -582,28 +554,35 @@ else
   exit 2
 fi
 
-#
-if [ -n "$label_assigned" ]; then
-  label="$label_assigned"
-elif [ -n "$full_path_to_efi_file" -a \
-       -e "$full_path_to_efi_file" ]; then
-  # We have to clean and sort the boot entries in $full_path_to_efi_file, like that for NVRAM.
-  # However, only the duplicated uEFI boot entry has to be processed, i.e., just need to keep one.
-  # No need to check if the boot entry exists in the NVRAM since it's a saved file, not NVRAM.
-  # TODO: when there are two boot entries existing in the same EFI partition, like:
-  # /EFI/debian/grubx64.efi, /EFI/Microsoft/Boot/bootmgfw.efi in /dev/sda1
-  # it might get the wrong one.
-  label="$(get_efi_hd_boot_entry_info -n $efi_system_part $full_path_to_efi_file label | head -n 1)"
-  if [ -z "$label" ]; then
-    # Try to extract from boot file
-    label="$(get_efi_hd_boot_entry_info -n $efi_system_part $full_path_to_efi_file boot_file)"
-    # boot_file will be like: \EFI\debian\grubaa64.efi -> Extract debian
-    label="$(echo "$label" | awk -F'\' '{print $3}')"
-    if [ -z "$label" -o "$label" = "Boot" ]; then
-      # If still not found, or like /EFI/Boot/bootx64.efi, use default label.
-      label="$label_def"
-    fi
+
+# Prepare a table for efiboot
+nvram_chklist_table="$(mktemp /tmp/nvram_chklist_table.XXXXXX)"
+nvram_2_update_table="$(mktemp /tmp/nvram_2_update_table.XXXXXX)"
+echo "# label; uuid; boot_file" > $nvram_chklist_table
+echo "# label; uuid; boot_file" > $nvram_2_update_table
+label_uuid_boot_f_in_nvram="$(get_efi_hd_boot_entry_info -a -p ';' nvram label uuid boot_file)"
+if [ -n "$full_path_to_efi_file" -a \
+     -e "$full_path_to_efi_file" ]; then
+  # For Windows, sometimes it just gives duplicated ones. We have to unique it, e.g.,
+  # BootCurrent: 0001
+  # Timeout: 2 seconds
+  # BootOrder: 0007,0003,0002,0001,0000,0004,0005,0006
+  # Boot0000* EFI VMware Virtual SATA Hard Drive (0.0)	PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x4,0x0)/Sata(0,0,0)
+  # Boot0001* EFI VMware Virtual SATA CDROM Drive (1.0)	PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x4,0x0)/Sata(1,0,0)
+  # Boot0002* EFI Network	PciRoot(0x0)/Pci(0x16,0x0)/Pci(0x0,0x0)/MAC(000c29144220,0)
+  # Boot0003* Windows Boot Manager	HD(2,GPT,a9427f00-e1d1-4bc5-9cd0-e23833e6fe62,0xe1800,0x31800)/File(\EFI\Microsoft\Boot\bootmgfw.efi)
+  # Boot0004* EFI VMware Virtual SATA Hard Drive (2.0)	PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x4,0x0)/Sata(2,0,0)
+  # Boot0005* EFI VMware Virtual NVME Namespace (NSID 1)	PciRoot(0x0)/Pci(0x18,0x0)/Pci(0x0,0x0)/NVMe(0x1,00-00-00-00-00-00-00-00)
+  # Boot0006* EFI VMware Virtual NVME Namespace (NSID 2)	PciRoot(0x0)/Pci(0x18,0x0)/Pci(0x0,0x0)/NVMe(0x2,00-00-00-00-00-00-00-00)
+  # Boot0007* Windows Boot Manager	HD(2,GPT,a9427f00-e1d1-4bc5-9cd0-e23833e6fe62,0xe1800,0x31800)/File(\EFI\Microsoft\Boot\bootmgfw.efi)WINDOWS.........x...B.C.D.O.B.J.E.C.T.=.{.9.d.e.a.8.6.2.c.-.5.c.d.d.-.4.e.7.0.-.a.c.c.1.-.f.3.2.b.3.4.4.d.4.7.9.5.}...,................
+  get_efi_hd_boot_entry_info -a -p ';' $full_path_to_efi_file label uuid boot_file | sort | uniq >> $nvram_chklist_table
+  # Append that from NVRAM if it's not the same as that from saved nvram data (efi-nvram.dat).
+  if [ -z "$(comm -12 <(cat "$nvram_chklist_table" | sort) <(echo "$label_uuid_boot_f_in_nvram") | sort)" ]; then
+    echo "$label_uuid_boot_f_in_nvram" >> $nvram_chklist_table
   fi
+else
+  # Only from NVRAM
+  echo "$label_uuid_boot_f_in_nvram" >> $nvram_chklist_table
 fi
 
 #
@@ -622,34 +601,28 @@ if [ "$ret" -eq 2 -o "$ret" -eq 4 ]; then
   # 1: UUID does not exist in NVRAM, need to update boot entry in NVRAM.
   # 2: UUID exists in NVRAM, not matching the one in hard drive, need to update boot entry in NVRAM.
   # Updating the boot entry for EFI NVRAM
-  find_efi_boot_loader_file $efi_system_part # We will get esp_boot_f, esp_boot_os
-  if [ -z "$esp_boot_f" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "EFI boot file in partition $efi_system_part was _NOT_ found."
+  check_efi_boot_loader_file $efi_system_part # We will get the file $nvram_2_update_table
+  while read -r line; do
+    [ -n "$(echo "$line" | grep -E "^[[:space:]]*#")" ] && continue
+    label="$(echo "$line" | awk -F";" '{print $1}')"; label="$(echo $label)"
+    uuid="$(echo "$line" | awk -F";" '{print $2}')"; uuid="$(echo $uuid)"
+    esp_boot_f="$(echo "$line" | awk -F";" '{print $3}')"; esp_boot_f="$(echo $esp_boot_f)"
+    cmd_update_add_boot_entry="efibootmgr -c -d ${disk_} -p ${esp_no} -L \"$label\" -l \"$esp_boot_f\""
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Updating/Adding the boot entry in EFI NVRAM by command:"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
-    exit 2
+    echo "$cmd_update_add_boot_entry"
+    LC_ALL=C eval "(${cmd_update_add_boot_entry} && exit \${PIPESTATUS[0]})"
+  done < $nvram_2_update_table
+  if [ -n "$efi_boot_file_info" ]; then
+    output_efi_boot_info
   fi
-  if [ -z "$label" ]; then
-    if [ -n "$esp_boot_os" ]; then
-      label="$esp_boot_os"
-    else
-      label="$label_def"
-    fi
-  fi
-  cmd_update_add_boot_entry="efibootmgr -c -d ${disk_} -p ${esp_no} -L \"$label\" -l \"$esp_boot_f\""
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "Updating/Adding the boot entry in EFI NVRAM by command:"
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "$cmd_update_add_boot_entry"
-  LC_ALL=C eval "(${cmd_update_add_boot_entry} && exit \${PIPESTATUS[0]})"
   echo $msg_delimiter_star_line
 elif [ "$ret" -eq 0 ]; then
   # 0: UUID exists in NVRAM, matching the one in hard drive, no need to update boot entry in NVRAM.
   # EFI system partition UUID in EFI NVRAM matches the one on this system
   if [ -n "$efi_boot_file_info" ]; then
-    # Here we still need to run find_efi_boot_loader_file so that if the file efi_boot_file_info is required, the info will be dumped when the function is run.
-    find_efi_boot_loader_file $efi_system_part # We will get esp_boot_f, esp_boot_os
+    output_efi_boot_info
   fi
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "No need to update the boot entry of EFI NVRAM."
@@ -662,3 +635,6 @@ else
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "$msg_program_stop!"
 fi
+
+[ -e "$nvram_chklist_table" ] && rm -f $nvram_chklist_table
+[ -e "$nvram_2_update_table" ] && rm -f $nvram_2_update_table
