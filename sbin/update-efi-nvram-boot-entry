@@ -202,7 +202,8 @@ check_if_nvram_efi_boot_entry_exist() {
 
   # efi_system_part is global variable
   
-  efi_sys_part_uuid_in_nvram="$(get_efi_hd_boot_entry_info -n $efi_system_part nvram uuid)"
+  # It might be duplicated uEFI boot entry in NVRAM for same ESP, just need to keep one.
+  efi_sys_part_uuid_in_nvram="$(get_efi_hd_boot_entry_info -n $efi_system_part nvram uuid | uniq)"
   efi_sys_part_uuid_in_harddrive="$(get_part_uuid_in_harddrive $efi_system_part)"
   ret_code=""
   if [ -n "$efi_sys_part_uuid_in_nvram" ]; then
@@ -266,7 +267,10 @@ check_efi_boot_loader_file() {
       # //NOTE// The efibootmgr-0.6.0-3 and above pkgs support passing unix-style paths with forward-slash / as path-separator for the -l option. 
       esp_p_="$(echo $esp_p_ | sed -r -e "s|\/|\\\|g")"
       if [ -e "$mnt_pnt/$esp_boot_f_unix_format" ]; then
-	echo "${lb_}; ${uud_}; ${bt_f_}" >> $nvram_2_update_table
+        # Make sure it does not exist in NVRAM before outputting.
+        if [ -z "$(comm -12 <(echo "$line" | sort) <(echo "$label_uuid_boot_f_in_nvram") | sort)" ]; then
+	  echo "${lb_}; ${uud_}; ${bt_f_}" >> $nvram_2_update_table
+	fi
       else
         # No reference one from EFI NVRAM, we have to find or guess...
         # Possible files examples:
@@ -308,7 +312,10 @@ check_efi_boot_loader_file() {
             break
           fi
         done
-	echo "${esp_boot_os}; ${uud_}; ${esp_boot_f}" >> $nvram_2_update_table
+        # Make sure it does not exist in NVRAM before outputting.
+        if [ -z "$(comm -12 <(echo "$line" | sort) <(echo "$label_uuid_boot_f_in_nvram") | sort)" ]; then
+	  echo "${esp_boot_os}; ${uud_}; ${esp_boot_f}" >> $nvram_2_update_table
+	fi
       fi
     fi
   done < $nvram_chklist_table
