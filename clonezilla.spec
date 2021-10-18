@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.12
+Version:	4.5.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Oct 18 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.13-drbl1
+  * update-efi-nvram-boot-entry: avoid duplicated boot entries.
+
 * Sun Oct 17 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.12-drbl1
   * update-efi-nvram-boot-entry: improved to refer to saved nvram data
     (efi-nvram.dat). In addition, multiple boot entries can be processed,
