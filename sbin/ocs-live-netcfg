@@ -15,9 +15,16 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
-# Settings
+# Default settings
 default_dns_server="8.8.8.8"
 # default_link_det_timeout is loaded from drbl-ocs.conf
+default_IP="192.168.120.1"
+default_NM="255.255.255.0"
+config_gw="yes"
+config_dns="yes"
+# ocs_use_wifi can be from boot parameters, or assigned in command line.
+# It will used in ask_nic_dev. 
+ocs_use_wifi_def="no"
 
 #
 check_if_root
@@ -36,9 +43,10 @@ USAGE() {
    echo " -g, --gateway GATEWAY   Assign the gateway shown in the dialog as GATEWAY."
    echo " -s, --dns     DNS       Assign the domain name server shown in the dialog as DNS."
    echo " -t, --timeout TIME      Assign the timeout to get the linking status of each NIC. Unit: sec. Default is $default_link_det_timeout secs."
-   echo  " --ignore-gw            Do not set default gateway."
-   echo  " --ignore-dns           Do not set domain name server."
-   echo  " -r, --ignore-dv  DV    Do not config network device DV, such as 'eth1 eth2'."
+   echo " --ignore-gw             Do not set default gateway."
+   echo " --ignore-dns            Do not set domain name server."
+   echo " -r, --ignore-dv  DV     Do not config network device DV, such as 'eth1 eth2'."
+   echo " -w, --use-wifi          Use wifi deivce."
 }
 #
 cfg_by_dhcp(){
@@ -231,9 +239,6 @@ if [ -n "$NS" ]; then
   done
 fi
 
-# Steven commented this. Not ready for wifi.
-#egrep -q "$DV" /proc/net/wireless 2>/dev/null && wlcardconfig "$DV"
-
 echo "Done."
 sleep 0.5
 } # end of cfg_static_ip
@@ -242,38 +247,26 @@ cfg_pppoe(){
    pppoeconf
 }
 
+##############
+#### MAIN ####
+##############
 
-# Default settings
-default_IP="192.168.120.1"
-default_NM="255.255.255.0"
-config_gw="yes"
-config_dns="yes"
 #
 while [ $# -gt 0 ]; do
   case "$1" in
     -l|--language)
-            shift
-            if [ -z "$(echo $1 |grep ^-.)" ]; then
-              # skip the -xx option, in case 
-	      specified_lang="$1"
-              shift
-            fi
-	    ;;
-    -d0|--dialog)  
-	    DIA="dialog" 
-	    shift;;
-    -d1|--Xdialog)  
-	    DIA="Xdialog" 
-	    shift;;
-    -d2|--whiptail)  
-	    DIA="whiptail" 
-	    shift;;
-    -d3|--gdialog)  
-	    DIA="gdialog" 
-	    shift;;
-    -d4|--kdialog)  
-	    DIA="kdialog" 
-	    shift;;
+        shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+	  specified_lang="$1"
+          shift
+        fi
+	;;
+    -d0|--dialog)   DIA="dialog"; shift;;
+    -d1|--Xdialog)  DIA="Xdialog"; shift;;
+    -d2|--whiptail) DIA="whiptail"; shift;;
+    -d3|--gdialog)  DIA="gdialog"; shift;;
+    -d4|--kdialog)  DIA="kdialog"; shift;;
     -i|--ip-add)
 	shift
         if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -314,12 +307,8 @@ while [ $# -gt 0 ]; do
 	  shift
         fi
 	;;
-    --ignore-gw)
-            config_gw="no"
-	    shift;;
-    --ignore-dns)
-            config_dns="no"
-	    shift;;
+    --ignore-gw)  config_gw="no"; shift;;
+    --ignore-dns) config_dns="no"; shift;;
     -r|--ignore-dv)
 	shift
         if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -328,10 +317,11 @@ while [ $# -gt 0 ]; do
 	  shift
         fi
 	;;
-    -*)     echo "${0}: ${1}: invalid option" >&2
-            USAGE >& 2
-            exit 2 ;;
-    *)      break ;;
+    -w|--use-wifi) ocs_use_wifi="yes"; shift;;
+    -*) echo "${0}: ${1}: invalid option" >&2
+        USAGE >& 2
+        exit 2 ;;
+    *)  break ;;
   esac
 done
 DV="$*"
@@ -343,15 +333,26 @@ ask_and_load_lang_set $specified_lang
 check_DIA_set_ESC $DIA
 
 # 
-[ -z "$ocs_netlink_timeout" ] && ocs_netlink_timeout="$default_link_det_timeout"
-
-##############
-#### main ####
-##############
-
 TMP="$(mktemp /tmp/netmenu.XXXXXX)"
 trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
 
+[ -z "$ocs_netlink_timeout" ] && ocs_netlink_timeout="$default_link_det_timeout"
+if [ -z "$ocs_use_wifi" ]; then
+  if grep -Ewq '(wlan.*|wl.*)' /proc/net/dev; then
+    # Found wifi device. Ask if using it.
+    $DIA  --title  \
+    "Use_wifi_dev" --menu "$msg_choose_if_use_wifi" \
+    0 0 0 $DIA_ESC \
+    "no"  "$msg_do_not_use_wifi" \
+    "yes" "$msg_use_wifi" \
+    2> $TMP
+    ocs_use_wifi="$(cat $TMP)"
+    [ -f "$TMP" ] && rm -f $TMP
+  fi
+fi
+[ -z "$ocs_use_wifi" ] && ocs_use_wifi="$ocs_use_wifi_def"
+
+#
 if [ -z "$DV" ]; then
   ask_nic_dev -e "$msg_choose_nic?" menu 1 # Obtain $chosen_nics
   DV="$chosen_nics"
@@ -379,6 +380,16 @@ fi
 # TODO: Check if $DV exists
 if [ "$DV" = "bond0" ]; then
   ocs-live-nicbonding
+fi
+
+# Use mtui for wifi connection
+if [ "$ocs_use_wifi" = "yes" ]; then
+  if [ -n "$(echo $DV | grep -Ew '(wlan.*|wl.*)')" ] ; then
+    service NetworkManager start
+    nmtui
+    rc=$?
+    exit $rc
+  fi
 fi
 
 #

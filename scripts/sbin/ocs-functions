@@ -14279,10 +14279,14 @@ ask_nic_dev() {
     checklist) dia_def_status="on";;
   esac
 
-  NETDEVICES="$(cat /proc/net/dev | awk -F: '/eth.*:|tr.*:|wlan.*:|wl.*:|en.*:/{print $1}' | sort)"
+  # ocs_use_wifi is from boot parameter, hence in /etc/ocs/ocs-live.conf, or assigned by ocs-live-netcfg.
+  if [ "$ocs_use_wifi" = "yes" ]; then
+    NETDEVICES="$(awk -F: '/wlan.*:|wl.*:/{print $1}' /proc/net/dev | sort)"
+  else
+    NETDEVICES="$(awk -F: '/eth.*:|tr.*:|en.*:/{print $1}' /proc/net/dev | sort)"
+  fi
   # make it in a single line
   NETDEVICES="$(echo $NETDEVICES)"
-
   nic_no="$(echo $NETDEVICES | wc -w)"
   if [ "$nic_no" -lt "$req_nic_no" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -14349,23 +14353,23 @@ ask_nic_dev() {
       else
 	if [ -n "$(echo $DEVICE | grep -Ew "(^wl.*|^wlan.*)")" ]; then
           echo "$DEVICE is a wireless device. No need to detect its linking status."
-	  continue
+        else
+          echo -n "Getting the linking status of $DEVICE. Timeout in $ocs_netlink_timeout secs."
+          TIMEOUT="$ocs_netlink_timeout"
+          while [ "$link_status" = "no" -o -z "$link_status" ]; do
+            sleep 1
+            link_status="$(LC_ALL=C ethtool $DEVICE | grep -i "Link detected:" | cut -d":" -f2 | sed -e "s/ //g")"
+            TIMEOUT="$(( $TIMEOUT - 1 ))"
+            if [ "$TIMEOUT" -le 0 ]; then
+              echo
+              echo -n "Timeout when finding linking status of $DEVICE."
+    	  sleep 2
+              break
+            else
+              echo -n "."
+            fi
+          done
         fi
-        echo -n "Getting the linking status of $DEVICE. Timeout in $ocs_netlink_timeout secs."
-        TIMEOUT="$ocs_netlink_timeout"
-        while [ "$link_status" = "no" -o -z "$link_status" ]; do
-          sleep 1
-          link_status="$(LC_ALL=C ethtool $DEVICE | grep -i "Link detected:" | cut -d":" -f2 | sed -e "s/ //g")"
-          TIMEOUT="$(( $TIMEOUT - 1 ))"
-          if [ "$TIMEOUT" -le 0 ]; then
-            echo
-            echo -n "Timeout when finding linking status of $DEVICE."
-    	sleep 2
-            break
-          else
-            echo -n "."
-          fi
-        done
         if [ "$link_status" = "yes" ]; then
           echo " Found status \"linked\"."
         else
