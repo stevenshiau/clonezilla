@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.13
+Version:	4.5.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.5.3, psmisc, udpcast, partclone >= 0.3.18, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
+Requires:	bash, perl, drbl >= 4.5.9, psmisc, udpcast, partclone >= 0.3.18, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Oct 25 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.14-drbl1
+  * ocs-live-netcfg: add support for wifi device.
+  * S03prep-drbl-clonezilla: Add boot parameter ocs_use_wifi. It can be
+    assigned as "yes" or "no" (default).
+
 * Mon Oct 18 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.13-drbl1
   * update-efi-nvram-boot-entry: avoid duplicated boot entries.
 
