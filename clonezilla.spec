@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.14
+Version:	4.5.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Oct 26 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.15-drbl1
+  * ocs-live-netcfg: rewrite so it's easier to read.
+    Changes:
+    Boot parameter ocs_use_wifi was changed to ocs_nic_type.
+    ocs-live-netcfg: no more option -r and -w.
+    Merge them as option -w|--nic-type TYPE. TYPE can be "wired" or "wireless".
+
 * Mon Oct 25 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.14-drbl1
   * ocs-live-netcfg: add support for wifi device.
   * S03prep-drbl-clonezilla: Add boot parameter ocs_use_wifi. It can be
