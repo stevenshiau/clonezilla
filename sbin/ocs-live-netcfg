@@ -22,9 +22,9 @@ default_IP="192.168.120.1"
 default_NM="255.255.255.0"
 config_gw="yes"
 config_dns="yes"
-# ocs_use_wifi can be from boot parameters, or assigned in command line.
+# ocs_nic_type can be from boot parameters, or assigned in command line.
 # It will used in ask_nic_dev. 
-ocs_use_wifi_def="no"
+ocs_nic_type_def="wired"  # Default to use wired network device.
 
 #
 check_if_root
@@ -46,7 +46,7 @@ USAGE() {
    echo " --ignore-gw             Do not set default gateway."
    echo " --ignore-dns            Do not set domain name server."
    echo " -r, --ignore-dv  DV     Do not config network device DV, such as 'eth1 eth2'."
-   echo " -w, --use-wifi          Use wifi deivce."
+   echo " -w, --net-type TYPE     Use TYPE (wired or wireless) for the network deivce."
 }
 #
 cfg_by_dhcp(){
@@ -244,8 +244,8 @@ sleep 0.5
 } # end of cfg_static_ip
 #
 cfg_pppoe(){
-   pppoeconf
-}
+  pppoeconf
+} # end of cfg_pppoe
 
 ##############
 #### MAIN ####
@@ -317,7 +317,14 @@ while [ $# -gt 0 ]; do
 	  shift
         fi
 	;;
-    -w|--use-wifi) ocs_use_wifi="yes"; shift;;
+    -w|--net-type) 
+	shift
+        if [ -z "$(echo $1 |grep ^-.)" ]; then
+          # skip the -xx option, in case 
+          ocs_nic_type="$1"
+	  shift
+        fi
+	;;
     -*) echo "${0}: ${1}: invalid option" >&2
         USAGE >& 2
         exit 2 ;;
@@ -337,20 +344,41 @@ TMP="$(mktemp /tmp/netmenu.XXXXXX)"
 trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
 
 [ -z "$ocs_netlink_timeout" ] && ocs_netlink_timeout="$default_link_det_timeout"
-if [ -z "$ocs_use_wifi" ]; then
-  if grep -Ewq '(wlan.*|wl.*)' /proc/net/dev; then
-    # Found wifi device. Ask if using it.
-    $DIA  --title  \
-    "Use_wifi_dev" --menu "$msg_choose_if_use_wifi" \
-    0 0 0 $DIA_ESC \
-    "no"  "$msg_do_not_use_wifi" \
-    "yes" "$msg_use_wifi" \
-    2> $TMP
-    ocs_use_wifi="$(cat $TMP)"
-    [ -f "$TMP" ] && rm -f $TMP
-  fi
+
+netdev_type_on_system="$(get_netdev_type_on_system)"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "Found NIC type on this system: $netdev_type_on_system"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+if [ -z "$ocs_nic_type" ]; then
+  # Another way to detect is /proc/net/wireless, and its content is like:
+  # Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE
+  #  face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22
+  # wlp4s0: 0000   68.  -42.  -256        0      0      0      0    154        0
+  # However, /proc/net/wirless seems to be not working well for USB wireless
+  # device. Even when it's plugged, it's not shown in /proc/net/wirless.
+  case $netdev_type_on_system in
+    "wired")    ocs_nic_type="wired";;
+    "wireless") ocs_nic_type="wireless";;
+    "none") 
+      show_nic_dev_status_on_system
+      echo "$msg_program_stop!"
+      my_ocs_exit 1
+      ;;
+    "both")
+      # Ask which one to use
+      $DIA  --title  \
+      "Wired or wireless network" --menu "$msg_choose_wired_or_wireless" \
+      0 0 0 $DIA_ESC \
+      "wired"    "$msg_use_wired" \
+      "wireless" "$msg_use_wireless" \
+      2> $TMP
+      ocs_nic_type="$(cat $TMP)"
+      [ -f "$TMP" ] && rm -f $TMP
+      ;;
+  esac
 fi
-[ -z "$ocs_use_wifi" ] && ocs_use_wifi="$ocs_use_wifi_def"
+[ -z "$ocs_nic_type" ] && ocs_nic_type="$ocs_nic_type_def"
 
 #
 if [ -z "$DV" ]; then
@@ -383,13 +411,11 @@ if [ "$DV" = "bond0" ]; then
 fi
 
 # Use mtui for wifi connection
-if [ "$ocs_use_wifi" = "yes" ]; then
-  if [ -n "$(echo $DV | grep -Ew '(wlan.*|wl.*)')" ] ; then
-    service NetworkManager start
-    nmtui
-    rc=$?
-    exit $rc
-  fi
+if [ "$ocs_nic_type" = "wireless" ]; then
+  service NetworkManager start
+  nmtui
+  rc=$?
+  exit $rc
 fi
 
 #

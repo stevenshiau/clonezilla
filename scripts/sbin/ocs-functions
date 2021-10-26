@@ -14253,6 +14253,7 @@ ask_nic_dev() {
   local enable_channel_bonding="no"
   # link_max_cache_sec is from drbl-ocs.conf
   # The file name prefix for link status file. It will be used like /tmp/linked-status.eth0
+  # ocs_nic_type is a global variable
   local link_status_cache_pref="/tmp/linked-status"
 
   while [ $# -gt 0 ]; do
@@ -14279,12 +14280,22 @@ ask_nic_dev() {
     checklist) dia_def_status="on";;
   esac
 
-  # ocs_use_wifi is from boot parameter, hence in /etc/ocs/ocs-live.conf, or assigned by ocs-live-netcfg.
-  if [ "$ocs_use_wifi" = "yes" ]; then
-    NETDEVICES="$(awk -F: '/wlan.*:|wl.*:/{print $1}' /proc/net/dev | sort)"
-  else
-    NETDEVICES="$(awk -F: '/eth.*:|tr.*:|en.*:/{print $1}' /proc/net/dev | sort)"
-  fi
+  # ocs_nic_type is from:
+  # (1) boot parameter, hence in /etc/ocs/ocs-live.conf
+  # (2) assigned by ocs-live-netcfg
+  case "$ocs_nic_type" in
+    wired)
+      NETDEVICES="$(awk -F: '/eth.*:|tr.*:|en.*:/{print $1}' /proc/net/dev | sort)"
+      ;;
+    wireless)
+      NETDEVICES="$(awk -F: '/wlan.*:|wl.*:/{print $1}' /proc/net/dev | sort)"
+      ;;
+    *)
+      echo "ocs_nic_type is not wired or wireless. No idea how to process."
+      echo "$msg_program_stop!"
+      my_ocs_exit 1
+      ;;
+  esac
   # make it in a single line
   NETDEVICES="$(echo $NETDEVICES)"
   nic_no="$(echo $NETDEVICES | wc -w)"
@@ -14292,6 +14303,7 @@ ask_nic_dev() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "The requested NIC number is: $req_nic_no, while the NIC number on this system is: $nic_no"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    show_nic_dev_status_on_system
     echo "$msg_program_stop!"
     my_ocs_exit 1
   fi
@@ -15436,3 +15448,33 @@ unmount_dislocker_mount_point_if_necessary(){
     fi
   done
 } # end of unmount_dislocker_mount_point_if_necessary
+#
+get_netdev_type_on_system() {
+  # Function to get the network type on the system.
+  # Return type: none; wired; wireless; both
+  # //NOTE// /proc/net/wirless seems to be not working well for USB wireless
+  # device. Even when it's plugged, it's not shown in /proc/net/wirless.
+  local nettype netdev_allno wired_no wireless_no
+  netdev_allno="$(LC_ALL=C tail -n +3 /proc/net/dev 2>/dev/null | \
+	    awk -F":" '!/lo:/{print $1}' | wc -l)"
+  wireless_no="$(awk -F: '/wlan.*:|wl.*:/{print $1}' /proc/net/dev | wc -l)"
+  wired_no="$(echo "scale=0; $netdev_allno - $wireless_no" 2>/dev/null | \
+	      bc -l)"
+  if [ "$wireless_no" -eq 0 -a "$wired_no" -gt 0 ]; then
+    nettype="wired"
+  elif [ "$wireless_no" -gt 0 -a "$wired_no" -eq 0 ]; then
+    nettype="wireless"
+  elif [ "$wireless_no" -gt 0 -a "$wired_no" -gt 0 ]; then
+    nettype="both"
+  else
+    nettype="none"
+  fi
+  echo "$nettype"
+} # end of get_netdev_type_on_system
+#
+show_nic_dev_status_on_system() {
+  echo "$msg_nic_status_on_sytem"
+  echo $msg_delimiter_star_line
+  cat /proc/net/dev
+  echo $msg_delimiter_star_line
+} # end of show_nic_dev_status_on_system
