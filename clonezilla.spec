@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.5.16
+Version:	4.6.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Nov 27 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.1-drbl1
+  * ocs-btsrv: no more assigning RAM size when running ezio.
+    Use the default value from libtorrent since ezio >= 1.2.1
+    has removed the option --cache.
+
 * Wed Oct 27 2021 Steven Shiau <steven _at_ clonezilla org> 4.5.16-drbl1
   * ocs-live-netcfg: add exit in the menu when choosing wired or wireless
     NIC type.
