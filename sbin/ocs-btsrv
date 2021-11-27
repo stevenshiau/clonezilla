@@ -233,7 +233,7 @@ start_bt_srv() {
   local ipt idir idir_name
   local cpu_no cmd_make_metainfo cmd_update_metainfo
   local existing_ip existing_port 
-  local cmd_start_seeding ezio_start_seeding_param ezio_ram_size_KB ct_pid_log_prefix
+  local cmd_start_seeding ezio_start_seeding_param ct_pid_log_prefix
   local rc_leecher
   if [ -z "$img_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -318,10 +318,6 @@ start_bt_srv() {
      get_ezio_prog  # get the variable ezio_prog
      # //NOTE// The working dir for ezio is the working dir as torrent file
      # E.g., ezio -U -f /home/partimag/btzone/xenial-x64-20161104/sda1.torrrent /home/partimag/btzone/xenial-x64-20161104
-     # Set memory limit
-     ezio_ram_size_KB="$(LC_ALL=C vmstat -s -S k | grep "free memory" | awk -F" " '{print $1}')"
-     # Do not use all the free memory. ezio_cache_ratio is from drbl-ocs.conf.
-     ezio_ram_size_KB="$(LC_ALL=C printf "%.0f" "$(echo "($ezio_ram_size_KB*$ezio_cache_ratio)" | bc -l)")"
      # Log and pid
      # Remove the leading ~
      ct_pid_log_prefix="$(echo $ct_pid_log_prefix | sed -e "s/^~//g")"
@@ -333,7 +329,7 @@ start_bt_srv() {
        # raw-dev: ezio -U -T sda1.torrent -L /dev/sda1 -T sda2.torrent -L /dev/sda2
        ezio_seeder_leecher_opt="$ezio_seeder_leecher_opt -f"
      fi
-     cmd_start_seeding="$ezio_prog $ezio_common_opt $ezio_seeder_leecher_opt --cache $ezio_ram_size_KB $ezio_start_seeding_param 2>&1" 
+     cmd_start_seeding="$ezio_prog $ezio_common_opt $ezio_seeder_leecher_opt $ezio_start_seeding_param 2>&1" 
      # Squeeze multiple spaces to one only
      cmd_start_seeding="$(echo $cmd_start_seeding | sed -r -e "s|[[:space:]]+| |g")"
      if [ "$run_mode" = "seeder" ]; then
