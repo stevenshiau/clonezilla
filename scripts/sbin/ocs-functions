@@ -2765,7 +2765,7 @@ do_run_update_initrd_from_restored_os() {
   local mnt_pnt mkinitrd_run_sh mkinitrd_cmd ival rc_
   local grub2_prt="$1"  # e.g. /dev/sda1, the partition where /boot/grub exists
   local root_prt="$2"   # e.g. /dev/sda2, the partition where / exists
-  local diff_grub_pt_flag kver_initrd initrd_tool initrd_2_be_updated 
+  local diff_grub_pt_flag kver_initrd initrd_tool initrd_2_be_updated tmpdir_opt
   for i in grub2_prt root_prt; do
     eval ivar=\$${i}
     if [ -z "$ivar" ]; then
@@ -2827,8 +2827,23 @@ do_run_update_initrd_from_restored_os() {
   initrd_2_be_updated="$(LC_ALL=C find $mnt_pnt/boot/ -name "init*${kver_initrd}*" -print 2>/dev/null | grep -v kdum)"
   # Decide it's update-initramfs or dracut
   mkinitrd_run_sh="$(mktemp $mnt_pnt/grub2-sh-XXXXXX)"
+  tmpdir_opt=""
+  # CentOS 6: /sbin/dracut, CentOS >=7: /usr/sbin/dracut
   if [ -e "$mnt_pnt/usr/bin/dracut" ]; then
+    # CentOS >=7: /usr/sbin/dracut
+    # Newer dracut supports --tmpdir
     initrd_tool="dracut"
+    if [ -n "$(LC_ALL=C strings $mnt_pnt/usr/bin/dracut | \
+	    grep -Eo -- --tmpdir)" ]; then
+      tmpdir_opt="--tmpdir /tmp"
+    fi
+  elif [ -e "$mnt_pnt/sbin/dracut" ]; then
+    # CentOS 6: /sbin/dracut
+    initrd_tool="dracut"
+    if [ -n "$(LC_ALL=C strings $mnt_pnt/sbin/dracut | \
+	    grep -Eo -- --tmpdir)" ]; then
+      tmpdir_opt="--tmpdir /tmp"
+    fi
   elif [ -e "$mnt_pnt/usr/sbin/update-initramfs" ]; then
     initrd_tool="update-initramfs"
   fi
@@ -2837,7 +2852,7 @@ do_run_update_initrd_from_restored_os() {
       mkinitrd_cmd="update-initramfs -u -k all" ;;
     "dracut")
       # Here we assign tmpdir as /tmp, since by default it's /var/tmp, but in chroot the /var might be in another partition.
-      mkinitrd_cmd="dracut --tmpdir /tmp -f ${initrd_2_be_updated#$mnt_pnt} $kver_initrd" ;;
+      mkinitrd_cmd="dracut $tmpdir_opt -f ${initrd_2_be_updated#$mnt_pnt} $kver_initrd" ;;
     *)
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "The tool to update initramfs was NOT found in function do_run_update_initrd_from_restored_os!"
