@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.6.2
+Version:	4.6.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Nov 29 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.3-drbl1
+  * ocs-btsrv: ezio uses --cache only as it's available. 
+    This is compatible when older version of ezio is used.
+  * Support dracut from CentOS 6 which exists in different path and no
+    option"--tmpdir" for the restored CentOS 6.
+
 * Sat Nov 27 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.2-drbl1
   * create-ubuntu-live: removed support for groovy, add jammy.
 
