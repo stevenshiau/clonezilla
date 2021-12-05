@@ -15493,3 +15493,19 @@ show_nic_dev_status_on_system() {
   cat /proc/net/dev
   echo $msg_delimiter_star_line
 } # end of show_nic_dev_status_on_system
+#
+check_if_repo_fat_tune_image_vol_limit(){
+  # Function to tune VOL_LIMIT_IN_INTERACTIVE when the image repo is FAT
+  # This is only required for saving modes (savedisk and saveparts).
+  local repo_fs
+  repo_fs="$(LC_ALL=C findmnt -n -o FSTYPE --target $ocsroot)"
+  case "$repo_fs" in
+    *fat*)
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+       echo "Found $ocsroot is using FAT file system. Set VOL_LIMIT_IN_INTERACTIVE to 4096 MB in /etc/drbl/drbl-ocs.conf."
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       export VOL_LIMIT_IN_INTERACTIVE="4096"
+       perl -pi -e "s/^VOL_LIMIT_IN_INTERACTIVE=.*/VOL_LIMIT_IN_INTERACTIVE=4096 # Modified by ocs-sr/" /etc/drbl/drbl-ocs.conf
+       ;;
+  esac
+} # end of check_if_repo_fat_tune_image_vol_limit
