@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.6.4
+Version:	4.6.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 06 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.5-drbl1
+  * Do not modify /etc/drbl/drbl-ocs.conf if the image repo is FAT. Just 
+    set the environmental variable VOL_LIMIT_IN_INTERACTIVE to 4096 once.
+
 * Sun Dec 05 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.4-drbl1
   * By default do not split the image file of a partition, i.e., use "-i 0"
     when saving an image by ocs-sr.
