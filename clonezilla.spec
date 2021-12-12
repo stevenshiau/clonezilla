@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.6.5
+Version:	4.6.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.6.1, psmisc, udpcast, partclone >= 0.3.18, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
+Requires:	bash, perl, drbl >= 4.6.3, psmisc, udpcast, partclone >= 0.3.18, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Dec 12 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.6-drbl1
+  * Unicast retoring by partclone was improved. If the image file is not
+    split, no need to use cat. Just read it from the uncompressing program.
+    This makes the performance better.
+
 * Mon Dec 06 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.5-drbl1
   * Do not modify /etc/drbl/drbl-ocs.conf if the image repo is FAT. Just 
     set the environmental variable VOL_LIMIT_IN_INTERACTIVE to 4096 once.
