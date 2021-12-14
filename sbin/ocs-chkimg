@@ -108,11 +108,18 @@ img_check_by_partclone() {
   echo $msg_delimiter_star_line
 
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
+  cat <<_EOT_ | tee -a /var/log/ocs-chk-img.log
+( for img in $target_d/$img_file_prefix; do
+    cat \$img
+  done
+) | \
+$unzip_stdin_cmd | LC_ALL=C partclone.chkimg -L /var/log/${img_file}-img-chk.log $PARTCLONE_CHKIMG_OPT -s -
+_EOT_
   ( for img in $target_d/$img_file_prefix; do
       cat $img
     done
   ) | \
-  $unzip_stdin_cmd | LC_ALL=C partclone.chkimg $PARTCLONE_CHKIMG_OPT -s -
+  $unzip_stdin_cmd | LC_ALL=C partclone.chkimg -L /var/log/${img_file}-img-chk.log $PARTCLONE_CHKIMG_OPT -s -
   rc="$?"
   return $rc
 } # end of img_check_by_partclone
