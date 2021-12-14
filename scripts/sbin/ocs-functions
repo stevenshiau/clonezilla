@@ -5533,7 +5533,7 @@ unicast_restore_by_ntfsclone() {
 #
 unicast_restore_by_partclone() {
   local file_ fs_ partclone_img_info_tmp file_basename
-  local unzip_cmd_error cmd_partclone_rest split_flag
+  local unzip_cmd_error cmd_partclone_rest
   local -a retcodes='()'
   # First, we find the filesystem 
   file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
@@ -5563,13 +5563,11 @@ unicast_restore_by_partclone() {
       # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
       # e.g. sda1.ext4-ptcl-img.gz.aaa -> sda1.ext4-ptcl-img.gz.*
       img_file_prefix="$(echo ${file_basename} | sed -r -e "s/\.aa*$//").*"
-      split_flag="yes"
     else
       # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
       get_image_cat_zip_cmd ${file_basename}
       # The file is NOT split, so the file name is just like "sda1.ext4-ptcl-img.gz" only, no "."
       img_file_prefix="${file_basename}"
-      split_flag="no"
     fi
   else
     # Old format
@@ -5579,13 +5577,11 @@ unicast_restore_by_partclone() {
       get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img.aa
       # The files are split, like hda1.00, hda1.01, so we have to add "."
       img_file_prefix="$img_file.${fs_}-img.*"
-      split_flag="yes"
     else
       # Old format with image not split
       get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img
       # The file is NOT split, so the file name is just like "hda1" only, no "."
       img_file_prefix="$img_file.${fs_}-img"
-      split_flag="no"
     fi
   fi
   # assign partclone_img_info tmp file.
@@ -5617,44 +5613,26 @@ unicast_restore_by_partclone() {
   fi
   # partclone_hfsp does not put any header, so just cat them
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
-  case "$split_flag" in
-  yes)
-    cat <<_EOT_ | tee -a ${OCS_LOGFILE}
+  cat <<_EOT_ | tee -a ${OCS_LOGFILE}
 ( for img in $target_d/$img_file_prefix; do
-    cat $img
+    cat \$img
   done
 ) \
 | $unzip_stdin_cmd 2> $unzip_cmd_error \
 | LC_ALL=C $cmd_partclone_rest
 _EOT_
-    ( for img in $target_d/$img_file_prefix; do
-        cat $img
-      done
-    ) \
-    | $unzip_stdin_cmd 2> $unzip_cmd_error \
-    | LC_ALL=C $cmd_partclone_rest
-    retcodes=(${PIPESTATUS[@]})
-    if [ "${retcodes[1]}" -eq 0 -a "${retcodes[2]}" -eq 0 ]; then
-      rc=0
-    else
-      rc=1
-    fi
-    ;;
-  no)
-    cat <<_EOT_ | tee -a ${OCS_LOGFILE}
-$unzip_stdin_cmd $target_d/$img_file_prefix 2> $unzip_cmd_error \
-| LC_ALL=C $cmd_partclone_rest
-_EOT_
-    $unzip_stdin_cmd $target_d/$img_file_prefix 2> $unzip_cmd_error \
-    | LC_ALL=C $cmd_partclone_rest
-    retcodes=(${PIPESTATUS[@]})
-    if [ "${retcodes[0]}" -eq 0 -a "${retcodes[1]}" -eq 0 ]; then
-      rc=0
-    else
-      rc=1
-    fi
-    ;;
-  esac
+  ( for img in $target_d/$img_file_prefix; do
+      cat $img
+    done
+  ) \
+  | $unzip_stdin_cmd 2> $unzip_cmd_error \
+  | LC_ALL=C $cmd_partclone_rest
+  retcodes=(${PIPESTATUS[@]})
+  if [ "${retcodes[1]}" -eq 0 -a "${retcodes[2]}" -eq 0 ]; then
+    rc=0
+  else
+    rc=1
+  fi
 
   cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
   if [ -s "$unzip_cmd_error" ]; then
@@ -5676,7 +5654,7 @@ _EOT_
 unicast_restore_by_dd() {
   local partclone_img_info_tmp
   local unzip_retcode_file unzip_retcode
-  local dd_retcode_file dd_retcode split_flag
+  local dd_retcode_file dd_retcode
   local unzip_cmd_error
   local -a retcodes='()'
   if [ -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
@@ -5684,12 +5662,10 @@ unicast_restore_by_dd() {
     get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file.dd-img`
     # The files are split, like hda1.00, hda1.01, so we have to add "."
     img_file_prefix="$img_file.dd-img.*"
-    split_flag="yes"
   else
     get_image_cat_zip_cmd $target_d/$img_file.dd-img
     # The file is NOT split, so the file name is just like "hda1" only, no "."
     img_file_prefix="$img_file.dd-img"
-    split_flag="no"
   fi
 
   echo $msg_delimiter_star_line
@@ -5768,50 +5744,31 @@ unicast_restore_by_dd() {
     start_time="$(date +%s%N)"
     # partclone_hfsp does not put any header, so just cat them
     # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
-    case "$split_flag" in
-    yes)
-      cat <<_EOT_ | tee -a ${OCS_LOGFILE}
+    cat <<_EOT_ | tee -a ${OCS_LOGFILE}
 ( for img in $target_d/$img_file_prefix; do
     # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
-    [ -n "$(echo "$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
-    cat $img
+    [ -n "$(echo "\$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
+    cat \$img
   done
 ) \
 | $unzip_stdin_cmd 2> $unzip_cmd_error \
 | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
 _EOT_
-      ( for img in $target_d/$img_file_prefix; do
-          # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
-          [ -n "$(echo "$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
-          cat $img
-        done
-      ) \
-      | $unzip_stdin_cmd 2> $unzip_cmd_error \
-      | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
-      retcodes=(${PIPESTATUS[@]})
-      
-      if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
-        rc=0
-      else
-        rc=1
-      fi
-      ;;
-    no)
-      cat <<_EOT_ | tee -a ${OCS_LOGFILE}
-$unzip_stdin_cmd $target_d/$img_file_prefix 2> $unzip_cmd_error \
-| LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
-_EOT_
-      $unzip_stdin_cmd $target_d/$img_file_prefix 2> $unzip_cmd_error \
-      | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
-      retcodes=(${PIPESTATUS[@]})
-      
-      if [ ${retcodes[0]} -eq 0 -a ${retcodes[1]} -eq 0 ]; then
-        rc=0
-      else
-        rc=1
-      fi
-      ;;
-    esac
+    ( for img in $target_d/$img_file_prefix; do
+        # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
+        [ -n "$(echo "$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
+        cat $img
+      done
+    ) \
+    | $unzip_stdin_cmd 2> $unzip_cmd_error \
+    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
+    retcodes=(${PIPESTATUS[@]})
+    
+    if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
+      rc=0
+    else
+      rc=1
+    fi
     
     cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
     if [ -s "$unzip_cmd_error" ]; then
