@@ -1377,21 +1377,40 @@ save_part_by_partclone() {
   split_error="$(mktemp /tmp/split_error.XXXXXX)"
   trap "[ -f "$TMP" ] && rm -f $split_error" HUP INT QUIT TERM EXIT
 
-  if [ "$fs_p" != "dd" ]; then
-    cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -c -s $source_dev --output - | $compress_prog_opt"
+  # Special case for no compression + no splitting. To get the best performance, reduce the usage of pipe to cat and split.
+  # Ref: https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/46706796eb
+  if [ "$compress_prog_opt" = "cat" -a "$VOL_LIMIT" = "0" ]; then
+    case "$fs_p" in
+      dd)
+         # Special case, dd, no compression + no splitting.
+         # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
+         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT --buffer_size ${partclone_dd_bs}  -L $partclone_img_info_tmp -s $source_dev --output $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}"
+         ;;
+       *)
+         # Special case, not dd, no compression + no splitting
+         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -c -s $source_dev --output $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}"
+         ;;
+    esac
   else
-    # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-    cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
+    case "$fs_p" in
+      dd)
+         # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
+         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
+         ;;
+       *)
+         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -c -s $source_dev --output - | $compress_prog_opt"
+         ;;
+    esac
+    case "$VOL_LIMIT" in
+      [1-9]*)
+         # $tgt_dir/${tgt_file}.${fs_pre}-img. is prefix, the last "." is necessary make the output file is like hda1.${fs_pre}-img.aa, hda1.${fs_pre}-img.ab. We do not add -d to make it like hda1.${fs_pre}-img.00, hda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (hda1.${fs_pre}-img.000, hda1.${fs_pre}-img.001)
+         cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}. 2> $split_error"
+         ;;
+      *)
+         cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf} 2> $split_error"
+         ;;
+    esac
   fi
-  case "$VOL_LIMIT" in
-    [1-9]*)
-       # $tgt_dir/${tgt_file}.${fs_pre}-img. is prefix, the last "." is necessary make the output file is like hda1.${fs_pre}-img.aa, hda1.${fs_pre}-img.ab. We do not add -d to make it like hda1.${fs_pre}-img.00, hda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (hda1.${fs_pre}-img.000, hda1.${fs_pre}-img.001)
-       cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}. 2> $split_error"
-       ;;
-    *)
-       cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf} 2> $split_error"
-       ;;
-  esac
   echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
   LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
   rc="$?"
