@@ -21,6 +21,9 @@
 # /dev/sdb2, LVM2_member, 7.5G, LVM2_member
 # /dev/sdc1, ntfs, 100M, ntfs
 # /dev/sdc2, ntfs, 7.9G, ntfs
+#
+# //NOTE// The major and minor in /proc/partitions might change after partprobe is run, although
+# The blocks and device name remain unchanged. Hence only column 3 and 4 should be focused.
 
 #
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -50,8 +53,9 @@ USAGE() {
 #
 gen_dev_list_file() {
   if [ -e "$dev_list_cache_dir/pttable_for_disk.txt" ]; then
-    if [ -n "$(diff $dev_list_cache_dir/pttable_for_disk.txt /proc/partitions)" ]; then
-      echo "Finding all disks..."
+    if [ -n "$(diff <(awk '{print $3,$4}' $dev_list_cache_dir/pttable_for_disk.txt) \
+	            <(awk '{print $3,$4}' /proc/partitions))" ]; then
+      echo "Finding all disk(s)..."
       dsk_list="$(get_disk_list /proc/partitions)"
     else
       echo "The file /proc/partitions remains the same. Skip generating disk(s) list file."
@@ -59,12 +63,13 @@ gen_dev_list_file() {
       dsk_list="$(cat $dev_list_cache_dir/disk_list.cache)"
     fi
   else
-    echo "Finding all disks..."
+    echo "Finding all disk(s)..."
     dsk_list="$(get_disk_list /proc/partitions)"
   fi
   if [ -e "$dev_list_cache_dir/pttable_for_part.txt" ]; then
-    if [ -n "$(diff $dev_list_cache_dir/pttable_for_part.txt /proc/partitions)" ]; then
-       echo "Finding all partitions..."
+    if [ -n "$(diff <(awk '{print $3,$4}' $dev_list_cache_dir/pttable_for_part.txt) \
+	            <(awk '{print $3,$4}' /proc/partitions))" ]; then
+       echo "Finding all partition(s)..."
        prt_list="$(get_part_list /proc/partitions)"
     else
       echo "The file /proc/partitions remains the same. Skip generating partitions(s) list file."
@@ -72,7 +77,7 @@ gen_dev_list_file() {
       prt_list="$(cat $dev_list_cache_dir/part_list.cache)"
     fi
   else
-    echo "Finding all partitions..."
+    echo "Finding all partition(s)..."
     prt_list="$(get_part_list /proc/partitions)"
   fi
 } # end of gen_dev_list_file
@@ -99,12 +104,12 @@ gen_dev_fs_cache_file_job() {
        echo /dev/$ipart, $fs, $size, $type >> $dev_list_cache_dir/dev_fs_size_type.cache
      fi
   done
-  (LC_ALL=C cat /proc/partitions; blkid)> $dev_list_cache_dir/pttable_blkid_for_dev.txt
+  (LC_ALL=C awk '{print $3,$4}' /proc/partitions; blkid)> $dev_list_cache_dir/pttable_blkid_for_dev.txt
 } # end of gen_dev_fs_cache_file_job
 #
 gen_dev_fs_cache_file() {
 if [ -e $dev_list_cache_dir/pttable_blkid_for_dev.txt ]; then
-  if [ -n "$(diff <(LC_ALL=C cat /proc/partitions; blkid) \
+  if [ -n "$(diff <(LC_ALL=C awk '{print $3,$4}' /proc/partitions; blkid) \
 	  <(cat $dev_list_cache_dir/pttable_blkid_for_dev.txt))" ]; then
     # The kept partition table file+blkid output is not the same with current one
     gen_dev_fs_cache_file_job
@@ -143,6 +148,7 @@ while [ $# -gt 0 ]; do
 done
 
 mkdir -p $dev_list_cache_dir
+echo "Start preparing device name cache files in $dev_list_cache_dir/..."
 partprobe 2>/dev/null
 
 case "$mode" in
