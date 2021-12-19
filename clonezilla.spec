@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.6.6
+Version:	4.6.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,29 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Dec 19 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.8-drbl1
+  * update-efi-nvram-boot-entry: bug fixed for 2 or more ESPs on the same
+    machine, unmount should be done within for loop.
+  * ocs-prep-cache: ignore the 1st 2 columns in /proc/partitions when
+    comparing it for the cache files, since partprobe might change the major
+    and minor numbers in /proc/partitions, while the blocks and device names
+    (3rd & 4th columns) will remain the same after partprobe is run.
+  * ocs-chkimg: treat not link & not split image as a special case. Read it
+    directly. Do not use cat to get best performance.
+  * When restoring, not link & not split image as a special case. Read it
+    directly. Do not use cat to get best performance.
+
+* Tue Dec 14 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.7-drbl1
+  * ocs-chkimg: output more messages to log files.
+  * Bug fixed: variables in for loop should be escaped when outputting to
+    log file.
+  * Reverted the split_flag mechanism when restoring which as implemented
+    in 4.6.6. This is because that some uncompression program can not deal
+    with (follow) symbolic files. E.g., "pixz -d" has no option to process
+    a symbolic file. This is crucial when we want to restore the image
+    saved from different source device. The program create-ocs-tmp-img
+    uses symbolic files for that.
+
 * Sun Dec 12 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.6-drbl1
   * Unicast retoring by partclone was improved. If the image file is not
     split, no need to use cat. Just read it from the uncompressing program.
