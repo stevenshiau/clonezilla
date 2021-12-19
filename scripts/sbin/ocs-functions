@@ -5552,7 +5552,7 @@ unicast_restore_by_ntfsclone() {
 #
 unicast_restore_by_partclone() {
   local file_ fs_ partclone_img_info_tmp file_basename
-  local unzip_cmd_error cmd_partclone_rest
+  local unzip_cmd_error cmd_partclone_rest split_flag link_flag restore_flag run_cmd_
   local -a retcodes='()'
   # First, we find the filesystem 
   file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
@@ -5573,6 +5573,12 @@ unicast_restore_by_partclone() {
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
     exit 1
   fi
+
+  if [ -h "$file_" ]; then
+    link_flag="yes"
+  else
+    link_flag="no"
+  fi
  
   if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img")" ]; then
     # New format
@@ -5582,11 +5588,13 @@ unicast_restore_by_partclone() {
       # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
       # e.g. sda1.ext4-ptcl-img.gz.aaa -> sda1.ext4-ptcl-img.gz.*
       img_file_prefix="$(echo ${file_basename} | sed -r -e "s/\.aa*$//").*"
+      split_flag="yes"
     else
       # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
       get_image_cat_zip_cmd ${file_basename}
       # The file is NOT split, so the file name is just like "sda1.ext4-ptcl-img.gz" only, no "."
       img_file_prefix="${file_basename}"
+      split_flag="no"
     fi
   else
     # Old format
@@ -5596,11 +5604,13 @@ unicast_restore_by_partclone() {
       get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img.aa
       # The files are split, like hda1.00, hda1.01, so we have to add "."
       img_file_prefix="$img_file.${fs_}-img.*"
+      split_flag="yes"
     else
       # Old format with image not split
       get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img
       # The file is NOT split, so the file name is just like "hda1" only, no "."
       img_file_prefix="$img_file.${fs_}-img"
+      split_flag="no"
     fi
   fi
   # assign partclone_img_info tmp file.
@@ -5623,6 +5633,14 @@ unicast_restore_by_partclone() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
 
+  if [ "$link_flag" = "no" -a "$split_flag" = "no" ]; then
+    # Special case: no link + no split. To get the best performance, remove cat,
+    # and avoid the error the some compression program can not read link file, e.g., pixz does not have "-f" like zstdmt.
+    restore_flag="direct" 
+  else
+    restore_flag="cat" 
+  fi
+
   start_time="$(date +%s%N)"
   if [ "$fs_" != "dd" ]; then
     cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -s - -r -o $part"
@@ -5632,7 +5650,10 @@ unicast_restore_by_partclone() {
   fi
   # partclone_hfsp does not put any header, so just cat them
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
-  cat <<_EOT_ | tee -a ${OCS_LOGFILE}
+  case "$restore_flag" in
+  cat)
+    # Could be link + split image. Use for loop to cat the source image then unzip it.
+    cat <<_EOT_ | tee -a ${OCS_LOGFILE}
 ( for img in $target_d/$img_file_prefix; do
     cat \$img
   done
@@ -5640,18 +5661,45 @@ unicast_restore_by_partclone() {
 | $unzip_stdin_cmd 2> $unzip_cmd_error \
 | LC_ALL=C $cmd_partclone_rest
 _EOT_
-  ( for img in $target_d/$img_file_prefix; do
-      cat $img
-    done
-  ) \
-  | $unzip_stdin_cmd 2> $unzip_cmd_error \
-  | LC_ALL=C $cmd_partclone_rest
-  retcodes=(${PIPESTATUS[@]})
-  if [ "${retcodes[1]}" -eq 0 -a "${retcodes[2]}" -eq 0 ]; then
-    rc=0
-  else
-    rc=1
-  fi
+    ( for img in $target_d/$img_file_prefix; do
+        cat $img
+      done
+    ) \
+    | $unzip_stdin_cmd 2> $unzip_cmd_error \
+    | LC_ALL=C $cmd_partclone_rest
+    retcodes=(${PIPESTATUS[@]})
+    if [ "${retcodes[1]}" -eq 0 -a "${retcodes[2]}" -eq 0 ]; then
+      rc=0
+    else
+      rc=1
+    fi
+    ;;
+  direct)
+    # Not link and not split image. Can be read directly
+    case "$unzip_stdin_cmd" in
+      cat)
+        # No compression, so the image file can be read directly.
+        # Replace stdin "-s -" as the source file.
+        cmd_partclone_rest="$(echo $cmd_partclone_rest | sed -r -e "s|-s -|-s $target_d/$img_file_prefix|")"
+        echo "LC_ALL=C $cmd_partclone_rest" | tee -a ${OCS_LOGFILE}
+        eval $cmd_partclone_rest
+	rc=$?
+        ;;
+      *)
+        # Compressed image. Use unzip command to output stdout
+        run_cmd_="$unzip_stdin_cmd $target_d/$img_file_prefix 2> \
+		  $unzip_cmd_error | LC_ALL=C $cmd_partclone_rest"
+        echo "$run_cmd_" | tee -a ${OCS_LOGFILE}
+        eval "$run_cmd_; retcodes=(\${PIPESTATUS[@]})"
+        if [ "${retcodes[0]}" -eq 0 -a "${retcodes[1]}" -eq 0 ]; then
+          rc=0
+        else
+          rc=1
+        fi
+        ;;
+    esac
+    ;;
+  esac
 
   cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
   if [ -s "$unzip_cmd_error" ]; then
@@ -5671,6 +5719,8 @@ _EOT_
 } # end of unicast_restore_by_partclone
 #
 unicast_restore_by_dd() {
+  # This function is actually replaced by unicast_restore_by_partclone when "dd" is listed at partclone_support_fs in /etc/drbl/drbl-ocs.conf.
+  # It is kept for backward compatibility.
   local partclone_img_info_tmp
   local unzip_retcode_file unzip_retcode
   local dd_retcode_file dd_retcode
