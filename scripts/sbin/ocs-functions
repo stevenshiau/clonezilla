@@ -10864,27 +10864,44 @@ get_dd_image_info() {
   return $rcode
 } # end of get_dd_image_info
 #
-check_if_tty_the_specified_one_and_continue() {
-  # This function is run in clonezilla live, by default only run on tty1 (no more ttyS0). If you want to use ttyS0, add live-getty and console=ttyS0,38400n81 in the boot parameter.
-  local TMP ocslivemode
-  # CURRENT_TTY is environment variable from S30ocs-live-menu
+check_current_tty_sudo_tty() {
+  local prompt="$1"
+  # CURRENT_TTY is an environmental variable from ocs-live-run-menu.
+  # SUDO_TTY is assigned by "sudo -i SUDO_TTY="$(tty) ocs-live-run-menu" in ~user/.bash_profile.
+  # This is due to sudo >= 1.9.8p2-1 will new a pts (e.g., /dev/pts/0) instead of keeping the tty from SUDO_USER.
+  # Hence we use "sudo -i SUDO_TTY="$(tty)" ocs-live-run-menu" in .bash_profile. Then SUDO_TTY will be shown here.
   # ocs_live_run_tty is variable loaded from /etc/ocs/ocs-live.conf
   # By default we will run $ocs_live_run in /dev/tty1 if ocs_live_run_tty is not specified.
   if [ -n "$ocs_live_run_tty" ]; then
     # tty is specified. Check if it the current tty
-    echo "ocs_live_run_tty is specified as $ocs_live_run_tty. Checking if the current tty is the specified one..."
-    if [ "$CURRENT_TTY" != "$ocs_live_run_tty" ]; then
-      echo "Current tty ($CURRENT_TTY) does not match ocs_live_run_tty ($ocs_live_run_tty). Program terminated!"
+    if [ "$prompt" != "no" ]; then
+      echo "ocs_live_run_tty is specified as $ocs_live_run_tty. Checking if the current tty is the specified one..."
+    fi
+    if [ "$CURRENT_TTY" != "$ocs_live_run_tty" -a \
+	 "$SUDO_TTY" != "$ocs_live_run_tty" ]; then
+      if [ "$prompt" != "no" ]; then
+        echo "Current tty ($CURRENT_TTY) or SUDO tty ($SUDO_TTY) does not match ocs_live_run_tty ($ocs_live_run_tty). Program terminated!"
+      fi
       exit 3
     fi
   else
     # No tty is specified to run $ocs_live_run_tty. Default to run only on /dev/tty1.
     # If it's not in /dev/tty1, just exit.
-    if [ "$CURRENT_TTY" != "/dev/tty1" ]; then
-      echo "$0 only works in environment variable 'CURRENT_TTY' = '/dev/tty1'"
+    if [ "$CURRENT_TTY" != "/dev/tty1" -a \
+	 "$SUDO_TTY" != "/dev/tty1" ]; then
+      if [ "$prompt" != "no" ]; then
+        echo "$0 only works in environment variable 'CURRENT_TTY' = '/dev/tty1' or 'SUDO_TTY' = '/dev/tty1'."
+      fi
       exit 3
     fi
   fi
+} # end of check_current_tty_sudo_tty
+#
+check_if_tty_the_specified_one_and_continue() {
+  # This function is run in clonezilla live, by default only run on tty1 (no more ttyS0). If you want to use ttyS0, add live-getty and console=ttyS0,38400n81 in the boot parameter.
+  local TMP ocslivemode
+
+  check_current_tty_sudo_tty yes
   
   TMP="$(mktemp /tmp/ocslivemode.XXXXXX)"
   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
