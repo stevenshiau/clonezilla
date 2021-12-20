@@ -64,16 +64,10 @@ gen_locale_if_not_found $locale_region $ocs_lang
 # export these variables so that they can be passed to $ocs_live_run in bterm
 export LANG="$ocs_lang"
 export CURRENT_TTY="$(tty)"  # e.g. /dev/tty1
+# Sudo >= 1.9.8p2-1 will new a pts (e.g., /dev/pts/0) instead of keeping the tty from SUDO_USER
+# Hence we use "sudo -i SUDO_TTY="$(tty)" ocs-live-run-menu" in .bash_profile. Then SUDO_TTY will be shown here.
 
-# By default we will run $ocs_live_run in /dev/tty1 if ocs_live_run_tty is not specified.
-if [ -n "$ocs_live_run_tty" ]; then
-  # tty is specified. Check if it the current tty
-  [ "$CURRENT_TTY" != "$ocs_live_run_tty" ] && exit 3
-else
-  # No tty is specified to run $ocs_live_run_tty. Default to run only on /dev/tty1 (no more ttyS0). If you want to use ttyS0, add live-getty and console=ttyS0,38400n81 in the boot parameter 
-  # If it's not in /dev/tty1, just exit.
-  [ "$CURRENT_TTY" != "/dev/tty1" ] && exit 3
-fi
+check_current_tty_sudo_tty no
 
 # Waiting for the jobs in /etc/ocs/ocs-live.d are finished.
 to_wait=""
