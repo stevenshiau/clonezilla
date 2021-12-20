@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.6.8
+Version:	4.6.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,16 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 20 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.9-drbl1
+  * Due to sudo >= 1.9.8p2-1 will new a pts (e.g., /dev/pts/0) instead of
+    keeping the tty from SUDO_USER. Hence a new environmental variable
+    SUDO_TTY from sudo will be used to make clonezilla main menu only starts
+    in tty1. Make both CURRENT_TTY and SUDO_TTY mechanism work.
+    The environmental variable SUDO_TTY is passed to ocs-lang-kbd-conf &
+    ocs-live-run-menu by:
+    sudo -i SUDO_TTY="$(tty)" ocs-lang-kbd-conf
+    sudo -i SUDO_TTY="$(tty)" ocs-live-run-menu
+
 * Sun Dec 19 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.8-drbl1
   * update-efi-nvram-boot-entry: bug fixed for 2 or more ESPs on the same
     machine, unmount should be done within for loop.
