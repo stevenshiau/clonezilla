@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.6.9
+Version:	4.6.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Dec 21 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.10-drbl1
+  * Bug fixed: ignore the 1st 2 columns in /proc/partitions when
+    comparing it for the cache files in the function
+    check_if_use_disklist_cache of ocs-functions.
+  *  ocs-get-dev-info: better way to run dislocker-find so that when it
+    failed to load some lib, it won't show the device's fs is bitlocker.
+
 * Mon Dec 20 2021 Steven Shiau <steven _at_ clonezilla org> 4.6.9-drbl1
   * Due to sudo >= 1.9.8p2-1 will new a pts (e.g., /dev/pts/0) instead of
     keeping the tty from SUDO_USER. Hence a new environmental variable
