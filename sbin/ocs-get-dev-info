@@ -518,12 +518,29 @@ get_type_from_lsblk() {
 } # end of get_type_from_lsblk
 #
 check_if_bitlocker_fs() {
-  local rc_n rc_f
+  local rc_f
+  # part is global veriable, e.g., /dev/sda1
   if type dislocker-find &>/dev/null; then
-    dislocker-find $part &>/dev/null
-    # //NOTE// Here the return code for dislocker-find is the number of bitlocker partition. Not the true/false.
-    rc_n=$?
-    if [ "$rc_n" -eq 1 ]; then
+    # Check if dislocker-find can run correctly.
+    # To avoid this error when some lib is uable to loaded, e.g.,
+    # Traceback (most recent call last):
+    # 2: from /usr/bin/dislocker-find:26:in `<main>'
+    # 1: from /usr/lib/ruby/vendor_ruby/rubygems/core_ext/kernel_require.rb:85:in `require'
+    # /usr/lib/ruby/vendor_ruby/rubygems/core_ext/kernel_require.rb:85:in `require': incompatible library version - /usr/lib/libdislocker.so (LoadError)
+    # Ref: 
+    # https://bugs.debian.org/906430
+    # https://bugs.launchpad.net/ubuntu/+source/dislocker/+bug/1955446
+    # The examples for dislocker-find:
+    # root@debian:~# dislocker-find
+    # /dev/nvme0n1p2
+    # /dev/nvme0n2p2
+    # root@debian:~# dislocker-find /dev/nvme0n2p2 2>&1
+    # /dev/nvme0n2p2
+    # root@debian:~# dislocker-find /dev/nvme0n2p2 2>&1 | grep -E "^/dev/nvme0n2p2"
+    # /dev/nvme0n2p2
+
+    if [ -n "$(LC_ALL=C dislocker-find $part 2>&1 | grep -qE "^$part")" ]; then
+    # //NOTE// Here the return code for dislocker-find is the number of bitlocker partition. Not the true/false. Do not use that mechanism since it's confusing.
       rc_f="bitlocker"
     else
       rc_f=""
