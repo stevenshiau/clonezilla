@@ -1374,8 +1374,8 @@ save_part_by_partclone() {
   start_time="$(date +%s%N)"
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
 
-  split_error="$(mktemp /tmp/split_error.XXXXXX)"
-  trap "[ -f "$TMP" ] && rm -f $split_error" HUP INT QUIT TERM EXIT
+  img_out_err="$(mktemp /tmp/img_out_err.XXXXXX)"
+  trap "[ -f "$TMP" ] && rm -f $img_out_err" HUP INT QUIT TERM EXIT
 
   # Special case for no compression + no splitting. To get the best performance, reduce the usage of pipe to cat and split.
   # Ref: https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/46706796eb
@@ -1404,10 +1404,10 @@ save_part_by_partclone() {
     case "$VOL_LIMIT" in
       [1-9]*)
          # $tgt_dir/${tgt_file}.${fs_pre}-img. is prefix, the last "." is necessary make the output file is like hda1.${fs_pre}-img.aa, hda1.${fs_pre}-img.ab. We do not add -d to make it like hda1.${fs_pre}-img.00, hda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (hda1.${fs_pre}-img.000, hda1.${fs_pre}-img.001)
-         cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}. 2> $split_error"
+         cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}. 2> $img_out_err"
          ;;
       *)
-         cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf} 2> $split_error"
+         cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf} 2> $img_out_err"
          ;;
     esac
   fi
@@ -1416,10 +1416,10 @@ save_part_by_partclone() {
   rc="$?"
   cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
   end_time="$(date +%s%N)"
-  if [ -s "$split_error" ]; then
-    cat $split_error | tee --append ${OCS_LOGFILE}
+  if [ -s "$img_out_err" ]; then
+    cat $img_out_err | tee --append ${OCS_LOGFILE}
   fi
-  rm -f $split_error
+  rm -f $img_out_err
   # UGLY! Since we use partclone, then pipe to compression program, then IO redirect to file, the error control is weak. partclone wil not exit even if the disk is full. Therefore we check here.
   echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf} is incomplete. You have to increase the disk space, then start clonezilla save mode again."
   get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
@@ -1623,17 +1623,17 @@ save_part_by_dd() {
     start_time="$(date +%s%N)"
     # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
 
-    split_error="$(mktemp /tmp/split_error.XXXXXX)"
-    trap "[ -f "$TMP" ] && rm -f $split_error" HUP INT QUIT TERM EXIT
+    img_out_err="$(mktemp /tmp/img_out_err.XXXXXX)"
+    trap "[ -f "$TMP" ] && rm -f $img_out_err" HUP INT QUIT TERM EXIT
 
     cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
     case "$VOL_LIMIT" in
       [1-9]*)
          # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary make the output file is like hda1.dd-img.aa, hda1.dd-img.ab. We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.$dd-img.001)
-         cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).dd-img. 2> $split_error"
+         cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).dd-img. 2> $img_out_err"
          ;;
       *)
-         cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).dd-img 2> $split_error"
+         cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).dd-img 2> $img_out_err"
          ;;
     esac
     echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
@@ -1641,10 +1641,10 @@ save_part_by_dd() {
     rc="$?"
     cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
     end_time="$(date +%s%N)"
-    if [ -s "$split_error" ]; then
-      cat $split_error | tee --append ${OCS_LOGFILE}
+    if [ -s "$img_out_err" ]; then
+      cat $img_out_err | tee --append ${OCS_LOGFILE}
     fi
-    rm -f $split_error
+    rm -f $img_out_err
     # sync_and_active_exec_files
     # UGLY! Since we use partclone, then pipe to compression program, then IO redirect to file, the error control is weak. partclone wil not exit even if the disk is full. Therefore we check here.
     echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename {tgt_file}).dd-img is incomplete! You have to increase the disk space, then start clonezilla save mode again."
