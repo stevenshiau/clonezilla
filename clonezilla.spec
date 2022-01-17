@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.6.12
+Version:	4.6.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 17 2022 Steven Shiau <steven _at_ clonezilla org> 4.6.13-drbl1
+  * The netboot client for interactive mode will inherit the
+    locale from lite server.
+  * Boot parameter use_os_prober="no" now skips running os-prober.
+    Thanks to Bernard Michaud for this idea.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/b96b4eee21/?limit=25#d97b
+
 * Sun Jan 09 2022 Steven Shiau <steven _at_ clonezilla org> 4.6.12-drbl1
   * Add a mechanism to skip using devices list cache. If the boot parameter
     use_dev_list_cache=no in the boot parameter, then the devices list cache
