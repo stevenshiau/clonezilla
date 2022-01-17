@@ -643,14 +643,23 @@ gen_ocs_live_netboot_conf() {
     add_opt_in_pxelinux_cfg_block -n Clonezilla-live keyboard-layouts "$client_kb_layout"
     add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" keyboard-layouts "$client_kb_layout"
   fi
-  # locales should be forced to use that assigned from drbl-ocs.conf. Normally it should be "en_US.UTF-8". Check drbl-ocs.conf for more details.
-  if [ -n "$ocs_lang_for_pxe_ocs_live" ]; then
-    add_opt_in_pxelinux_cfg_block -n Clonezilla-live locales "$ocs_lang_for_pxe_ocs_live"
-    add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" locales "$ocs_lang_for_pxe_ocs_live"
-  fi
   if [ "$ls_client_mode"  = "massive-deployment" ]; then
+    # While for massive-deployment mode, force to use $ocs_lang_for_pxe_ocs_live. 
+    # Normally it should be "en_US.UTF-8". Check drbl-ocs.conf for more details.
+    if [ -n "$ocs_lang_for_pxe_ocs_live" ]; then
+      add_opt_in_pxelinux_cfg_block -n Clonezilla-live locales "$ocs_lang_for_pxe_ocs_live"
+      add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" locales "$ocs_lang_for_pxe_ocs_live"
+    fi
     add_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run "ocs-live-get-img $cast_srv_ip"
     add_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run "ocs-live-get-img $cast_srv_ip"
+  elif [ "$ls_client_mode"  = "interactive-client" ]; then
+    # For interactive-client mode, we might enter CJK language which needs framebuffer mode to run jfbterm.
+    # Hence we add vga=788 to enter framebuffer mode.
+    add_opt_in_pxelinux_cfg_block -n Clonezilla-live vga 788
+    add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" vga 788
+    # We take ocs_lang from ocs-live.conf and set it for netboot client in interactive mode.
+    add_opt_in_pxelinux_cfg_block -n Clonezilla-live locales "$ocs_lang"
+    add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" locales "$ocs_lang"
   fi
   # Overwrite the default background photo
   cp -a $DRBL_SCRIPT_PATH/image/ocswp-grub2.png $pxecfg_pd/drblwp.png
