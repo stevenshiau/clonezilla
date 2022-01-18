@@ -826,11 +826,10 @@ get_image_cat_zip_cmd() {
               ;;
       xz)     
               if [ "$cpu_no" -gt 1 ] && \
-                 [ "$use_parallel_decompression" = "yes" ] && \
-                 type pixz &>/dev/null; then
-                cat_prog="pixz -d"
-                zip_stdin_cmd="pixz $extra_pixz_opt"
-                unzip_stdin_cmd="pixz -d"
+                 [ "$use_parallel_decompression" = "yes" ]; then 
+                cat_prog="xzcat -T 0"
+                zip_stdin_cmd="xz -c -T 0 $extra_xz_opt"
+                unzip_stdin_cmd="unxz -c -T 0"
               else
                 cat_prog="xzcat"
                 zip_stdin_cmd="xz -c $extra_xz_opt"
@@ -993,11 +992,10 @@ get_image_cat_zip_cmd() {
     elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "XZ compressed data")" ]; then
       # Ex: sda1.ntfs-ptcl-img.xz.aa: XZ compressed data
       if [ "$cpu_no" -gt 1 ] && \
-         [ "$use_parallel_decompression" = "yes" ] && \
-         type pixz &>/dev/null; then
-        cat_prog="pixz -d"
-        zip_stdin_cmd="pixz $extra_pixz_opt"
-        unzip_stdin_cmd="pixz -d"
+         [ "$use_parallel_decompression" = "yes" ]; then
+        cat_prog="xzcat -T 0"
+        zip_stdin_cmd="xz -c -T 0 $extra_xz_opt"
+        unzip_stdin_cmd="unxz -c -T 0"
       else
         cat_prog="xzcat"
         zip_stdin_cmd="xz -c $extra_xz_opt"
@@ -1056,10 +1054,10 @@ ocs-get-comp-suffix() {
     lzop*)                                  suffix="lzo";;
     lz4*|lz4mt*)                            suffix="lz4";;
     lzma*|lzcat*|unlzma*)                   suffix="lzma";;
-    xz*|pixz*|xzcat*|pxz*|unxz*)            suffix="xz";;
+    xz*|xzcat*|unxz*)                       suffix="xz";;
     lzip*|plzip*)                           suffix="lzip";;
     lrzip*)                                 suffix="lrz";;
-    zstd*|zstdmt*)                           suffix="zst";;
+    zstd*|zstdmt*)                          suffix="zst";;
   esac
   if [ -n "$suffix" ]; then
     echo "$suffix"
@@ -10355,7 +10353,7 @@ check_ocs_input_params(){
     IMG_CLONE_CMP="gzip -c $extra_gzip_opt"
   fi
   
-  more_compress_progs="lzma xz pixz lzip plzip lrzip lz4 lz4mt zstd zstdmt"
+  more_compress_progs="lzma xz lzip plzip lrzip lz4 lz4mt zstd zstdmt"
   for i in $more_compress_progs; do
     eval iz=\$i
     # lrzip uses "-q -", the rest use "-c"
@@ -14862,12 +14860,9 @@ case "$net_filter" in
        fi
        ;;
    xz)
-       if type pixz &>/dev/null; then
-         net_filter_comp="pixz $extra_pixz_opt"
-         net_filter_decomp="pixz -d"
-       elif type xz &>/dev/null; then
-         net_filter_comp="xz -c $extra_xz_opt"
-         net_filter_decomp="xz -cd"
+       if type xz &>/dev/null; then
+         net_filter_comp="xz -c -T 0 $extra_xz_opt"
+         net_filter_decomp="xz -cd -T 0"
        else
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
          echo "xz is NOT found." | tee --append $OCS_LOGFILE
