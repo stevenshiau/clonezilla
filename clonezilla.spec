@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.6.14
+Version:	4.6.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jan 18 2022 Steven Shiau <steven _at_ clonezilla org> 4.6.15-drbl1
+  * The variable use_os_prober should skip linux-boot-prober, too.
+
 * Tue Jan 18 2022 Steven Shiau <steven _at_ clonezilla org> 4.6.14-drbl1
   * Bug fixed: pixz has no option to stdout with "-d".
     Therefore program pixz was replaced by xz since
