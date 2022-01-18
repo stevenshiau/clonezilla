@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	4.6.13
+Version:	4.6.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 4.6.6, psmisc, udpcast, partclone >= 0.3.18, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
+Requires:	bash, perl, drbl >= 4.6.7, psmisc, udpcast, partclone >= 0.3.18, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jan 18 2022 Steven Shiau <steven _at_ clonezilla org> 4.6.14-drbl1
+  * Bug fixed: pixz has no option to stdout with "-d".
+    Therefore program pixz was replaced by xz since
+    using "-T 0" works the same.
+    Thanks to nurupo for reporting this issue.
+
 * Mon Jan 17 2022 Steven Shiau <steven _at_ clonezilla org> 4.6.13-drbl1
   * The netboot client for interactive mode will inherit the
     locale from lite server.
