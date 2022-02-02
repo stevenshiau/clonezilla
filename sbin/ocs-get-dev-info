@@ -212,7 +212,8 @@ get_fs_from_blkid() {
     # TYPE=VMFS_volume_member
     # PARTUUID=0004b3fb-1e
     # //NOTE// "TYPE" in the output of blkid is actually for file system.
-    TYPE="$(LC_ALL=C blkid -o export -c /dev/null $part_ | grep -E "^TYPE=.*" | sed -r -e "s|^TYPE=||")"
+    # 2022/2/2 No more using dislocker-find to identify BitLocker since newer blkid can identify it.
+    TYPE="$(LC_ALL=C blkid -s TYPE -o value -- $part_)"
     # If the result of TYPE is isw_raid_member, clean it 
     # since it's not really a file system which Clonezilla can process.
     if [ -n "$(echo "$TYPE" | grep -iE "(isw_raid_member|linux_raid_member)")" ]; then
@@ -517,38 +518,6 @@ get_type_from_lsblk() {
   fi
 } # end of get_type_from_lsblk
 #
-check_if_bitlocker_fs() {
-  local rc_f
-  # part is global veriable, e.g., /dev/sda1
-  if type dislocker-find &>/dev/null; then
-    # Check if dislocker-find can run correctly.
-    # To avoid this error when some lib is uable to loaded, e.g.,
-    # Traceback (most recent call last):
-    # 2: from /usr/bin/dislocker-find:26:in `<main>'
-    # 1: from /usr/lib/ruby/vendor_ruby/rubygems/core_ext/kernel_require.rb:85:in `require'
-    # /usr/lib/ruby/vendor_ruby/rubygems/core_ext/kernel_require.rb:85:in `require': incompatible library version - /usr/lib/libdislocker.so (LoadError)
-    # Ref: 
-    # https://bugs.debian.org/906430
-    # https://bugs.launchpad.net/ubuntu/+source/dislocker/+bug/1955446
-    # The examples for dislocker-find:
-    # root@debian:~# dislocker-find
-    # /dev/nvme0n1p2
-    # /dev/nvme0n2p2
-    # root@debian:~# dislocker-find /dev/nvme0n2p2 2>&1
-    # /dev/nvme0n2p2
-    # root@debian:~# dislocker-find /dev/nvme0n2p2 2>&1 | grep -E "^/dev/nvme0n2p2"
-    # /dev/nvme0n2p2
-
-    if [ -n "$(LC_ALL=C dislocker-find $part 2>&1 | grep -qE "^$part")" ]; then
-    # //NOTE// Here the return code for dislocker-find is the number of bitlocker partition. Not the true/false. Do not use that mechanism since it's confusing.
-      rc_f="bitlocker"
-    else
-      rc_f=""
-    fi
-    echo "$rc_f"
-  fi
-} # end of check_if_bitlocker_fs
-#
 check_if_MSR_part() {
   local rc_n rc_f
   # Microsoft Reserved Partition
@@ -633,9 +602,6 @@ for wanted in $request; do
        fs="$(get_fs_from_partclone_fstype $part)"
        if [ -z "$fs" ]; then
          fs="$(get_fs_from_blkid $part)"
-       fi
-       if [ -z "$fs" ]; then
-         fs="$(check_if_bitlocker_fs $part)"
        fi
        if [ -z "$fs" ]; then
          fs="$(check_if_MSR_part $part)"
