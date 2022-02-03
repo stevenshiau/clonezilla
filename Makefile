@@ -14,8 +14,8 @@ all:	ocs-sbin
 	@echo "No need to compile..."
 
 ocs-sbin:
-	(cd sbin; ln -fs prep-ocsroot ocs-prep-home)
-	(cd sbin; ln -fs cnvt-ocs-dev ocs-cvt-dev)
+	(cd sbin; ln -fs ocs-prep-repo prep-ocsroot)
+	(cd sbin; ln -fs ocs-cvt-dev cnvt-ocs-dev)
 
 build:
 	@echo "Nothing to build."
