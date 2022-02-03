@@ -351,7 +351,35 @@ task_logv_check() {
   done < $LOGV_PARSE_CONF
   return $rctlv
 } # end of task_logv_check
+#
+task_luks_img_check() {
+  local lks_maps_rt="$*"  # e.g., ocs_luks_XYO ocs_luks_ABX
+  local clted_luks_devs_pv_rt rc rcp rcplv
 
+  rcp=0
+  for id in $lks_maps_rt; do
+    if grep -qsEw /dev/mapper/$id "$target_dir_fullpath/lvm_vg_dev.list"; then
+      # Found LVM on LUKS mapping device. Process later.
+      clted_luks_devs_pv_rt="$clted_luks_devs_pv_rt mapper/$id"
+      continue
+    fi
+    do_partition_or_lv_img_check $target_dir_fullpath $id
+    rc=$?
+    rcp="$(($rcp + $rc))"
+  done
+
+  rcplv=0
+  clted_luks_devs_pv_rt="$(echo $clted_luks_devs_pv_rt)" # Remove the leading spaces.
+  # process LVM over LUKS if clted_luks_devs_pv_rt exists
+  if [ -n "$clted_luks_devs_pv_rt" ]; then
+    task_logv_check "$clted_luks_devs_pv_rt"
+    rc=$?
+    rcplv="$(($rcplv + $rc))"
+  fi
+  echo "End of task_luks_img_check."
+
+  return $(( $rcp + $rcplv ))
+} # end of task_luks_img_check
 #
 task_checkimage() {
   local target_dir="$1"
@@ -454,45 +482,16 @@ task_checkimage() {
     p_type="$(get_partition_table_type_from_img "$target_dir_fullpath" "${ihd}")"
     # Only check mbr or gpt, skip pv_disk.
     case "$p_type" in
-     mbr)
+     mbr|gpt)
+      echo "Partition table type: $p_type" | tee --append ${OCS_LOGFILE}
       if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-pt.sf" ]; then
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-         echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-pt.sf" | tee --append ${OCS_LOGFILE}
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo -n "$msg_press_enter_to_continue..."
-         read
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-pt.sf" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "$msg_press_enter_to_continue..."
+        read
       else
-	 echo "Partition table file for disk was found: ${ihd}" | tee --append ${OCS_LOGFILE}
-      fi
-      ;;
-     gpt)
-	 if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-gpt-1st" ]; then
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-	 echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-gpt-1st" | tee --append ${OCS_LOGFILE}
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo -n "$msg_press_enter_to_continue..."
-         read
-      else
-         echo "GPT 1st partition table file found!" | tee --append ${OCS_LOGFILE}
-      fi
-      if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-gpt-2nd" ]; then
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-	 echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-gpt-2nd" | tee --append ${OCS_LOGFILE}
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo -n "$msg_press_enter_to_continue..."
-         read
-      else
-         echo "GPT 2nd partition table file found!" | tee --append ${OCS_LOGFILE}
-      fi
-      if [ ! -e "$target_dir_fullpath/$(to_filename ${ihd})-gpt.gdisk" ]; then
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	 echo "$msg_this_partition_table_file_not_found: $(to_filename ${ihd})-gpt.gdisk" | tee --append ${OCS_LOGFILE}
-	 echo "Was this image saved by older version of Clonezilla? If so, we still can use this old image. However, it's recommended to save the image with the latest Clonezilla. " | tee --append ${OCS_LOGFILE}
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo -n "$msg_press_enter_to_continue..."
-         read
-      else
-         echo "GPT partition table file for this disk saved by gdisk was found: ${ihd}" | tee --append ${OCS_LOGFILE}
+	echo "$msg_this_partition_table_file_found: ${ihd}, $target_dir_fullpath/$(to_filename ${ihd})-pt.sf" | tee --append ${OCS_LOGFILE}
       fi
       ;;
      unknown)
@@ -526,8 +525,8 @@ task_checkimage() {
       p_type="$(get_partition_table_type_from_img "$target_dir_fullpath" "${ihd}")"
       # Only check mbr or gpt, skip pv_disk.
       case "$p_type" in
-       mbr)
-        echo "Finding swap partition(s) in MBR table $target_dir_fullpath/$(to_filename ${ihd})-pt.sf..."
+       mbr|gpt)
+        echo "Finding swap partition(s) in file $target_dir_fullpath/$(to_filename ${ihd})-pt.sf..."
         for partition in `get_swap_partition_sf_format $target_dir_fullpath/$(to_filename ${ihd})-pt.sf`; do
           echo "Checking swap partition $partition..."
 	  # read LABEL, UUID info for $partition if swappt-$(to_filename $partition).info exists
@@ -535,25 +534,6 @@ task_checkimage() {
           label_opt=""
 	  if [ -e "$target_dir_fullpath/swappt-$(to_filename $partition).info" ]; then
 	    cat "$target_dir_fullpath/swappt-$(to_filename $partition).info"
-            echo "Swap partition info file found!"
-          else
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-            echo "$msg_this_swap_part_info_not_found: $partition"
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-            echo -n "$msg_press_enter_to_continue..."
-            read
-          fi
-        done
-        ;;
-       gpt)
-        echo "Finding swap partition(s) in GPT table $target_dir_fullpath/$(to_filename ${ihd})-pt.parted..."
-        for partition in `get_swap_partition_parted_format $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; do
-          echo "Checking swap partition $partition..."
-	  # read LABEL, UUID info for $partition if swappt-$(to_filename $partition).info exists
-          uuid_opt=""
-          label_opt=""
-	  if [ -e "$target_dir_fullpath/swappt-$(to_filename $partition).info" ]; then
-            cat "$target_dir_fullpath/swappt-$(to_filename $partition).info"
             echo "Swap partition info file found!"
           else
             [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -610,10 +590,11 @@ task_checkimage() {
 
   echo $msg_delimiter_star_line
   PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
-  do_LVM_restore="no"
+  do_LVM_check="no"
+  do_LUKS_check="no"
   rct=0
   for partition in $target_parts; do
-    # hda1 -> hda
+    # sda1 -> sda
     hd_tmp="$(get_diskname $partition)"
     part_is_lvm="no"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
@@ -627,9 +608,45 @@ task_checkimage() {
     fi
     # If part_is_lvm is yes, we should skip the rest...
     if [ "$part_is_lvm" = "yes" ]; then
-      do_LVM_restore="yes"
+      do_LVM_check="yes"
       # This continue is to skip the rest of this partition do loop
       continue
+    fi
+
+    # LUKS
+    if [ -e "$target_dir_fullpath/luks-dev.list" ]; then
+      if [ -n "$(grep -Ew /dev/$partition $target_dir_fullpath/luks-dev.list)" ]; then
+	if [ -e "$target_dir_fullpath/${partition}-luksHeader.bin" ]; then
+          echo "$msg_luks_header_file_found: $target_dir_fullpath/${partition}-luksHeader.bin" | tee --append ${OCS_LOGFILE}
+	else
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "$msg_luks_header_file_not_found: $target_dir_fullpath/${partition}-luksHeader.bin" | tee --append ${OCS_LOGFILE}
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "$msg_program_stop!"
+          my_ocs_exit 1
+	fi
+        do_LUKS_check="yes"
+        if [ -e "$target_dir_fullpath/luks-crypttab-from-OS.info" ]; then
+          echo "$msg_luks_crypttab_file_found: $target_dir_fullpath/luks-crypttab-from-OS.info" | tee --append ${OCS_LOGFILE}
+          lks_mapper="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$partition $target_dir_fullpath from-img)"
+          if [ -z "$lks_mapper" ]; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "$msg_luks_mapped_name_not_found_in_this_file: $target_dir_fullpath/luks-crypttab-from-OS.info."
+	    echo "$msg_name_it_arbitrarily_restered_os_boot_might_fail"
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	    countdown 5
+	    echo
+	  fi
+        else
+          echo "$msg_luks_crypttab_file_not_found: $target_dir_fullpath/luks-crypttab-from-OS.info. Use $target_dir_fullpath/luks-dev.list" | tee --append ${OCS_LOGFILE}
+	fi
+        if [ -z "$lks_mapper" ]; then 
+          lks_mapper="$(LC_ALL=C grep -Ew /dev/$partition $target_dir_fullpath/luks-dev.list | awk -F " " '{print $3}' | xargs basename)"
+        fi
+        clted_luks_devs_map_rt="$clted_luks_devs_map_rt $lks_mapper"
+        # This continue is to skip the rest of this partition do loop
+        continue
+      fi
     fi
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Checking the partition $partition in the image \"$target_dir\"..."
@@ -640,12 +657,22 @@ task_checkimage() {
   done
 
   # Check LVM
-  if [ "$do_LVM_restore" = "yes" ]; then
+  if [ "$do_LVM_check" = "yes" ]; then
     # LVM exists, check PV/VG/LV.
     task_logv_check "$target_parts"
     rc=$?
     rct="$(($rct + $rc))"
-    echo $msg_delimiter_star_line
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  fi
+
+  # Check LUKS
+  if [ "$do_LUKS_check" = "yes" ]; then
+    # LUKS exists, restore it
+    echo "LUKS device image exists, checking it..."
+    task_luks_img_check $clted_luks_devs_map_rt
+    rc=$?
+    rct="$(($rct + $rc))"
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
   if [ "$rct" -gt 0 -a "$ocs_batch_mode" != "on" ]; then
