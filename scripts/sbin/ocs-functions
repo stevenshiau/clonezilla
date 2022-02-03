@@ -1689,8 +1689,7 @@ save_part_by_dd() {
 } # end of save_part_by_dd
 #
 image_save() {
-  # source_dev is like /dev/hda1
-  local source_dev="$1"
+  local source_dev="$(format_dev_name_with_leading_dev $1)" # e.g., /dev/sda1
   local tgt_dir="$2"
   local tgt_file="$3"
   local image_name_
@@ -2317,7 +2316,7 @@ mount_root_partition_for_separate_boot_part() {
 check_if_input_device_exist() {
   ANS_TMP=$1
   shift
-  local input_dev="$*"
+  local input_dev="$(format_dev_name_without_leading_dev $*)" # e.g., sda1, sda2
   local partition_table
   if [ -z "$input_dev" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -2329,7 +2328,9 @@ check_if_input_device_exist() {
 
   ret_dev="$input_dev"
   for idev in $input_dev; do
-    if [ -z "$(awk -F" " '{print $4}' $partition_table | grep -Ew "$idev")" ]; then
+    if [ -z "$(awk -F" " '{print $4}' $partition_table | \
+	    grep -Ew "$idev")" ] && \
+	    [ ! -b "/dev/$idev" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "The input device [$idev] does NOT exist in this machine!"
       echo "We will not save this device [$idev]!"
@@ -5689,8 +5690,7 @@ _EOT_
         ;;
       *)
         # Compressed image. Use unzip command to output stdout
-        run_cmd_="$unzip_stdin_cmd $target_d/$img_file_prefix 2> \
-		  $unzip_cmd_error | LC_ALL=C $cmd_partclone_rest"
+        run_cmd_="$unzip_stdin_cmd $target_d/$img_file_prefix 2> $unzip_cmd_error | LC_ALL=C $cmd_partclone_rest"
         echo "$run_cmd_" | tee -a ${OCS_LOGFILE}
         eval "$run_cmd_; retcodes=(\${PIPESTATUS[@]})"
         if [ "${retcodes[0]}" -eq 0 -a "${retcodes[1]}" -eq 0 ]; then
@@ -6089,16 +6089,16 @@ multicast_restore_by_dd() {
 # http://www.partimage.org/forums/viewtopic.php?t=363
 # Use stdin input for restoring is a good solution.
 do_unicast_stdin_restore() {
-  # part is like: /dev/hda1
   local target_d="$1"
   local img_file="$(to_filename $2)"
-  local part="$3"  # part is like /dev/hda1
+  local part="$(format_dev_name_with_leading_dev $3)"  # part is like /dev/sda1
   local start_time end_time image_name_ split_by dd_report_sig_pid part_size hdtmp pt_type
   # if the report_msg is empty, put the initial one: image_name_
   image_name_="$(basename $target_d)"
   [ -z "$report_msg" ] && report_msg="Unicast restored $image_name_,"
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   check_if_dev_busy $part
+
   echo $msg_delimiter_star_line
   # time_elapsed, time_elapsed_in_min and speed are global variables
   # get the cat program: cat, zcat or bzcat
@@ -6723,8 +6723,7 @@ do_d2d_network_restore() {
 # Check if LVM
 check_LVM_partition() {
   # This function is to check existing LVM partition
-  # part is like "/dev/hda1"
-  local part="$1"
+  local part="$(format_dev_name_with_leading_dev $1)" # e.g., /dev/sda1
   [ -z "$part" ] && return 1
   # Check if the partition is LVM, if so, return 0, else 1
   # Ceasar suggested to use ocs-get-dev-info:
@@ -6740,13 +6739,9 @@ check_LVM_partition() {
 # Part of these codes are from http://www.trickytools.com/php/clonesys.php
 # Thanks to Jerome Delamarche (jd@inodes-fr.com)
 save_logv() {
-  local DEV
-  local VG
-  local UUID
-  local LOGV
-  local TF
+  local target="$1"  # target can be /dev/sda1, sda1, /dev/mapper/ocs_luks_XYO or ocs_luks_XYO
+  local DEV VG UUID LOGV TF
   local image_name_ rc_save_logv FND_PV
-  local target="$1"
   # target_dir_fullpath is local (in function task_saveparts) global variable, since save_logv is used in function task_saveparts 
   PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
   LOGV_PARSE_CONF="$target_dir_fullpath/lvm_logv.list"
@@ -7965,7 +7960,7 @@ prep_client_inittab_rc_srv() {
      # Note! OCS_OPT should not use -s/-S/-a/-b/-z/0-6
      # because: /sbin/init [ -a ] [ -s ] [ -b ] [ -z xxx ] [ 0123456Ss ]
      # The OCS_OPT is passed to program "/usr/sbin/clonezilla", not ocs-sr.
-     # We added "-k|--skip-prep-ocsroot" to skip prep-ocsroot action
+     # We added "-k|--skip-ocs-prep-repo" to skip ocs-prep-repo action
      # First we extract the "-p action" part
      # E.g. echo "--batch -y1 -p reboot -k1" | grep -oEw -- "-p[[:space:]]+[[:alnum:]]+([[:space:]]|$)"
      OCS_OPT="$(LC_ALL=C echo "$OCS_OPT" | grep -oEw -- "-p[[:space:]]+[[:alnum:]]+([[:space:]]|$)")"
@@ -8623,6 +8618,15 @@ task_savedisk() {
     fi
   done
 
+  # LUKS devices.
+  run_chk_luks_dev_flag=""
+  check_if_luks_dev_exists_do_jobs $target_hd # Obtain luks_devs_from_machine
+  for id in $luks_devs_from_machine; do
+    if [ -z "$(echo $target_parts | grep -Ew $id)" ]; then
+      target_parts="$target_parts $id"
+    fi
+  done
+
   # Strip the single white space which should be nothing. Thanks to Borksoft.
   target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
   target_swap_parts="$(echo $target_swap_parts | sed -e "s/^  *$//")"
@@ -8697,112 +8701,8 @@ task_savedisk() {
 
   return $rc_task_savedisk
 } # end of task_savedisk
-
-# task "saveparts"
-# parameter:
-#  $1 target_dir
-#  $2 target_parts
-task_saveparts() {
-  local target_dir="$1"
-  local target_parts="$2"
-  local disk_size_sec to_skip dev_to_be_saved_shown_in_warning rc_savepts
-  local target_dir_fullpath
-  local minix_subpt_start minix_subpt_end minix_subpt_size cmd_save_minix_sub_parts_table
-  local pv_on_dsk pv_on_dsk_flag
-
-  # target_hd will be extracted from $target_parts, maybe we will have one more
-  local target_hd=""
-  local hd_tmp=""
-
-  screen_not_blank
-  active_proc_partitions
-  #######################################################
-  # ask user about target_dir and target_parts #
-  #######################################################
-  if [ "$target_dir" = "ask_user" ]; then
-    get_target_dir_name_when_saving  # get $target_dir
-  fi
-   
-  # set absolute path, i.e. put leading $ocsroot.
-  target_dir_fullpath="$ocsroot/$target_dir"
-
-  if [ "$target_parts" = "ask_user" ]; then
-    get_target_parts_name_from_local_machine
-  fi
-
-  # check if the device exists
-  ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
-  trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-  check_if_input_device_exist $ANS_TMP $target_parts
-  # we have to remove " (comes with checklist in dialog) so that for loop
-  # will work (Specially for FC3/4...)
-  target_parts="$(cat $ANS_TMP | tr -d \")"
-  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
-
-  # find the target hd
-  # maybe we will have one more hd (like hda1, hda2, hdb1, hdb3 -> hda, hdb)
-  for ipart in $target_parts; do
-    # If ipart is bare block device without partition, e.g., sda with ext4, no partition sda1, not adding to target_hd list.
-    hd_tmp="$(get_diskname $ipart)"
-    if is_block_device_with_fs /dev/$hd_tmp; then
-      continue
-    fi
-    if [ -z "$target_hd" ]; then
-	    target_hd="$hd_tmp"
-    elif [ -z "$(echo $target_hd | grep -Ew "$hd_tmp" 2>/dev/null)" ]; then
-	    target_hd="$target_hd $hd_tmp"
-    fi
-  done
-
-  # Check if mbr and gpt partition table coexist
-  for ihd in $target_hd; do
-    check_specify_hd_exists $ihd
-    check_mbr_gpt_partition_table $ihd
-  done
-
-  # countdown or confirm.
-  dev_to_be_saved_shown_in_warning=""
-  if [ -n "$(echo "$ocs_sr_type" | grep -E "disk")" ]; then
-    # To save a disk, we list all the existing partition(s), too.
-    dev_to_be_saved_shown_in_warning="$target_hd $target_parts"
-  elif [ -n "$(echo "$ocs_sr_type" | grep -E "parts")" ]; then
-    # To save partition(s) only
-    dev_to_be_saved_shown_in_warning="$target_parts"
-  fi
-  # get_dev_model_shown will give $dev_model_shown
-  get_dev_model_shown "$dev_to_be_saved_shown_in_warning"
-  if [ "$ocs_batch_mode" != "on" ]; then
-    # Interactive mode, need to confirm
-    countdown_or_confirm_before_save "$target_dir_fullpath" 
-  fi
-
-  # Check if the image repository is writable.
-  if [ ! -w "$ocsroot" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$msg_img_repository_not_writable: $ocsroot"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!"
-    exit 1
-  fi
-
-  # If the existing target image exists, remove it.
-  rm_target_image_if_exist $target_dir_fullpath
-
-  # Turn on HD DMA
-  for ihd in $target_hd; do
-    [ "$force_dma_on" = "yes" ] && turn_on_hd_dma /dev/$ihd
-  done
-  # Turn off swap and LVM2, unlock the busy partitions.
-  turn_off_swap_and_LVM2
-
-  # Create the image directory
-  mkdir -p $target_dir_fullpath
-
-  # Save multipath infomation file
-  if ls ${MULTIPATH_INFODIR}/*-multipath >/dev/null 2>&1; then
-    cp -f ${MULTIPATH_INFODIR}/*-multipath $target_dir_fullpath
-  fi
-
+#
+save_part_table_mbr_dm_info(){
   # Save device mapper info file. We want to output a table listing:
   # dmraid (disk): dm (partition)
   # E.g. the following layoutput will give a table:
@@ -8851,9 +8751,6 @@ task_saveparts() {
     echo "Saving block devices attributes in $target_dir_fullpath/blkid.list..." | tee --append $OCS_LOGFILE
     output_blkid_info $target_dir_fullpath/blkid.list
   fi
-  # Add the column explanation in dev-fs.list. Later we will append line by line in task_saveparts.
-  echo "# <Device name>   <File system>   <Size>" > $target_dir_fullpath/dev-fs.list
-  echo "# File system is got from ocs-get-dev-info. It might be different from that of blkid or parted." >> $target_dir_fullpath/dev-fs.list
 
   # Save partition table
   for ihd in $target_hd; do
@@ -8999,17 +8896,198 @@ task_saveparts() {
     echo "Saving the MBR data for $ihd..." | tee --append $OCS_LOGFILE
     dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-mbr bs=512 count=1 2>&1 | tee --append ${OCS_LOGFILE}
   done
+} # end of save_part_table_mbr_dm_info
 
+# task "saveparts"
+# parameter:
+#  $1 target_dir
+#  $2 target_parts
+task_saveparts() {
+  local target_dir="$1"
+  local target_parts="$2"
+  local disk_size_sec to_skip dev_to_be_saved_shown_in_warning rc_savepts
+  local target_dir_fullpath clted_normal_devs
+  local minix_subpt_start minix_subpt_end minix_subpt_size cmd_save_minix_sub_parts_table
+  local pv_on_dsk pv_on_dsk_flag
+  local lks_open_cmd clted_luks_devs clted_luks_devs_map_sv lkuuid
+
+  # target_hd will be extracted from $target_parts, maybe we will have one more
+  local target_hd=""
+  local hd_tmp=""
+
+  screen_not_blank
+  active_proc_partitions
+  #######################################################
+  # ask user about target_dir and target_parts #
+  #######################################################
+  if [ "$target_dir" = "ask_user" ]; then
+    get_target_dir_name_when_saving  # get $target_dir
+  fi
+   
+  # set absolute path, i.e. put leading $ocsroot.
+  target_dir_fullpath="$ocsroot/$target_dir"
+
+  if [ "$target_parts" = "ask_user" ]; then
+    get_target_parts_name_from_local_machine
+  fi
+
+  # check if the device exists
+  ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
+  trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+  check_if_input_device_exist $ANS_TMP $target_parts
+  # we have to remove " (comes with checklist in dialog) so that for loop
+  # will work (Specially for FC3/4...)
+  target_parts="$(cat $ANS_TMP | tr -d \")"
+  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+
+  # find the target hd
+  # maybe we will have one more sd (like sda1, sda2, sdb1, sdb3 -> sda, sdb)
+  for ipart in $target_parts; do
+    # If ipart is bare block device without partition, e.g., sda with ext4, no partition sda1, not adding to target_hd list.
+    hd_tmp="$(get_diskname $ipart)"
+    if is_block_device_with_fs /dev/$hd_tmp; then
+      continue
+    fi
+    if [ -z "$target_hd" ]; then
+	    target_hd="$hd_tmp"
+    elif [ -z "$(echo $target_hd | grep -Ew "$hd_tmp" 2>/dev/null)" ]; then
+	    target_hd="$target_hd $hd_tmp"
+    fi
+  done
+
+  # Check if mbr and gpt partition table coexist
+  for ihd in $target_hd; do
+    check_specify_hd_exists $ihd
+    check_mbr_gpt_partition_table $ihd
+  done
+
+  if [ "$run_chk_luks_dev_flag" != "done" ]; then
+    check_if_luks_dev_exists_do_jobs $target_parts # Obtain luks_devs_from_machine
+  fi
+
+  # countdown or confirm.
+  dev_to_be_saved_shown_in_warning=""
+  if [ -n "$(echo "$ocs_sr_type" | grep -E "disk")" ]; then
+    # To save a disk, we list all the existing partition(s), too.
+    dev_to_be_saved_shown_in_warning="$target_hd $target_parts"
+  elif [ -n "$(echo "$ocs_sr_type" | grep -E "parts")" ]; then
+    # To save partition(s) only
+    dev_to_be_saved_shown_in_warning="$target_parts"
+  fi
+  # get_dev_model_shown will give $dev_model_shown
+  get_dev_model_shown "$dev_to_be_saved_shown_in_warning"
+  if [ "$ocs_batch_mode" != "on" ]; then
+    # Interactive mode, need to confirm
+    countdown_or_confirm_before_save "$target_dir_fullpath" 
+  fi
+
+  # Check if the image repository is writable.
+  if [ ! -w "$ocsroot" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$msg_img_repository_not_writable: $ocsroot"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!"
+    exit 1
+  fi
+
+  # If the existing target image exists, remove it.
+  rm_target_image_if_exist $target_dir_fullpath
+
+  # Turn on HD DMA
+  for ihd in $target_hd; do
+    [ "$force_dma_on" = "yes" ] && turn_on_hd_dma /dev/$ihd
+  done
+  # Turn off swap and LVM2, unlock the busy partitions.
+  turn_off_swap_and_LVM2
+
+  # Create the image directory
+  mkdir -p $target_dir_fullpath
+
+  # Save multipath infomation file
+  if ls ${MULTIPATH_INFODIR}/*-multipath >/dev/null 2>&1; then
+    cp -f ${MULTIPATH_INFODIR}/*-multipath $target_dir_fullpath
+  fi
+
+  # Add the column explanation in dev-fs.list. Later we will append line by line in task_saveparts.
+  echo "# <Device name>   <File system>   <Size>" > $target_dir_fullpath/dev-fs.list
+  echo "# File system is got from ocs-get-dev-info. It might be different from that of blkid or parted." >> $target_dir_fullpath/dev-fs.list
+
+  echo $msg_delimiter_star_line
   do_LVM_save="no"
+  do_LUKS_save="no"
   for partition in $target_parts; do
-    check_LVM_partition /dev/$partition
-    if [ "$?" -eq 0 ]; then
+    if check_LVM_partition /dev/$partition; then
       # LVM
       # We have to do save LVM (PV/VG/LV) together, not follow every partition
       do_LVM_save="yes"
       continue
     fi
-    # not LVM, normal partition
+    if cryptsetup isLuks -- /dev/$partition; then
+      # LUKS
+      # We will save LUKS later
+      do_LUKS_save="yes"
+      clted_luks_devs="$clted_luks_devs $partition"
+      continue
+    fi
+    clted_normal_devs="$clted_normal_devs $partition"
+  done
+
+  if [ -n "$clted_luks_devs" ]; then
+    # Found LUKS device. Open it first.
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_found_luks_dev: $clted_luks_devs"
+    echo "$msg_prompt_for_open_luks_dev"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "# <Block device> <UUID> <Device mapped name>" > $target_dir_fullpath/luks-dev.list
+
+    rm -f $target_dir_fullpath/luks-crypttab-from-OS.info
+    # Since LUKS device found, we need to create the luks-crypttab-from-OS.info in image dir from initramfs.
+    extract_crypttab_from_initramfs $target_dir_fullpath $clted_normal_devs
+
+    for id in $clted_luks_devs; do
+      save_luks_dev_header $target_dir_fullpath /dev/$id 
+      if [ -e "$target_dir_fullpath/luks-crypttab-from-OS.info" ]; then
+	lks_dev_map="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$partition $target_dir_fullpath from-local-dev)"
+        if [ -z "$lks_dev_map" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "$msg_luks_mapped_name_not_found_in_this_file: $target_dir_fullpath/luks-crypttab-from-OS.info."
+	  echo "$msg_name_it_arbitrarily_restered_os_boot_might_fail"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	  countdown 5
+	  echo
+	fi
+      fi
+      # Mapped device name for LUKS was not found. Create one.
+      if [ -z "$lks_dev_map" ]; then
+        lks_dev_map="$(LC_ALL=C mktemp -u /dev/mapper/ocs_luks_XXX)" # e.g., /dev/mapper/ocs_luks_vQX
+      fi
+
+      lks_dev_map_basenm="$(basename $lks_dev_map)" # e.g., ocs_luks_vQX
+
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+      echo "$msg_now_open_luks_dev: /dev/$id" | tee --append $OCS_LOGFILE
+      lks_open_cmd="cryptsetup open --type luks /dev/$id $lks_dev_map_basenm"
+      echo "Running: $lks_open_cmd" | tee --append $OCS_LOGFILE
+      eval $lks_open_cmd
+      rc=$?
+      if [ "$rc" -ne 0 ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "Failed to open LUKS device /dev/$id."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	exit 1
+      fi
+
+      lkuuid="$(LC_ALL=C ocs-get-dev-info /dev/$id uuid)"
+      echo "/dev/$id $lkuuid $lks_dev_map" >> $target_dir_fullpath/luks-dev.list
+      clted_luks_devs_map_sv="$clted_luks_devs_map_sv $lks_dev_map_basenm"
+    done
+    # Skip using save_crypttab_from_os. Normally the crypttab can not be found before LUKS is opened in the OS partition.
+    # It should be found in the initramfs. So we use extract_crypttab_from_initramfs.
+    # save_crypttab_from_os $target_dir_fullpath $clted_luks_devs_map_sv
+  fi
+
+  for partition in $clted_normal_devs; do
+    # not LVM or LUKS, normal partition
     image_save /dev/$partition $target_dir_fullpath $partition
     rc_savepts="$(($rc_savepts + $?))"
     # Tag the partition info. This is special for NTFS boot reserved partiition
@@ -9020,6 +9098,7 @@ task_saveparts() {
       echo "PARTITION_TYPE=Win_boot_reserved" > $target_dir_fullpath/$partition.info
     fi
   done
+
   # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
   # instead it's on a disk (e.g. /dev/sdb).
   # Although there is a checking in task_savedisk function, but this is for "saveparts" option.
@@ -9033,14 +9112,29 @@ task_saveparts() {
       fi
     fi
   done
+  # TODO: LUKS. What if LUKS in the pv_on_dsk?
 
   # Strip the single white space which should be nothing. Thanks to Borksoft.
   target_parts="$(echo $target_parts | sed -e "s/^  *$//")"
+
   # We have to do save LVM (PV/VG/LV) together, not follow every partition
   if [ "$do_LVM_save" = "yes" ]; then
     save_logv "$target_parts"
     rc_savepts="$(($rc_savepts + $?))"
   fi
+  
+  if [ "$do_LUKS_save" = "yes" ]; then
+    save_luks_dev_fs $clted_luks_devs_map_sv
+    rc_savepts="$(($rc_savepts + $?))"
+    # Close all LUKS dev.
+    ocs-lvm2-stop
+    for id in $clted_luks_devs_map_sv; do
+      cryptsetup close $id
+    done
+  fi
+
+  #
+  save_part_table_mbr_dm_info
 
   # Save EFI NVRAM info. What we need is actually the label
   # Only if dir /sys/firmware/efi/efivars exists, the data exist in EFI NVRAM 
@@ -9267,6 +9361,7 @@ task_restoreparts() {
   local efi_info_tmp
   local processed_extended_parts grub_cand_parts
   local lsrc_dev bt_cmd_
+  local lks_mapper lksopen_cmd clted_luks_devs_map_rt
   # create_temp_img_flag, orig_ocsroot, orig_target_dir and all_bt_part_lv are global variables
 
   if [ -z "$target_dir" ]; then
@@ -9429,6 +9524,8 @@ task_restoreparts() {
 
   if [ "$create_part" = "yes" ]; then
     for ihd in $target_hd; do
+      # LUKS
+      inactive_busy_luks_dev /dev/$ihd
       create_partition /dev/$ihd $target_dir_fullpath
     done
   else
@@ -9471,14 +9568,64 @@ task_restoreparts() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
 
+  echo $msg_delimiter_star_line
+  # LUKS
+  for partition in $target_parts; do
+    # Restore LUKS headers
+    if [ -e "$target_dir_fullpath/${partition}-luksHeader.bin" ]; then
+      echo "$msg_found_luks_dev: /dev/$partition"
+      inactive_busy_luks_dev /dev/$partition
+      restore_luks_dev_header $target_dir_fullpath /dev/$partition
+      sync;sync;sync
+      # Open the LUKS devs
+      # Get mapped device name from luks-crypttab-from-OS.info first. If not found, use luks-dev.list.
+      if [ -e "$target_dir_fullpath/luks-crypttab-from-OS.info" ]; then
+	lks_mapper="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$partition $target_dir_fullpath from-img)"
+        if [ -z "$lks_mapper" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "$msg_luks_mapped_name_not_found_in_this_file: $target_dir_fullpath/luks-crypttab-from-OS.info."
+	  echo "$msg_name_it_arbitrarily_restered_os_boot_might_fail"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	  countdown 5
+	  echo
+	fi
+      fi
+      # Mapped device name for LUKS was not found from luks-crypttab-from-OS.info. Use the backup one from luks-dev.list.
+      if [ -z "$lks_mapper" ]; then
+        lks_mapper="$(LC_ALL=C grep -Ew /dev/$partition $target_dir_fullpath/luks-dev.list | awk -F " " '{print $3}' | xargs basename)"
+      fi
+
+      if [ -n "$lks_mapper" ]; then
+        echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "$msg_now_open_luks_dev: /dev/$partition" | tee --append $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        lksopen_cmd="cryptsetup open --type luks /dev/$partition $lks_mapper"
+        echo "Running: $lksopen_cmd" | tee --append $OCS_LOGFILE
+        eval $lksopen_cmd
+	rc=$?
+	if [ "$rc" -eq 0 ]; then
+          clted_luks_devs_map_rt="$clted_luks_devs_map_rt $lks_mapper"
+	fi
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "The mapped device name for /dev/$partition was not found in $target_dir_fullpath/luks-dev.list" | tee --append $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	exit 1
+      fi
+    fi
+  done
+
   PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
   do_LVM_restore="no"
+  do_LUKS_restore="no"
   all_bt_part_lv=""
   for partition in $target_parts; do
     # sda1 -> sda
     hd_tmp="$(get_diskname $partition)"
     part_is_lvm="no"
     # If the partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
+    # LVM
     if [ -e $PV_PARSE_CONF ]; then
       for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
         if [ "$partition" = "$(get_master_dev_of_multipath $i)" ]; then
@@ -9492,6 +9639,14 @@ task_restoreparts() {
       do_LVM_restore="yes"
       # This continue is to skip the rest of this partition do loop
       continue
+    fi
+    # LUKS
+    if [ -e "$target_dir_fullpath/luks-dev.list" ]; then
+      if [ -n "$(grep -Ew /dev/$partition $target_dir_fullpath/luks-dev.list)" ]; then
+        do_LUKS_restore="yes"
+        # This continue is to skip the rest of this partition do loop
+        continue
+      fi
     fi
     echo "Restoring partition /dev/$partition..." | tee --append $OCS_LOGFILE
     # From partimage 0.6.6, batch mode won't stop if checkInodeForDevice is not run. Therefore comment it.
@@ -9665,6 +9820,15 @@ task_restoreparts() {
     # Append the whole disk to the partitions list. Althouth it's a disk, but it contains LV.
     # However, we do not put the disk name to $target_parts otherwise it might cause confusion.
     restore_logv "$target_parts" $net_mode $port
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  fi
+
+  # Restore LUKS
+  if [ "$do_LUKS_restore" = "yes" ]; then
+    # LUKS exists, restore it
+    echo "LUKS device exists, restoring it." | tee --append ${OCS_LOGFILE}
+    # LUKS
+    restore_luks_dev_fs $clted_luks_devs_map_rt
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
@@ -9856,6 +10020,12 @@ task_restoreparts() {
       fi
     done
   fi
+
+  # Close all LUKS dev.
+  ocs-lvm2-stop
+  for id in $clted_luks_devs_map_rt; do
+    cryptsetup close $id
+  done
 
   # Remove the temp converted image. //NOTE// Now target_dir is *-tmp-cnvted. img_cnvt_count is just for insurance.
   rm_tmp_cnvt_img
@@ -10970,7 +11140,7 @@ ocs-live-env-prepare(){
   # Prepare default ocsroot.
   if [ -n "$(find /$LIVE_MEDIA/$ocsroot/* -maxdepth 1 -type d -print 2>/dev/null)" ]; then
     # If images exist in /$LIVE_MEDIA/$ocsroot, default to make $ocsroot link to /$LIVE_MEDIA/$ocsroot.
-    # This link file will be removed by prep-ocsroot if it need the mount point $ocsroot (dir).
+    # This link file will be removed by ocs-prep-repo if it need the mount point $ocsroot (dir).
     # Remove the stale mountpoint if it's empty. This will avoid link twice: 
     # If we run this later:
     # ln -fs /live_media/home/partimag /home/partimag
@@ -11192,7 +11362,7 @@ ocs_success_mountpoint() {
   echo "$msg_df_report:" | tee --append ${OCS_MOUNT_LOG}
   echo $msg_delimiter_star_line | tee --append ${OCS_MOUNT_LOG}
   # //NOTE// No more using df to show $ocsroot disk usage. Use findmnt now.
-  # Option "df_extra_opt" is from prep-ocsroot.
+  # Option "df_extra_opt" is from ocs-prep-repo.
   # df $df_extra_opt -h 2>&1 | tee --append ${OCS_MOUNT_LOG}
   # Better way to show only /home/partimag:
   # findmnt --df --target /home/partimag/
@@ -11517,6 +11687,7 @@ run_ntfsreloc_part() {
 #
 fsck_partition() {
   local partfs_ dev_ fsck_exopt_ # dev_ is like /dev/sda1
+  local fsck_cmd btrfs_chk btrfs_scrub
   partfs_="$1"
   dev_="$2"
   fsck_exopt_="$3"  # This option could be nothing. Not always required.
@@ -11532,9 +11703,18 @@ fsck_partition() {
           echo "There is no good tool to check and repair NTFS on GNU/Linux, hence skip fscking this partition $dev_"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
           ;;
+    btrfs) 
+	  btrfs_chk="btrfs check --repair -p $dev_"
+	  # btrfs_scrub="btrfs scrub start -Bf $dev_"
+	  echo "Running: $btrfs_chk"
+	  eval $btrfs_chk
+	  # echo "Running: $btrfs_scrub"
+	  # eval $btrfs_scrub
+          ;;
     *)    
-          echo "Running: fsck -f $fsck_exopt_ $dev_"
-          fsck -f $fsck_exopt_ $dev_
+          fsck_cmd="fsck -f $fsck_exopt_ $dev_"
+          echo "Running: $fsck_cmd"
+	  eval $btrfs_scrub
           ;;
   esac
 } # end of fsck_partition
@@ -11918,16 +12098,18 @@ get_part_number() {
     # echo cciss/c0d0 | sed -r -e 's/^.*[0-9]{1,}(p[0-9]{1,})$/\1/g'
     # will get "cciss/c0d0". However, it should be "".
     # It's easier we use: sed -r -e 's|cciss/c[0-9]+d[0-9]+||g' for cciss/c0d0p3 cases
+    # 2022/2/2 /dev/mapper/ should be no partition number. Treat it as a disk. Hence just return nothing.
   case "$dev_" in
-    cciss*) num="$(echo "$dev_" | sed -r -e 's|cciss/c[0-9]+d[0-9]+||g')" ;;
-    rd*)    num="$(echo "$dev_" | sed -r -e 's|rd/c[0-9]+d[0-9]+||g')" ;;
-    ida*)   num="$(echo "$dev_" | sed -r -e 's|ida/c[0-9]+d[0-9]+||g')" ;;
-    mmcblk*)num="$(echo "$dev_" | sed -r -e 's|mmcblk[0-9]+||g')" ;;
-    nvme*)  num="$(echo "$dev_" | sed -r -e 's|nvme[0-9]+n[0-9]+||g')" ;;
-    md*)    num="$(echo "$dev_" | sed -r -e 's|md[0-9]+||g')" ;;
-    nbd*)   num="$(echo "$dev_" | sed -r -e 's|nbd[0-9]+||g')" ;;
-    loop*)  num="$(echo "$dev_" | sed -r -e 's|loop[0-9]+||g')" ;;
-    *)      num="$(echo "$dev_" | sed -r -e 's/^[^0-9]*-?([0-9]*)$/\1/g')" ;;
+    cciss*)   num="$(echo "$dev_" | sed -r -e 's|cciss/c[0-9]+d[0-9]+||g')" ;;
+    rd*)      num="$(echo "$dev_" | sed -r -e 's|rd/c[0-9]+d[0-9]+||g')" ;;
+    ida*)     num="$(echo "$dev_" | sed -r -e 's|ida/c[0-9]+d[0-9]+||g')" ;;
+    mmcblk*)  num="$(echo "$dev_" | sed -r -e 's|mmcblk[0-9]+||g')" ;;
+    nvme*)    num="$(echo "$dev_" | sed -r -e 's|nvme[0-9]+n[0-9]+||g')" ;;
+    md*)      num="$(echo "$dev_" | sed -r -e 's|md[0-9]+||g')" ;;
+    nbd*)     num="$(echo "$dev_" | sed -r -e 's|nbd[0-9]+||g')" ;;
+    loop*)    num="$(echo "$dev_" | sed -r -e 's|loop[0-9]+||g')" ;;
+    mapper*)  num="" ;;
+    *)        num="$(echo "$dev_" | sed -r -e 's/^[^0-9]*-?([0-9]*)$/\1/g')" ;;
   esac
   fi
 
@@ -11974,7 +12156,7 @@ get_diskname() {
     loop*)   echo "$dev_" | sed -r -e 's/^([^0-9]*p[0-9]+)p[0-9]*$/\1/g' ;;
     sr*)     echo "$dev_" ;;
     *)       if [[ "$dev_" =~ "/" ]]; then
-	       # e.g., lv name: /dev/host-vg/swap_1
+	       # e.g., LV name: /dev/host-vg/swap_1
                echo "$dev_"
              else
                echo "$dev_" | sed -r -e 's/^([^0-9]*)[0-9]*$/\1/g'
@@ -13014,10 +13196,10 @@ get_pv_on_disk_from_local_machine() {
   # Remove the leading space
   lpv_on_dsk="$(echo  "$lpv_on_dsk" | sed -r -e "s/^[[:space:]]*//g")" 
   if [ -n "$lpv_on_dsk" ]; then
-     echo "$lpv_on_dsk"
-     return 0
+    echo "$lpv_on_dsk"
+    return 0
   else
-     return 1
+    return 1
   fi
 } # end of get_pv_on_disk_from_local_machine
 
@@ -13036,8 +13218,7 @@ get_pv_on_disk_from_PV_conf_list() {
       fi
     done
   fi
-  # Remove the leading space
-  lpv_on_dsk="$(echo  "$lpv_on_dsk" | sed -r -e "s/^[[:space:]]*//g")" 
+  lpv_on_dsk="$(echo $lpv_on_dsk)" # Remove the leading spaces
   if [ -n "$lpv_on_dsk" ]; then
      echo "$lpv_on_dsk"
      return 0
@@ -13848,7 +14029,7 @@ prepare_mnt_point_ocsroot() {
 } # end of prepare_mnt_point_ocsroot
 #
 load_ocsroot_mnt_cmd() {
-  # Function to be used for prep-ocsroot and ocs-live-respository
+  # Function to be used for ocs-prep-repo and ocs-live-respository
   ocsroot_mnt_cmd_smb="LC_ALL=C mount -t cifs \"//${smb_srv}${smbfs_dir}\" $ocsroot -o user=\"${smb_account}${smb_password_opt}${smb_domain_opt}\"${smb_sec_opt}${smb_ver_opt}" 
   ocsroot_mnt_cmd_nfs="LC_ALL=C mount -t $nfs_ver $nfs_srv:$nfs_dir $ocsroot -o $ocsroot_def_mnt_opt,$nfsvers_opt"
   ocsroot_mnt_cmd_webdav="LC_ALL=C mount -t davfs -o noexec $davfs_url $ocsroot"
@@ -15598,3 +15779,241 @@ check_if_repo_fat_tune_image_vol_limit(){
        ;;
   esac
 } # end of check_if_repo_fat_tune_image_vol_limit
+#
+get_luks_dev_from_local_machine() {
+  local luks_devs id luks_devs_list
+  luks_devs="$(LC_ALL=C blkid --output device --match-token TYPE=crypto_LUKS)"
+  luks_devs_list=""
+  for id in $luks_devs; do
+    # List it like: sda2, not /dev/sda2
+    luks_devs_list="$luks_devs_list ${id#/dev/*}"
+  done
+  # Remove the leading space
+  luks_devs_list="$(echo  "$luks_devs_list" | sed -r -e "s/^[[:space:]]*//g")" 
+  if [ -n "$luks_devs_list" ]; then
+    echo "$luks_devs_list"
+    return 0
+  else
+    return 1
+  fi
+} # end of get_luks_dev_from_local_machine
+#
+save_luks_dev_header(){
+  local img_d_="$1"
+  local lk_dev_="$(format_dev_name_without_leading_dev $2)" # e.g., sda1
+  local lks_hdbk_cmd
+  lks_hdbk_cmd="cryptsetup luksHeaderBackup --header-backup-file ${img_d_}/${lk_dev_}-luksHeader.bin /dev/${lk_dev_}"
+  echo "Running: $lks_hdbk_cmd"
+  eval $lks_hdbk_cmd
+} # end of save_luks_dev_header
+#
+restore_luks_dev_header(){
+  local img_d_="$1"
+  local lk_dev_="$(format_dev_name_without_leading_dev $2)" # e.g., sda1
+  local lks_hdrt_cmd
+  lks_hdrt_cmd="cryptsetup luksHeaderRestore -q --header-backup-file ${img_d_}/${lk_dev_}-luksHeader.bin /dev/${lk_dev_}"
+  echo "Running: $lks_hdrt_cmd"
+  eval $lks_hdrt_cmd
+} # end of restore_luks_dev_header
+#
+inactive_busy_luks_dev() {
+  local busy_lks ilks
+  local lks_dev_="$(format_dev_name_without_leading_dev $*)" # e.g., sda1
+  ocs-lvm2-stop
+  for id in $lks_dev_; do
+    busy_lks="$(LC_ALL=C lsblk -npr -o name /dev/$id | grep -v -Ew "/dev/$id" | grep -Ew "/dev/mapper")"
+    for ilks in $busy_lks; do
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo -n "Closing LUKS mapping dev $ilks... "
+      cryptsetup close $ilks
+      echo "done!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    done
+  done
+} # end of inactive_busy_luks_dev
+#
+check_if_luks_dev_exists_do_jobs() {
+  local desg_dev="$*" # e.g., sda or sda1
+  local lk_devs_ to_be_rt
+  # run_chk_luks_dev_flag is a global variable.
+  # luks_devs_from_machine is global variable
+  lk_devs_="$(get_luks_dev_from_local_machine)"
+  # If lk_devs_ is not in the designated device, remove it
+  # E.g., sda1 is not part of sdc, nvme0n1p1 is not part of nvme0n2 or
+  # sdc is not part of sda1
+  for idd in $desg_dev; do
+    for ild in $lk_devs_; do
+      if [[ $ild =~ ^${idd}.* ]]; then
+	if ! [[ $to_be_rt =~ $ild ]]; then
+          to_be_rt="$to_be_rt $ild"
+	fi
+        continue
+      fi
+    done
+  done
+  # TODO: LUKS. Ask user if skip this?
+  if [ -n "$to_be_rt" ]; then
+    inactive_busy_luks_dev $to_be_rt
+  fi
+  luks_devs_from_machine="$to_be_rt"
+  run_chk_luks_dev_flag="done"
+} # end of check_if_luks_dev_exists_do_jobs
+#
+save_luks_dev_fs(){
+  local lks_maps_sv="$*"  # e.g., ocs_luks_XYO ocs_luks_ABX
+  local clted_luks_devs_pv_sv
+
+  for id in $lks_maps_sv; do
+    # device mapper on the LUKS partition.
+    if check_LVM_partition /dev/mapper/$id; then
+      # Found LVM on LUKS mapping device. Process later.
+      clted_luks_devs_pv_sv="$clted_luks_devs_pv_sv $id"
+      continue
+    fi
+    image_save /dev/mapper/$id $target_dir_fullpath $id
+    rc_savepts="$(($rc_savepts + $?))"
+  done
+
+  clted_luks_devs_pv_sv="$(echo $clted_luks_devs_pv_sv)"  # Remove the leading spaces.
+  # process LVM over LUKS if clted_luks_devs_pv_sv exists
+  if [ -n "$clted_luks_devs_pv_sv" ]; then
+    save_logv "$clted_luks_devs_pv_sv"
+    rc_savepts="$(($rc_savepts + $?))"
+  fi
+  # TODO: LUKS
+  # echo $rc
+} # end of save_luks_dev_fs
+#
+restore_luks_dev_fs(){
+  local lks_maps_rt="$*"  # e.g., ocs_luks_XYO ocs_luks_ABX
+  local clted_luks_devs_pv_rt
+  # target_dir_fullpath, net_mode, port are global variables
+  for id in $lks_maps_rt; do
+    if grep -qsEw /dev/mapper/$id "$target_dir_fullpath/lvm_vg_dev.list"; then
+      # Found LVM on LUKS mapping device. Process later.
+      clted_luks_devs_pv_rt="$clted_luks_devs_pv_rt mapper/$id"
+      continue
+    fi
+    do_unicast_stdin_restore $target_dir_fullpath "$id" "mapper/$id"
+    rc_restorepts="$(($rc_restorepts + $?))"
+  done
+
+  clted_luks_devs_pv_rt="$(echo $clted_luks_devs_pv_rt)" # Remove the leading spaces.
+  # process LVM over LUKS if clted_luks_devs_pv_rt exists
+  if [ -n "$clted_luks_devs_pv_rt" ]; then
+    restore_logv "$clted_luks_devs_pv_rt" $net_mode $port
+    rc_restorepts="$(($rc_restorepts + $?))"
+  fi
+  # TODO: LUKS
+  # echo $rc
+} # end of restore_luks_dev_fs
+#
+extract_crypttab_from_initramfs() {
+  # Two inputted variables: img_d_ & initrd_part
+  local img_d_="$1"
+  local initrd_part ird_mnt crypttab_f extract_tmp
+  shift
+  initrd_part="$(format_dev_name_with_leading_dev $*)"  # e.g., /dev/sda1
+  ird_mnt="$(mktemp -d /tmp/ird_mnt.XXX)"
+  extract_tmp="$(mktemp -d /tmp/extract_tmp.XXX)"
+  crypttab_f=$img_d_/luks-crypttab-from-OS.info
+  for id in $initrd_part; do
+    if mount -o ro $id $ird_mnt 2>/dev/null; then
+      ird_f="$(find $ird_mnt -maxdepth 2 -type f \( -iname "initrd.img*" -o -iname "initramfs*.img" \) -print  | sort -Vr | uniq | head -n 1)"
+      if [ -n "$ird_f" ]; then
+        echo -n "Extracting initramfs: $ird_f... "
+	unmkinitramfs $ird_f $extract_tmp
+	echo "done."
+	ctab_f="$(find $extract_tmp/ -name crypttab -print)"
+	if [ -n "$ctab_f" ]; then
+          echo "Found LUKS crypttab file in $ird_f. Appending it to $crypttab_f..."
+	  cat $ctab_f >> $crypttab_f
+	fi
+      fi
+      umount $ird_mnt
+    fi
+  done
+  rmdir $ird_mnt
+  [ -d "$extract_tmp" -a -n "$(echo $extract_tmp | grep "extract_tmp")" ] && rm -rf $extract_tmp
+} # end of extract_crypttab_from_initramfs
+#
+save_crypttab_from_os() {
+  # This function is for backup purpose. Normally the crypttab can not be found before LUKS is opened in the OS partition.
+  # It should be found in the initramfs. So we use extract_crypttab_from_initramfs.
+  # Two inputted variables: img_d_ & lks_maps_svos
+  local img_d_="$1"
+  local lks_maps_svos clted_luks_devs_pv_sv vgs_the lvs_the lks_mnt crypttab_f
+  shift
+  lks_maps_svos="$*"  # e.g., ocs_luks_XYO ocs_luks_ABX
+  lks_mnt="$(mktemp -d /tmp/luks_mnt.XXX)"
+  crypttab_f=$img_d_/luks-crypttab-from-OS.info
+  for id in $lks_maps_svos; do
+    # device mapper on the LUKS partition.
+    if check_LVM_partition /dev/mapper/$id; then
+      # Found LVM on LUKS mapping device. Process later.
+      clted_luks_devs_pv_sv="$clted_luks_devs_pv_sv $id"
+      continue
+    fi
+    if mount -o ro /dev/mapper/$id $lks_mnt 2>/dev/null; then
+      if [ -e "$lks_mnt/etc/crypttab" ]; then
+        echo "Found crypttab. Appending it to $crypttab_f..."
+        cat $lks_mnt/etc/crypttab >> $crypttab_f
+      fi
+      umount /dev/mapper/$id
+    fi
+  done
+
+  clted_luks_devs_pv_sv="$(echo $clted_luks_devs_pv_sv)"  # Remove the leading spaces.
+  # process LVM over LUKS if clted_luks_devs_pv_sv exists
+  for id in $clted_luks_devs_pv_sv; do
+    vgs_the="$(LC_ALL=C pvs --noheadings -o vg_name /dev/mapper/$id)"
+    for ig in $vgs_the; do
+      lvs_the="$lvs_the $(LC_ALL=C lvs --noheadings -o lv_path $ig)"
+    done
+  done
+  for ilv in $lvs_the; do
+    if mount -o ro $ilv $lks_mnt 2>/dev/null; then
+      if [ -e "$lks_mnt/etc/crypttab" ]; then
+        echo "Found /etc/crypttab at $lks_mnt/etc/crypttab."
+	cat_cmd="cat $lks_mnt/etc/crypttab >> $crypttab_f"
+	echo "Running: $cat_cmd"
+	eval $cat_cmd
+      fi
+      umount $lks_mnt
+    fi
+  done
+  rmdir $lks_mnt
+} # end of save_crypttab_from_os
+#
+get_luks_mapped_dev_name_from_os() {
+  # Function to get the LUKS's target, or the mapped device name from crypttab.
+  # From man 5 crypttab, the 2nd field is the source device, can be
+  # “UUID=<uuid>”, “LABEL=<label>”, “PARTUUID=<partuuid>” and “PARTLABEL=<partlabel>”
+  # e.g., the file luks-crypttab-from-OS.info is like:
+  # sda3_crypt UUID=d40857a5-9585-44a2-9a7d-be840ea22520 none luks,discard
+  local luks_dev_="$(format_dev_name_with_leading_dev $1)" # e.g., /dev/sda1
+  local img_full_path="$2"
+  local type_="$3" # from-local-dev or from-img
+  local search_pat field_2nd mapped_dev
+
+  # Find the search_pat in luks-crypttab-from-OS.info. It can be UUID, LABEL, PARTUUID, or PARTLABEL.
+  search_pat="$(grep -Eo "^[^#].*[[:space:]]+(UUID=|LABEL=|PARTUUID=|PARTLABEL=)" \
+	        $img_full_path/luks-crypttab-from-OS.info | awk -F" " '{print $2}' | sed -r -e "s/=$//g")"
+  case $type_ in
+    from-local-dev)
+      # From local device
+      field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_dev_ $search_pat)" # e.g., UUID=d40857a5-9585-44a2-9a7d-be840ea22520
+      ;;
+    from-img)
+      # From the blkid.list in the image dir
+      # e.g.,
+      # /dev/sda1: UUID="6A45-3312" BLOCK_SIZE="512" TYPE="vfat" PARTLABEL="EFI System Partition" PARTUUID="ec2938ac-93c6-4e04-825d-efc9a40f3294"
+      # /dev/sda2: UUID="97092124-0ba2-4911-83b6-a11427f6d6ad" BLOCK_SIZE="4096" TYPE="ext4" PARTUUID="0c9d419b-d05a-449b-b317-4c60f4935cbe"
+      # /dev/sda3: UUID="d40857a5-9585-44a2-9a7d-be840ea22520" TYPE="crypto_LUKS" PARTUUID="159c02bd-7098-40f5-a02f-49ae0f42fa8a"
+      field_2nd="$(grep -Ew $luks_dev_ $img_full_path/blkid.list | grep -Eo "[[:space:]]+${search_pat}=[^[:space:]]+" | sed -r -e "s|[[:space:]]*${search_pat}=||" -e "s/\"//g")"
+      ;;
+  esac
+
+  mapped_dev="$(LC_ALL=C grep -Ew $search_pat=$field_2nd $img_full_path/luks-crypttab-from-OS.info 2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+  echo $mapped_dev
+} # end of get_luks_mapped_dev_name_from_os
