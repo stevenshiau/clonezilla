@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.0.0
+Version:	5.0.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Feb 04 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.1-drbl1
+  * Avoid running efibootmgr with empty label in update-efi-nvram-boot-entry.
+
 * Thu Feb 03 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.0-drbl1
   * Add LUKS support. Basically a better mechanism than using dd is
     implemented.
