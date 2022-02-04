@@ -243,6 +243,8 @@ check_efi_boot_loader_file() {
   while read -r line; do
     [ -n "$(echo "$line" | grep -E "^[[:space:]]*#")" ] && continue
     lb_="$(echo "$line" | awk -F";" '{print $1}')"; lb_="$(echo $lb_)"
+    # Avoid to output empty line.
+    [ "$lb_" = "" ] && continue
     uud_="$(echo "$line" | awk -F";" '{print $2}')"; uud_="$(echo $uud_)"
     bt_f_="$(echo "$line" | awk -F";" '{print $3}')"; bt_f_="$(echo $bt_f_)"
     esp_p_="$(get_part_name_from_uuid_in_harddrive $uud_)"
@@ -268,7 +270,7 @@ check_efi_boot_loader_file() {
       esp_p_="$(echo $esp_p_ | sed -r -e "s|\/|\\\|g")"
       if [ -e "$mnt_pnt/$esp_boot_f_unix_format" ]; then
         # Make sure it does not exist in NVRAM before outputting.
-        if [ -z "$(comm -12 <(echo "$line" | sort) <(echo "$label_uuid_boot_f_in_nvram") | sort)" ]; then
+	if [ -z "$(comm -12 <(echo "$line" | sort) <(echo "$label_uuid_boot_f_in_nvram" | sort))" ]; then
 	  echo "${lb_}; ${uud_}; ${bt_f_}" >> $nvram_2_update_table
 	fi
       else
@@ -313,7 +315,7 @@ check_efi_boot_loader_file() {
           fi
         done
         # Make sure it does not exist in NVRAM before outputting.
-        if [ -z "$(comm -12 <(echo "$line" | sort) <(echo "$label_uuid_boot_f_in_nvram") | sort)" ]; then
+	if [ -z "$(comm -12 <(echo "$line" | sort) <(echo "$label_uuid_boot_f_in_nvram" | sort))" ]; then
 	  echo "${esp_boot_os}; ${uud_}; ${esp_boot_f}" >> $nvram_2_update_table
 	fi
       fi
@@ -341,6 +343,8 @@ output_efi_boot_info() {
   if [ -n "$efi_boot_file_info" ]; then
     while read -r line; do
       [ -n "$(echo "$line" | grep -E "^[[:space:]]*#")" ] && continue
+      # Avoid to output empty line.
+      [ "$lb_" = "" ] && continue
       lb_="$(echo "$line" | awk -F";" '{print $1}')"; lb_="$(echo $lb_)"
       boot_f_="$(echo "$line" | awk -F";" '{print $3}')"; boot_f_="$(echo $boot_f_)"
       [ -n "$lb_" ] && lb_all="$lb_all $lb_"
@@ -584,12 +588,16 @@ if [ -n "$full_path_to_efi_file" -a \
   # Boot0007* Windows Boot Manager	HD(2,GPT,a9427f00-e1d1-4bc5-9cd0-e23833e6fe62,0xe1800,0x31800)/File(\EFI\Microsoft\Boot\bootmgfw.efi)WINDOWS.........x...B.C.D.O.B.J.E.C.T.=.{.9.d.e.a.8.6.2.c.-.5.c.d.d.-.4.e.7.0.-.a.c.c.1.-.f.3.2.b.3.4.4.d.4.7.9.5.}...,................
   get_efi_hd_boot_entry_info -a -p ';' $full_path_to_efi_file label uuid boot_file | sort | uniq >> $nvram_chklist_table
   # Append that from NVRAM if it's not the same as that from saved nvram data (efi-nvram.dat).
-  if [ -z "$(comm -12 <(cat "$nvram_chklist_table" | sort) <(echo "$label_uuid_boot_f_in_nvram") | sort)" ]; then
-    echo "$label_uuid_boot_f_in_nvram" >> $nvram_chklist_table
+  if [ -z "$(comm -12 <(cat "$nvram_chklist_table" | sort) <(echo "$label_uuid_boot_f_in_nvram" | sort))" ]; then
+    if [ -n "$label_uuid_boot_f_in_nvram" ]; then
+      echo "$label_uuid_boot_f_in_nvram" >> $nvram_chklist_table
+    fi
   fi
 else
   # Only from NVRAM
-  echo "$label_uuid_boot_f_in_nvram" >> $nvram_chklist_table
+  if [ -n "$label_uuid_boot_f_in_nvram" ]; then
+    echo "$label_uuid_boot_f_in_nvram" >> $nvram_chklist_table
+  fi
 fi
 
 #
@@ -611,7 +619,9 @@ if [ "$ret" -eq 2 -o "$ret" -eq 4 ]; then
   check_efi_boot_loader_file $efi_system_part # We will get the file $nvram_2_update_table
   while read -r line; do
     [ -n "$(echo "$line" | grep -E "^[[:space:]]*#")" ] && continue
+    # Avoid running empty parameter with efibootmgr
     label="$(echo "$line" | awk -F";" '{print $1}')"; label="$(echo $label)"
+    [ "$label" = "" ] && continue
     uuid="$(echo "$line" | awk -F";" '{print $2}')"; uuid="$(echo $uuid)"
     esp_boot_f="$(echo "$line" | awk -F";" '{print $3}')"; esp_boot_f="$(echo $esp_boot_f)"
     cmd_update_add_boot_entry="efibootmgr -c -d ${disk_} -p ${esp_no} -L \"$label\" -l \"$esp_boot_f\""
