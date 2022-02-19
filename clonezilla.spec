@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.0.1
+Version:	5.0.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Feb 19 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.2-drbl1
+  * Bug fixed: ocs-onthefly via net failed, this was due
+    to the options -a/-f should not be passed to ocs-sr.
+    Thanks to m2acgi for reporting this issue and providing the patch.
+    Ref:
+    https://github.com/stevenshiau/clonezilla/issues/68#issuecomment-1042540967
+
 * Fri Feb 04 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.1-drbl1
   * Avoid running efibootmgr with empty label in update-efi-nvram-boot-entry.
 
