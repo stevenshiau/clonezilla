@@ -71,8 +71,8 @@ USAGE() {
     echo "Ex:"
     echo "To create a isolinux menu in dir isolinux_tmp/isolinux/"
     echo "$prog isolinux isolinux_tmp/isolinux/"
-    echo "To create a grub menu in dir grub_tmp/boot/grub/"
-    echo "$prog grub grub_tmp/boot/grub/"
+    echo "To create a grub2 EFI menu in dir grub_tmp/boot/grub/"
+    echo "$prog grub2-efi grub_tmp/boot/grub/"
 }
 gen_config_syslinux() {
   local type=$1
@@ -686,15 +686,14 @@ menuentry "Local operating system (if available)" --id local-disk {
 
 GRUB_END
 
-if [ -e "$tmp_sys_files_path/$memtest_filename" ]; then
-  cat <<-BOOT_MENU_END >> $output_file
-#menuentry "memtest"{
-#  search --set -f $sys_files_dir/$memtest_filename
-#  linux16 $sys_files_dir/$memtest_filename
-#}
+cat <<-BOOT_MENU_END >> $output_file
+menuentry --hotkey=m "Memtester ($vga_default_prompt & To RAM)" --id memtester {
+  search --set -f $kernel_file
+  \$linux_cmd $kernel_file $boot_param $vga_default_mode $toram_opt ip= net.ifnames=0 $quiet_opt $splash_opt $vga_blacklist_opt init=/bin/bash -- -c "/sbin/ocs-memtester"
+  \$initrd_cmd $initrd_file
+}
 
 BOOT_MENU_END
-fi
 
 # The following depends on the image exists or not 
 
