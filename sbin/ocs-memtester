@@ -13,8 +13,8 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
 # Settings
-# By default the maximum iteration is 3
-max_itr_def="3"
+# By default the maximum iteration is infinite, i.e., if not assigned, it will be infinite.
+max_itr_def=""
 
 #
 USAGE() {
@@ -25,7 +25,7 @@ USAGE() {
     echo
     echo "Options:"
 
-    echo "-i, --max-iteration ITERATION  The number of loops to iterate through is ITERATION. If not assigned, $max_itr_def will be used."
+    echo "-i, --max-iteration ITERATION  The number of loops to iterate through is ITERATION. If not assigned, Default is infinite."
     echo "-s, --test-size NUMBER         The amount of memory to allocate and test, in NUMBER MB. If not assigned, the available memory size from /proc/meminfo will be used."
     echo
     echo "Ex:"
@@ -84,7 +84,10 @@ else
   avail_mem_MB="$(LC_ALL=C free -m | grep -i "^Mem:" | awk -F" " '{print $NF}')"
 fi
 run_cmd="memtester ${avail_mem_MB}M $max_itr"
-echo "Running: $run_cmd"
+echo "Run: $run_cmd"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "//Hint// Press Ctrl-Alt-Del to reboot the system."
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 eval $run_cmd
 rc=$?
 if [ "$rc" -eq 0 ]; then
