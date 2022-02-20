@@ -1,0 +1,92 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to stress test to find memory subsystem faults.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+# By default the maximum iteration is 3
+max_itr_def="3"
+
+#
+USAGE() {
+    echo "$ocs - To test the memory in this system by running memtester"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] ITERATION"
+    echo
+    echo "Options:"
+
+    echo "-i, --max-iteration ITERATION  The number of loops to iterate through is ITERATION. If not assigned, $max_itr_def will be used."
+    echo "-s, --test-size NUMBER         The amount of memory to allocate and test, in NUMBER MB. If not assigned, the available memory size from /proc/meminfo will be used."
+    echo
+    echo "Ex:"
+    echo "To test the memory in this system by running memtester in 2 iterations, run:"
+    echo "   $ocs -i 2"
+    echo
+} # end of USAGE
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -s|--test-size)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             mem_size="$1"
+             shift;
+           fi
+           [ -z "$ocsroot" ] && USAGE && exit 1
+           ;;
+   -i|--max-iteration)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             max_itr="$1"
+             shift;
+           fi
+           [ -z "$ocsroot" ] && USAGE && exit 1
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+check_if_root
+ask_and_load_lang_set
+
+[ -z "$max_itr" ] && max_itr=$max_itr_def
+
+echo "Free and used memory (MB) in the system:"
+echo $msg_delimiter_star_line
+free -m
+echo $msg_delimiter_star_line
+if [ -n "$mem_size" ]; then
+  avail_mem_MB="$mem_size"
+else
+  avail_mem_MB="$(LC_ALL=C free -m | grep -i "^Mem:" | awk -F" " '{print $NF}')"
+fi
+run_cmd="memtester ${avail_mem_MB}M $max_itr"
+echo "Running: $run_cmd"
+eval $run_cmd
+rc=$?
+if [ "$rc" -eq 0 ]; then
+  echo "Everything works properly about the memory in this system."
+fi
