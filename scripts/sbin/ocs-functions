@@ -2980,26 +2980,42 @@ clean_cylinder_boundary_warning() {
   fi
 }
 #
-turn_off_swap() {
-  # turn off the swap partition and file to unlock the busy partition
-  if [ -e /etc/debian_version -o -e /etc/SuSE-release ]; then
-    # Debian or SUSE
-    # just stop it!
-    [ -x /etc/init.d/mkswapfile ] && /etc/init.d/mkswapfile stop
-  else
-    # RH-like
-    if [ -f /var/lock/subsys/mkswapfile -a -x /etc/init.d/mkswapfile ]; then
-      /etc/init.d/mkswapfile stop
+swapoff_dev() {
+  # Functions to check if it's swap, if so, swapoff it.
+  local sw_devs="$(format_dev_name_with_leading_dev $*)"  # e.g., /dev/sda1
+  local fs_
+  for id in $sw_devs; do
+    fs_="$(LC_ALL=C ocs-get-dev-info $id fs)"
+    if [ "$fs_" = "swap" ]; then
+      swapoff $id
     fi
-  fi
-  if is_systemd_init && [ -e "/lib/systemd/system/mkswapfile.service" ]; then
-    systemctl stop mkswapfile
-  fi
-  swapoff -a
-} # end of turn_off_swap
+  done
+} # end of swapoff_dev
 #
 turn_off_swap_and_LVM2() {
-  turn_off_swap | tee --append ${OCS_LOGFILE}
+  local d_devs="$(format_dev_name_with_leading_dev $*)"  # e.g., /dev/sda
+  local $sw_p fs_
+  # Part 1: swap
+  if [ -e "/lib/systemd/system/mkswapfile.service" ]; then
+    systemctl stop mkswapfile
+  fi
+  if [ -z "$d_devs" ]; then
+    swapoff -a
+  else
+    for id in $d_devs; do
+      if is_whole_disk $id; then
+        # Disk
+        sw_p="$(LC_ALL=C lsblk -npr -o name,fstype $id | grep -iw swap | awk -F" " '{print $1}')"
+        if [ -n "$sw_p" ]; then
+          swapoff $sw_p | tee --append ${OCS_LOGFILE}
+        fi
+      else
+        # Partition
+        swapoff_dev $id
+      fi
+    done
+  fi
+  # Part 2: LVM
   # Stop LVM so that the HD will not be occupied, we use script comes from
   # gentoo, but actually just run "vgchange -an" will be ok.
   ocs-lvm2-stop | tee --append ${OCS_LOGFILE}
@@ -3550,7 +3566,7 @@ create_partition() {
 
   check_input_hd $tgt_hd_name
 
-  turn_off_swap_and_LVM2
+  turn_off_swap_and_LVM2 $tgt_hd_file
 
   # The following actions must be after turn_off_swap_and_LVM2, since if swap and LVM2 is not off, partimage or ntfsclone will not be able to write the busy partitions. 
 
@@ -8998,7 +9014,7 @@ task_saveparts() {
     [ "$force_dma_on" = "yes" ] && turn_on_hd_dma /dev/$ihd
   done
   # Turn off swap and LVM2, unlock the busy partitions.
-  turn_off_swap_and_LVM2
+  turn_off_swap_and_LVM2 $target_parts $target_swap_parts
 
   # Create the image directory
   mkdir -p $target_dir_fullpath
@@ -9975,7 +9991,7 @@ task_restoreparts() {
   # 
   # Reinstall whole MBR (512 bytes)
   if [ "$dump_mbr_in_the_end" = "yes" ]; then
-    turn_off_swap_and_LVM2
+    turn_off_swap_and_LVM2 $target_hd
     sleep 1
     for ihd in $target_hd; do
       # Ref: http://en.wikipedia.org/wiki/Master_boot_record
@@ -10762,9 +10778,25 @@ check_if_disk_busy() {
   [ -z "$src_dev_" ] && return 1
   mounted_parts="$(LC_ALL=C mount | grep -Ew -- "^${src_dev_}([0-9]*|(p[0-9]+))")"
   if [ -n "$mounted_parts" ]; then
+    # Is busy (mounted)
     rc_d=0
   else
-    rc_d=1
+    # Not busy
+    # Check if swap on or LV on
+    # For swap, e.g.,
+    # root@debian:~# cat /proc/swaps
+    # Filename         Type         Size       Used   Priority
+    # /dev/sdb5        partition    4192252    1076   -2
+    # /dev/sda3        partition    6814716    0      -3
+    if [ -n "$(grep -Ew -- "^${src_dev_}([0-9]*|(p[0-9]+))" /proc/swaps)" ]; then
+      # Is busy (swap on)
+      rc_d=0
+    elif [ -n "$(LC_ALL=C lsblk -npr -o name,type ${src_dev_} | awk -F" " '$2 ~ IGNORECASE=1;/lvm/ {print $1}')" ]; then
+      # Is busy (LV active)
+      rc_d=0
+    else
+      rc_d=1
+    fi
   fi
   return $rc_d
 } # end of check_if_disk_busy
