@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.0.3
+Version:	5.0.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Mar 12 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.4-drbl1
+  * Improved functions related to turn_off_swap_and_LVM2, including
+    turn_off_swap, turn_off_swap_and_LVM2 itself, and check_if_disk_busy.
+    Basically make turn_off_swap_and_LVM2 accept the device about be off.
+    The goal in the future is to only inactive the destination device (swap,
+    LV) before saving or restoring. Not disable all in the beginning of
+    ocs-sr or ocs-onthefly.
+
 * Sun Feb 20 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.3-drbl1
   * Add the program ocs-memtester, which can be used to run
     memtester easier.
