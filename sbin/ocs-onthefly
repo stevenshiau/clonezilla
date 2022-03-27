@@ -463,6 +463,7 @@ USAGE() {
     echo "-icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
     echo "-iefi, --ignore-update-efi-nvram  Skip updating boot entries in EFI NVRAm after cloning."
     echo "-k, --no-sfdisk          Do NOT create partition table in boot sector in target machine"
+    echo "-k0,                     Create partition table based on the partition table from the image. this is the same as as default. Just an option to let us explain the action easier."
     echo "-k1,                     Create partition table in the target disk proportionally."
     echo "-k2,                     Enter command line prompt to create partition table manually before restoring image."
     echo "-j2, --clone-hidden-data  Use dd to clone the image of the data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool."
@@ -755,7 +756,7 @@ set_ocs_onthefly_extra_param() {
       "-k "      "$msg_ocs_onthefly_param_n"  \
       "-k1 "     "$msg_ocs_param_k1"  \
       "-k2 "     "$msg_ocs_param_k2"  \
-      " "        "$msg_use_the_part_table_from_sourcedisk"  \
+      "-k0 "     "$msg_use_the_part_table_from_sourcedisk"  \
       "exit "    "$msg_exit" \
       2>> $OCS_PARAM_TMP
     else
@@ -768,7 +769,7 @@ set_ocs_onthefly_extra_param() {
       $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
       "$msg_clonezilla_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set_single_choice $msg_hint_for_fdisk:" \
       0 0 0 $DIA_ESC \
-      " "        "$msg_use_the_part_table_from_sourcedisk"  \
+      "-k0 "     "$msg_use_the_part_table_from_sourcedisk"  \
       "-k "      "$msg_ocs_onthefly_param_n"  \
       "-k1 "     "$msg_ocs_param_k1"  \
       "-k2 "     "$msg_ocs_param_k2"  \
@@ -863,9 +864,8 @@ parse_ocs_onthefly_cmd_options() {
               fi
               [ -z "$grub_partition" ] && USAGE && exit 1
               ;;
-      -n)     shift; create_part="no"
-  	      echo "Option -n is deprecated! Please use -k in the future!"
-  	      ;;
+      -k0)    # Do nothing. Just an option to let us explain the action easier.
+              shift ;;
       -k|--no-sfdisk) shift; create_part="no" ;;
       -k1|--fdisk-proportion)  
               shift
