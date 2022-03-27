@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.0.4
+Version:	5.0.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.0.1, psmisc, udpcast, partclone >= 0.3.18, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
+Requires:	bash, perl, drbl >= 5.0.4, psmisc, udpcast, partclone >= 0.3.19, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 27 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.5-drbl1
+  * Add the dummy option "-k0" for creating partition in ocs-sr and
+    ocs-onthefly. It's the same as default action. Just easier for
+    us to explain.
+
 * Sat Mar 12 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.4-drbl1
   * Improved functions related to turn_off_swap_and_LVM2, including
     turn_off_swap, turn_off_swap_and_LVM2 itself, and check_if_disk_busy.
