@@ -168,6 +168,11 @@ is_gpt_partitition_table_file() {
   fi
   if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $p_table_f 2>/dev/null | grep -iE "gpt")" ]; then
     rt_code=0
+  elif [ -n "$(LC_ALL=C grep -Ei "^label:[[:space:]]+gpt" ${p_table_f/%-pt.parted/-pt.sf} 2>/dev/null)" ]; then
+    # Sometimes parted has some issues failing to identify that. E.g., 
+    # https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
+    # Hence use the backup plan to check partition table file $disk-pt.sf, not $disk-pt.parted.
+    rt_code=0
   else
     rt_code=1
   fi
@@ -182,6 +187,11 @@ is_mbr_partitition_table_file() {
     return 3
   fi
   if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $p_table_f 2>/dev/null | grep -iE "msdos")" ]; then
+    rt_code=0
+  elif [ -n "$(LC_ALL=C grep -Ei "^label:[[:space:]]+dos" ${p_table_f/%-pt.parted/-pt.sf} 2>/dev/null)" ]; then
+    # Sometimes parted has some issues failing to identify that. E.g., 
+    # https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
+    # Hence use the backup plan to check partition table file $disk-pt.sf, not $disk-pt.parted.
     rt_code=0
   else
     rt_code=1
@@ -198,6 +208,10 @@ is_gpt_partitition_table_disk() {
   fi
   if [ -n "$(LC_ALL=C parted -s $input_disk_ print | grep -iE "^Partition Table:" | grep -iE "gpt")" ]
   then 
+    rt_code=0
+  elif [ -n "$(LC_ALL=C sfdisk -d $input_disk_ | grep -Ei "^label:[[:space:]]+gpt")" ]; then
+    # Sometimes parted has some issues failing to identify that. E.g., 
+    # https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
     rt_code=0
   else
     rt_code=1
@@ -219,6 +233,12 @@ is_gpt_disk_with_bios_boot_part_in_legacy_bios() {
     if [ -n "$(LC_ALL=C parted -s $input_disk_ print | grep -Ew "^[[:space:]]+1[[:space:]]+.*[[:space:]]+bios_grub")" ]; then
       # This is the case "GPT disk" while legacy BIOS, and a special "bios_boot" partition exists.
       rt_code=0
+    elif [ -n "$(LC_ALL=C sfdisk -d $input_disk_ | grep -Ei "type=21686148-6449-6E6F-744E-656564454649,")" ]; then
+      # Sometimes parted has some issues failing to identify that. E.g., 
+      # https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
+      # GUID for the BIOS boot partition in the GPT scheme is 21686148-6449-6E6F-744E-656564454649
+      # Ref: https://en.wikipedia.org/wiki/BIOS_boot_partition
+      rt_code=0
     else
       rt_code=1
     fi
@@ -235,6 +255,10 @@ is_mbr_partitition_table_disk() {
   fi
   if [ -n "$(LC_ALL=C parted -s $input_disk_ print | grep -iE "^Partition Table:" | grep -iE "msdos")" ]
   then
+    rt_code=0
+  elif [ -n "$(LC_ALL=C sfdisk -d $input_disk_ | grep -Ei "^label:[[:space:]]+dos")" ]; then
+    # Sometimes parted has some issues failing to identify that. E.g., 
+    # https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
     rt_code=0
   else
     rt_code=1
@@ -3041,6 +3065,14 @@ check_integrity_of_partition_table_in_disk() {
   parted -s $disk_file print &> $dsk_chk_tmp
   rc=$?
   if [ "$rc" -gt 0 ]; then
+    # Sometimes parted has some issues failing to identify that. E.g., 
+    # https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
+    sfdisk -d $disk_file &>/dev/null
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+      # False alarm.
+      return 0
+    fi
     # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
     pv_on_dsk="$(get_pv_on_disk_from_local_machine)"
     pv_on_dsk_flag="false"
@@ -3106,6 +3138,14 @@ check_created_partition_table() {
   parted -s $disk_file print &> $dsk_chk_tmp
   rc=$?
   if [ "$rc" -gt 0 ]; then
+    # Sometimes parted has some issues failing to identify that. E.g., 
+    # https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
+    sfdisk -d $disk_file &>/dev/null
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+      # False alarm.
+      return 0
+    fi
     disk_name="$(basename $disk_file)"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "$msg_the_partition_table_in_disk_is_illegal: $disk_file" | tee --append $OCS_LOGFILE
@@ -3492,7 +3532,7 @@ create_gpt_partition_table() {
           fi
           # Sometimes even the return code of sgdisk is 0, it still fails. So the backup plan is to use dd.
           if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -E "^Partition Table: unknown")" ]; then
-               do_gpt_dd="yes"
+            do_gpt_dd="yes"
           fi
         else
           do_gpt_dd="yes"
