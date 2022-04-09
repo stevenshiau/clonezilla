@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.0.6
+Version:	5.0.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Apr 09 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.7-drbl1
+  * ocs-resize-part: Give warning, not failure for Unknown or
+  * Implemented a better to check GPT/MBR format of a disk.
+    This is a workaround to deal with ChromeOS Flex partition table.
+    Ref:
+    https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/688ce74fb1
+
 * Tue Mar 29 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.6-drbl1
   * To make it consistent, put "-k0" even it's in beginner mode in the
     dialog menu of ocs-onthefly.
