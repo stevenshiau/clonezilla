@@ -237,9 +237,12 @@ check_efi_boot_loader_file() {
   # # label; uuid; boot_file
   # CentOS Linux; fdd78f33-3c25-48b0-9fc7-c5dc7f1b1eff; \EFI\centos\grubx64.efi;
   # CentOS Linux; fdd78f33-3c25-48b0-9fc7-c5dc7f1b1eff; \EFI\centos\shimx64.efi;
+  # Inputted global variables: nvram_chklist_table, efi_system_part
   local lb_ uud_ bt_f_ esp_p_
   local mnt_pnt obreak efi_boot efi_boot_append dirs_list
   mnt_pnt="$(mktemp -d /tmp/efi_sys_part.XXXXXX)"
+  # We will try to find the label/uuid/boot_file from the file $nvram_chklist_table.
+  # However, if it contains none of them, we need to parse the ESP partition to get it.
   while read -r line; do
     [ -n "$(echo "$line" | grep -E "^[[:space:]]*#")" ] && continue
     lb_="$(echo "$line" | awk -F";" '{print $1}')"; lb_="$(echo $lb_)"
@@ -284,11 +287,16 @@ check_efi_boot_loader_file() {
         efi_boot_append=""
         dirs_list=""
         for idir in $mnt_pnt/EFI/*; do
+          # Since ESP partition is definitely a FAT partition. It's case insentive.
+          # Hence no need to test $mnt_pnt/efi/ here or it will be duplicated.
+          # However, later the dir name 
+          # might be uppercase or lowercase. Hence we have to use "-i" of grep or
+          # regular expression of sed to deal with that.
           # We only need dir in 2nd level of path
           if [ ! -d "$idir" ]; then
             continue
           fi
-          if [ -n "$(echo "$idir" | grep -i "$mnt_pnt/EFI/boot")" ]; then
+	  if [ -n "$(echo "$idir" | grep -Ei "$mnt_pnt/EFI/BOOT")" ]; then
             # Should not add /EFI/{boot,Boot,BOOT} now, make it as the last one later.
             efi_boot="yes"
             efi_boot_append="$idir"
@@ -305,7 +313,7 @@ check_efi_boot_loader_file() {
                 echo "Found EFI boot loader: $dir/$file"
                 # esp_boot_f example: \EFI\Boot\bootx64.efi
                 esp_boot_f="$(LC_ALL=C echo $dir/$file | sed -r -e "s|$mnt_pnt||g" | sed -r -e "s|\/|\\\|g")"
-                esp_boot_os="$(LC_ALL=C echo $dir/$file | sed -r -e "s|$mnt_pnt/EFI/||g" | xargs dirname)"
+		esp_boot_os="$(LC_ALL=C echo $dir/$file | sed -r -e "s@$mnt_pnt/(EFI|efi)/@@g" | xargs dirname)"
                 obreak="yes"
                 break
               fi
@@ -324,6 +332,66 @@ check_efi_boot_loader_file() {
       umount ${mnt_pnt}
     fi
   done < $nvram_chklist_table
+
+  # If the file $nvram_2_update_table contains none of label/uuid/boot_file,
+  # we need to parse the ESP partition to get it.
+  # This might happen when the saved NVRAM does not have any ESP boot info,
+  # e.g., it was saved from USB live system, but restored to hard drive.
+  if  [ "$(LC_ALL=C grep -vE "^[[:space:]]*#" $nvram_2_update_table | wc -l)" -eq 0 ]; then
+    # No reference one from EFI NVRAM, we have to find or guess...
+    # Possible files examples:
+    # Ubuntu Quantal: /EFI/ubuntu/grubx64.efi
+    # Fedora 19: /EFI/fedora/shim.efi
+    # MS Windows: /EFI/Boot/bootx64.efi
+    uud_="$(ocs-get-dev-info $efi_system_part PARTUUID)"
+    mount -o ro $efi_system_part $mnt_pnt
+    obreak="no"
+    efi_boot="no"
+    efi_boot_append=""
+    dirs_list=""
+    for idir in $mnt_pnt/EFI/*; do
+      # Since ESP partition is definitely a FAT partition. It's case insentive.
+      # Hence no need to test $mnt_pnt/efi/ here or it will be duplicated.
+      # However, later the dir name 
+      # might be uppercase or lowercase. Hence we have to use "-i" of grep or
+      # regular expression of sed to deal with that.
+
+      # We only need dir in 2nd level of path
+      if [ ! -d "$idir" ]; then
+        continue
+      fi
+      if [ -n "$(echo "$idir" | grep -Ei "$mnt_pnt/EFI/BOOT")" ]; then
+        # Should not add /EFI/{boot,Boot,BOOT} now, make it as the last one later.
+        efi_boot="yes"
+        efi_boot_append="$idir"
+        continue
+      fi
+      dirs_list="$dirs_list $idir"
+    done
+    if [ "$efi_boot" = "yes" ]; then
+      dirs_list="$dirs_list $efi_boot_append"
+    fi
+    for dir in $dirs_list; do
+      for file in $efiblfiles; do
+          if test -f $dir/$file; then
+            echo "Found EFI boot loader: $dir/$file"
+            # esp_boot_f example: \EFI\Boot\bootx64.efi
+            esp_boot_f="$(LC_ALL=C echo $dir/$file | sed -r -e "s|$mnt_pnt||g" | sed -r -e "s|\/|\\\|g")"
+    	    esp_boot_os="$(LC_ALL=C echo $dir/$file | sed -r -e "s@$mnt_pnt/(EFI|efi)/@@g" | xargs dirname)"
+            obreak="yes"
+            break
+          fi
+      done
+      if [ "$obreak" = "yes" ]; then
+        break
+      fi
+    done
+    echo "${esp_boot_os}; ${uud_}; ${esp_boot_f}" >> $nvram_2_update_table
+
+    if mountpoint ${mnt_pnt} &>/dev/null; then
+      umount ${mnt_pnt}
+    fi
+  fi
 
   # Clean stale dir
   if [ -d "${mnt_pnt}" -a \
@@ -567,6 +635,8 @@ fi
 
 
 # Prepare a table for efiboot
+# nvram_chklist_table is the list from NVRAM or saved NVRAM file
+# nvram_2_update_table is the file really to be used to run efibootmgr
 nvram_chklist_table="$(mktemp /tmp/nvram_chklist_table.XXXXXX)"
 nvram_2_update_table="$(mktemp /tmp/nvram_2_update_table.XXXXXX)"
 echo "# label; uuid; boot_file" > $nvram_chklist_table
@@ -613,10 +683,10 @@ ret="$?"
 # 4: UUID does not exist in NVRAM, need to update boot entry in NVRAM.
 esp_boot_os=""
 if [ "$ret" -eq 2 -o "$ret" -eq 4 ]; then
-  # 1: UUID does not exist in NVRAM, need to update boot entry in NVRAM.
   # 2: UUID exists in NVRAM, not matching the one in hard drive, need to update boot entry in NVRAM.
+  # 4: UUID does not exist in NVRAM, need to update boot entry in NVRAM.
   # Updating the boot entry for EFI NVRAM
-  check_efi_boot_loader_file $efi_system_part # We will get the file $nvram_2_update_table
+  check_efi_boot_loader_file # We will get the file $nvram_2_update_table
   while read -r line; do
     [ -n "$(echo "$line" | grep -E "^[[:space:]]*#")" ] && continue
     # Avoid running empty parameter with efibootmgr
