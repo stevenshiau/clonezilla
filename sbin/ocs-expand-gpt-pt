@@ -148,16 +148,30 @@ fi
 #   7      2543058s  16776584s  14233527s  logical                     
 
 ori_disk_size="$(LC_ALL=C grep -E "^Disk /dev" $orig_parted_tab | awk -F":" '{print $2}' | sed -e "s/s$//g")"
+
 # If nothing in target disk, parted will show like this:
 # sudo parted -s /dev/sda unit s print
 # Error: Unable to open /dev/sda - unrecognised disk label.
-
+init_gpt_flag=""
 if ! LC_ALL=C parted -s $target_disk unit s print &>/dev/null; then
-  # Try to create a partition table so that we can read the size via parted -s $dev unit s print
-  echo "No initial GPT table on disk $target_disk. Create one now by:" | tee --append $OCS_LOGFILE
-  echo "parted -s $target_disk mklabel gpt" | tee --append $OCS_LOGFILE
-  LC_ALL=C parted -s $target_disk mklabel gpt | tee --append $OCS_LOGFILE
+  init_gpt_flag=yes
+elif ! LC_ALL=C sfdisk -d $target_disk &>/dev/null; then
+  # Sometimes parted has some issues failing to identify that. E.g., 
+  # https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
+  # Hence use the backup plan to check partition table file $disk-pt.sf, not $disk-pt.parted.
+  init_gpt_flag=yes
+else
+  init_gpt_flag=no
 fi
+if [ "$init_gpt_flag" = "yes" ]; then
+  # Try to create a partition table so that we can read the size via parted -s $dev unit s print
+  cr_gpt="LC_ALL=C parted -s $target_disk mklabel gpt"
+  echo "No initial MBR table on disk $target_disk. Create one now by:"
+  echo $cr_gpt
+  eval $cr_gpt
+fi
+
+echo $msg_delimiter_star_line
 tgt_disk_size="$(LC_ALL=C parted -s $target_disk unit s print | grep -E "^Disk /dev" | awk -F":" '{print $2}' | sed -e "s/s$//g")"
 
 #
@@ -382,32 +396,48 @@ echo "*****************************************"
 if [ -z "$(echo $EXTRA_SFDISK_OPT | grep -Ew -- "--force")" ]; then
   EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT --force"
 fi
-echo "Running: sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf"
-LC_ALL=C sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf
-echo "Partition table was created by: sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf"
+sf_cmd="LC_ALL=C sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf"
+echo "Running: $sf_cmd"
+eval $sf_cmd
 
+echo $msg_delimiter_star_line
+# Get the last partition
+last_part="$(LC_ALL=C sfdisk -d $target_disk | grep -Ei "^/dev/" |  awk -F":" '{print $1}' | sort -Vr | head -n 1)"
+# For EFI System partition (ESP): its GUID or type in sfdisk is like: type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B,
+# Ref: https://en.wikipedia.org/wiki/GUID_Partition_Table
+# E.g.,
+# /dev/nvme0n1p1 : start=        2048, size=      532480, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=5854A0BE-D910-4F07-85FF-7C68FB5AFD2F, name="EFI system partition", attrs="RequiredPartition"
+# /dev/sda12 : start=      102400, size=      131072, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=81709525-0560-5844-87D1-D092B7EC65FB, name="EFI-SYSTEM", attrs="LegacyBIOSBootable"
+
+esp_GUID="$(LC_ALL=C sfdisk -d $target_disk | grep -Ew "^$last_part" | grep -Eio "type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B,")"
+do_fill_part="yes"
+if [ -n "$esp_GUID" ]; then
+  # Found ESP, skip fill the last partitition to the end of disk since it's ESP, might be FAT16, and has small size limit. ChromeOS Flex put ESP in the last one.
+  do_fill_part="no"
+fi
 # Use parted to fill the last partitition to the end of disk because
 # there might be some resudial in the calculation.
 # Thanks to Conan for this suggestion.
 # Ref: https://sourceforge.net/p/clonezilla/discussion/
 #      Clonezilla_live/thread/c5e92d87/?limit=25#080c
-echo $msg_delimiter_star_line
-if [ -n "$(LC_ALL=C parted -h | grep -w resizepart)" ]; then
-  # Find the last partition number.
-  # Firstly we get the line number for "Number  Start   End     Size    
-  # File system  Name  Flags"
-  line_after="$(LC_ALL=C parted -s $target_disk print | \
-  grep -n -Ew "^Number[[:space:]]+Start[[:space:]]+End.*" | \
-  awk -F":" '{print $1}')"
-  line_after="$((line_after +1))"
-  last_part_no="$(LC_ALL=C parted -s $target_disk print | \
-  tail -n +${line_after} | awk -F" " '{print $1}' | sort -V | tail -n 1)"
-  if [ -n "$last_part_no" ]; then
-    resizepart_cmd="LC_ALL=C parted -s $target_disk resizepart $last_part_no 100%"
-    echo "Now trying to extend the last partition to the end of disk by:"
-    echo "$resizepart_cmd"
-    eval $resizepart_cmd
-    echo "Done!"
+if [ "$do_fill_part" = "yes" ]; then
+  if [ -n "$(LC_ALL=C parted -h | grep -w resizepart)" ]; then
+    # Find the last partition number.
+    # Firstly we get the line number for "Number  Start   End     Size    
+    # File system  Name  Flags"
+    line_after="$(LC_ALL=C parted -s $target_disk print | \
+    grep -n -Ew "^Number[[:space:]]+Start[[:space:]]+End.*" | \
+    awk -F":" '{print $1}')"
+    line_after="$((line_after +1))"
+    last_part_no="$(LC_ALL=C parted -s $target_disk print | \
+    tail -n +${line_after} | awk -F" " '{print $1}' | sort -V | tail -n 1)"
+    if [ -n "$last_part_no" ]; then
+      resizepart_cmd="LC_ALL=C parted -s $target_disk resizepart $last_part_no 100%"
+      echo "Now trying to extend the last partition to the end of disk by:"
+      echo "$resizepart_cmd"
+      eval $resizepart_cmd
+      echo "Done!"
+    fi
   fi
 fi
 

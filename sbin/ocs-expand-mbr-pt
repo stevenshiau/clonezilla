@@ -138,18 +138,32 @@ fi
 #   7      2543058s  16776584s  14233527s  logical                     
 
 ori_disk_size="$(LC_ALL=C grep -E "^Disk /dev" $orig_parted_tab | awk -F":" '{print $2}' | sed -e "s/s$//g")"
+
 # If nothing in target disk, parted will show like this:
 # sudo parted -s /dev/sda unit s print
 # Error: Unable to open /dev/sda - unrecognised disk label.
 
+init_mbr_flag=""
 if ! LC_ALL=C parted -s $target_disk unit s print &>/dev/null; then
+  init_mbr_flag=yes
+elif ! LC_ALL=C sfdisk -d $target_disk &>/dev/null; then
+  # Sometimes parted has some issues failing to identify that. E.g., 
+  # https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
+  # Hence use the backup plan to check partition table file $disk-pt.sf, not $disk-pt.parted.
+  init_mbr_flag=yes
+else
+  init_mbr_flag=no
+fi
+if [ "$init_mbr_flag" = "yes" ]; then
   # Try to create a partition table so that we can read the size via parted -s $dev unit s print
-  echo -n "No partition table exists in target disk $target_disk, try to initialize one so that we can get the disk size by sfdisk... "
-  echo 1,,83 | sfdisk -f $target_disk &>/dev/null
-  echo "done!"
+  cr_mbr="LC_ALL=C parted -s $target_disk mklabel msdos"
+  echo "No initial MBR table on disk $target_disk. Create one now by:"
+  echo $cr_mbr
+  eval $cr_mbr
 fi
 tgt_disk_size="$(LC_ALL=C parted -s $target_disk unit s print | grep -E "^Disk /dev" | awk -F":" '{print $2}' | sed -e "s/s$//g")"
 
+echo $msg_delimiter_star_line
 # If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
 check_mbr_disk_size_gt_2TiB $target_disk exit
 
@@ -368,9 +382,9 @@ echo "*****************************************"
 if [ -z "$(echo $EXTRA_SFDISK_OPT | grep -Ew -- "--force")" ]; then
   EXTRA_SFDISK_OPT="$EXTRA_SFDISK_OPT --force"
 fi
-echo "Running: sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf"
-LC_ALL=C sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf
-echo "Partition table was created by: sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf"
+sf_cmd="LC_ALL=C sfdisk $EXTRA_SFDISK_OPT $target_disk < $new_sf"
+echo "Running: $sf_cmd"
+eval $sf_cmd
 
 [ -e "$new_sf" ] && rm -f $new_sf
 [ -e "$new_sf_tmp" ] && rm -f $new_sf_tmp
