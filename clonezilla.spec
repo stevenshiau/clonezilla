@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.0.8
+Version:	5.0.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Apr 13 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.9-drbl1
+  * ocs-expand-*-pt: Improved the mechanism about creating proportional
+    partition table. Especially that GPT in the last partition should not
+    be expanded.
+
 * Mon Apr 11 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.8-drbl1
   * update-efi-nvram-boot-entry: when there is no reference
     label/uuid/boot_file in NVRAM, try to guess one based on
