@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.0.9
+Version:	5.0.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Apr 17 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.10-drbl1
+  * Option "-k0" was added to drbl-ocs and ocs-live-feed-img, too.
+
 * Wed Apr 13 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.9-drbl1
   * ocs-expand-*-pt: Improved the mechanism about creating proportional
     partition table. Especially that GPT in the last partition should not
