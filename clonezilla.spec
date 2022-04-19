@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.0.11
+Version:	5.0.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Apr 19 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.12-drbl1
+  * ocs-iso/ocs-live-dev: check_if_in_netboot_env should be in the live env
+    after booting, not in the mode that downloaded live media exists.
+
 * Tue Apr 19 2022 Steven Shiau <steven _at_ clonezilla org> 5.0.11-drbl1
   * Show the prompt that ocs-iso/ocs-live-dev can not be run in
     netboot env.
