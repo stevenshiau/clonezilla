@@ -16090,3 +16090,22 @@ get_luks_mapped_dev_name_from_os() {
   mapped_dev="$(LC_ALL=C grep -Ew $search_pat=$field_2nd $img_full_path/luks-crypttab-from-OS.info 2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
   echo $mapped_dev
 } # end of get_luks_mapped_dev_name_from_os
+#
+check_if_in_netboot_env() {
+  # Function to check if netboot environment
+  local lm_path="$1"
+  if [ -z "$lm_path" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "\"lm_path\"" was not assigned in function check_if_in_netboot_env.
+    exit 1
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  if [ "$(LC_ALL=C find $lm_path -type f | wc -l)" -eq 1 ] &&\
+     [ -n "$(grep -Eo "fetch=" /proc/cmdline)" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$prog does not support to run from network boot environment (PXE or uEFI netboot). Please run it in the environment booting from CD-ROM or USB flash drive."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop"
+    exit 1
+  fi
+} # end of check_if_in_netboot_env
