@@ -8965,6 +8965,7 @@ task_saveparts() {
   local target_dir_fullpath clted_normal_devs
   local minix_subpt_start minix_subpt_end minix_subpt_size cmd_save_minix_sub_parts_table
   local pv_on_dsk pv_on_dsk_flag
+  local ask_luks_flag enable_luks_ans enable_luks
   local lks_open_cmd clted_luks_devs clted_luks_devs_map_sv lkuuid
 
   # target_hd will be extracted from $target_parts, maybe we will have one more
@@ -9071,6 +9072,7 @@ task_saveparts() {
   echo $msg_delimiter_star_line
   do_LVM_save="no"
   do_LUKS_save="no"
+  ask_luks_flag="yes"
   for partition in $target_parts; do
     if check_LVM_partition /dev/$partition; then
       # LVM
@@ -9079,10 +9081,40 @@ task_saveparts() {
       continue
     fi
     if cryptsetup isLuks -- /dev/$partition; then
+      # Ask if enabling LUKS
+      while [ "$ask_luks_flag" = "yes" ]; do
+        echo $msg_delimiter_star_line
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "$msg_found_luks_do_you_want_open_it"
+	echo "$msg_if_yes_open_luks"
+        echo "$msg_if_no_dd_mode_will_be_used"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "[y/n] "
+        read enable_luks_ans
+        case "$enable_luks_ans" in
+          y|Y|[yY][eE][sS]) enable_luks="yes"
+                            ask_luks_flag="no"
+		            ;;
+          n|N|[nN][oO])     enable_luks="no"
+                            ask_luks_flag="no"
+		            ;;
+          *)
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+             echo "$msg_you_have_to_enter_yes_or_no!"
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+             echo $msg_delimiter_star_line
+             ask_luks_flag="yes"
+             ;;
+          esac
+      done
       # LUKS
       # We will save LUKS later
-      do_LUKS_save="yes"
-      clted_luks_devs="$clted_luks_devs $partition"
+      if [ "$enable_luks" = "yes" ]; then
+        do_LUKS_save="yes"
+        clted_luks_devs="$clted_luks_devs $partition"
+      else
+        clted_normal_devs="$clted_normal_devs $partition"
+      fi
       continue
     fi
     clted_normal_devs="$clted_normal_devs $partition"
