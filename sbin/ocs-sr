@@ -141,6 +141,7 @@ USAGE() {
     echo " -pe, --passwd-ecryptfs PASSWD  Set the password to encrypt the image. Use with option \"-enc\" when saving, or restoring when the image is encrypted. //NOTE// This is not a safe way to use it because the password is shown in the command line or system processes."
     echo " -pfe, --passwd-file-ecryptfs FILE  Set the password to encrypt the image in the FILE. Use with option -enc, or restoring when the image is encrypted. The file contains the password to encrypt the image. Its format is like: passphrase_passwd=YOURPASSWORD."
     echo " -scpt, --skip-check-part-table  Skip checking the partition table of the source disk, i.e., just save it without checking it is MBR or GPT format."
+    echo " -luks, --enable-luks MODE  Open LUKS device or not. MODE can be either yes or no."
     USAGE_reserved_word_for_save
     echo
     echo " Options for restoring:"
@@ -690,6 +691,25 @@ parse_ocs_sr_cmd_options_with_dash() {
     -iefi|--ignore-update-efi-nvram)
 	    update_efi_nvram="no"
 	    shift; n_shift=$((n_shift+1));;
+    -luks|--enable-luks)
+            shift; n_shift=$((n_shift+1)); 
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              enable_luks_mode="$1"
+              shift; n_shift=$((n_shift+1)); 
+            fi
+            [ -z "$enable_luks_mode" ] && USAGE && exit 1
+            case "$enable_luks_mode" in
+              y|Y|[yY][eE][sS]) enable_luks="yes";;
+              n|N|[nN][oO])     enable_luks="no";;
+              *)
+                 [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+                 echo "Unknown option for -luks|--enable-luks"
+                 [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+                 echo $msg_delimiter_star_line
+		 USAGE && exit 1;;
+            esac
+	    ;;
     -*)     echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
             exit 2 ;;
@@ -926,7 +946,7 @@ create_clonezilla_live_recovery_iso_zip() {
     echo > $REC_TMP # clean REC_TMP
 
     # ask if want to set ocs extra param for recovery iso/zip
-    set_ocs_sr_extra_param restore $REC_TMP $ocs_sr_type
+    set_ocs_sr_extra_param restore $ocs_sr_type
     OCS_OPTS="$(cat $REC_TMP)"
     parse_ocs_sr_cmd_options_with_dash $OCS_OPTS
     OCS_OPTS="$(echo $OCS_OPTS)"  # make it in a line
@@ -1036,7 +1056,10 @@ get_extra_param_when_type_is_ask_user_and_interactive_mode() {
      # ask if want to set ocs extra param
      OCS_PARAM_TMP=`mktemp /tmp/ocs_sr_param_tmp.XXXXXX`
      trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
-     set_ocs_sr_extra_param save $OCS_PARAM_TMP $ocs_sr_type
+     # Check LUKS device. If exists, ask if open it.
+     check_luks_dev_then_ask_if_open_it # OCS_PARAM_TMP is the global variable
+
+     set_ocs_sr_extra_param save $ocs_sr_type
      # In interactive mode, we reset OCS_OPTS instead of appending it. Later wrap_up_opt will process more.
      OCS_OPTS="$(cat $OCS_PARAM_TMP)"
      [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
@@ -1046,7 +1069,7 @@ get_extra_param_when_type_is_ask_user_and_interactive_mode() {
      # ask if want to set ocs extra param
      OCS_PARAM_TMP=`mktemp /tmp/ocs_sr_param_tmp.XXXXXX`
      trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
-     set_ocs_sr_extra_param restore $OCS_PARAM_TMP $ocs_sr_type
+     set_ocs_sr_extra_param restore $ocs_sr_type
      # In interactive mode, we reset OCS_OPTS instead of appending it. Later wrap_up_opt will process more.
      OCS_OPTS="$(cat $OCS_PARAM_TMP)"
      [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
