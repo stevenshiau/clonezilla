@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.1.2
+Version:	5.1.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu May 12 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.3-drbl1
+  * create-ubuntu-live: drop support for hirsute, add support kinetic
+
 * Tue May 10 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.2-drbl1
   * ocs-sr: add an option "-luks" so that opening LUKS or not
     can be assigned in the command line prompt.
