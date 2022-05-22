@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.1.4
+Version:	5.1.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.1.1, psmisc, udpcast, partclone >= 0.3.20, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
+Requires:	bash, perl, drbl >= 5.1.6, psmisc, udpcast, partclone >= 0.3.20, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun May 22 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.5-drbl1
+  * create-ubuntu-live: update distribution name/arch.
+
 * Sun May 22 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.4-drbl1
   * Bug fixed: recovery iso/zip failed due to output file is not assigned
     in create_clonezilla_live_recovery_iso_zip of ocs-sr.
