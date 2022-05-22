@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.1.3
+Version:	5.1.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun May 22 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.4-drbl1
+  * Bug fixed: recovery iso/zip failed due to output file is not assigned
+    in create_clonezilla_live_recovery_iso_zip of ocs-sr.
+
 * Thu May 12 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.3-drbl1
   * create-ubuntu-live: drop support for hirsute, add support kinetic
 
