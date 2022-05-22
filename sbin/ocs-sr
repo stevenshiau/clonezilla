@@ -890,9 +890,9 @@ create_clonezilla_live_recovery_iso_zip() {
     # Target command Ex: 
     # ocs-iso -g en -t -k NONE -e "-b -c restoredisk sarge-r5 hda" sarge-r5
     # ocs-live-dev -c -g en -t -k NONE -e "-b -c restoredisk sarge-r5 hda" sarge-r5
-    local REC_TMP ans_
-    REC_TMP=`mktemp /tmp/ocs_recovery_tmp.XXXXXX`
-    trap "[ -f "$REC_TMP" ] && rm -f $REC_TMP" HUP INT QUIT TERM EXIT
+    local OCS_PARAM_TMP ans_
+    OCS_PARAM_TMP=`mktemp /tmp/ocs_recovery_tmp.XXXXXX`
+    trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
 
     # Ask image name first (disk or parts image)
     if [ "$ocs_sr_img_name" = "ask_user" ]; then
@@ -925,8 +925,8 @@ create_clonezilla_live_recovery_iso_zip() {
     ASK_DEV_NAME=1
     while [ "$ASK_DEV_NAME" -ne 0 ]; do
       $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-      --inputbox "$dev_prompt_and_example" 0 0 "$dev_preset" 2> $REC_TMP
-      rec_dev_name="$(cat $REC_TMP)"
+      --inputbox "$dev_prompt_and_example" 0 0 "$dev_preset" 2> $OCS_PARAM_TMP
+      rec_dev_name="$(cat $OCS_PARAM_TMP)"
       if [ -z "$rec_dev_name" ]; then
         $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
         --yesno "$msg_you_must_input_device_name_to_be_restored! $msg_do_u_want_to_do_it_again" 0 0 
@@ -936,33 +936,33 @@ create_clonezilla_live_recovery_iso_zip() {
               ASK_DEV_NAME=1;;
            1) # no is chosen
               echo "$msg_program_stop!"
-              [ -f "$REC_TMP" ] && rm -f $REC_TMP
+              [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
               exit 1;;
          esac
       else
         ASK_DEV_NAME=0
       fi
     done
-    echo > $REC_TMP # clean REC_TMP
+    echo > $OCS_PARAM_TMP # clean OCS_PARAM_TMP
 
     # ask if want to set ocs extra param for recovery iso/zip
     set_ocs_sr_extra_param restore $ocs_sr_type
-    OCS_OPTS="$(cat $REC_TMP)"
+    OCS_OPTS="$(cat $OCS_PARAM_TMP)"
     parse_ocs_sr_cmd_options_with_dash $OCS_OPTS
     OCS_OPTS="$(echo $OCS_OPTS)"  # make it in a line
-    echo > $REC_TMP # clean REC_TMP
+    echo > $OCS_PARAM_TMP # clean OCS_PARAM_TMP
 
     # Ask language to be used in live iso/zip
     # $DRBL_SCRIPT_PATH/lang/bash/$lang
-    get_existing_language $REC_TMP
-    rec_lang="$(cat $REC_TMP)"
+    get_existing_language $OCS_PARAM_TMP
+    rec_lang="$(cat $OCS_PARAM_TMP)"
 
     # Ask keymap
     ASK_KEYMAP_FILE=1
     while [ "$ASK_KEYMAP_FILE" -ne 0 ]; do
       $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-      --inputbox "$keymap_file_prompt_and_example" 0 0 "NONE" 2> $REC_TMP
-      rec_keymap_file="$(cat $REC_TMP)"
+      --inputbox "$keymap_file_prompt_and_example" 0 0 "NONE" 2> $OCS_PARAM_TMP
+      rec_keymap_file="$(cat $OCS_PARAM_TMP)"
       if [ -z "$rec_keymap_file" ]; then
         $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
         --yesno "$msg_you_must_input_keymap_file! $msg_do_u_want_to_do_it_again" 0 0 
@@ -972,14 +972,14 @@ create_clonezilla_live_recovery_iso_zip() {
               ASK_KEYMAP_FILE=1;;
            1) # no is chosen
               echo "$msg_program_stop!"
-              [ -f "$REC_TMP" ] && rm -f $REC_TMP
+              [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
               exit 1;;
          esac
       else
         ASK_KEYMAP_FILE=0
       fi
     done
-    echo > $REC_TMP # clean REC_TMP
+    echo > $OCS_PARAM_TMP # clean OCS_PARAM_TMP
 
     # Generage iso, zip or both ?
     $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
@@ -988,10 +988,10 @@ create_clonezilla_live_recovery_iso_zip() {
     "iso"   "$msg_create_recovery_clonezilla_live_iso" \
     "zip"   "$msg_create_recovery_clonezilla_live_zip" \
     "both"  "$msg_create_recovery_clonezilla_live_iso_and_zip" \
-    2> $REC_TMP
-    rec_file_type="$(cat $REC_TMP)"
+    2> $OCS_PARAM_TMP
+    rec_file_type="$(cat $OCS_PARAM_TMP)"
 
-    [ -f "$REC_TMP" ] && rm -f $REC_TMP
+    [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
 
     # Run ocs-iso/ocs-live-dev
     # Ex:ocs-iso -g en -t -k NONE -e "-b -c restoredisk sarge-r5 hda" sarge-r5
