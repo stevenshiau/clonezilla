@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.1.7
+Version:	5.1.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue May 31 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.8-drbl1
+  * ocs-live-swap-kernel: update-intitramfs needs /boot/config-$ver, so add
+    it before running it.
+
 * Thu May 26 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.7-drbl1
   * ask_nic_dev of ocs-functions: more flexible method to get NIC names.
     Ref:
