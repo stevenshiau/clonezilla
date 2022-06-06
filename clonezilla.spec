@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.1.9
+Version:	5.1.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jun 06 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.10-drbl1
+  * Add extra_pigz_opt extra_zstdmt_opt to be parsed in boot parameters.
+    This will be easier for user to customized.
+
 * Sat Jun 04 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.9-drbl1
   * The option --rsyncable of zstd causes bad performance. It can be 5 times slower
     for v1.4.x, and worse for v1.5.2.
