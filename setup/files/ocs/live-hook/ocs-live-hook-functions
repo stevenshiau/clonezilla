@@ -884,3 +884,35 @@ replace_jfbterm_terminfo() {
     ln -fsr /usr/share/terminfo/j/jfbterm.genuine /usr/share/terminfo/j/jfbterm
   fi
 } # end of replace_jfbterm_terminfo
+#
+disable_sudo_use_pty() {
+  # Do not let sudo to spawn pseudo-terminal when running a job. Otherwise
+  # ocs-live-run-menu will be run twice, and it will make the console weird.
+  # Ref: https://groups.google.com/g/ocs-clonezilla/c/tB93Vjz9CVw
+  # Check sudoers's manual, and look for "use_pty".
+  #
+  # With use_pty (as Clonezilla live 3.0.0-26 didi, by default Debian put use_pty in /etc/sudoers)
+  # root       50427   50424  0 07:44 tty1     00:00:00 sudo SUDO_TTY=/dev/tty1 ocs-live-run-menu
+  # root       50428   50427  0 07:44 pts/0    00:00:00 sudo SUDO_TTY=/dev/tty1 ocs-live-run-menu  <------
+  # root       50429   50428  0 07:44 pts/0    00:00:00 /bin/bash /usr/sbin/ocs-live-run-menu
+  # root       50596   50429  0 07:44 pts/0    00:00:00 jfbterm -q -e /tmp/ocs_live_run_tmp.jPwvrt
+  # root       50599   50596  0 07:44 pts/4    00:00:00 /bin/bash /tmp/ocs_live_run_tmp.jPwvrt
+  # root       50600   50599  0 07:44 pts/4    00:00:00 /bin/bash /usr/sbin/ocs-live-general
+  # 
+  # without use_pty (as clonezilla live 2.8.0-27-amd64 did，Debian by default Debian does not put use_pty in /etc/sudoers)
+  # root        2900    2897  0 06:45 tty1     00:00:00 sudo -i ocs-live-run-menu
+  # root        2901    2900  0 06:45 tty1     00:00:00 /bin/bash /usr/sbin/ocs-live-run-menu <------
+  # root        3071    2901  0 06:45 tty1     00:00:00 jfbterm -q -e /tmp/ocs_live_run_tmp.G6ycSu
+  # root        3074    3071  0 06:45 pts/1    00:00:00 /bin/bash /tmp/ocs_live_run_tmp.G6ycSu
+  # root        3075    3074  0 06:45 pts/1    00:00:00 /bin/bash /usr/sbin/ocs-live-general
+  #
+  # /etc/sudoers:
+  # Defaults        env_reset
+  # Defaults        mail_badpass
+  # Defaults        secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  # Defaults        use_pty
+
+  chmod u+w /etc/sudoers
+  perl -pi -e 's/^(Defaults[[:space:]]+use_pty)/#$1 # Commented by DRBL/g' /etc/sudoers
+  chmod u-w /etc/sudoers
+} # end of disable_sudo_use_pty
