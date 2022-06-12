@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.1.11
+Version:	5.1.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jun 12 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.12-drbl1
+  * Do not let sudo to spawn pseudo-terminal when running a job. Otherwise
+    ocs-live-run-menu will be run twice, and it will make the console weird.
+    Ref: https://groups.google.com/g/ocs-clonezilla/c/tB93Vjz9CVw
+    Thanks to ottokang for reporting this bug.
+
 * Sun Jun 12 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.11-drbl1
   * Add image size info file (Info-img-size.txt) in the image dir.
   * Replace buggy /usr/share/terminfo/j/jfbterm from ncurses-term.
