@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.1.10
+Version:	5.1.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,15 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jun 12 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.11-drbl1
+  * Add image size info file (Info-img-size.txt) in the image dir.
+  * Replace buggy /usr/share/terminfo/j/jfbterm from ncurses-term.
+    Thanks to ottokang for reporting this bug.
+  * Add more options in boot parameters to be parsed, including:
+    extra_pbzip2_opt, extra_lbzip2_opt, extra_plzip_opt, extra_lz4mt_opt,
+    and extra_xz_opt.
+    Thanks to ottokang for this request.
+
 * Mon Jun 06 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.10-drbl1
   * Add extra_pigz_opt extra_zstdmt_opt to be parsed in boot parameters.
     This will be easier for user to customized.
