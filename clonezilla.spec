@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.2.1
+Version:	5.2.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jul 09 2022 Steven Shiau <steven _at_ clonezilla org> 5.2.2-drbl1
+  * /etc/default/espeakup has changed its variable, so modify default_voice
+    instead of VOICE.
+
 * Tue Jul 05 2022 Steven Shiau <steven _at_ clonezilla org> 5.2.1-drbl1
   * Disable ufw service when making live system.
 
