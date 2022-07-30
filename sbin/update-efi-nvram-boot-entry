@@ -24,7 +24,7 @@ clean_nvram_unused_boot_entry="yes"
 # OpenSuSE 12.3: /EFI/opensuse/grubx64.efi" 
 # MS Windows 7/8: /EFI/Boot/bootx64.efi
 # CentOS 7.4: /EFI/centos/grubx64.efi
-# //NOTE// Rememer to sync the variable efiblfiles in /etc/drbl/boot-local-efi.cfg and drbl/conf/boot-local-efi.cfg.
+# //NOTE// Remember to sync the variable efiblfiles in /etc/drbl/boot-local-efi.cfg and drbl/conf/boot-local-efi.cfg.
 efiblfiles="shimx64.efi shim.efi grubx64.efi grub.efi elilo.efi bootx64.efi Boot/bootmgfw.efi grubaa64.efi bootaa64.efi bootarm.efi"
 # Default label name
 label_def="OS on hard drive"
@@ -188,7 +188,7 @@ check_if_nvram_efi_boot_entry_exist() {
   # Boot0080*       ACPI(a0341d0,0)PCI(1f,2)03120a00000000000000HD(2,64028,3a1ec0c0,00006572-1fb9-0000-5d0a-000037290000)File(\System\Library\CoreServices\boot.efi)
   # BootFFFF*       ACPI(a0341d0,0)PCI(1f,2)03120a00000000000000HD(2,64028,3a1ec0c0,00006572-1fb9-0000-5d0a-000037290000)File(\System\Library\CoreServices\boot.efi)
 
-  # The following is from the uEFI specification "3.1.1 Boot Manager Programming"
+  # The following is from the UEFI specification "3.1.1 Boot Manager Programming"
   # Each load option entry resides in a Boot#### variable or a Driver#### variable where the #### is replaced by a unique option number in printable hexadecimal representation using the digits 0–9, and the upper case versions of the characters A–F (0000–FFFF). The #### must always be four digits, so small numbers must use leading zeros
 
   #  # We could use udevadm info to get the partition UUID:
@@ -202,7 +202,7 @@ check_if_nvram_efi_boot_entry_exist() {
 
   # efi_system_part is global variable
   
-  # It might be duplicated uEFI boot entry in NVRAM for same ESP, just need to keep one.
+  # It might be duplicated UEFI boot entry in NVRAM for same ESP, just need to keep one.
   efi_sys_part_uuid_in_nvram="$(get_efi_hd_boot_entry_info -n $efi_system_part nvram uuid | uniq)"
   efi_sys_part_uuid_in_harddrive="$(get_part_uuid_in_harddrive $efi_system_part)"
   ret_code=""
@@ -287,7 +287,7 @@ check_efi_boot_loader_file() {
         efi_boot_append=""
         dirs_list=""
         for idir in $mnt_pnt/EFI/*; do
-          # Since ESP partition is definitely a FAT partition. It's case insentive.
+          # Since ESP partition is definitely a FAT partition. It's case insensitive.
           # Hence no need to test $mnt_pnt/efi/ here or it will be duplicated.
           # However, later the dir name 
           # might be uppercase or lowercase. Hence we have to use "-i" of grep or
@@ -350,7 +350,7 @@ check_efi_boot_loader_file() {
     efi_boot_append=""
     dirs_list=""
     for idir in $mnt_pnt/EFI/*; do
-      # Since ESP partition is definitely a FAT partition. It's case insentive.
+      # Since ESP partition is definitely a FAT partition. It's case insensitive.
       # Hence no need to test $mnt_pnt/efi/ here or it will be duplicated.
       # However, later the dir name 
       # might be uppercase or lowercase. Hence we have to use "-i" of grep or
@@ -452,7 +452,7 @@ clean_unused_uefi_boot_entry_in_nvram() {
   local dup_bf_fp all_boot_num boot_nums_2_be_removed
   all_boot_num=$(get_efi_hd_boot_entry_info -a nvram boot_num)
   efi_tmpd="$(LC_ALL=C mktemp -d /tmp/efi_tmpd.XXXXXX)"
-  echo "Trying to clean unused uEFI boot entry if it exists..."
+  echo "Trying to clean unused UEFI boot entry if it exists..."
   for ib in $all_boot_num; do
     do_clean_EFI_boot_entry="no"
     efi_f=""
@@ -470,7 +470,7 @@ clean_unused_uefi_boot_entry_in_nvram() {
       continue
     fi
     # Found EFI boot file listed in NVRAM.
-    # The cases for useless uEFI boot entry:
+    # The cases for useless UEFI boot entry:
     # (1) EFI boot file listed in NVRAM, but there is no such partition.
     # (2) EFI boot file listed in NVRAM, the partition exists, but there is no such boot file.
     if [ -z "$efi_part" ]; then
@@ -497,7 +497,7 @@ clean_unused_uefi_boot_entry_in_nvram() {
   if [ -d "$efi_tmpd" ]; then
     rmdir $efi_tmpd
   fi
-  # Process the duplicated uEFI boot entry, just need to keep one.
+  # Process the duplicated UEFI boot entry, just need to keep one.
   dup_bf_fp="$(get_efi_hd_boot_entry_info -a nvram boot_file_full_path | sort | uniq -d)"
   for id in $dup_bf_fp; do
     all_boot_num="$(LC_ALL=C efibootmgr -v | grep -F "$id" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g")"
@@ -585,7 +585,7 @@ ask_and_load_lang_set $specified_lang
 #fi
 
 # 2019/02/16
-# Disable blacklisting Dell machine. We can avoid bricking the uEFI BIOS by newer mechanism to get only one uEFI boot label even when multiple OSs exist. Thanks to Dell US & Taiwan, and AMI Taiwan.
+# Disable blacklisting Dell machine. We can avoid bricking the UEFI BIOS by newer mechanism to get only one UEFI boot label even when multiple OSs exist. Thanks to Dell US & Taiwan, and AMI Taiwan.
 #if check_if_dell; then
 #  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
 #  echo "Due to an issue of efibootmgr on Dell's machine, EFI NVRAM boot entry update was skipped."

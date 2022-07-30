@@ -6,9 +6,9 @@
 # A. For seeder:
 #   Part 1: create metainfo file (.torrent)
 #   Part 2: start tracker
-#   Part 3: start bitorrent client program
+#   Part 3: start bittorrent client program
 # B. For leecher:
-#   Only 1: start bitorrent client program
+#   Only 1: start bittorrent client program
 
 #
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -142,7 +142,7 @@ create_metainfo_file(){
   fi
 } # end of create_metainfo_file
 #
-start_tarcker() {
+start_tracker() {
   d_file="$btlog_dir/${idir_name}-dfile"
   log_file="$btlog_dir/${idir_name}-tracker.log"
   tracker_pid_log="$btlog_dir/${idir_name}-tracker.pid"
@@ -165,9 +165,9 @@ start_tarcker() {
   tracker_pid="$!"
   echo "$tracker_pid" > $tracker_pid_log
   wait_bt_port_open $port_b
-} # end of start_tarcker
+} # end of start_tracker
 #
-start_bitorrent_client_program_in_seeder() {
+start_bittorrent_client_program_in_seeder() {
   ct_pid_log="$btlog_dir/${idir_name}-torrent.pid" # Used for non-ezio bt client
   if [ "$bt_client" = "lftp" ]; then
     cmd_start_seeding="lftp -c torrent -O $(dirname $ocsroot_btzone/${idir}) $ocsroot_btzone/${idir}.torrent"
@@ -220,14 +220,14 @@ start_bitorrent_client_program_in_seeder() {
     echo "$ct_pid" > $ct_pid_log
     echo $msg_delimiter_star_line
   fi
-} # end of start_bitorrent_client_program_in_seeder
+} # end of start_bittorrent_client_program_in_seeder
 #
-start_bitorrent_client_program_in_leecher() {
+start_bittorrent_client_program_in_leecher() {
   # No matter bt_slices_from_dev is "img" or "raw-dev", in the leecher the command for ezio is the same
   # Collect multiple torrent files. Make it like:
   # ezio -U -T sda1.torrent -L /dev/sda1 -T sda2.torrent -L /dev/sda2
   ezio_start_seeding_param="$ezio_start_seeding_param -T $ocsroot_btzone/${idir}.torrent -L /dev/$ipt"
-} # end of start_bitorrent_client_program_in_leecher
+} # end of start_bittorrent_client_program_in_leecher
 #
 start_bt_srv() {
   local ipt idir idir_name
@@ -290,7 +290,7 @@ start_bt_srv() {
 
     idir="$img_dir/$(to_filename $ipt)" # e.g., xenial-x64-20161104/sda1
     # idir_name is the name for log usage
-    get_idir_name $idir # Obtian $idir_name, e.g., xenial-x64-20161104~sda1
+    get_idir_name $idir # Obtain $idir_name, e.g., xenial-x64-20161104~sda1
 
     if [ "$run_mode" = "seeder" ]; then
       # Prepare port no
@@ -300,24 +300,24 @@ start_bt_srv() {
       create_metainfo_file
       echo $msg_delimiter_star_line
       # Part 2: start tracker
-      start_tarcker
+      start_tracker
       echo $msg_delimiter_star_line
-      # Part 3: start bitorrent client program
+      # Part 3: start bittorrent client program
       ezio_seeder_leecher_opt="$ezio_seeder_opt -U"
-      start_bitorrent_client_program_in_seeder
+      start_bittorrent_client_program_in_seeder
     else
       # For leecher:
-      # Start bitorrent client program
+      # Start bittorrent client program
       ezio_seeder_leecher_opt="$ezio_leecher_opt"
-      start_bitorrent_client_program_in_leecher
+      start_bittorrent_client_program_in_leecher
     fi
   done
-  # For ezio case, in start_bitorrent_client_program_in_seeder and 
-  # start_bitorrent_client_program_in_leecher we only collect the options. Now run it.
+  # For ezio case, in start_bittorrent_client_program_in_seeder and 
+  # start_bittorrent_client_program_in_leecher we only collect the options. Now run it.
   if [ -n "$ezio_start_seeding_param" ]; then
      get_ezio_prog  # get the variable ezio_prog
      # //NOTE// The working dir for ezio is the working dir as torrent file
-     # E.g., ezio -U -f /home/partimag/btzone/xenial-x64-20161104/sda1.torrrent /home/partimag/btzone/xenial-x64-20161104
+     # E.g., ezio -U -f /home/partimag/btzone/xenial-x64-20161104/sda1.torrent /home/partimag/btzone/xenial-x64-20161104
      ezio_cache_opt=""
      if [ -n "$($ezio_prog -h | grep -Eo -- "--cache")" ]; then
        # Set memory limit
@@ -379,7 +379,7 @@ stop_bt_srv() {
   	       for ipt in $parts; do
 		 idir="$img_dir/$(to_filename $ipt)"
                  # idir_name is the name for log usage
-                 get_idir_name $ipt # Obtian $idir_name
+                 get_idir_name $ipt # Obtain $idir_name
                  ct_pid_log_prefix="${ct_pid_log_prefix}~$(to_filename $ipt)"
 		 # Possible tracker pid file and torrent pid file, there is ezio part later.
                  id_file="$btlog_dir/${idir_name}-tracker.pid $btlog_dir/${idir_name}-torrent.pid"
@@ -510,7 +510,7 @@ shift
 # The partition name, e.g. sda1, sda2
 parts="$(strip_leading_dev $*)" # No matter the input is like /dev/sda1 or sda1, format it as sda1.
 
-# Load deafult values if not specified.
+# Load default values if not specified.
 [ -z "$metainfo_creator" ] && metainfo_creator="$metainfo_creator_def"
 [ -z "$bt_client" ] && bt_client="$bt_client_def"
 if [ "$bt_slices_from_dev" = "raw-dev" ]; then

@@ -3055,7 +3055,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 
 * Mon Dec 07 2015 Steven Shiau <steven _at_ clonezilla org> 3.19.3-drbl1
 - Allow ocs-install-grub to run when it's a GPT disk with a special "bios_boot" partition exists in the machine using legacy BIOS.
-- Use parted to fill the last partitition to the end of disk because there might be some resudial in the calculation of ocs-expand-gpt-pt.  Thanks to Conan for this suggestion. Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/c5e92d87/?limit=25#080c
+- Use parted to fill the last partition to the end of disk because there might be some residual in the calculation of ocs-expand-gpt-pt.  Thanks to Conan for this suggestion. Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/c5e92d87/?limit=25#080c
 
 * Mon Nov 23 2015 Steven Shiau <steven _at_ clonezilla org> 3.19.2-drbl1
 - Add option "-scs" to be the same option for "-sc" in drbl-ocs and ocs-sr. This will be easier to tell the differences between saving and restoring image.

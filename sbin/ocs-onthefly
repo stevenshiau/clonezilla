@@ -39,12 +39,12 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
 # Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
-# By default the prevous partclone and ONTHEFLY_NET_PIPE service will be killed
+# By default the previous partclone and ONTHEFLY_NET_PIPE service will be killed
 keep_netpipe="no"
 # Default to run ocs-update-initrd to update the initramfs of restored OS
 do_update_initrd="yes"
 #
-d2d_psuedo_img="d2d-pseudo"
+d2d_pseudo_img="d2d-pseudo"
 
 # Local functions:
 # check if the user input /dev/hda, /dev/hdb...
@@ -72,7 +72,7 @@ check_input_param() {
 #
 kill_clone_prog_nc_process() {
   local i
-  echo "Terminate partimage and $NC_CMD processs if they exist..." | tee --append ${OCS_LOGFILE}
+  echo "Terminate partimage and $NC_CMD process if they exist..." | tee --append ${OCS_LOGFILE}
   for i in partclone partimage ntfsclone dd nc netcat nuttcp; do
     echo "pkill -u root $i"  && pkill -u root $i
   done
@@ -82,7 +82,7 @@ confirm_do_it_in_target_dev() {
   local DEV_MODEL machine_name
   if [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then
     # From target_hd, we can get the partitions list
-    # We need the partition table to conver the selected HD to partitions.
+    # We need the partition table to convert the selected HD to partitions.
     tgt_parts=""
     for idisk in $target_hd; do
       BACKUP_DEVS=""
@@ -124,7 +124,7 @@ confirm_do_it_in_target_dev() {
 } # end of confirm_do_it_in_target_dev
 #
 prepare_src_dev_pseudo_img() {
-  local save_psuedo_img_cmd save_mode gen_chksum_opt 
+  local save_pseudo_img_cmd save_mode gen_chksum_opt
   if [ "$chksum_for_files_in_dev" = "yes" ]; then
     gen_chksum_opt="-gmf"
   fi
@@ -132,19 +132,19 @@ prepare_src_dev_pseudo_img() {
     disk)      save_mode="savedisk" ;;
     partition) save_mode="saveparts" ;;
   esac
-  save_psuedo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_src_tmp -luks no -sfsck -sfs -nogui -q2 --batch -j2 -scs -senc -p true $gen_chksum_opt $save_mode $d2d_psuedo_img $src_dev"
+  save_pseudo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_src_tmp -luks no -sfsck -sfs -nogui -q2 --batch -j2 -scs -senc -p true $gen_chksum_opt $save_mode $d2d_pseudo_img $src_dev"
   echo "Saving the source device as a pseudo image. Running:"
-  echo "$save_psuedo_img_cmd"
-  eval $save_psuedo_img_cmd
+  echo "$save_pseudo_img_cmd"
+  eval $save_pseudo_img_cmd
   if [ "$STATUS" = "clone_server" ]; then
     # Keep the source type, device and other info otherwise when destination is different, it will be changed
-    cat <<-ONTHEFLY_LOCAL_END > $hd_src_tmp/$d2d_psuedo_img/ocs-onthefly-param.info
+    cat <<-ONTHEFLY_LOCAL_END > $hd_src_tmp/$d2d_pseudo_img/ocs-onthefly-param.info
 opt_for_ocs_sr_restore_assigned_from_src="$opt_for_ocs_sr_restore_this_run"
 
 ONTHEFLY_LOCAL_END
   fi
   (cd $hd_src_tmp
-   tar -czf $d2d_psuedo_img.tgz $d2d_psuedo_img/*
+   tar -czf $d2d_pseudo_img.tgz $d2d_pseudo_img/*
   )
 } # end of prepare_src_dev_pseudo_img
 #
@@ -194,8 +194,8 @@ prepare_network_clone_dev_info() {
     fi
     # wait for client to download it
     case "$ONTHEFLY_NET_PIPE" in
-      netcat) run_cmd="cat $hd_src_tmp/${d2d_psuedo_img}.tgz | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &" ;;
-      nuttcp) run_cmd="cat $hd_src_tmp/${d2d_psuedo_img}.tgz | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) &" ;;
+      netcat) run_cmd="cat $hd_src_tmp/${d2d_pseudo_img}.tgz | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &" ;;
+      nuttcp) run_cmd="cat $hd_src_tmp/${d2d_pseudo_img}.tgz | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) &" ;;
     esac
     echo "Running: $run_cmd"
     eval $run_cmd
@@ -241,8 +241,8 @@ prepare_network_clone_dev_info() {
     fi
     # Get the pt and mbr... from server
     case "$ONTHEFLY_NET_PIPE" in
-      netcat) run_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT > $hd_tgt_tmp/${d2d_psuedo_img}.tgz" ;;
-      nuttcp) run_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log > $hd_tgt_tmp/${d2d_psuedo_img}.tgz" ;;
+      netcat) run_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT > $hd_tgt_tmp/${d2d_pseudo_img}.tgz" ;;
+      nuttcp) run_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log > $hd_tgt_tmp/${d2d_pseudo_img}.tgz" ;;
     esac
     echo "Running: $run_cmd"
     eval $run_cmd
@@ -255,42 +255,42 @@ prepare_network_clone_dev_info() {
       exit 1
     fi
     NC_PORT=$((NC_PORT + 6))
-    if [ ! -f "$hd_tgt_tmp/${d2d_psuedo_img}.tgz" ]; then
+    if [ ! -f "$hd_tgt_tmp/${d2d_pseudo_img}.tgz" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "The partition table, MBR infomation is not received from another machine (IP address $SOURCE_IP)!" | tee --append ${OCS_LOGFILE}
+      echo "The partition table, MBR information is not received from another machine (IP address $SOURCE_IP)!" | tee --append ${OCS_LOGFILE}
       echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       exit 1
     fi
     ( 
       cd $hd_tgt_tmp/
-      tar -xzf ${d2d_psuedo_img}.tgz
+      tar -xzf ${d2d_pseudo_img}.tgz
     )
   fi
 } # end of prepare_network_clone_dev_info
 #
 local_dev_clone() {
-  local restore_psuedo_img_cmd
+  local restore_pseudo_img_cmd
   case "$source_type" in
     partition)
-      restore_psuedo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_src_tmp -l en_US.UTF-8 --batch -t2 -scr -p true $opt_for_ocs_sr_restore_this_run ld2d_restoreparts $d2d_psuedo_img $tgt_dev"
+      restore_pseudo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_src_tmp -l en_US.UTF-8 --batch -t2 -scr -p true $opt_for_ocs_sr_restore_this_run ld2d_restoreparts $d2d_pseudo_img $tgt_dev"
       echo "Cloning the source device to /dev/$tgt_dev. Running:"
-      echo "$restore_psuedo_img_cmd"
-      eval $restore_psuedo_img_cmd
+      echo "$restore_pseudo_img_cmd"
+      eval $restore_pseudo_img_cmd
       ;;
     disk)
       echo $msg_delimiter_star_line
-      restore_psuedo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_src_tmp -l en_US.UTF-8 --batch -j2 -scr -p true $opt_for_ocs_sr_restore_this_run ld2d_restoredisk $d2d_psuedo_img $target_hd"
+      restore_pseudo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_src_tmp -l en_US.UTF-8 --batch -j2 -scr -p true $opt_for_ocs_sr_restore_this_run ld2d_restoredisk $d2d_pseudo_img $target_hd"
       echo "Cloning the source device to /dev/$tgt_dev. Running:"
-      echo "$restore_psuedo_img_cmd"
-      eval $restore_psuedo_img_cmd
+      echo "$restore_pseudo_img_cmd"
+      eval $restore_pseudo_img_cmd
       ;;
    esac
 } # end of local_dev_clone
 #
 clone_over_net() {
   local fn example_target ipart part_fs size my_ip_one use_netcat_nuttcp_opt
-  local restore_psuedo_img_cmd
+  local restore_pseudo_img_cmd
   if [ "$STATUS" = "clone_server" ]; then
     case "$source_type" in
       partition)
@@ -335,21 +335,21 @@ clone_over_net() {
     esac
   elif [ "$STATUS" = "clone_client" ]; then
     # To obtain opt_for_ocs_sr_restore_assigned_from_src provided by server
-    . $hd_tgt_tmp/${d2d_psuedo_img}/ocs-onthefly-param.info
+    . $hd_tgt_tmp/${d2d_pseudo_img}/ocs-onthefly-param.info
     case "$source_type" in
       partition)
          echo $msg_delimiter_star_line
-         restore_psuedo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_tgt_tmp -l en_US.UTF-8 --batch -j2 -scr -p true --data-port $NC_PORT $opt_for_ocs_sr_restore_assigned_from_src $opt_for_ocs_sr_restore_this_run nd2d_restoreparts $d2d_psuedo_img $tgt_dev"
+         restore_pseudo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_tgt_tmp -l en_US.UTF-8 --batch -j2 -scr -p true --data-port $NC_PORT $opt_for_ocs_sr_restore_assigned_from_src $opt_for_ocs_sr_restore_this_run nd2d_restoreparts $d2d_pseudo_img $tgt_dev"
          echo "Cloning the source device to /dev/$tgt_dev. Running:"
-         echo "$restore_psuedo_img_cmd"
-         eval $restore_psuedo_img_cmd
+         echo "$restore_pseudo_img_cmd"
+         eval $restore_pseudo_img_cmd
          ;;
       disk)
          echo $msg_delimiter_star_line
-	 restore_psuedo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_tgt_tmp -l en_US.UTF-8 --batch -j2 -scr -p true --data-port $NC_PORT $opt_for_ocs_sr_restore_assigned_from_src $opt_for_ocs_sr_restore_this_run nd2d_restoredisk $d2d_psuedo_img $target_hd"
+	 restore_pseudo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_tgt_tmp -l en_US.UTF-8 --batch -j2 -scr -p true --data-port $NC_PORT $opt_for_ocs_sr_restore_assigned_from_src $opt_for_ocs_sr_restore_this_run nd2d_restoredisk $d2d_pseudo_img $target_hd"
          echo "Cloning the source device to /dev/$tgt_dev. Running:"
-         echo "$restore_psuedo_img_cmd"
-         eval $restore_psuedo_img_cmd
+         echo "$restore_pseudo_img_cmd"
+         eval $restore_pseudo_img_cmd
          ;;
     esac
   fi
@@ -448,7 +448,7 @@ USAGE() {
     echo "-b, -batch, --batch, --batch-mode   (DANGEROUS!) Run program in batch mode, i.e. without any prompt or wait for pressing enter key. //NOTE// You have to use '-batch' instead of '-b' when you want to use it in the boot parameters. Otherwise the program init on system will honor '-b', too."
     echo "-cmf, --chk-chksum-for-files-in-dev    Do the files checksum inspection for cloned files in destination devices."
     echo "-d, --destination, --target DEV        Specify the target device as DEV (can be with or without /dev/, e.g., /dev/sda or sda, /dev/sda1 or sda1...)"
-    echo "-e1, --change-geometry NTFS-BOOT-PARTITION  Force to change the CHS (cylinders, heads, sectors) value of NTFS boot partitoin after image is restored. NTFS-BOOT-PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the NTFS boot partition automatically)"
+    echo "-e1, --change-geometry NTFS-BOOT-PARTITION  Force to change the CHS (cylinders, heads, sectors) value of NTFS boot partition after image is restored. NTFS-BOOT-PARTITION can be one of \"/dev/sda1\", \"/dev/sda2\"... or \"auto\" (\"auto\" will let clonezilla detect the NTFS boot partition automatically)"
     echo "-e2, --load-geometry-from-edd  Force to use the CHS (cylinders, heads, sectors) from EDD (Enhanced Disk Device) when creating partition table by sfdisk"
     echo "-r, --resize-partition   Resize the file system size to fit the partition size in the destination disk. It is normally used when when a small partition image is restored to a larger partition."
     echo "-f, --source DEV         Specify the source device as DEV (can be with or without /dev/, e.g., /dev/sda or sda, /dev/sda1 or sda1...)"
@@ -591,8 +591,8 @@ get_onthefly_input_param() {
   local TMP ASK_OCS_ONTHEFLY_TYPE ocs_otf_type
   # (1) disk to local disk
   # (2) disk to remote disk
-  # (3) partiiton to local partition
-  # (4) partiiton to remote partition
+  # (3) partition to local partition
+  # (4) partition to remote partition
 
   if  [ "$show_local_menu_in_ocs_onthefly" = "yes" ]; then
     # Only menus for local cloning
@@ -787,7 +787,7 @@ set_ocs_onthefly_extra_param() {
   if LC_ALL=C grep -Ew -- "(-k1|-k2)" $OCS_PARAM_TMP &>/dev/null; then
     # Option -k1 or -k2 is for different partition size, turn on -r and -icds by default
     if [ -z "$(LC_ALL=C grep -Ew -- "-r" $OCS_PARAM_TMP)" ]; then
-      echo "Since the mode you choose might resize partition size, we turn on file system resize funtion automatically (-r)..."
+      echo "Since the mode you choose might resize partition size, we turn on file system resize function automatically (-r)..."
       echo " -r " >> $OCS_PARAM_TMP
     fi
     if [ -z "$(LC_ALL=C grep -Ew -- "-icds" $OCS_PARAM_TMP)" ]; then
@@ -994,7 +994,7 @@ parse_ocs_onthefly_cmd_options() {
 } # End of parse_ocs_onthefly_cmd_options
 # 
 remove_src_dest_etc_opt() {
-  # function to remove -f dev -d dev, and keep the rest of opttions for ocs-sr in restoring mode
+  # function to remove -f dev -d dev, and keep the rest of options for ocs-sr in restoring mode
   # more options should not be passed to ocs-sr, e.g., -rvd, -p x (force to run -p true)
   local left_opt
   while [ $# -gt 0 ]; do
@@ -1206,7 +1206,7 @@ ask_ocs_onthefly_dest_dev() {
 convert_serialno_to_blkdev(){
   local srl_no_="$1"
   # Only one input device will be mapped since for ocs-onthefly this is the case.
-  # Ouput the variable $blk_dev
+  # Output the variable $blk_dev
 
   # Format the input SERIALNO= to be uppercase
   srl_no_="$(echo $srl_no_ | sed -r -e "s/serialno=/SERIALNO=/gi")"
@@ -1451,8 +1451,8 @@ if [ "$mode" = "local" -o "$STATUS" = "clone_server" ]; then
   hd_src_tmp="$(mktemp -d /tmp/ocs_onthefly_src.XXXXXX)"
   prepare_src_dev_pseudo_img
   # dev-fs.list is got when ocs-sr save an image which is run in prepare_src_dev_pseudo_img.
-  src_pt_info="$hd_src_tmp/$d2d_psuedo_img/dev-fs.list"
-  src_parted_info="$hd_src_tmp/$d2d_psuedo_img/${source_hd}-pt.parted"
+  src_pt_info="$hd_src_tmp/$d2d_pseudo_img/dev-fs.list"
+  src_parted_info="$hd_src_tmp/$d2d_pseudo_img/${source_hd}-pt.parted"
 elif [ "$STATUS" = "clone_client" ]; then
   hd_tgt_tmp="$(mktemp -d /tmp/ocs_onthefly_tgt.XXXXXX)"
 fi

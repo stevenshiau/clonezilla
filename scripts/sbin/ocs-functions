@@ -118,9 +118,9 @@ get_disk_from_part() {
 get_partition_table_type_from_disk() {
   local tdisk=$1  # e.g. /dev/sda
   local ptype
-  if `is_gpt_partitition_table_disk $tdisk`; then
+  if `is_gpt_partition_table_disk $tdisk`; then
     ptype="gpt"
-  elif `is_mbr_partitition_table_disk $tdisk`; then
+  elif `is_mbr_partition_table_disk $tdisk`; then
     ptype="mbr"
   else
     # Here we do not have to check if it's PV on a disk, because we do not need to do anything when it's "pv_disk" like that in function "get_partition_table_type_from_img".
@@ -138,12 +138,12 @@ get_partition_table_type_from_img() {
     exit 1
   fi
   # From the output file of parted, we can decide if the partition is gpt or mbr
-  if `is_gpt_partitition_table_file $img_dir_fullpath/$(to_filename ${hdsk})-pt.parted`; then
+  if `is_gpt_partition_table_file $img_dir_fullpath/$(to_filename ${hdsk})-pt.parted`; then
     ptype="gpt"
-  elif `is_mbr_partitition_table_file $img_dir_fullpath/$(to_filename ${hdsk})-pt.parted`; then
+  elif `is_mbr_partition_table_file $img_dir_fullpath/$(to_filename ${hdsk})-pt.parted`; then
     ptype="mbr"
   else
-    # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+    # There is still one possibility that we need to deal with LVM, i.e. PV is not on partition,
     pv_on_dsk="$(get_pv_on_disk_from_PV_conf_list "$img_dir_fullpath/lvm_vg_dev.list")"
     for ip in $pv_on_dsk; do
       if [ -n "$(LC_ALL=C echo "${hdsk}" | grep -Ew "${ip}")" ]; then
@@ -159,11 +159,11 @@ get_partition_table_type_from_img() {
   echo "$ptype"
 } # end of get_partition_table_type
 #
-is_gpt_partitition_table_file() {
+is_gpt_partition_table_file() {
   local p_table_f="$1"
   local rt_code=""
   if [ -z "$p_table_f" ]; then
-    echo "No input parameter \$p_table_f in function is_gpt_partitition_table!"
+    echo "No input parameter \$p_table_f in function is_gpt_partition_table!"
     return 3
   fi
   if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $p_table_f 2>/dev/null | grep -iE "gpt")" ]; then
@@ -177,13 +177,13 @@ is_gpt_partitition_table_file() {
     rt_code=1
   fi
   return $rt_code
-} # end of is_gpt_partitition_table_file
+} # end of is_gpt_partition_table_file
 #
-is_mbr_partitition_table_file() {
+is_mbr_partition_table_file() {
   local p_table_f="$1"
   local rt_code=""
   if [ -z "$p_table_f" ]; then
-    echo "No input parameter \$p_table_f in function is_mbr_partitition_table!"
+    echo "No input parameter \$p_table_f in function is_mbr_partition_table!"
     return 3
   fi
   if [ -n "$(LC_ALL=C grep -iE "^Partition Table:" $p_table_f 2>/dev/null | grep -iE "msdos")" ]; then
@@ -197,13 +197,13 @@ is_mbr_partitition_table_file() {
     rt_code=1
   fi
   return $rt_code
-} # end of is_mbr_partitition_table_file
+} # end of is_mbr_partition_table_file
 #
-is_gpt_partitition_table_disk() {
+is_gpt_partition_table_disk() {
   local input_disk_="$1"  # e.g. /dev/sda
   local rt_code=""
   if [ -z "$input_disk_" ]; then
-    echo "No input parameter \$input_disk_ in function is_gpt_partitition_table!"
+    echo "No input parameter \$input_disk_ in function is_gpt_partition_table!"
     return 3
   fi
   if [ -n "$(LC_ALL=C parted -s $input_disk_ print | grep -iE "^Partition Table:" | grep -iE "gpt")" ]
@@ -217,7 +217,7 @@ is_gpt_partitition_table_disk() {
     rt_code=1
   fi
   return $rt_code
-} # end of is_gpt_partitition_table_disk
+} # end of is_gpt_partition_table_disk
 #
 is_gpt_disk_with_bios_boot_part_in_legacy_bios() {
   # Function to test if GPT disk with a special "bios_boot" partition
@@ -229,7 +229,7 @@ is_gpt_disk_with_bios_boot_part_in_legacy_bios() {
     echo "No input parameter \$input_disk_ in function is_gpt_disk_with_legacy_bios!"
     return 3
   fi
-  if `is_gpt_partitition_table_disk $input_disk_`; then
+  if `is_gpt_partition_table_disk $input_disk_`; then
     if [ -n "$(LC_ALL=C parted -s $input_disk_ print | grep -Ew "^[[:space:]]+1[[:space:]]+.*[[:space:]]+bios_grub")" ]; then
       # This is the case "GPT disk" while legacy BIOS, and a special "bios_boot" partition exists.
       rt_code=0
@@ -246,11 +246,11 @@ is_gpt_disk_with_bios_boot_part_in_legacy_bios() {
   fi
 } # end of is_gpt_disk_with_bios_boot_part_in_legacy_bios
 #
-is_mbr_partitition_table_disk() {
+is_mbr_partition_table_disk() {
   local input_disk_="$1"  # e.g. /dev/sda
   local rt_code=""
   if [ -z "$input_disk_" ]; then
-    echo "No input parameter \$input_disk_ in function is_mbr_partitition_table!"
+    echo "No input parameter \$input_disk_ in function is_mbr_partition_table!"
     return 3
   fi
   if [ -n "$(LC_ALL=C parted -s $input_disk_ print | grep -iE "^Partition Table:" | grep -iE "msdos")" ]
@@ -264,11 +264,11 @@ is_mbr_partitition_table_disk() {
     rt_code=1
   fi
   return $rt_code
-} # end of is_mbr_partitition_table_disk
+} # end of is_mbr_partition_table_disk
 #
 wait_for_part_table_take_effect() {
   local dsk_=${1#/dev/*} # Input is like /dev/sda1, so dev_ becomes sda1
-  # //NOTE// Some device has different format, like disk: /dve/nvme0n1 partition: /dve/nvme0n1p1
+  # //NOTE// Some device has different format, like disk: /dev/nvme0n1 partition: /dev/nvme0n1p1
   for i in `seq 1 50`; do
     echo -n "."
     sleep 0.2
@@ -681,7 +681,7 @@ get_part_vol_name() {
   local part_w="$1"  # part_w is like: /dev/sda1
   local part_f="$2"
   local part_v
-  # If no device or file system (possible, only partition is created, not formated), we should not give any error message in stdin. Otherwise it will become the part_v to be returned.
+  # If no device or file system (possible, only partition is created, not formatted), we should not give any error message in stdin. Otherwise it will become the part_v to be returned.
   if [ -z "$part_w" ]; then
     return 1 
   fi
@@ -764,7 +764,7 @@ get_random_time() {
   # Found ip, ocs_server, mac, we can notify ocs server
   # To avoid all the clients notify at almost same time, we use random sleep before send info.
   # Ref: http://www.faqs.org/docs/abs/HTML/randomvar.html
-  # We need extra uniq seed number, otherwise all the clients boot at same time, same boot sqeuence, will have same Unix time, PID, PPID... then the random will be the same. 
+  # We need extra uniq seed number, otherwise all the clients boot at same time, same boot sequence, will have same Unix time, PID, PPID... then the random will be the same.
   # "ifconfig -a" will give the uniq value, since it contains uniq IP address and MAC address.
   # "$RANDOM" is bash built-in random number, Nominal range: 0 - 32767 (signed 16-bit integer).
   # NOTE: ran0: max 10 digits; ran1: max 5 digits, we want ran1 in the order 0-100, so /1000.0
@@ -1179,7 +1179,7 @@ output_swap_partition_uuid_label() {
     UUID=""
     LABEL=""
     . $blkinfo
-    [ -z "$UUID" -a -z "$LABEL" ] && echo "Warning! UUID and LABLE of swap dev $swap_dev are nothing!"
+    [ -z "$UUID" -a -z "$LABEL" ] && echo "Warning! UUID and LABEL of swap dev $swap_dev are nothing!"
     echo "UUID=\"$UUID\"" > $output_swap_info
     echo "LABEL=\"$LABEL\"" >> $output_swap_info
     [ -e "$blkinfo" ] && rm -f $blkinfo
@@ -1274,14 +1274,14 @@ save_part_by_ntfsclone() {
   tee $ntfs_img_info_tmp
   rc="$?"
   end_time="$(date +%s%N)"
-  # UGLY! Since we use ntfsclone, then pipe to compression program, then IO redirect to file, the error control is weak. ntfsclone wil not exit even if the disk is full. Therefore we check here.
+  # UGLY! Since we use ntfsclone, then pipe to compression program, then IO redirect to file, the error control is weak. ntfsclone will not exit even if the disk is full. Therefore we check here.
   echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/${tgt_file}.ntfs-img is incomplete! You have to increase the disk space, then start clonezilla save mode again."
   get_ntfs_image_info $ntfs_img_info_tmp $start_time $end_time
   # no preparation time, it's accurate enough.
   echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins), average speed: $speed"
   [ -e "$ntfs_img_info_tmp" ] && rm -f $ntfs_img_info_tmp
   # For better security
-  set_acess_mode_for_img "$tgt_dir/${tgt_file}.ntfs-img*"
+  set_access_mode_for_img "$tgt_dir/${tgt_file}.ntfs-img*"
   # prepare statistic report
   conv_return_code_to_human_read $rc
   report_msg="$report_msg $source_dev, $clone_status, $space_used, $time_elapsed_in_min mins, $speed;"
@@ -1448,7 +1448,7 @@ save_part_by_partclone() {
     cat $img_out_err | tee --append ${OCS_LOGFILE}
   fi
   rm -f $img_out_err
-  # UGLY! Since we use partclone, then pipe to compression program, then IO redirect to file, the error control is weak. partclone wil not exit even if the disk is full. Therefore we check here.
+  # UGLY! Since we use partclone, then pipe to compression program, then IO redirect to file, the error control is weak. partclone will not exit even if the disk is full. Therefore we check here.
   echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf} is incomplete. You have to increase the disk space, then start clonezilla save mode again."
   get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
   [ $rc -eq 0 ] && rc=$?
@@ -1456,7 +1456,7 @@ save_part_by_partclone() {
     # no preparation time, it's accurate enough.
     echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append ${OCS_LOGFILE}
     # For better security
-    set_acess_mode_for_img "$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}*" 
+    set_access_mode_for_img "$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}*"
   else
     if ls $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}* &>/dev/null; then
       rm -f $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}*
@@ -1477,7 +1477,7 @@ save_part_by_partimage() {
   # case (2): partimage supported filesystem, we can use partimage to save it.
   # Use partimage and stdout pipe to lzop, gzip, bzip2
   # Since partimage does not support lzo, we use pipe to lzop the image, and this is a good approach. So use it for gzip, bzip2, too. i.e. do not let partimage to do gzip/bzip2/lzop, use external program.
-  # partiamge will use the NO-GUI mode. When using pipe stdout, --volume=0 is a must. Otherwise it will create a file like stdout.000...
+  # partimage will use the NO-GUI mode. When using pipe stdout, --volume=0 is a must. Otherwise it will create a file like stdout.000...
   # The basic idea is to use partimage, but compression is made by other program with pipe, so use -z0 in partimage. -z0 and --volume=0 are already assigned in drbl-ocs.conf
   #
   # Check the Blocks per group of ext2/ext3 is 32768 or not. If not, partimage does not support. Exit. Ref: http://sourceforge.net/forum/forum.php?thread_id=1833628&forum_id=663168
@@ -1523,7 +1523,7 @@ save_part_by_partimage() {
   calculate_elapsed_time $start_time $end_time
   echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append ${OCS_LOGFILE}
   # For better security
-  set_acess_mode_for_img "$tgt_dir/${tgt_file}*" 
+  set_access_mode_for_img "$tgt_dir/${tgt_file}*"
   # prepare statistic report
   conv_return_code_to_human_read $rc
   report_msg="$report_msg $source_dev, $clone_status, $time_elapsed_in_min mins;"
@@ -1559,7 +1559,7 @@ save_part_by_dd() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "$msg_fs_not_supported_by_partimage_ntfsclone: $part_fs" | tee --append ${OCS_LOGFILE}
   echo "$msg_cons_for_dd_clone" | tee --append ${OCS_LOGFILE}
-  echo "$msg_will_be_inefficent_and_slow..."
+  echo "$msg_will_be_inefficient_and_slow..."
   case "$s2s_img_prog_for_save" in
   dd)
     echo "$msg_use_this_method_to_save_img: dd + $compress_prog_prompt" | tee --append ${OCS_LOGFILE}
@@ -1631,8 +1631,8 @@ save_part_by_dd() {
     kill -9 $dd_report_sig_pid &>/dev/null
     # save the size so that when we restore the image, partition size can be shown in the status report. This is better than to get partition info from *-pt.sf (which is shown in sectors, not absolute value) or uncompress *.dd-img then get the partition info in the loop device file (not efficient).
     echo "$part_size" > $tgt_dir/$(to_filename ${tgt_file})-size
-    # UGLY! Since we use dd, then pipe to compression program, then IO redirect to file, the error control is weak. dd wil not exit even if the disk is full. Therefore we check here.
-    echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename ${tgt_file}).dd-img is incomplete. You have to increase the disk space, then start Clonzilla save mode again."
+    # UGLY! Since we use dd, then pipe to compression program, then IO redirect to file, the error control is weak. dd will not exit even if the disk is full. Therefore we check here.
+    echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename ${tgt_file}).dd-img is incomplete. You have to increase the disk space, then start Clonezilla save mode again."
     get_dd_image_info $dd_img_info_tmp $start_time $end_time
     [ $rc -eq 0 ] && rc=$?
     [ -e "$dd_img_info_tmp" ] && rm -f $dd_img_info_tmp
@@ -1674,7 +1674,7 @@ save_part_by_dd() {
     fi
     rm -f $img_out_err
     # sync_and_active_exec_files
-    # UGLY! Since we use partclone, then pipe to compression program, then IO redirect to file, the error control is weak. partclone wil not exit even if the disk is full. Therefore we check here.
+    # UGLY! Since we use partclone, then pipe to compression program, then IO redirect to file, the error control is weak. partclone will not exit even if the disk is full. Therefore we check here.
     echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename {tgt_file}).dd-img is incomplete! You have to increase the disk space, then start clonezilla save mode again."
     get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
     [ $rc -eq 0 ] && rc=$?
@@ -1685,7 +1685,7 @@ save_part_by_dd() {
     # no preparation time, it's accurate enough.
     echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append ${OCS_LOGFILE}
     # For better security
-    set_acess_mode_for_img "$tgt_dir/$(to_filename ${tgt_file}).dd-img*" 
+    set_access_mode_for_img "$tgt_dir/$(to_filename ${tgt_file}).dd-img*"
   else
     if ls $tgt_dir/$(to_filename ${tgt_file}).dd-img* &>/dev/null; then
       rm -f $tgt_dir/$(to_filename ${tgt_file}).dd-img*
@@ -2121,8 +2121,8 @@ conv_uuid_mount_to_tradpart() {
 #
 get_known_partition_proc_format() {
     # input param, [harddisk|partition]
-    # To specify it's hardisk or partition
-    # return the hardisks or partitions
+    # To specify it's harddisk or partition
+    # return the harddisks or partitions
 
     # BACKUP_DEVS is a global variable
     # Return the results to variable $BACKUP_DEVS
@@ -2158,7 +2158,7 @@ get_known_partition_proc_format() {
     echo -n "Collecting info."
     for p in $dev_list; do
        # Skip swap and extended partition
-       # We do not use the output of fdisk -l, it's type mabe like Extended, Ext'd, it's not easy to tell... We do not use file to get the partition type, either, since in newer version (e.g. in Debian lenny) it won't show anything about extended.
+       # We do not use the output of fdisk -l, it's type maybe like Extended, Ext'd, it's not easy to tell... We do not use file to get the partition type, either, since in newer version (e.g. in Debian lenny) it won't show anything about extended.
        echo -n "."
        part_type="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem 2>/dev/null | sort)"
        rc=$?
@@ -2311,7 +2311,7 @@ mount_root_partition_for_separate_boot_part() {
   done
   # Try LVM2 if no root partition is found
   if [ -z "$found_root_partition" ]; then
-    # Froce to start LVM devices so that they will be shown in /proc/partitions ad dm-*
+    # Force to start LVM devices so that they will be shown in /proc/partitions ad dm-*
     ocs-lvm2-start
     lvm_list="$(LC_ALL=C awk '/dm-[0-9]+/ { print $4; }' $partition_table | sort)"
     if [ -n "$lvm_list" ]; then
@@ -2976,7 +2976,7 @@ load_HD_geometry_opt_from_image() {
   no_CHS_data_warning() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "Unable to find the previous saved file $target_d/$(to_filename ${DEV})-chs.sf."
-      echo "Maybe the image is created by old verson clonezilla."
+      echo "Maybe the image is created by old version clonezilla."
       echo "We will not force to use the specified HD geometry."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   }
@@ -2993,7 +2993,7 @@ load_HD_geometry_opt_from_image() {
 } # end of load_HD_geometry_opt_from_image
 #
 clean_cylinder_boundary_warning() {
-  # We have to clean this two warnings, otherwise sfdisk will refuce to write
+  # We have to clean this two warnings, otherwise sfdisk will refuse to write
   # even if we run something like:
   # sfdisk --force -C# -H# -S# /dev/hda < hda-pt.sf...
   # //NOTE// Here we only run perl after grep finds the words we want to replace. Otherwise even if it's empty, once perl is run the original file still will be processed, and some version of perl, like 5.10.1-17 in Debian Squeeze, will create a temp file like ".nfs0000000096af2bf700000013" in the image dir, and it won't be removed after it's run.
@@ -3077,7 +3077,7 @@ check_integrity_of_partition_table_in_disk() {
       # False alarm.
       return 0
     fi
-    # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+    # There is still one possibility that we need to deal with LVM, i.e. PV is not on partition,
     pv_on_dsk="$(get_pv_on_disk_from_local_machine)"
     pv_on_dsk_flag="false"
     for ip in $pv_on_dsk; do
@@ -3262,7 +3262,7 @@ clean_mbr_gpt_part_table() {
 #
 create_mbr_partition_table() {
   local opt_wm sfdisk_cmd_mbr
-  # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
+  # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by default.
   if [ "$use_HD_CHS_from_EDD_pref" = "yes" ]; then
     if [ -z "$(LC_ALL=C strings $tgt_dir/$(to_filename ${tgt_hd_name})-mbr | grep -i "grub")" ]
     then
@@ -3296,7 +3296,7 @@ create_mbr_partition_table() {
     fi
   fi
   # If the partition table is tag as "gpt", change it as msdos
-  if `is_gpt_partitition_table_disk $tgt_hd_file`; then
+  if `is_gpt_partition_table_disk $tgt_hd_file`; then
     echo "The partition table in $tgt_hd_file is for GPT, now make it for MBR." | tee --append $OCS_LOGFILE
     echo "Running: parted -s $tgt_hd_file mklabel msdos" | tee --append $OCS_LOGFILE
     LC_ALL=C parted -s $tgt_hd_file mklabel msdos | tee --append $OCS_LOGFILE
@@ -3333,7 +3333,7 @@ create_mbr_partition_table() {
       fi
       ;;
     y|Y|[yY][eE][sS])
-      # Sfdisk >= 0.26 has option --wipe, we should use it to avoid confliction
+      # Sfdisk >= 0.26 has option --wipe, we should use it to avoid conflicting
       opt_wm=""
       if [ -n "$(LC_ALL=C sfdisk --help 2>&1 | grep -Ew -- "--wipe")" ]; then
         opt_wm="--wipe always"
@@ -3395,10 +3395,10 @@ create_mbr_partition_table() {
       esac
       ;;
   esac
-  # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
+  # Due to some reason, although LVM was deactivated before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactivated and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
   echo $msg_delimiter_star_line
   if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
-    echo "LV is still active, try to deactive it..."
+    echo "LV is still active, try to deactivate it..."
     ocs-lvm2-stop
   fi
   inform_kernel_partition_table_changed mbr $tgt_hd_file | tee --append ${OCS_LOGFILE}
@@ -3411,15 +3411,15 @@ create_gpt_partition_table() {
 
   # Before really create partition table, we should do some tasks...
   clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
-  # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
+  # Due to some reason, although LVM was deactivated before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactivate and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
   echo $msg_delimiter_star_line
   if [ -n "$(LC_ALL=C lvscan | grep -Ewi "ACTIVE")" ]; then
-    echo "LV is still active, try to deactive it..."
+    echo "LV is still active, try to deactivate it..."
     ocs-lvm2-stop
   fi
   create_gpt_table_if_no_table $tgt_hd_file
 
-  # Sfdisk >= 0.26 has option --wipe, we should use it to avoid confliction
+  # Sfdisk >= 0.26 has option --wipe, we should use it to avoid conflicting
   opt_wm=""
   if [ -n "$(LC_ALL=C sfdisk --help 2>&1 | grep -Ew -- "--wipe")" ]; then
     opt_wm="--wipe always"
@@ -3543,7 +3543,7 @@ create_gpt_partition_table() {
         fi
         # Somehow "sgdisk -l" (<= version 0.8.4) does not create protective MBR, either. Therefore we have to use the following workaround to write it again.
         if [ -n "$(LC_ALL=C parted -s $tgt_hd_file print | grep -i "it does not have a valid fake msdos partition table" )" ]; then
-          # FixME. In the future if sgdisk supports an option to do this, we should swith to use sgdisk instead of gdisk+expect.
+          # FixME. In the future if sgdisk supports an option to do this, we should switch to use sgdisk instead of gdisk+expect.
           sleep 1
           LC_ALL=C echo "spawn gdisk $tgt_hd_file; expect Command; send wq\r; expect \"Do you want to proceed? (Y/N)\"; send Y\r; expect eof" | expect -f -
         fi
@@ -3888,7 +3888,7 @@ task_processing_after_parameters_checked() {
   fi
 
   # Check the image if restorable for restoring mode.
-  if [ "$chk_img_restoreable_mod_restore" = "yes" -a -d "$ocsroot/$target_dir" ]; then
+  if [ "$chk_img_restorable_mod_restore" = "yes" -a -d "$ocsroot/$target_dir" ]; then
     # To avoid the /var/lib/clonezilla/ocs-vars is overwritten by ocs-chkimg, backup it first.
     if [ -e /var/lib/clonezilla/ocs-vars ]; then
       mv -f /var/lib/clonezilla/ocs-vars /var/lib/clonezilla/ocs-vars.before-ocs-chkimg
@@ -3963,7 +3963,7 @@ task_postprocessing() {
   # (1) Change the hostname of MS Windows in the restored machine
   # (2) Restore the inittab so that if ocsmgrd fails to get the message, the client will not clone again.
   # (3) Restore the udevd rules (if exists) which were disabled by ocs-lvm2-stop.
-  # (4) Unmount NFS mounting poing if $mount_point exists
+  # (4) Unmount NFS mounting point if $mount_point exists
   # (5) Enter debug mode if assigned
   # (6) Notify the server if necessary
   # (7) Output a file name to tag the image and put the log for saving the image
@@ -4048,7 +4048,7 @@ task_postprocessing() {
       echo "IMG_ID=$(LC_ALL=C sha512sum $img_dir/clonezilla-img | awk -F" " '{print $1}')" >> $img_dir/Info-img-id.txt
 
       # Check the saved image before unmounting the encrypted image
-      if [ "$chk_img_restoreable_mod_save" = "yes" ]; then
+      if [ "$chk_img_restorable_mod_save" = "yes" ]; then
         if [ "$ocs_sr_type" = "savedisk"  -a "x$rc_savedisk"  = "x0" ] ||
            [ "$ocs_sr_type" = "saveparts" -a "x$rc_saveparts" = "x0" ]; then
           # To avoid the /var/lib/clonezilla/ocs-vars is overwritten by ocs-chkimg, backup it first.
@@ -4324,7 +4324,7 @@ get_input_image_name() {
       fi
     done
     [ -f "$TMP" ] && rm -f $TMP
-    # return the valule
+    # return the value
     echo $tgt_img_name > $ANS_TMP
 } # end of get_input_image_name
 #
@@ -4383,7 +4383,7 @@ get_disk_or_part_hardware_info() {
   if is_partition "$p"; then
     # Partition 
     # Skip swap and extended partition
-    # We do not use the output of fdisk -l, it's type mabe like
+    # We do not use the output of fdisk -l, it's type maybe like
     # Extended, Ext'd, it's not easy to tell... We use file to get the
     # partition type
     echo "Getting /dev/$p info..."
@@ -4621,7 +4621,7 @@ get_not_busy_disks_or_parts() {
 
   # Two cases:
   # (1) Remove busy partitions (hence those busy disks, like sda1 busy, so sda is busy, too)
-  # (2) Remove busy disks (disk as block device contains file system, e.g. /dev/sdc is formated with ext4)
+  # (2) Remove busy disks (disk as block device contains file system, e.g. /dev/sdc is formatted with ext4)
   # E.g., $mounted_table now has the following busy devices:
   # loop0
   # nvme0n1p1
@@ -4684,8 +4684,8 @@ get_not_busy_disks_or_parts() {
 #
 get_input_dev_name() {
     # input param, [harddisk|partition]
-    # To specify it's hardisk or partition
-    # return the hardisks or partitions
+    # To specify it's harddisk or partition
+    # return the harddisks or partitions
     # Note!!! We must use common tmp file to pass the result, we can not
     # just echo result in the end of this function. Otherwise in newer
     # dialog (FC3), the script will wait for the end of function, then it 
@@ -4924,7 +4924,7 @@ get_existing_hda1_image() {
      [ "$file" = "$imagedir/ocsmgrd" ] && continue
      [ "$file" = "$imagedir/size" ] && continue
    
-     ## Blake, 2005/01/20, backward compability ..
+     ## Blake, 2005/01/20, backward compatibility ..
      if [ ! -d $file ]; then
        imgf="${file/\.000/}"
        for imgff in $imgf.*; do
@@ -4941,9 +4941,9 @@ get_existing_hda1_image() {
      echo "$numfiles. $filename $fileinfo" >> $TMP
      numfiles=`expr $numfiles + 1`
    done
-   ## Blake, 2005/01/20, backward compability
+   ## Blake, 2005/01/20, backward compatibility
    if [ "$(wc -l $OLDVERTMP | awk -F " " '{print $1}')" != "0" ]; then
-     echo "To make it compatble with the new clonezilla,"
+     echo "To make it compatible with the new clonezilla,"
      echo "we have to move some of the old partimage files into directories."
      echo "The following partimage files are moving:"
      while read from to; do echo "  $from -> $to"; done < $OLDVERTMP
@@ -4977,7 +4977,7 @@ get_existing_hda1_image() {
    fi
    [ -f "$TMP" ] && rm -f $TMP
    [ -f "$OLDVERTMP" ] && rm -f $OLDVERTMP
-   # return the valule
+   # return the value
    echo $tgt_file > $ANS_TMP
 } # end of get_existing_hda1_image
 #
@@ -5081,7 +5081,7 @@ get_existing_disk_image() {
      exit 1
    fi
    [ -f "$TMP" ] && rm -f $TMP
-   # return the valule
+   # return the value
    echo $tgt_file > $ANS_TMP
 } # end of get_existing_disk_image
 
@@ -5180,7 +5180,7 @@ get_existing_parts_image() {
      exit 1
    fi
    [ -f "$TMP" ] && rm -f $TMP
-   # return the valule
+   # return the value
    echo $tgt_file > $ANS_TMP
 } # end of get_existing_parts_image
 #
@@ -5234,7 +5234,7 @@ get_existing_disks_from_img() {
      exit 1
    fi
    [ -f "$TMP" ] && rm -f $TMP
-   # return the valule
+   # return the value
    echo $tgt_disks > $ANS_TMP
    # strip the unnecessary quotation mark "
    LC_ALL=C perl -pi -e "s/\"//g" $ANS_TMP
@@ -5803,7 +5803,7 @@ unicast_restore_by_dd() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "$msg_image_saved_from_dd"
   echo "$msg_cons_for_dd_clone"
-  echo "$msg_will_be_inefficent_and_slow..."
+  echo "$msg_will_be_inefficient_and_slow..."
   if [ "$S2S_IMAGE_PROG_IN_OCS" = "dd" ]; then
     echo "$msg_status_report_is_very_primitive..."
   fi
@@ -6018,7 +6018,7 @@ multicast_restore_by_partclone() {
   # No matter it split or not, ${file_basename} or ${file_} can be .aa file or the single image itself. We only need one file to test.
   # Since server will feed the image, therefore here we do not have to prepare a variable "$img_file_prefix" like that in function unicast_restore_by_partclone
   if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img")" ]; then
-    # New format, decide by file name, so we do not have to include dir name. It's better to do so since maybe user will assing a image name (dir name) with the "magic" keyword in a coincidence
+    # New format, decide by file name, so we do not have to include dir name. It's better to do so since maybe user will assign a image name (dir name) with the "magic" keyword in a coincidence
     get_image_cat_zip_cmd ${file_basename}
   else
     # Old format, since it's tested by command "file -Ls", we need the absolute path so file command can access it.
@@ -6083,7 +6083,7 @@ multicast_restore_by_dd() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "$msg_image_saved_from_dd"
   echo "$msg_cons_for_dd_clone"
-  echo "$msg_will_be_inefficent_and_slow..."
+  echo "$msg_will_be_inefficient_and_slow..."
   if [ "$S2S_IMAGE_PROG_IN_OCS" = "dd" ]; then
     echo "$msg_status_report_is_very_primitive..."
   fi
@@ -6724,10 +6724,10 @@ do_d2d_local_restore() {
      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
      echo "No file system was found in /dev/$src_d!" | tee --append $OCS_LOGFILE
      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-     local_partition_to_partiton_clone dd /dev/$src_d /dev/$tgt_d
+     local_partition_to_partition_clone dd /dev/$src_d /dev/$tgt_d
      # Unknown file system, no way to mount to inspect the checksum. Skip it here.
   else
-     local_partition_to_partiton_clone $part_fs /dev/$src_d /dev/$tgt_d
+     local_partition_to_partition_clone $part_fs /dev/$src_d /dev/$tgt_d
      if [ "$chksum_for_files_in_dev" = "yes" ]; then
        echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
        inspect_chksum_for_files_in_dev /dev/$tgt_d "$target_d"
@@ -7351,7 +7351,7 @@ feed_bittorrent_LVM() {
   local btl_cmd
   local fn
   local track_max_client_opt from_rawdev_opt
-  # lv_list_bt is gloable variable
+  # lv_list_bt is global variable
   while [ $# -gt 0 ]; do
     case "$1" in
       -f|--from-raw-dev)
@@ -7613,7 +7613,7 @@ start_ocsmgrd_daemon() {
   kill_ps_by_killall_9 ocsmgrd
     
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  echo "The status recevied by ocsmgrd will be saved to $ocs_log_dir/ocsmgrd-notify.log."
+  echo "The status received by ocsmgrd will be saved to $ocs_log_dir/ocsmgrd-notify.log."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   ocs_log_rotate $ocs_log_dir/ocsmgrd-notify.log
   nohup sh -c "ocsmgrd $mgrd_opt 2>&1 | tee -a $ocs_log_dir/ocsmgrd-notify.log" &
@@ -7802,7 +7802,7 @@ start_ocs_service() {
       add_runlevel_1_in_grub_efi_cfg_block clonezilla-se-client
     fi
     
-    # If the mode is in always_restore, and PXE default menu is assigned to local (-y0), we will set local boot as default. Since the always_restore mode is only useful with local OS exists. But if in some scenario, such as production clone flow, maybe pxe_menu_default_mode=clone is useful, since a lot of hardisks will be replaced one by one.
+    # If the mode is in always_restore, and PXE default menu is assigned to local (-y0), we will set local boot as default. Since the always_restore mode is only useful with local OS exists. But if in some scenario, such as production clone flow, maybe pxe_menu_default_mode=clone is useful, since a lot of harddisks will be replaced one by one.
     if [ "$always_restore" = "yes" ]; then
      case "$pxe_menu_default_mode" in
        "local")
@@ -8016,7 +8016,7 @@ prep_client_inittab_rc_srv() {
 
   if [ "$rc_task" = "select_in_client" ]; then
      # reset these variables, we just want to run "/usr/sbin/clonezilla" only
-     # skip prep ocsroot (clonezilla iamge home), since it's in DRBL environment, the ocsroot is mounted by NFS already.
+     # skip prep ocsroot (clonezilla image home), since it's in DRBL environment, the ocsroot is mounted by NFS already.
      # Note! OCS_OPT should not use -s/-S/-a/-b/-z/0-6
      # because: /sbin/init [ -a ] [ -s ] [ -b ] [ -z xxx ] [ 0123456Ss ]
      # The OCS_OPT is passed to program "/usr/sbin/clonezilla", not ocs-sr.
@@ -8292,7 +8292,7 @@ get_target_device_name_from_local_machine() {
 } # end of get_target_device_name_from_local_machine
 #
 get_target_dir_name_when_restoring_disk() {
-  # target_dir and ocsroot are gloable variables
+  # target_dir and ocsroot are global variables
   local ANS_TMP
   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
@@ -8301,12 +8301,12 @@ get_target_dir_name_when_restoring_disk() {
   # Note! We won't add leading $ocsroot in $target_dir, because when task_saveparts do the real job later, it will add that.
   target_dir="$(cat $ANS_TMP)"
   [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
-  # conver the clonezilla format for 1.x to 2.x if necessary
+  # convert the clonezilla format for 1.x to 2.x if necessary
   convert_ocs_format_from_1.5_to_2.0_or_newer $ocsroot/$target_dir/
 } # end of get_target_dir_name_when_restoring_disk
 #
 get_target_dir_name_when_restoring_parts() {
-  # target_dir and ocsroot are gloable variables
+  # target_dir and ocsroot are global variables
   local ANS_TMP
   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
@@ -8318,12 +8318,12 @@ get_target_dir_name_when_restoring_parts() {
   # target_image is an important global variable, it's related to the PXE menu tag, and some other important thing.
   target_image="$target_dir"
   [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
-  # conver the clonezilla format for 1.x to 2.x if necessary
+  # convert the clonezilla format for 1.x to 2.x if necessary
   convert_ocs_format_from_1.5_to_2.0_or_newer $ocsroot/$target_dir/
 } # end of get_target_dir_name_when_restoring_parts
 #
 get_target_dir_name_when_checking_img_restorable() {
-  # target_dir and ocsroot are gloable variables
+  # target_dir and ocsroot are global variables
   local ANS_TMP
   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
@@ -8338,7 +8338,7 @@ get_target_dir_name_when_checking_img_restorable() {
 } # end of get_target_dir_name_when_checking_img_restorable
 #
 get_target_dir_name_when_converting_img() {
-  # target_dir and ocsroot are gloable variables
+  # target_dir and ocsroot are global variables
   local ANS_TMP
   local only_type  # Available types: p2v, enc (encrypted image), nonenc (non-encrypted image)
   #
@@ -8379,7 +8379,7 @@ get_target_dir_name_when_converting_img() {
 } # end of get_target_dir_name_when_converting_img
 #
 get_target_dir_name_when_checking_img_checksum() {
-  # target_dir and ocsroot are gloable variables
+  # target_dir and ocsroot are global variables
   local ANS_TMP
   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
@@ -8457,7 +8457,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # Some cases not supported:
   # (1) Multicast clone.
   # (2) Unicast clone with batch mode (Since maybe there will be more than 1 restoration, and they will create the same temp image, which will be in a mess.
-  # (3) source hardisk number is >= 2
+  # (3) source harddisk number is >= 2
   # for BT, the port is assigned as "bt" from ocs-sr
   # for d2d, the port is assigned as "bt" from ocs-sr
   if [ -n "$port" -a "$port" != "bt" -a "$port" != "ld2d" -a "$port" != "nd2d" ]; then
@@ -8646,7 +8646,7 @@ task_savedisk() {
   target_hd="$(cat $ANS_TMP | tr -d \")"
   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
 
-  # We need the partition table to conver the selected HD to partitions.
+  # We need the partition table to convert the selected HD to partitions.
   target_parts=""
   target_swap_parts=""
   target_extended_parts=""
@@ -8665,7 +8665,7 @@ task_savedisk() {
     rm -f $part_rec_f
   fi
 
-  # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+  # There is still one possibility that we need to deal with LVM, i.e. PV is not on partition,
   # instead it's on a disk (e.g. /dev/sdb).
   pv_on_dsk="$(get_pv_on_disk_from_local_machine)"  # pv_on_dsk: sda, sdb...
   for ip in $pv_on_dsk; do
@@ -8835,7 +8835,7 @@ save_part_table_mbr_dm_info(){
     # From the output file of parted, we can decide if the partition is gpt or mbr
     # //NOTE// Here we can not use function "get_partition_table_type_from_img"
     # because the image is not created completely yet.
-    if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
+    if `is_gpt_partition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
       if [ "$RETVAL" -ne 0 ]; then
         # sfdisk failed to save the partition table
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -8878,7 +8878,7 @@ save_part_table_mbr_dm_info(){
       fi
       # Save Veracrypt volume header if required.
       ocs-save-veracrypt-vh /dev/$ihd $target_dir_fullpath
-    elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
+    elif `is_mbr_partition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
       if [ "$RETVAL" -ne 0 ]; then
         # sfdisk failed to save the partition table
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -8923,7 +8923,7 @@ save_part_table_mbr_dm_info(){
     else
       # Disk with no GPT or MBR partition.
       # In this case, sfdisk should fail to save the partition table, but if PV on a disk, not partition.
-      # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+      # There is still one possibility that we need to deal with LVM, i.e. PV is not on partition,
       pv_on_dsk="$(get_pv_on_disk_from_local_machine)"
       pv_on_dsk_flag="false"
       for ip in $pv_on_dsk; do
@@ -8971,7 +8971,7 @@ task_saveparts() {
   local pv_on_dsk pv_on_dsk_flag
   local ask_luks_flag enable_luks_ans 
   local lks_open_cmd clted_luks_devs clted_luks_devs_map_sv lkuuid
-  # enable_luks is a global vaariable
+  # enable_luks is a global variable
 
   # target_hd will be extracted from $target_parts, maybe we will have one more
   local target_hd=""
@@ -9065,7 +9065,7 @@ task_saveparts() {
   # Create the image directory
   mkdir -p $target_dir_fullpath
 
-  # Save multipath infomation file
+  # Save multipath information file
   if ls ${MULTIPATH_INFODIR}/*-multipath >/dev/null 2>&1; then
     cp -f ${MULTIPATH_INFODIR}/*-multipath $target_dir_fullpath
   fi
@@ -9146,7 +9146,7 @@ task_saveparts() {
         if [ -z "$lks_dev_map" ]; then
           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
           echo "$msg_luks_mapped_name_not_found_in_this_file: $target_dir_fullpath/luks-crypttab-from-OS.info."
-	  echo "$msg_name_it_arbitrarily_restered_os_boot_might_fail"
+	  echo "$msg_name_it_arbitrarily_restored_os_boot_might_fail"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 	  countdown 5
 	  echo
@@ -9185,7 +9185,7 @@ task_saveparts() {
     # not LVM or LUKS, normal partition
     image_save /dev/$partition $target_dir_fullpath $partition
     rc_savepts="$(($rc_savepts + $?))"
-    # Tag the partition info. This is special for NTFS boot reserved partiition
+    # Tag the partition info. This is special for NTFS boot reserved partition
     rc_boot_reserve=""
     check_if_windows_boot_reserve_part /dev/$partition
     rc_boot_reserve="$?"
@@ -9194,7 +9194,7 @@ task_saveparts() {
     fi
   done
 
-  # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+  # There is still one possibility that we need to deal with LVM, i.e. PV is not on partition,
   # instead it's on a disk (e.g. /dev/sdb).
   # Although there is a checking in task_savedisk function, but this is for "saveparts" option.
   pv_on_dsk="$(get_pv_on_disk_from_local_machine)"  # pv_on_dsk: sda, sdb...
@@ -9319,7 +9319,7 @@ task_restoredisk() {
     done
   done
 
-  # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+  # There is still one possibility that we need to deal with LVM, i.e. PV is not on partition,
   # instead it's on a disk (e.g. /dev/sdb).
   pv_on_dsk="$(get_pv_on_disk_from_PV_conf_list "$ocsroot/$target_dir/lvm_vg_dev.list")"
   for ip in $pv_on_dsk; do
@@ -9364,7 +9364,7 @@ task_multicast_restoredisk() {
     # e.g., check_md5sum="no"
     eval check_${imtd}="no"
   done
-  # To do backward compatability, we still keep task_multicast_restoredisk function, but let task_restoredisk do the real job.
+  # To do backward compatibility, we still keep task_multicast_restoredisk function, but let task_restoredisk do the real job.
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_multicast_restoredisk
 
@@ -9401,7 +9401,7 @@ task_bt_restoreparts() {
     # e.g., check_md5sum="no"
     eval check_${imtd}="no"
   done
-  # To do backward compatability, we still keep task_bt_restoreparts function, but let task_restoreparts do the real job.
+  # To do backward compatibility, we still keep task_bt_restoreparts function, but let task_restoreparts do the real job.
   task_restoreparts "$target_dir" "$target_parts" "$port"
 } # end of task_bt_restoreparts
 #
@@ -9428,7 +9428,7 @@ task_d2d_restoreparts() {
     # e.g., check_md5sum="no"
     eval check_${imtd}="no"
   done
-  # To do backward compatability, we still keep task_bt_restoreparts function, but let task_restoreparts do the real job.
+  # To do backward compatibility, we still keep task_bt_restoreparts function, but let task_restoreparts do the real job.
   task_restoreparts "$target_dir" "$target_parts" "$port"
 } # end of task_d2d_restoreparts 
 
@@ -9635,7 +9635,7 @@ task_restoreparts() {
     for ihd in $target_hd; do
       # Restore the hidden data between MBR and 1st partition. Maybe it's useless, maybe it's useful. Since some of the recovery programs put data on that.
       # Only for MBR, excluding GPT type of disk. We only deal with MBR for this hidden data
-      if `is_mbr_partitition_table_disk /dev/$ihd`; then
+      if `is_mbr_partition_table_disk /dev/$ihd`; then
         echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
 	if [ -e "$target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr" ]; then
           restore_hidden_data_after_MBR $ihd $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr
@@ -9679,7 +9679,7 @@ task_restoreparts() {
         if [ -z "$lks_mapper" ]; then
           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
           echo "$msg_luks_mapped_name_not_found_in_this_file: $target_dir_fullpath/luks-crypttab-from-OS.info."
-	  echo "$msg_name_it_arbitrarily_restered_os_boot_might_fail"
+	  echo "$msg_name_it_arbitrarily_restored_os_boot_might_fail"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 	  countdown 5
 	  echo
@@ -9769,7 +9769,7 @@ task_restoreparts() {
           # Local disk to local disk only allows same partition name clone, e.g., sda1 -> sdb1
 	  lsrc_dev="$(echo $partition | replace_disk_name_stdin $target_hd $source_hd)" ;;
         "ld2d_restoreparts")
-          # Local part to local part only allows differents partition name clone, e.g., sda2 -> sdb1
+          # Local part to local part only allows different partition name clone, e.g., sda2 -> sdb1
 	  lsrc_dev="$source_part" ;;
         esac
         do_d2d_local_restore $target_dir_fullpath $lsrc_dev /dev/$partition
@@ -9890,7 +9890,7 @@ task_restoreparts() {
   # Strip the leading spaces
   processed_extended_parts="$(echo $processed_extended_parts | sed -r -e "s|^[[:space:]]*||g")"
 
-  # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+  # There is still one possibility that we need to deal with LVM, i.e. PV is not on partition,
   # instead it's on a disk (e.g. /dev/sdb).
   pv_on_dsk="$(get_pv_on_disk_from_PV_conf_list "$PV_PARSE_CONF")"
   for ip in $pv_on_dsk; do
@@ -9912,7 +9912,7 @@ task_restoreparts() {
   if [ "$do_LVM_restore" = "yes" ]; then
     # LVM exists, restore PV/VG/LV.
     echo "LVM exists, restoring PV/VG/LV." | tee --append ${OCS_LOGFILE}
-    # Append the whole disk to the partitions list. Althouth it's a disk, but it contains LV.
+    # Append the whole disk to the partitions list. Although it's a disk, but it contains LV.
     # However, we do not put the disk name to $target_parts otherwise it might cause confusion.
     restore_logv "$target_parts" $net_mode $port
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
@@ -10060,7 +10060,7 @@ task_restoreparts() {
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
-  # Reloc ntfs boot partition
+  # Realloc ntfs boot partition
   if [ "$change_ntfs_boot_chs" = "on" ]; then
     echo "Running: run_ntfsreloc_part -p \"$target_parts\" $ntfs_boot_partition" | tee --append $OCS_LOGFILE
     run_ntfsreloc_part -p "$target_parts" $ntfs_boot_partition | tee --append $OCS_LOGFILE
@@ -10092,7 +10092,7 @@ task_restoreparts() {
   # Updating EFI NVRAM for the boot device
   if [ "$update_efi_nvram" = "yes" ]; then
     for ihd in $target_hd; do
-      if `is_gpt_partitition_table_disk /dev/$ihd` && \
+      if `is_gpt_partition_table_disk /dev/$ihd` && \
         ! `is_gpt_disk_with_bios_boot_part_in_legacy_bios /dev/$ihd`; then
         efi_info_tmp="$(mktemp /tmp/efi_info.XXXXXX)"
 	update_efi_nvram_boot_entry_cmd="update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat -f $efi_info_tmp /dev/$ihd"
@@ -10146,13 +10146,13 @@ task_multicast_restoreparts() {
     # e.g., check_md5sum="no"
     eval check_${imtd}="no"
   done
-  # To do backward compatability, we still keep task_multicast_restoreparts function, but let task_restoreparts do the real job.
+  # To do backward compatibility, we still keep task_multicast_restoreparts function, but let task_restoreparts do the real job.
   task_restoreparts "$target_dir" "$target_parts" "$port"
 }
 
 check_boot_kernel_arg_cmdline() {
   # The mode assigned when client boots, if this is assigned, 
-  # it will overide the mode assigned by server
+  # it will override the mode assigned by server
   if grep -i -q "drbl_ocs=disallow" /proc/cmdline; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "Clonezilla server assigned drbl_ocs=\"disallow\" for this client, so the clonezilla execution in this machine is aborted!"
@@ -10313,10 +10313,10 @@ do_startdisk() {
     case "$task" in
       "restore"|"multicast_restore"|"bt_restore")
         if [ "$target_image" != "ask_user" ]; then
-          # If it's restore, we have to conver the old format to newer
+          # If it's restore, we have to convert the old format to newer
           convert_ocs_format_from_1.5_to_2.0_or_newer $imagedir/$target_image/
         fi
-        if [ -d "$imagedir/$target_image" -a "$chk_img_restoreable_on_srv" = "yes" ]; then
+        if [ -d "$imagedir/$target_image" -a "$chk_img_restorable_on_srv" = "yes" ]; then
           echo $msg_delimiter_star_line
           check_image_if_restorable -i "$target_image" "$imagedir"
           rc_chkimg="$?"
@@ -10451,10 +10451,10 @@ do_startparts () {
     case "$task" in
       "restore"|"multicast_restore"|"bt_restore")
         if [ "$target_image" != "ask_user" ]; then
-          # If it's restore, we have to conver the old format to newer
+          # If it's restore, we have to convert the old format to newer
           convert_ocs_format_from_1.5_to_2.0_or_newer $imagedir/$target_image/
         fi
-        if [ -d "$imagedir/$target_image" -a "$chk_img_restoreable_on_srv" = "yes" ]; then
+        if [ -d "$imagedir/$target_image" -a "$chk_img_restorable_on_srv" = "yes" ]; then
           echo $msg_delimiter_star_line
           check_image_if_restorable -i "$target_image" "$imagedir"
           rc_chkimg="$?"
@@ -10507,7 +10507,7 @@ do_select_in_client() {
   # Set the single user mode password if not setting for client...This will be safer..."
   set_clients_rc1_passwd $IP_LIST
 
-  # If the mode is in always_restore, and PXE default menu is assigned to local (-y0), we will set local boot as default. Since the always_restore mode is only useful with local OS exists. But if in some scenario, such as production clone flow, maybe pxe_menu_default_mode=clone is useful, since a lot of hardisks will be replaced one by one.
+  # If the mode is in always_restore, and PXE default menu is assigned to local (-y0), we will set local boot as default. Since the always_restore mode is only useful with local OS exists. But if in some scenario, such as production clone flow, maybe pxe_menu_default_mode=clone is useful, since a lot of harddisks will be replaced one by one.
   if [ "$always_restore" = "yes" ]; then
    case "$pxe_menu_default_mode" in
      "local")
@@ -10707,7 +10707,7 @@ USAGE_common_restore(){
     # This --max-time-to-wait exists both in drbl-ocs and ocs-sr is because
     # ocs-sr need to know the --max-time-to-wait so that when sleeping
     # between partitions restoring clone won't timeout.
-    echo " --max-time-to-wait TIME   When not enough clients have connected (but at least one), start anyways when TIME seconds since first client connection have pased. This option is used with --clients-to-wait"
+    echo " --max-time-to-wait TIME   When not enough clients have connected (but at least one), start anyways when TIME seconds since first client connection have passed. This option is used with --clients-to-wait"
     echo " -cm, --check-md5sum   Check the MD5 checksum for the image. To use this option, you must enable -gm|--gen-md5sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
     echo " -cs, --check-sha1sum  Check the SHA1 checksum for the image. To use this option, you must enable -gs|--gen-sha1sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
     echo " -cmf, --chk-chksum-for-files-in-dev   Check the checksum for the files in the device. To use this option, you must enable -gmf|--gen-chksum-for-files-in-dev when the image is saved. Note! (1) The file system must be supported by Linux kernel so that it can be mounted as read-only to check the files. (2) It might take a lot of time to check if there are many files in the source device."
@@ -11225,7 +11225,7 @@ get_live_media_mnt_point() {
   # squash_f default is filesystem.squashfs, but on PXE server, it might be changed. E.g. fetch=tftp://192.168.1.254/Clonezilla-live-filesystem.squashfs. We will overwrite the default value if fetch is found.
   parse_cmdline_option fetch
   [ -n "$fetch" ] && squash_f="$(basename $fetch)"
-  # Besids $live_sys_files_dir_list, user might assign his/her own live_sys_files_dir_list in the media (e.g. /live-hd). We can try to find it from the boot parameter "live-media-path" (//NOTE// Function parse_cmdline_option in drbl-functions is not working for this varialbe live-media-path, since it can not be a shell script variable.
+  # Besides $live_sys_files_dir_list, user might assign his/her own live_sys_files_dir_list in the media (e.g. /live-hd). We can try to find it from the boot parameter "live-media-path" (//NOTE// Function parse_cmdline_option in drbl-functions is not working for this variable live-media-path, since it can not be a shell script variable.
   extra_live_media_path="$(LC_ALL=C grep -oE "live-media-path=([[:alnum:]]|_|-|\.|\/)*([[:space:]]|$)+" /proc/cmdline | sed -e "s/live-media-path=//g")"
   for i in $extra_live_media_path $live_media_path_chklist; do
     if test -n "$(find $i -maxdepth 3 -name "$squash_f" -print 2>/dev/null)" ; then
@@ -11575,7 +11575,7 @@ get_RawCHS_of_HD_from_hdparm() {
     # If RawCHS exists, CurCHS must exist, too.
     # echo "CurCHS of $selected_hd: $CurCHS"
   else
-    echo "RawCHS and CurCHS of $selected_hd is not found! Maybe this is ScSI device ?"
+    echo "RawCHS and CurCHS of $selected_hd is not found! Maybe this is SCSI device ?"
   fi
 } # end of get_RawCHS_of_HD_from_hdparm
 #
@@ -11810,7 +11810,7 @@ fsck_partition() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   case "$partfs_" in
     ntfs) #ntfsfix $dev_;;
-          # If we use ntfsfix to fsck NTFS, ntfsclone and partclone need to use some special parameter to force clone. e.g. for ntfsclone, we have to use options "--force --rescue" (No such options for patclone.ntfs on Aug/05/2009). Therefore here we do not want to use ntfsfix to do that. It might cause some problems.
+          # If we use ntfsfix to fsck NTFS, ntfsclone and partclone need to use some special parameter to force clone. e.g. for ntfsclone, we have to use options "--force --rescue" (No such options for partclone.ntfs on Aug/05/2009). Therefore here we do not want to use ntfsfix to do that. It might cause some problems.
           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
           echo "There is no good tool to check and repair NTFS on GNU/Linux, hence skip fscking this partition $dev_"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -12035,7 +12035,7 @@ init_mbr_part_table_if_not_existing() {
 #
 check_mbr_disk_size_gt_2TiB() {
   local dest_dsk="$1"  # e.g. /dev/sdc
-  local postaction="$2"  # "exit" will exit, anything eles will continue
+  local postaction="$2"  # "exit" will exit, anything else will continue
   # If dest_dsk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
   dest_dsk_size_in_B="$(LC_ALL=C parted -s $dest_dsk unit B print | grep -E "^Disk /dev" | awk -F":" '{print $2}' | sed -e "s/B$//g")"
   dest_dsk_size_in_TB="$(LC_ALL=C parted -s $dest_dsk unit TB print | grep -E "^Disk /dev" | awk -F":" '{print $2}')"
@@ -12791,7 +12791,7 @@ active_proc_partitions() {
 #
 output_blkdev_info() {
   local output_f="$1"
-  local dev_="$2" # if dev_ is mssing, then it means the whole system.
+  local dev_="$2" # if dev_ is missing, then it means the whole system.
   LC_ALL=C lsblk -o KNAME,NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL $dev_ > $output_f
 } # end of output_blkdev_info
 #
@@ -13103,7 +13103,7 @@ get_part_name_from_uuid_in_harddrive() {
 #
 get_best_console_font_size() {
   # console_prefer_cols (input, from drbl-ocs.conf) and console_font_size (output) are  global variables.
-  local resoluton_cols font_size_cols
+  local resolution_cols font_size_cols
   #
   # The output of "fbset -s" is like:
   # mode "1280x1024"
@@ -13115,17 +13115,17 @@ get_best_console_font_size() {
   #
   # Valid font faces are: VGA (sizes  8x8,  8x14,  8x16,  16x28  and 16x32),  Terminus  (sizes  6x12, 8x14, 8x16, 10x20, 12x24, 14x28 and 16x32), TerminusBold (sizes 8x14, 8x16, 10x20, 12x24,  14x28 and  16x32),  TerminusBoldVGA  (sizes  8x14 and 8x16), and Fixed (sizes  8x13,  8x14,  8x15,  8x16   and   8x18).    If   however CODESET=Ethiopian,  then  the  available font faces are Goha and GohaClassic, each in sizes 8x12, 8x14 and 8x16.
   
-  resoluton_cols="$(LC_ALL=C fbset -s | grep -Ew "^[[:space:]]*geometry" | awk -F" " '{print $2}')"
+  resolution_cols="$(LC_ALL=C fbset -s | grep -Ew "^[[:space:]]*geometry" | awk -F" " '{print $2}')"
   
   # [ ! -e "/etc/default/console-setup" ] && exit 1
   # . /etc/default/console-setup
   # # FONTSIZE is like: 16, 16x32
   # font_rows="$(LC_ALL=C echo $FONTSIZE | awk -F"x" '{print $1}')"
-  # size_rows="$(echo "scale=0; ${resoluton_rows}/${font_rows}" | bc -l)"
+  # size_rows="$(echo "scale=0; ${resolution_rows}/${font_rows}" | bc -l)"
   # echo "row size: $size_rows"
   
-  if [ -n "$resoluton_cols" ]; then
-    font_size_cols="$(echo "scale=0; ${resoluton_cols}/${console_prefer_cols}" | bc -l)"
+  if [ -n "$resolution_cols" ]; then
+    font_size_cols="$(echo "scale=0; ${resolution_cols}/${console_prefer_cols}" | bc -l)"
     echo "Calculated font column size: $font_size_cols"
   fi
   # From Debian Sid (console-setup 1.95), the manual (man 5 console-setup) says:
@@ -13141,7 +13141,7 @@ get_best_console_font_size() {
   # and 16) and Fixed (sizes 13, 14, 15, 16 and 18). 
   # The file name is actually like: /usr/share/consolefonts/Lat2-TerminusBold20x10.psf.gz, both on Debian Sid and Ubuntu 13.04.
   # XXX The cols and rows are opposite... weird...
-  # However, for console-setup (1.71) unstable; urgency=low, the changelog mentionied:
+  # However, for console-setup (1.71) unstable; urgency=low, the changelog mentioned:
   # setupcon: accept all methods to state font size in the configuration file (8x14, 14x8, 14). Therefore we use the font size it can be accepted in old version.
   # Since the file names are:
   # dpkg -L console-setup-linux | grep -i uni2-terminusbold
@@ -13317,7 +13317,7 @@ get_pv_on_disk_from_local_machine() {
 
 #
 get_pv_on_disk_from_PV_conf_list() {
-  # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
+  # There is still one possibility that we need to deal with LVM, i.e. PV is not on partition,
   # instead it's on a disk (e.g. /dev/sdb).
   local pv_cfg_list="$1"  # The PV_PARSE_CONF file from the image dir. Absolute path.
   local lpv_on_dsk
@@ -13735,7 +13735,7 @@ replace_disk_name_in_file(){
   # /dev/nvme0n1p2 : start=      999424, size=     7999488, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F, uuid=D47B030E-FCA6-485F-B6CF-5CC4BD708256
   # /dev/nvme0n1p3 : start=     8998912, size=  2335225856, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=D9ED4B04-1077-4390-B177-B558445A7F38
   # 
-  # nvme0n1p3 has extra "p", we can not just s/nvme0n1/sda/, otherwise resutls:
+  # nvme0n1p3 has extra "p", we can not just s/nvme0n1/sda/, otherwise results:
   # will have "sdap1", the wrong partition name.
   # label: gpt
   # label-id: 8D91AEC3-EA8E-4312-BAF9-C2AE97025C48
@@ -13847,7 +13847,7 @@ replace_disk_name_stdin(){
   # /dev/nvme0n1p2 : start=      999424, size=     7999488, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F, uuid=D47B030E-FCA6-485F-B6CF-5CC4BD708256
   # /dev/nvme0n1p3 : start=     8998912, size=  2335225856, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=D9ED4B04-1077-4390-B177-B558445A7F38
   # 
-  # nvme0n1p3 has extra "p", we can not just s/nvme0n1/sda/, otherwise resutls:
+  # nvme0n1p3 has extra "p", we can not just s/nvme0n1/sda/, otherwise results:
   # will have "sdap1", the wrong partition name.
   # label: gpt
   # label-id: 8D91AEC3-EA8E-4312-BAF9-C2AE97025C48
@@ -13984,12 +13984,12 @@ gen_chksum_for_files_in_dev() {
     | tee --append ${OCS_LOGFILE}
     rc_chk="${PIPESTATUS[0]}"
 
-    set_acess_mode_for_img "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz"
+    set_access_mode_for_img "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz"
     umount /dev/$sum_part
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_fail_to_mount_maybe_linux_not_support: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
-    echo "$msg_unsble_to_create_checksum_file" | tee --append ${OCS_LOGFILE}
+    echo "$msg_unable_to_create_checksum_file" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     if [ "$ocs_batch_mode" != "on" ]; then
       echo -n "$msg_press_enter_to_continue..."
@@ -14061,7 +14061,7 @@ inspect_chksum_for_files_in_dev() {
     else
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "$msg_fail_to_mount_maybe_linux_not_support: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
-      echo "$msg_unsble_to_inspect_checksum" | tee --append ${OCS_LOGFILE}
+      echo "$msg_unable_to_inspect_checksum" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       if [ "$ocs_batch_mode" != "on" ]; then
         echo -n "$msg_press_enter_to_continue..."
@@ -14141,7 +14141,7 @@ prepare_mnt_point_ocsroot() {
 } # end of prepare_mnt_point_ocsroot
 #
 load_ocsroot_mnt_cmd() {
-  # Function to be used for ocs-prep-repo and ocs-live-respository
+  # Function to be used for ocs-prep-repo and ocs-live-repository
   ocsroot_mnt_cmd_smb="LC_ALL=C mount -t cifs \"//${smb_srv}${smbfs_dir}\" $ocsroot -o user=\"${smb_account}${smb_password_opt}${smb_domain_opt}\"${smb_sec_opt}${smb_ver_opt}" 
   ocsroot_mnt_cmd_nfs="LC_ALL=C mount -t $nfs_ver $nfs_srv:$nfs_dir $ocsroot -o $ocsroot_def_mnt_opt,$nfsvers_opt"
   ocsroot_mnt_cmd_webdav="LC_ALL=C mount -t davfs -o noexec $davfs_url $ocsroot"
@@ -14244,7 +14244,7 @@ get_directories_list_common() {
      # This directory only contain itself, no any image in the subdir.
      fileinfo="${fileinfo}_NO_SUBDIR"
    fi
-   # Group them, collect normal dirs first, then conezilla img dir.
+   # Group them, collect normal dirs first, then clonezilla img dir.
    
    if [ -e "$file/clonezilla-img" ]; then
      filelist_CZ="$filelist_CZ $(basename "$file") $fileinfo"
@@ -14599,13 +14599,13 @@ create_LVM_bt_image_files_from_partclone_img() {
   done < $LOGV_PARSE_CONF
 } # end of create_LVM_bt_image_files_from_partclone_img
 #
-set_acess_mode_for_img() {
+set_access_mode_for_img() {
   local img_prefix="$1"
   if [ "$only_access_by_owner" = "yes" -a -n "$img_prefix" ]; then
     echo "Change mode to 600 for these files: $img_prefix"
     chmod 600 $img_prefix 2>/dev/null
   fi
-} # end of set_acess_mode_for_img
+} # end of set_access_mode_for_img
 #
 check_if_in_clonezilla_live(){
   # LIVE_MEDIA is global variable.
@@ -14711,7 +14711,7 @@ ask_nic_dev() {
   # Check if it makes sense when channel bonding is enabled
   if [ "$enable_channel_bonding" = "yes" ]; then
     if [ "$nic_no" -lt 2 ]; then
-      echo "Disable channnel bonding since there is only one NIC found."
+      echo "Disable channel bonding since there is only one NIC found."
       enable_channel_bonding="no"
     fi
   fi
@@ -14805,7 +14805,7 @@ ask_nic_dev() {
 
     $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
     "$msg_nchc_clonezilla" --${dia_type} "$dia_prompt" 0 0 0 $DEVICELIST 2>"$nic_tmp"
-    # Force to strip the unnecessary quotation ', this is specially for dialog (from cdialog) in Mandriva and same reason to strip the unnecessary double quotation ", this is sepcially for dialog in OpenSuSE 11.1. Otherwise it will cause -p reboot become (containing space) '-p reboot', which is wrong option in dcs.
+    # Force to strip the unnecessary quotation ', this is specially for dialog (from cdialog) in Mandriva and same reason to strip the unnecessary double quotation ", this is specially for dialog in OpenSuSE 11.1. Otherwise it will cause -p reboot become (containing space) '-p reboot', which is wrong option in dcs.
     LC_ALL=C perl -pi -e "s/\'//g" $nic_tmp
     LC_ALL=C perl -pi -e "s/\"//g" $nic_tmp
     chosen_nics="$(cat $nic_tmp)"
@@ -14949,15 +14949,15 @@ force_to_dd_clone_local_part() {
   esac
 } # end of force_to_dd_clone_local_part
 #
-local_partition_to_partiton_clone() {
+local_partition_to_partition_clone() {
   local pt_fs="$1"
   local src_p="$2"  # src_p is like /dev/hda1
   local tgt_p="$3"  # tgt_p is like /dev/hdb1
   local pt_size ret dd_img_info_tmp dd_report_sig_pid start_time end_time partition
   local cmd_partclone
-  # FORCE_TO_USE_DD, USE_NTFSCLONE_IN_OCS_ONTHEFLY, USE_PARTCLONE_IN_OCS_ONTHEFLY are global variabls.
+  # FORCE_TO_USE_DD, USE_NTFSCLONE_IN_OCS_ONTHEFLY, USE_PARTCLONE_IN_OCS_ONTHEFLY are global variables.
   if [ -z "$pt_fs" -o -z "$src_p" -o -z "$tgt_p" ]; then
-    echo "Wrong options in local_partition_to_partiton_clone!!!" | tee --append $OCS_LOGFILE
+    echo "Wrong options in local_partition_to_partition_clone!!!" | tee --append $OCS_LOGFILE
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
   fi
@@ -15027,7 +15027,7 @@ local_partition_to_partiton_clone() {
      read
   fi
   return $ret
-} # end of local_partition_to_partiton_clone
+} # end of local_partition_to_partition_clone
 #
 netcat_nuttcp_check() {
   local nc_tmp
@@ -15072,7 +15072,7 @@ netcat_nuttcp_check() {
        # This is the version Hobbit wrote (http://www.vulnwatch.org/netcat/)
        # The reason we want to add -q 0 for Hobbit version is that:
        # in Debian, if -q 0 is not set, it will wait forever... nc will not quit.
-       # However, in FC3 or ealier version, there is no -q option. nc will quit
+       # However, in FC3 or earlier version, there is no -q option. nc will quit
        # when EOF.
        [ -n "$(grep "\-q secs" $nc_tmp 2>/dev/null)" ] && NC_QUIT_OPT="-q 0"
        NC_LOCAL_PORT_OPT="$NC_QUIT_OPT -p"
@@ -15378,7 +15378,7 @@ onthefly_feed_partition_or_lv_in_server() {
        fi
      done
      [ "$is_in_chosen_partition" = "no" ] && continue
-     # if it's swap, output the labe and uuid only.
+     # if it's swap, output the label and uuid only.
      case "$fs" in 
        *[Ss][Ww][Aa][Pp]*|*extended*)
          continue ;;
@@ -15473,7 +15473,7 @@ onthefly_receive_partition_or_lv_in_client() {
 
     # Only when the target_type is disk we will create swap partition, other we might make a mistake to format the existing partition as swap partition.
     if [ "$target_type" = "disk" ]; then
-      # if it's swap, output the labe and uuid only.
+      # if it's swap, output the label and uuid only.
       case "$fs" in 
         *[Ss][Ww][Aa][Pp]*)
           fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
@@ -15849,8 +15849,8 @@ unmount_dislocker_mount_point_if_necessary(){
 get_netdev_type_on_system() {
   # Function to get the network type on the system.
   # Return type: none; wired; wireless; both
-  # //NOTE// /proc/net/wirless seems to be not working well for USB wireless
-  # device. Even when it's plugged, it's not shown in /proc/net/wirless.
+  # //NOTE// /proc/net/wireless seems to be not working well for USB wireless
+  # device. Even when it's plugged, it's not shown in /proc/net/wireless.
   local nettype netdev_allno wired_no wireless_no
   netdev_allno="$(LC_ALL=C tail -n +3 /proc/net/dev 2>/dev/null | \
 	    awk -F":" '!/lo:/{print $1}' | wc -l)"
@@ -15870,7 +15870,7 @@ get_netdev_type_on_system() {
 } # end of get_netdev_type_on_system
 #
 show_nic_dev_status_on_system() {
-  echo "$msg_nic_status_on_sytem"
+  echo "$msg_nic_status_on_system"
   echo $msg_delimiter_star_line
   cat /proc/net/dev
   echo $msg_delimiter_star_line
