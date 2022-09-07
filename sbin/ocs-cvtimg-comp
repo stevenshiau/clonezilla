@@ -15,7 +15,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
 # Settings
 verbose="no"
-chk_img_restoreable_def="yes"
+chk_img_restorable_def="yes"
 
 #
 USAGE() {
@@ -30,7 +30,7 @@ USAGE() {
     echo "-nogui, --nogui          Do not show GUI (TUI) of Partclone when checking, use text only"
     echo "-sc, --skip-check-restorable  Skip checking the image if restorable after it is converted."
     echo "-v, --verbose            Prints verbose information"
-    echo "-z0, --no-compress       Convert to uncompression format"
+    echo "-z0, --no-compress       Convert to uncompressed format"
     echo "-z1, --gzip-compress     Convert to gzip format"
     echo "-z2, --bz2-compress      Convert to bzip2 format"
     echo "-z3, --lzo-compress      Convert to lzop format"
@@ -42,7 +42,7 @@ USAGE() {
     echo "-z9, --zstd-compress     Convert to zstd format"
     echo "SRC_IMAGE_NAME and DEST_IMAGE_NAME are the image dir name, not absolute path"
     echo "If the destination compression format is not assigned, XZ format will be used"
-    echo "If \"ask_user\" is used as SRC_IMAGE_NAME or DEST_IMAGE_NAME, a dialog menu will be shown to allow selection or inputing."
+    echo "If \"ask_user\" is used as SRC_IMAGE_NAME or DEST_IMAGE_NAME, a dialog menu will be shown to allow selection or inputting."
     echo "If no SRC_IMAGE_NAME or DEST_IMAGE_NAME is specified, a dialog menu will be shown."
     echo "Ex:"
     echo "To convert the image \"my-image\", which is located in $ocsroot/my-image to \"my-image-xz\" with xz format, run"
@@ -136,8 +136,8 @@ ask_if_check_converted_img() {
   2> $TMP
   sc_opt="$(cat $TMP)"
   case "$sc_opt" in
-   -sc)  chk_img_restoreable="no";;
-     *)  chk_img_restoreable="yes";;
+   -sc)  chk_img_restorable="no";;
+     *)  chk_img_restorable="yes";;
   esac
   [ -f "$TMP" ] && rm -f $TMP
 } # ask_if_check_converted_img
@@ -471,7 +471,7 @@ task_convertimage() {
     image_type="partition"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_a_part_image_saved_from_partitions: $(get_parts_list_from_img $ocsroot/$target_dir)"
-    echo "$msg_the_part_image_to_be_cheked: $target_parts"
+    echo "$msg_the_part_image_to_be_verified: $target_parts"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -644,12 +644,12 @@ while [ $# -gt 0 ]; do
            [ -z "$ocsroot" ] && USAGE && exit 1
            ;;
    -nogui|--nogui)
-           # -nogui is for backward compatable, better to use --nogui
+           # -nogui is for backward compatibility, better to use --nogui
            nogui="on"
 	   shift;;
    -sc|--skip-check-restorable)
            # Flag to check if the image is restorable
-           chk_img_restoreable="no"
+           chk_img_restorable="no"
 	   shift;;
    -v|--verbose) verbose="yes"; shift;;
    -i|--image-size)
@@ -778,8 +778,8 @@ check_and_fix_vol_limit_if_required
 if [ "$mode" = "interactive" ]; then
   ask_if_check_converted_img
 else
-  if [ -z "$chk_img_restoreable" ]; then
-    chk_img_restoreable="$chk_img_restoreable_def"
+  if [ -z "$chk_img_restorable" ]; then
+    chk_img_restorable="$chk_img_restorable_def"
   fi
 fi
 
@@ -815,7 +815,7 @@ create-ocs-tmp-img $ocs_tmp_img_opt -n -t $ocsroot "$ocs_src_img_name" "$ocs_des
 task_convertimage "$ocs_dest_img_name"
 
 #
-if [ "$chk_img_restoreable" = "yes" ]; then
+if [ "$chk_img_restorable" = "yes" ]; then
   if [ "$nogui" = "on" ]; then
     nogui_opt="-nogui"
   fi
