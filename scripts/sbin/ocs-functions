@@ -11226,7 +11226,7 @@ get_live_media_mnt_point() {
   parse_cmdline_option fetch
   [ -n "$fetch" ] && squash_f="$(basename $fetch)"
   # Besids $live_sys_files_dir_list, user might assign his/her own live_sys_files_dir_list in the media (e.g. /live-hd). We can try to find it from the boot parameter "live-media-path" (//NOTE// Function parse_cmdline_option in drbl-functions is not working for this varialbe live-media-path, since it can not be a shell script variable.
-  extra_live_media_path="$(LC_ALL=C grep -oE "live-media-path=([[:alnum:]]|_|-|\.|\/)*([[:space:]]|$)+" /proc/cmdline | sed -e "s/live-media-path=//g")"
+  extra_live_media_path="$(LC_ALL=C grep -oE "live-media-path=([[:alnum:]]|_|-|\.|/)*([[:space:]]|$)+" /proc/cmdline | sed -e "s/live-media-path=//g")"
   for i in $extra_live_media_path $live_media_path_chklist; do
     if test -n "$(find $i -maxdepth 3 -name "$squash_f" -print 2>/dev/null)" ; then
       LIVE_MEDIA="$i"
@@ -12341,7 +12341,7 @@ get_part_list() {
   if [ "$use_partlist_cache" = "yes" ]; then
     prt_list="$(cat $dev_list_cache_dir/part_list.cache)"
   else
-    devs="$(LC_ALL=C egrep '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
+    devs="$(LC_ALL=C grep -E '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
            | awk '{ print $4 }' | sort -V)"
     # E.g.,
     # devs='nvme0n1 nvme0n1p1 nvme0n2 sda sda1 sda2 sda5 sdb sdb1 sdb2 sdb3 sdb5 sdb6 sdc sdc1 sdc2 sr0'
@@ -12380,7 +12380,7 @@ get_disk_list() {
   if [ "$use_disklist_cache" = "yes" ]; then
     disk_list="$(cat $dev_list_cache_dir/disk_list.cache)"
   else
-    devs="$(LC_ALL=C egrep '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
+    devs="$(LC_ALL=C grep -E '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
            | awk '{ print $4 }' | sort -V)"
     # E.g.,
     # devs='nvme0n1 nvme0n1p1 nvme0n2 sda sda1 sda2 sda5 sdb sdb1 sdb2 sdb3 sdb5 sdb6 sdc sdc1 sdc2 sr0'
@@ -12903,7 +12903,7 @@ get_efi_hd_boot_entry_info() {
   # Boot0005* EFI Internal Shell    MemoryMapped(11,0x13f7c2000,0x13fbc3c3f)/FvFile(7c04a583-9e3e-4f1c-ad65-e05268d0b4d1)
   # Boot0006* Debian        PciRoot(0x0)/Pci(0x1,0x0)/HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
   local type_ term_ filt_case
-  local cmd_ boot_num label part_no uuid boot_file boot_num filter_entery dev_uuid dev_nam itm
+  local cmd_ boot_num label part_no uuid boot_file boot_num filter_entry dev_uuid dev_nam itm
   local nvram_tmp append_ch rt_var rt_var_all
   filt_case="fbo-only" # Default to filter 1st boot entry only
   # Input boot_num is like 000C, later it will be prepended "Boot" so that it will like: Boot000C
@@ -13008,26 +13008,26 @@ get_efi_hd_boot_entry_info() {
       # Get the 1st boot order. When multiple items are available, we only refer to first boot order.
       # boot_num e.g.,: Boot000C
       boot_num="Boot$(LC_ALL=C cat $nvram_tmp | grep -Eiw "^BootOrder:" | awk -F" " '{print $2}' | awk -F"," '{print $1}')"
-      filter_entery="grep -Ew ^${boot_num}" 
+      filter_entry="grep -Ew ^${boot_num}" 
       ;;
     boot-num)
       boot_num="Boot${boot_num}" # Prepend "Boot" so that it's like Boot000C
-      filter_entery="grep -Ew ^${boot_num}" 
+      filter_entry="grep -Ew ^${boot_num}" 
       ;;
     dev-uuid)
       # The case when -d|--show-dev-uuid-only) is used
       # Boot0004* opensuse  HD(1,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\opensuse\grubx64.efi)
-      filter_entery="grep -E ,${dev_uuid}," 
+      filter_entry="grep -E ,${dev_uuid}," 
       ;;
     dev-name)
       # The case when -n|--show-dev-name-only) is used
       # Boot0004* opensuse  HD(1,GPT,7f033140-72dd-47f6-a9f2-ef7486b67510,0x800,0x4e000)/File(\EFI\opensuse\grubx64.efi)
       dev_uuid="$(get_part_uuid_in_harddrive $dev_nam)"
-      filter_entery="grep -E ,${dev_uuid}," 
+      filter_entry="grep -E ,${dev_uuid}," 
       ;;
     all) 
       # no any filter
-      filter_entery="cat"
+      filter_entry="cat"
       ;;
   esac
   while read -r line; do
@@ -13035,7 +13035,7 @@ get_efi_hd_boot_entry_info() {
     for itm in $term_; do
       case "$itm" in
         boot_num)
-	  rt_var="$(echo $line | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g")"
+	  rt_var="$(echo $line | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*/*HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g")"
           ;;
         label)
           # Must be only one result. E.g., this contains at least two label, but we can only return one label
@@ -13047,21 +13047,21 @@ get_efi_hd_boot_entry_info() {
           # Boot0002* EFI Network   PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x1,0x0)/MAC(000c291d9ad1,0)
           # Boot0003* EFI Internal Shell (Unsupported option)       MemoryMapped(11,0xef9d018,0xf3f7017)/FvFile(c57ad6b7-0515-40a8-9d21-551652854e37)
           # Boot0004* EFI VMware Virtual SCSI Hard Drive (1.0)      PciRoot(0x0)/Pci(0x10,0x0)/SCSI(1,0)
-	  rt_var="$(echo $line | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)\/*FILE\(.*\)" | sed -r -e "s|^Boot[[:alnum:]]+[*][[:space:]]+||g" -e "s|[[:space:]]+HD\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\).*||g")"
+	  rt_var="$(echo $line | $filter_entry | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*/*HD\(.*\)/*FILE\(.*\)" | sed -r -e "s|^Boot[[:alnum:]]+[*][[:space:]]+||g" -e "s|[[:space:]]+HD\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\).*||g")"
           ;;
         part_no)
-	  rt_var="$(echo $line | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $1}')"
+	  rt_var="$(echo $line | $filter_entry | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $1}')"
           ;;
         uuid)
-	  rt_var="$(echo $line | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $3}' | tr '[:upper:]' '[:lower:]')"
+	  rt_var="$(echo $line | $filter_entry | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*/*HD\(.*\)" | grep -o -iE "\([[:digit:]]+,[[:alnum:]]+,[[:alnum:]-]+,[[:alnum:]]+,[[:alnum:]]+\)" | sed -r -e "s/^\(//g" -e "s/\)$//g" | awk -F"," '{print $3}' | tr '[:upper:]' '[:lower:]')"
           ;;
         boot_file)
           # e.g., Boot0006* Debian   PciRoot(0x0)/Pci(0x1,0x0)/HD(1,GPT,a314a8b1-b2dd-4b36-96b1-24c99b3ea940,0x800,0x100000)/File(\EFI\debian\grubaa64.efi)
-	  rt_var="$(echo $line | $filter_entery | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*\/*HD\(.*\)\/*FILE\(.*\)" | grep -o -iE "FILE\(.*\)" | sed -r -e "s/^File\(//g" -e "s/\)$//g")"
+	  rt_var="$(echo $line | $filter_entry | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*/*HD\(.*\)/*FILE\(.*\)" | grep -o -iE "FILE\(.*\)" | sed -r -e "s/^File\(//g" -e "s/\)$//g")"
           ;;
         boot_file_full_path)
           # e.g., HD(1,GPT,aff8ff57-5b02-4d9b-8945-35fb0e5a905f,0x800,0x100000)/File(\EFI\ubuntu\shimx64.efi)
-	  rt_var="$(echo $line | $filter_entery | grep -iE -o "HD\(.*\)\/*FILE\(.*\)")"
+	  rt_var="$(echo $line | $filter_entry | grep -iE -o "HD\(.*\)/*FILE\(.*\)")"
           ;;
       esac
       if [ -n "$rt_var" ]; then
