@@ -1443,6 +1443,8 @@ save_part_by_partclone() {
   LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
   rc="$?"
   cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
+  ocs_log_rotate /var/log/partclone-$(to_filename ${source_dev#/dev/*}).log
+  cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${source_dev#/dev/*}).log
   end_time="$(date +%s%N)"
   if [ -s "$img_out_err" ]; then
     cat $img_out_err | tee --append ${OCS_LOGFILE}
@@ -1668,6 +1670,8 @@ save_part_by_dd() {
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     rc="$?"
     cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
+    ocs_log_rotate /var/log/partclone-$(to_filename ${source_dev#/dev/*}).log
+    cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${source_dev#/dev/*}).log
     end_time="$(date +%s%N)"
     if [ -s "$img_out_err" ]; then
       cat $img_out_err | tee --append ${OCS_LOGFILE}
@@ -5764,6 +5768,8 @@ _EOT_
   esac
 
   cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
+  ocs_log_rotate /var/log/partclone-$(to_filename ${part#/dev/*}).log
+  cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${part#/dev/*}).log
   if [ -s "$unzip_cmd_error" ]; then
     cat "$unzip_cmd_error" | tee --append ${OCS_LOGFILE}
   fi
@@ -5902,6 +5908,8 @@ _EOT_
     fi
     
     cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
+    ocs_log_rotate /var/log/partclone-$(to_filename ${part#/dev/*}).log
+    cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${part#/dev/*}).log
     if [ -s "$unzip_cmd_error" ]; then
       cat "$unzip_cmd_error" | tee --append ${OCS_LOGFILE}
     fi
@@ -6059,6 +6067,9 @@ _EOT_
   LC_ALL=C $cmd_partclone_rest
   rc="$?"
   end_time="$(date +%s%N)"
+  cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
+  ocs_log_rotate /var/log/partclone-$(to_filename ${part#/dev/*}).log
+  cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${part#/dev/*}).log
   # sync_and_active_exec_files
   get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
   echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append  ${OCS_LOGFILE}
@@ -6133,6 +6144,9 @@ multicast_restore_by_dd() {
     LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
     rc="$?"
     end_time="$(date +%s%N)"
+    cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
+    ocs_log_rotate /var/log/partclone-$(to_filename ${part#/dev/*}).log
+    cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${part#/dev/*}).log
     # sync_and_active_exec_files
     get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
     ;;
@@ -14529,6 +14543,8 @@ _EOT_
     fi
     
     cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
+    ocs_log_rotate /var/log/partclone-btfiles.log
+    cp "${partclone_img_info_tmp}" /var/log/partclone-btfiles.log
     if [ -s "$unzip_stdin_cmd_error" ]; then
       cat "$unzip_stdin_cmd_error" | tee --append ${OCS_LOGFILE}
     fi
@@ -14945,6 +14961,8 @@ force_to_dd_clone_local_part() {
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     ret=$?
     cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
+    ocs_log_rotate /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
+    cp "${PARTCLONE_LOG}" /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
     ;;
   esac
 } # end of force_to_dd_clone_local_part
@@ -15008,6 +15026,8 @@ local_partition_to_partiton_clone() {
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     ret=$?
     cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
+    ocs_log_rotate /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
+    cp "${PARTCLONE_LOG}" /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
   elif `is_partimage_support_fs $pt_fs`; then
     echo "Using partimage to clone..."  
     partimage $DEFAULT_STDOUT_PARTIMAGE_SAVE_OPT save $src_p stdout 2> /dev/null | \
@@ -15236,6 +15256,8 @@ onthefly_receive_partition_from_server_then_write() {
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     ret=$?
     cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
+    ocs_log_rotate /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
+    cp "${PARTCLONE_LOG}" /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
   elif `is_partimage_support_fs $pt_fs`; then
     echo "Using partimage to clone..."  
     [ "$verbose" = "on" ] && echo "$netpipe_cli_cmd | $net_filter_decomp | partimage $DEFAULT_STDIN_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_ONTHEFLY_OPT restore $tgt_p stdin"
@@ -15261,6 +15283,8 @@ onthefly_receive_partition_from_server_then_write() {
       LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
       ret=$?
       cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
+      ocs_log_rotate /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
+      cp "${PARTCLONE_LOG}" /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
       ;;
     esac
   fi
