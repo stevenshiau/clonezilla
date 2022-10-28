@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.2.5
+Version:	5.2.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 13 2022 Steven Shiau <steven _at_ clonezilla org> 5.2.6-drbl1
+  * Add device to partclone log file name and rotate it,
+    not overwrite it.
+  * Move "set timeout" to the head of grub.cfg.
+
 * Tue Sep 27 2022 Steven Shiau <steven _at_ clonezilla org> 5.2.5-drbl1
   * Add options -k0/-k1 in the beginner mode of ocs-onthefly.
 
