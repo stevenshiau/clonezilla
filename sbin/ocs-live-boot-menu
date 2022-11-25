@@ -374,23 +374,46 @@ label local
 BOOT_MENU_END
 
 # If both memtest and fdos exist, group them
-if [ -e "$tmp_sys_files_path/$memtest_filename" -a -e "$tmp_sys_files_path/freedos.img" ]; then
+if [ -n "$(ls -l $tmp_sys_files_path/mt86+x*.mbr 2>/dev/null)" ] && \
+   [ -e "$tmp_sys_files_path/freedos.img" ]; then
   echo "MENU BEGIN Memtest & FreeDOS" >> $output_file
 fi
 
-if [ -e "$tmp_sys_files_path/$memtest_filename" ]; then
+# For memtest86+ in legacy BIOS:
+# memtest86+.bin -> mt86+x32.mbr
+# memtest86+x32.bin -> mt86+x32.mbr
+# memtest86+x64.bin -> mt86+x64.mbr
+if [ -e "$tmp_sys_files_path/mt86+x32.mbr" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 
 # Note! *.bin is specially purpose for syslinux, 
 # Do NOT use memtest.bin, use memtest instead of memtest.bin
-label memtest
+label memtest (32 bits)
   # MENU DEFAULT
   # MENU HIDE
-  MENU LABEL Memory test using Memtest86+
+  MENU LABEL Memory test using Memtest86+ (32 bits)
   # MENU PASSWD
-  kernel $sys_files_dir/$memtest_filename
+  kernel $sys_files_dir/mt86+x32.mbr
   TEXT HELP
-  Run memory test using Memtest86+
+  Run memory test using 32-bit Memtest86+
+  ENDTEXT
+
+BOOT_MENU_END
+fi
+
+if [ -e "$tmp_sys_files_path/mt86+x64.mbr" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+
+# Note! *.bin is specially purpose for syslinux, 
+# Do NOT use memtest.bin, use memtest instead of memtest.bin
+label memtest (64 bits)
+  # MENU DEFAULT
+  # MENU HIDE
+  MENU LABEL Memory test using Memtest86+ (64 bits)
+  # MENU PASSWD
+  kernel $sys_files_dir/mt86+x64.mbr
+  TEXT HELP
+  Run memory test using 64-bit Memtest86+
   ENDTEXT
 
 BOOT_MENU_END
@@ -413,7 +436,8 @@ label FreeDOS
 BOOT_MENU_END
 fi
 # End of the group "memtest and freedos"
-if [ -e "$tmp_sys_files_path/$memtest_filename" -a -e "$tmp_sys_files_path/freedos.img" ]; then
+if [ -n "$(ls -l $tmp_sys_files_path/mt86+x*.mbr 2>/dev/null)" ] && \
+   [ -e "$tmp_sys_files_path/freedos.img" ]; then
   echo "MENU END" >> $output_file
 fi
 
@@ -720,6 +744,18 @@ BOOT_MENU_END
 
 # The following depends on the image exists or not 
 
+# For memtest86+ in uEFI BIOS:
+# memtest86+x64.efi -> mt86+x64.efi
+if [ -e "$sys_files_dir/mt86+x64.efi" ]; then
+  cat <<-BOOT_MENU_END >> $output_file
+menuentry "Memtest using Memtest86+" --id memtest86+ {
+  search --no-floppy --set=root -f $sys_files_dir/mt86+x64.efi
+  linux $sys_files_dir/mt86+x64.efi
+}
+
+BOOT_MENU_END
+fi
+
 if [ -e "$tmp_sys_files_path/freedos.img" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 #menuentry "FreeDOS"{
@@ -756,6 +792,7 @@ menuentry "Network boot via iPXE" {
 
 BOOT_MENU_END
 fi
+
 #
 cat <<-BOOT_MENU_END >> $output_file
 menuentry 'uEFI firmware setup' 'uefi-firmware' {
@@ -1051,11 +1088,6 @@ case "$bg_mode" in
    *)
       MENUC32="vesamenu.c32" ;;
 esac
-
-# get memtest filename
-# We no longer to use memtest_filename="$(basename $memtest86_file)", since if the filename is too long, if it's FAT (like in USB flash drive), it will go wrong.
-# We use memtest to overwrite the one comes from Debian live
-memtest_filename="memtest"
 
 #
 case "$fb_mode" in
