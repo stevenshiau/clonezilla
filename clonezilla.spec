@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.2.7
+Version:	5.3.0
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.1.13, psmisc, udpcast, partclone >= 0.3.20, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
+Requires:	bash, perl, drbl >= 5.2.0, psmisc, udpcast, partclone >= 0.3.20, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,17 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Nov 26 2022 Steven Shiau <steven _at_ clonezilla org> 5.3.0-drbl1
+  * Support memtest86+ v6 naming & mechanism.
+    Memtest86+ v6.00 now supports legacy BIOS and uEFI booting.
+    Both x86 and x86-64 are supported, too. In DRBL/Clonezilla
+    we use shorter file name so that it works in FAT file system:
+    memtest86+.bin -> mt86+x32.mbr
+    memtest86+x32.bin -> mt86+x32.mbr
+    memtest86+x32.efi -> mt86+x32.efi
+    memtest86+x64.bin -> mt86+x64.mbr
+    memtest86+x64.efi -> mt86+x64.efi
+
 * Fri Oct 28 2022 Steven Shiau <steven _at_ clonezilla org> 5.2.7-drbl1
   * Use OWNER:GROUP, not OWNER.GROUP in chown command
 
