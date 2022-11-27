@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.0
+Version:	5.3.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Nov 27 2022 Steven Shiau <steven _at_ clonezilla org> 5.3.1-drbl1
+  * ocs-live-boot-menu: wrong path to test file if mt86+x64.efi exists or
+    not.
+
 * Sat Nov 26 2022 Steven Shiau <steven _at_ clonezilla org> 5.3.0-drbl1
   * Support memtest86+ v6 naming & mechanism.
     Memtest86+ v6.00 now supports legacy BIOS and uEFI booting.
