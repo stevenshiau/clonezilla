@@ -156,7 +156,8 @@ start_tarcker() {
   fi
   rm -f $d_file $log_file $tracker_pid_log
   # cmd_start_tracker="ocs-bttrack --port $port_b --dfile $d_file $btclient_no_opt --logfile $log_file --nat_check 0 --scrape_allowed full --allowed_dir $(dirname $(readlink -f $ocsroot_btzone/${idir}.torrent)) &"
-  cmd_start_tracker="ocs-bttrack --port $port_b --dfile $d_file $btclient_no_opt --logfile $log_file --nat_check 0 --scrape_allowed full &"
+  # cmd_start_tracker="ocs-bttrack --port $port_b --dfile $d_file $btclient_no_opt --logfile $log_file --nat_check 0 --scrape_allowed full &"
+  cmd_start_tracker="opentracker -p $port_b -d  $(dirname $(readlink -f $ocsroot_btzone/${idir}.torrent)) -w /etc/opentracker/whitelist.txt > $log_file 2>&1 &"
   # Squeeze multiple spaces to one only
   cmd_start_tracker="$(echo "$cmd_start_tracker" | sed -r -e "s|[[:space:]]+| |g")"
   echo "Start tracker by:"
@@ -393,7 +394,7 @@ stop_bt_srv() {
 
   # All
   if [ "$brutal_kill" = "no" ]; then
-    echo "Stop service: ocs-bttrack and ezio/ctorrent/lftp/btdownloadheadless/aria2c if available..."
+    echo "Stop service: opentracker and ezio/ctorrent/lftp/btdownloadheadless/aria2c if available..."
     for i in $id_file; do
       [ ! -e "$i" ] && continue
       all_pid="$all_pid $(cat $i)"
@@ -411,8 +412,8 @@ stop_bt_srv() {
       echo "No pid was found... Do nothing."
     fi
   else
-    echo "Brutally kill service ocs-bttrack and ezio/ctorrent/lftp/btdownloadheadless/aria2c if available..."
-    pkill -9 ocs-bttrack
+    echo "Brutally kill service opentracker and ezio/ctorrent/lftp/btdownloadheadless/aria2c if available..."
+    pkill -9 opentracker
     pkill -9 ezio
     pkill -9 ezio-static
     pkill -9 ctorrent
@@ -425,7 +426,7 @@ stop_bt_srv() {
 #
 show_status() {
   echo $msg_delimiter_star_line
-  ps -www -C "ocs-bttrack" -C "aria2c" -C "ctorrent" -C "lftp" -C "btdownloadheadless" -o pid,tname,cmd
+  ps -www -C "opentracker" -C "aria2c" -C "ctorrent" -C "lftp" -C "btdownloadheadless" -o pid,tname,cmd
   echo $msg_delimiter_star_line
 } # end of show_status
 
