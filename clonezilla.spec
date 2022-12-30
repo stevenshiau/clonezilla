@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.2
+Version:	5.3.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Dec 30 2022 Steven Shiau <steven _at_ clonezilla org> 5.3.3-drbl1
+  * By default the opentracker service is disabled in Clonezilla live.
+
 * Fri Dec 30 2022 Steven Shiau <steven _at_ clonezilla org> 5.3.2-drbl1
   * Replace ocs-bttrack with opentracker since python2 is not available in
     Debian Sid anymore.
