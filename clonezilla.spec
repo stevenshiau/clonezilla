@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.4
+Version:	5.3.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jan 08 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.5-drbl1
+  * Add program ocs-live-ver to show clonezilla live version. 
+
 * Sun Jan 08 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.4-drbl1
   * Improved LUKS mechanism to support multiple LUKS devices.
     Thanks to Swâmi Petaramesh for reporting this issue.
