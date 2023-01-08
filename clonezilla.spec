@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.3
+Version:	5.3.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.2.0, psmisc, udpcast, partclone >= 0.3.20, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
+Requires:	bash, perl, drbl >= 5.2.2, psmisc, udpcast, partclone >= 0.3.21, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jan 08 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.4-drbl1
+  * Improved LUKS mechanism to support multiple LUKS devices.
+    Thanks to Swâmi Petaramesh for reporting this issue.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/397/
+
 * Fri Dec 30 2022 Steven Shiau <steven _at_ clonezilla org> 5.3.3-drbl1
   * By default the opentracker service is disabled in Clonezilla live.
 
