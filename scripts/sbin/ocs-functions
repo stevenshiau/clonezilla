@@ -9156,21 +9156,17 @@ task_saveparts() {
     for id in $clted_luks_devs; do
       save_luks_dev_header $target_dir_fullpath /dev/$id 
       if [ -e "$target_dir_fullpath/luks-crypttab-from-OS.info" ]; then
-	lks_dev_map="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$partition $target_dir_fullpath from-local-dev)"
+	lks_dev_map="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$id $target_dir_fullpath from-local-dev)"
         if [ -z "$lks_dev_map" ]; then
           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-          echo "$msg_luks_mapped_name_not_found_in_this_file: $target_dir_fullpath/luks-crypttab-from-OS.info."
+          echo "$msg_luks_mapped_name_not_found_in_this_file: /dev/$id, $target_dir_fullpath/luks-crypttab-from-OS.info."
 	  echo "$msg_name_it_arbitrarily_restered_os_boot_might_fail"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 	  countdown 5
 	  echo
 	fi
       fi
-      # Mapped device name for LUKS was not found. Create one.
-      if [ -z "$lks_dev_map" ]; then
-        lks_dev_map="$(LC_ALL=C mktemp -u /dev/mapper/ocs_luks_XXX)" # e.g., /dev/mapper/ocs_luks_vQX
-      fi
-
+      lks_dev_map="$(LC_ALL=C mktemp -u /dev/mapper/ocs_luks_XXX)" # e.g., /dev/mapper/ocs_luks_vQX
       lks_dev_map_basenm="$(basename $lks_dev_map)" # e.g., ocs_luks_vQX
 
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
@@ -9681,6 +9677,7 @@ task_restoreparts() {
   # LUKS
   for partition in $target_parts; do
     # Restore LUKS headers
+    lks_mapper=""
     if [ -e "$target_dir_fullpath/${partition}-luksHeader.bin" ]; then
       echo "$msg_found_luks_dev: /dev/$partition"
       inactive_busy_luks_dev /dev/$partition
@@ -9715,6 +9712,11 @@ task_restoreparts() {
 	rc=$?
 	if [ "$rc" -eq 0 ]; then
           clted_luks_devs_map_rt="$clted_luks_devs_map_rt $lks_mapper"
+        else
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "Failed to open LUKS device /dev/$partition."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	  exit 1
 	fi
       else
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -16054,7 +16056,8 @@ extract_crypttab_from_initramfs() {
   crypttab_f=$img_d_/luks-crypttab-from-OS.info
   for id in $initrd_part; do
     if mount -o ro $id $ird_mnt 2>/dev/null; then
-      ird_f="$(find $ird_mnt -maxdepth 2 -type f \( -iname "initrd.img*" -o -iname "initramfs*.img" \) -print  | sort -Vr | uniq | head -n 1)"
+      ird_f="$(find $ird_mnt -maxdepth 2 -type f \( -iname "initrd.img*" -o -iname "initramfs*.img" \) -print |\
+	       grep -v "fallback" | sort -Vr | uniq | head -n 1)"
       if [ -n "$ird_f" ]; then
         echo -n "Extracting initramfs: $ird_f... "
 	unmkinitramfs $ird_f $extract_tmp
@@ -16070,6 +16073,11 @@ extract_crypttab_from_initramfs() {
   done
   rmdir $ird_mnt
   [ -d "$extract_tmp" -a -n "$(echo $extract_tmp | grep "extract_tmp")" ] && rm -rf $extract_tmp
+  if [ ! -e "$crypttab_f" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Not any LUKS crypttab file was found inside initramfs file."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
 } # end of extract_crypttab_from_initramfs
 #
 save_crypttab_from_os() {
