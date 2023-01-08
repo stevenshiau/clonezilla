@@ -16179,3 +16179,33 @@ check_if_in_netboot_env() {
     exit 1
   fi
 } # end of check_if_in_netboot_env
+#
+show_ocs_live_ver() {
+  # LIVE_MEDIA is global variable.
+  # First line in $LIVE_MEDIA/Clonezilla-Live-Version, e.g.,
+  # clonezilla-live-3.0.3-6-amd64
+  live_ver="$(LC_ALL=C head -n 1 $LIVE_MEDIA/Clonezilla-Live-Version | sed -e "s/clonezilla-live-//g")"
+  if [ -n "$live_ver" ]; then
+    echo "Clonezilla live version: $live_ver"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "File $LIVE_MEDIA/Clonezilla-Live-Version not found."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+} # end of show_ocs_live_ver
+#
+show_related_pkgs_ver() {
+  local installed_pkgs ipkg ipkg_ver
+  installed_pkgs=""
+  for ipkg in drbl $PKG_FROM_DRBL; do
+    ipkg_ver=""
+    ipkg_ver="$(LC_ALL=C dpkg -l $ipkg 2>/dev/null | tail -n 1 | awk -F" " '{print $2"-"$3}')"
+    [ -n $ipkg_ver ] && installed_pkgs="$installed_pkgs $ipkg_ver"
+  done
+  # Strip the leading spaces
+  installed_pkgs="$(echo $installed_pkgs | sed -r -e "s/^[[:space:]]*//g")"
+  echo "*********************************************************"
+  echo "Related packages and versions:"
+  echo "$installed_pkgs"
+  echo "*********************************************************"
+} # end of show_related_pkgs_ver
