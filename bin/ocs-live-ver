@@ -1,0 +1,72 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to list the Clonezilla live version.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+show_related_pkgs="off"
+#
+
+#
+USAGE() {
+    echo "$ocs - To check the image of Clonezilla"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION]"
+    echo
+    echo "Options:"
+    echo "-r, --related-pkgs Show related packages version, too"
+    echo
+    echo "Ex:"
+    echo "To see the Clonezilla live version, run"
+    echo "   $ocs"
+    echo
+} # end of USAGE
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -r|--related-pkgs) show_related_pkgs="on"; shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+#
+export LC_ALL=C
+ask_and_load_lang_set
+
+check_if_in_clonezilla_live # get LIVE_MEDIA
+if [ -z "$LIVE_MEDIA" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Clonezilla live boot media not found."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop!"
+  exit 1
+fi
+
+case "$show_related_pkgs" in
+  on) show_ocs_live_ver 
+      show_related_pkgs_ver ;;
+  off)
+      show_ocs_live_ver ;;
+esac
+
+exit 0
