@@ -2898,6 +2898,8 @@ do_run_update_initrd_from_restored_os() {
     fi
   elif [ -e "$mnt_pnt/usr/sbin/update-initramfs" ]; then
     initrd_tool="update-initramfs"
+  elif [ -e "$mnt_pnt/usr/sbin/mkinitcpio" ]; then
+    initrd_tool="mkinitcpio"
   fi
   case "$initrd_tool" in
     "update-initramfs")
@@ -2905,6 +2907,8 @@ do_run_update_initrd_from_restored_os() {
     "dracut")
       # Here we assign tmpdir as /tmp, since by default it's /var/tmp, but in chroot the /var might be in another partition.
       mkinitrd_cmd="dracut $tmpdir_opt -f ${initrd_2_be_updated#$mnt_pnt} $kver_initrd" ;;
+    "mkinitcpio")
+      mkinitrd_cmd=" mkinitcpio -P" ;;
     *)
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "The tool to update initramfs was NOT found in function do_run_update_initrd_from_restored_os!"
@@ -9154,6 +9158,7 @@ task_saveparts() {
     extract_crypttab_from_initramfs $target_dir_fullpath $clted_normal_devs
 
     for id in $clted_luks_devs; do
+      lks_dev_map=""
       save_luks_dev_header $target_dir_fullpath /dev/$id 
       if [ -e "$target_dir_fullpath/luks-crypttab-from-OS.info" ]; then
 	lks_dev_map="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$id $target_dir_fullpath from-local-dev)"
@@ -9166,7 +9171,11 @@ task_saveparts() {
 	  echo
 	fi
       fi
-      lks_dev_map="$(LC_ALL=C mktemp -u /dev/mapper/ocs_luks_XXX)" # e.g., /dev/mapper/ocs_luks_vQX
+      # Mapped device name for LUKS was not found. Create one.
+      if [ -z "$lks_dev_map" ]; then
+        lks_dev_map="$(LC_ALL=C mktemp -u /dev/mapper/ocs_luks_XXX)" # e.g., /dev/mapper/ocs_luks_vQX
+      fi
+
       lks_dev_map_basenm="$(basename $lks_dev_map)" # e.g., ocs_luks_vQX
 
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
@@ -9183,7 +9192,7 @@ task_saveparts() {
       fi
 
       lkuuid="$(LC_ALL=C ocs-get-dev-info /dev/$id uuid)"
-      echo "/dev/$id $lkuuid $lks_dev_map" >> $target_dir_fullpath/luks-dev.list
+      echo "/dev/$id $lkuuid $lks_dev_map_basenm" >> $target_dir_fullpath/luks-dev.list
       clted_luks_devs_map_sv="$clted_luks_devs_map_sv $lks_dev_map_basenm"
     done
     # Skip using save_crypttab_from_os. Normally the crypttab can not be found before LUKS is opened in the OS partition.
