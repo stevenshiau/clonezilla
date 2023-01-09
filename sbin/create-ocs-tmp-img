@@ -212,6 +212,36 @@ if [ -e "$LOGV_PARSE_CONF" ]; then
   done
   exec 3<&-
 fi
+
+# Part 3: LUKS
+LUKS_LIST="$ocsroot/$imgname/luks-dev.list"
+# <Block device> <UUID> <Device mapped name>
+# e.g., 
+# /dev/nvme0n1p3 d40857a5-9585-44a2-9a7d-be840ea22520 sda3_crypt
+# /dev/sda4 9c9895fc-95d8-423f-a6ef-d8769de97e57 /dev/mapper/ocs_luks_H8c
+if [ -e "$LUKS_LIST" ]; then
+  exec 3< $LUKS_LIST
+  while read -u 3 dev_ uuid_ map_dev_; do
+    ldev_found=""
+    if [ -n "$(echo "$dev_" | grep -E "^#[[:space:]]*")" ]; then
+      continue
+    fi
+    echo "dev_ uuid_ map_dev_: $dev_ $uuid_ $map_dev_"
+    map_dev_="$(basename ${map_dev_})"
+    if [ -z "$(unalias ls 2>/dev/null; ls $ocsroot/$imgname/$(to_filename $map_dev_)* 2>/dev/null)" ]; then
+      echo "$ocsroot/$imgname/${map_dev_}* was not found! Skip this!"
+      continue
+    else
+      # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
+      ldev_found="$(unalias ls 2>/dev/null; ls $ocsroot/$imgname/*$(to_filename ${map_dev_})* \
+      2>/dev/null | grep -E -v "(dd-img.info$|\.info.gz$)" | while read x; do basename $x; done | sort)"
+    fi
+    PARTIMG_LIST="$PARTIMG_LIST $ldev_found"
+  done
+  exec 3<&-
+fi
+
+# Possible LUKS files, from file luks-dev.list.
 # Softlink them
 for i in $PARTIMG_LIST $LV_LIST; do
   ( 
