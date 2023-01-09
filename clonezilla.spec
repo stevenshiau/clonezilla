@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.5
+Version:	5.3.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 09 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.6-drbl1
+  * Support mkinitcpio in updating initramfs mechanism.
+    This is for restoring Arch/Manjaro Linux.
+  * Add linking LUKS image file, not copying it.
+    Thanks to Stephen Hawes for reporting this issue.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/8757c20ada/
+
 * Sun Jan 08 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.5-drbl1
   * Add program ocs-live-ver to show clonezilla live version. 
 
