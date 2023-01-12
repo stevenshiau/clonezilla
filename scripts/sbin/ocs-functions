@@ -16141,16 +16141,19 @@ get_luks_mapped_dev_name_from_os() {
   # Function to get the LUKS's target, or the mapped device name from crypttab.
   # From man 5 crypttab, the 2nd field is the source device, can be
   # “UUID=<uuid>”, “LABEL=<label>”, “PARTUUID=<partuuid>” and “PARTLABEL=<partlabel>”
-  # e.g., the file luks-crypttab-from-OS.info is like:
+  # e.g., the file luks-crypttab-from-OS.info is like (it can be more than one line):
   # sda3_crypt UUID=d40857a5-9585-44a2-9a7d-be840ea22520 none luks,discard
+  # luks-4b6c2a59-45bc-45bc-bde6-b3403e657a71 UUID=4b6c2a59-45bc-45bc-bde6-b3403e657a71     none luks,discard
   local luks_dev_="$(format_dev_name_with_leading_dev $1)" # e.g., /dev/sda1
   local img_full_path="$2"
   local type_="$3" # from-local-dev or from-img
   local search_pat field_2nd mapped_dev
 
   # Find the search_pat in luks-crypttab-from-OS.info. It can be UUID, LABEL, PARTUUID, or PARTLABEL.
+  # //NOTE// This file might contain more than 1 lines, so uniq has to be used.
   search_pat="$(grep -Eo "^[^#].*[[:space:]]+(UUID=|LABEL=|PARTUUID=|PARTLABEL=)" \
-	        $img_full_path/luks-crypttab-from-OS.info | awk -F" " '{print $2}' | sed -r -e "s/=$//g")"
+	        $img_full_path/luks-crypttab-from-OS.info | awk -F" " '{print $2}' |\
+	       	sed -r -e "s/=$//g" | uniq)"
   case $type_ in
     from-local-dev)
       # From local device
