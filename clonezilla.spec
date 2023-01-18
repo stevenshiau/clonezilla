@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.6
+Version:	5.3.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jan 12 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.7-drbl1
+  * Try to get the Clonezilla live version no. in /live/ first.
+    Thanks to Swâmi Petaramesh.
+  * Bug fixe: The LUKS devices in crypttab of initramfs can be more than 1.
+    Thanks to Swâmi Petaramesh.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/397/
+
 * Mon Jan 09 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.6-drbl1
   * Support mkinitcpio in updating initramfs mechanism.
     This is for restoring Arch/Manjaro Linux.
