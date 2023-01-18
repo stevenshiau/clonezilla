@@ -9161,7 +9161,7 @@ task_saveparts() {
       lks_dev_map=""
       save_luks_dev_header $target_dir_fullpath /dev/$id 
       if [ -e "$target_dir_fullpath/luks-crypttab-from-OS.info" ]; then
-	lks_dev_map="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$id $target_dir_fullpath from-local-dev)"
+	lks_dev_map="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$id from-local-dev $target_dir_fullpath)"
         if [ -z "$lks_dev_map" ]; then
           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
           echo "$msg_luks_mapped_name_not_found_in_this_file: /dev/$id, $target_dir_fullpath/luks-crypttab-from-OS.info."
@@ -9695,7 +9695,7 @@ task_restoreparts() {
       # Open the LUKS devs
       # Get mapped device name from luks-crypttab-from-OS.info first. If not found, use luks-dev.list.
       if [ -e "$target_dir_fullpath/luks-crypttab-from-OS.info" ]; then
-	lks_mapper="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$partition $target_dir_fullpath from-img)"
+	lks_mapper="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$partition from-img $target_dir_fullpath)"
         if [ -z "$lks_mapper" ]; then
           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
           echo "$msg_luks_mapped_name_not_found_in_this_file: $target_dir_fullpath/luks-crypttab-from-OS.info."
@@ -16140,24 +16140,71 @@ save_crypttab_from_os() {
 get_luks_mapped_dev_name_from_os() {
   # Function to get the LUKS's target, or the mapped device name from crypttab.
   # From man 5 crypttab, the 2nd field is the source device, can be
-  # “UUID=<uuid>”, “LABEL=<label>”, “PARTUUID=<partuuid>” and “PARTLABEL=<partlabel>”
+  # source device explicitly, “UUID=<uuid>”, “LABEL=<label>”, “PARTUUID=<partuuid>” and “PARTLABEL=<partlabel>”
   # e.g., the file luks-crypttab-from-OS.info is like (it can be more than one line):
+  # cswap /dev/sda6 /dev/urandom cipher=aes-xts-plain64,size=256,hash=sha1,swap
   # sda3_crypt UUID=d40857a5-9585-44a2-9a7d-be840ea22520 none luks,discard
   # luks-4b6c2a59-45bc-45bc-bde6-b3403e657a71 UUID=4b6c2a59-45bc-45bc-bde6-b3403e657a71     none luks,discard
-  local luks_dev_="$(format_dev_name_with_leading_dev $1)" # e.g., /dev/sda1
-  local img_full_path="$2"
-  local type_="$3" # from-local-dev or from-img
+  # luks-727e6677-a4c1-4bd9-ac98-771f3bcc3589 /dev/disk/by-uuid/727e6677-a4c1-4bd9-ac98-771f3bcc3589 none discard
+  # luks_part_ is the source device to be checked for the mapped device name.
+  local luks_part_="$(format_dev_name_with_leading_dev $1)" # e.g., /dev/sda1
+  local type_="$2" # from-local-dev or from-img
+  local img_full_path="$3"
+  local target_ sdev_ key_ opt_
   local search_pat field_2nd mapped_dev
 
-  # Find the search_pat in luks-crypttab-from-OS.info. It can be UUID, LABEL, PARTUUID, or PARTLABEL.
+  # Find the search_pat in luks-crypttab-from-OS.info. It can be UUID, LABEL, PARTUUID, PARTLABEL or /dev/disk/by-uuid/...
   # //NOTE// This file might contain more than 1 lines, so uniq has to be used.
-  search_pat="$(grep -Eo "^[^#].*[[:space:]]+(UUID=|LABEL=|PARTUUID=|PARTLABEL=)" \
-	        $img_full_path/luks-crypttab-from-OS.info | awk -F" " '{print $2}' |\
-	       	sed -r -e "s/=$//g" | uniq)"
   case $type_ in
     from-local-dev)
-      # From local device
-      field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_dev_ $search_pat)" # e.g., UUID=d40857a5-9585-44a2-9a7d-be840ea22520
+      # $luks_part_ is from local device
+      while read target_ sdev_ key_ opt_; do
+	if [ -n "$(echo $target_ | grep -E "^[[:space:]]*#")" ]; then
+          # Skip comment line
+	  continue
+	fi
+	field_2nd=""
+	mapped_dev=""
+        case $sdev_ in
+          UUID=*)      field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_part_ uuid)"
+	               if [ -n "$field_2nd" ]; then
+                         mapped_dev="$(LC_ALL=C grep -Ew UUID=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+		       fi
+		       ;;
+          LABEL=*)     field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_part_ label)"
+	               if [ -n "$field_2nd" ]; then
+                         mapped_dev="$(LC_ALL=C grep -Ew LABEL=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+		       fi
+		       ;;
+          PARTUUID=*)  field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_part_ PARTUUID)"
+	               if [ -n "$field_2nd" ]; then
+                         mapped_dev="$(LC_ALL=C grep -Ew PARTUUID=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+		       fi
+		       ;;
+          PARTLABEL=*) field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_part_ PARTLABEL)"
+	               if [ -n "$field_2nd" ]; then
+                         mapped_dev="$(LC_ALL=C grep -Ew PARTLABEL=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+		       fi
+		       ;;
+	  /dev/disk/by-uuid/*)
+                       field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_part_ uuid)"
+	               if [ -n "$field_2nd" ]; then
+                         mapped_dev="$(LC_ALL=C grep -Ew /dev/disk/by-uuid/$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+		       fi
+		       ;;
+          /dev/*)
+                       mapped_dev="$(LC_ALL=C grep -Ew $luks_part_ $img_full_path/luks-crypttab-from-OS.info \
+			             2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')" ;;
+        esac
+	if [ -n "$mapped_dev" ]; then
+	  break
+	fi
+      done < $img_full_path/luks-crypttab-from-OS.info
       ;;
     from-img)
       # From the blkid.list in the image dir
@@ -16165,11 +16212,70 @@ get_luks_mapped_dev_name_from_os() {
       # /dev/sda1: UUID="6A45-3312" BLOCK_SIZE="512" TYPE="vfat" PARTLABEL="EFI System Partition" PARTUUID="ec2938ac-93c6-4e04-825d-efc9a40f3294"
       # /dev/sda2: UUID="97092124-0ba2-4911-83b6-a11427f6d6ad" BLOCK_SIZE="4096" TYPE="ext4" PARTUUID="0c9d419b-d05a-449b-b317-4c60f4935cbe"
       # /dev/sda3: UUID="d40857a5-9585-44a2-9a7d-be840ea22520" TYPE="crypto_LUKS" PARTUUID="159c02bd-7098-40f5-a02f-49ae0f42fa8a"
-      field_2nd="$(grep -Ew $luks_dev_ $img_full_path/blkid.list | grep -Eo "[[:space:]]+${search_pat}=[^[:space:]]+" | sed -r -e "s|[[:space:]]*${search_pat}=||" -e "s/\"//g")"
+      # $luks_part_ is from image
+      while read target_ sdev_ key_ opt_; do
+	if [ -n "$(echo $target_ | grep -E "^[[:space:]]*#")" ]; then
+          # Skip comment line
+	  continue
+	fi
+	field_2nd=""
+	mapped_dev=""
+        case $sdev_ in
+          UUID=*)      field_2nd="$(grep -Ew $luks_part_ $img_full_path/blkid.list | \
+		       grep -Eo "[[:space:]]+UUID=[^[:space:]]+" | \
+		       sed -r -e "s|[[:space:]]*UUID=||" -e "s/\"//g")"
+	               if [ -n "$field_2nd" ]; then
+                         mapped_dev="$(LC_ALL=C grep -Ew UUID=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+		       fi
+		       ;;
+          LABEL=*)     field_2nd="$(grep -Ew $luks_part_ $img_full_path/blkid.list | \
+		       grep -Eo "[[:space:]]+LABEL=[^[:space:]]+" | \
+		       sed -r -e "s|[[:space:]]*LABEL=||" -e "s/\"//g")"
+	               if [ -n "$field_2nd" ]; then
+                         mapped_dev="$(LC_ALL=C grep -Ew LABEL=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+		       fi
+		       ;;
+          PARTUUID=*)  field_2nd="$(grep -Ew $luks_part_ $img_full_path/blkid.list | \
+		       grep -Eo "[[:space:]]+PARTUUID=[^[:space:]]+" | \
+		       sed -r -e "s|[[:space:]]*PARTUUID=||" -e "s/\"//g")"
+	               if [ -n "$field_2nd" ]; then
+                         mapped_dev="$(LC_ALL=C grep -Ew PARTUUID=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+		       fi
+		       ;;
+          PARTLABEL=*) field_2nd="$(grep -Ew $luks_part_ $img_full_path/blkid.list | \
+		       grep -Eo "[[:space:]]+PARTLABEL=[^[:space:]]+" | \
+		       sed -r -e "s|[[:space:]]*PARTLABEL=||" -e "s/\"//g")"
+	               if [ -n "$field_2nd" ]; then
+                         mapped_dev="$(LC_ALL=C grep -Ew PARTLABEL=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+		       fi
+		       ;;
+	  /dev/disk/by-uuid/*)
+                       field_2nd="$(grep -Ew $luks_part_ $img_full_path/blkid.list | \
+		       grep -Eo "[[:space:]]+UUID=[^[:space:]]+" | \
+		       sed -r -e "s|[[:space:]]*UUID=||" -e "s/\"//g")"
+	               if [ -n "$field_2nd" ]; then
+                         mapped_dev="$(LC_ALL=C grep -Ew /dev/disk/by-uuid/$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+		       fi
+		       ;;
+          /dev/*)
+	               if [ -n "$field_2nd" ]; then
+                         mapped_dev="$(LC_ALL=C grep -Ew $luks_part_ $img_full_path/luks-crypttab-from-OS.info \
+				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
+		       fi
+		       ;;
+        esac
+	if [ -n "$mapped_dev" ]; then
+	  break
+	fi
+      done < $img_full_path/luks-crypttab-from-OS.info
       ;;
   esac
 
-  mapped_dev="$(LC_ALL=C grep -Ew $search_pat=$field_2nd $img_full_path/luks-crypttab-from-OS.info 2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
   echo $mapped_dev
 } # end of get_luks_mapped_dev_name_from_os
 #
