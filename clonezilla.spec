@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.10
+Version:	5.3.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 23 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.11-drbl1
+  * Exclude kdump and rescue initrams when seeking cryttab.
+
 * Mon Jan 23 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.10-drbl1
   * ocs-chkimg: check the LUKS swap device info instead of dd image.
 
