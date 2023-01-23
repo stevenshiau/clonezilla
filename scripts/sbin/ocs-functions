@@ -16007,7 +16007,7 @@ check_if_luks_dev_exists_do_jobs() {
 #
 save_luks_dev_fs(){
   local lks_maps_sv="$*"  # e.g., ocs_luks_XYO ocs_luks_ABX
-  local clted_luks_devs_pv_sv
+  local clted_luks_devs_pv_sv LUKS_F
 
   for id in $lks_maps_sv; do
     # device mapper on the LUKS partition.
@@ -16016,7 +16016,13 @@ save_luks_dev_fs(){
       clted_luks_devs_pv_sv="$clted_luks_devs_pv_sv $id"
       continue
     fi
-    image_save /dev/mapper/$id $target_dir_fullpath $id
+    # If it's swap, save UUID and label only.
+    LUKS_F="$(LC_ALL=C ocs-get-dev-info "/dev/mapper/$id" type filesystem 2>/dev/null)"
+    if [ -n "$(echo $LUKS_F | grep -Eiw "swap")" ]; then
+      output_swap_partition_uuid_label /dev/mapper/$id $target_dir_fullpath/swappt-$(to_filename ${id}).info
+    else
+      image_save /dev/mapper/$id $target_dir_fullpath $id
+    fi
     rc_savepts="$(($rc_savepts + $?))"
   done
 
@@ -16033,6 +16039,7 @@ save_luks_dev_fs(){
 restore_luks_dev_fs(){
   local lks_maps_rt="$*"  # e.g., ocs_luks_XYO ocs_luks_ABX
   local clted_luks_devs_pv_rt
+  local fn uuid_opt label_opt LUKS_F mkswap_cmd
   # target_dir_fullpath, net_mode, port are global variables
   for id in $lks_maps_rt; do
     if grep -qsEw /dev/mapper/$id "$target_dir_fullpath/lvm_vg_dev.list"; then
@@ -16040,7 +16047,36 @@ restore_luks_dev_fs(){
       clted_luks_devs_pv_rt="$clted_luks_devs_pv_rt mapper/$id"
       continue
     fi
-    do_unicast_stdin_restore $target_dir_fullpath "$id" "mapper/$id"
+    # The data in the file dev-fs.list is like:
+    # <Device name>   <File system>   <Size>
+    # File system is got from ocs-get-dev-info. It might be different from that of blkid or parted.
+    # /dev/nvme0n1p1 vfat 297M
+    # /dev/nvme0n1p2 ext4 1G
+    # /dev/mapper/ocs_luks_Xg4 swap 472.3M
+    # /dev/mapper/luks-73ad2e74-b444-461d-9676-6061cbfc1276 btrfs 18.2G
+    # If it's swap, save UUID and label only.
+    LUKS_F="$(grep -Eo "^/dev/mapper/$id[[:space:]]+swap[[:space:]]+" $target_dir_fullpath/dev-fs.list 2>/dev/null)"
+    if [ -n "$LUKS_F" ]; then
+      echo $msg_delimiter_star_line
+      echo "Found the swap partition /dev/mapper/$id info, create it by:"
+      fn="$(to_filename $id)"
+      # read LABEL, UUID info for $partition if swappt-${fn}.info exists
+      uuid_opt=""
+      label_opt=""
+      if [ -e "$target_dir_fullpath/swappt-${fn}.info" ]; then
+        UUID=""
+        LABEL=""
+        . "$target_dir_fullpath/swappt-${fn}.info"
+        [ -n "$UUID" ] && uuid_opt="-U $UUID"
+        [ -n "$LABEL" ] && label_opt="-L $LABEL"
+      fi
+      mkswap_cmd="mkswap $label_opt $uuid_opt /dev/mapper/$id"
+      echo $mkswap_cmd
+      eval $mkswap_cmd
+      echo $msg_delimiter_star_line
+    else
+      do_unicast_stdin_restore $target_dir_fullpath "$id" "mapper/$id"
+    fi
     rc_restorepts="$(($rc_restorepts + $?))"
   done
 
