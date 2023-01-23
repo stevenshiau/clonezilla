@@ -354,7 +354,7 @@ task_logv_check() {
 #
 task_luks_img_check() {
   local lks_maps_rt="$*"  # e.g., ocs_luks_XYO ocs_luks_ABX
-  local clted_luks_devs_pv_rt rc rcp rcplv
+  local clted_luks_devs_pv_rt rc rcp rcplv LUKS_F
 
   rcp=0
   for id in $lks_maps_rt; do
@@ -363,7 +363,26 @@ task_luks_img_check() {
       clted_luks_devs_pv_rt="$clted_luks_devs_pv_rt mapper/$id"
       continue
     fi
-    do_partition_or_lv_img_check $target_dir_fullpath $id
+    # If swap, check swap info
+    LUKS_F="$(grep -Eo "^/dev/mapper/$id[[:space:]]+swap[[:space:]]+" $target_dir_fullpath/dev-fs.list 2>/dev/null)"
+    if [ -n "$LUKS_F" ]; then
+      echo $msg_delimiter_star_line
+      fn="$(to_filename $id)"
+      if [ -e "$target_dir_fullpath/swappt-${fn}.info" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Found the swap partition /dev/mapper/$id info file \"$target_dir_fullpath/swappt-${fn}.info\"."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo $msg_delimiter_star_line
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "The swap partition /dev/mapper/$id info file \"$target_dir_fullpath/swappt-${fn}.info\" was not found."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	sleep 2
+      fi
+      echo $msg_delimiter_star_line
+    else
+      do_partition_or_lv_img_check $target_dir_fullpath $id
+    fi
     rc=$?
     rcp="$(($rcp + $rc))"
   done
