@@ -16057,23 +16057,28 @@ restore_luks_dev_fs(){
     # If it's swap, save UUID and label only.
     LUKS_F="$(grep -Eo "^/dev/mapper/$id[[:space:]]+swap[[:space:]]+" $target_dir_fullpath/dev-fs.list 2>/dev/null)"
     if [ -n "$LUKS_F" ]; then
-      echo $msg_delimiter_star_line
-      echo "Found the swap partition /dev/mapper/$id info, create it by:"
       fn="$(to_filename $id)"
       # read LABEL, UUID info for $partition if swappt-${fn}.info exists
       uuid_opt=""
       label_opt=""
       if [ -e "$target_dir_fullpath/swappt-${fn}.info" ]; then
+        echo $msg_delimiter_star_line
+        echo "Found the swap partition /dev/mapper/$id info, create it by:"
         UUID=""
         LABEL=""
         . "$target_dir_fullpath/swappt-${fn}.info"
         [ -n "$UUID" ] && uuid_opt="-U $UUID"
         [ -n "$LABEL" ] && label_opt="-L $LABEL"
+        mkswap_cmd="mkswap $label_opt $uuid_opt /dev/mapper/$id"
+        echo $mkswap_cmd
+        eval $mkswap_cmd
+        echo $msg_delimiter_star_line
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "The swap partition /dev/mapper/$id info file \"$target_dir_fullpath/swappt-${fn}.info\" was not found."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	sleep 2
       fi
-      mkswap_cmd="mkswap $label_opt $uuid_opt /dev/mapper/$id"
-      echo $mkswap_cmd
-      eval $mkswap_cmd
-      echo $msg_delimiter_star_line
     else
       do_unicast_stdin_restore $target_dir_fullpath "$id" "mapper/$id"
     fi
