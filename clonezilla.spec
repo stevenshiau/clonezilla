@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.11
+Version:	5.3.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 23 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.12-drbl1
+  * Bug fixed: option -fsck-y failed to run.
+    Thanks to Dupuis for reporting this.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/401/
+
 * Mon Jan 23 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.11-drbl1
   * Exclude kdump and rescue initrams when seeking cryttab.
 
