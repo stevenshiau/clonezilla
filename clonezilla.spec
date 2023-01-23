@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.8
+Version:	5.3.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.2.2, psmisc, udpcast, partclone >= 0.3.21, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
+Requires:	bash, perl, drbl >= 5.2.2, psmisc, udpcast, partclone >= 0.3.22, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 23 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.9-drbl1
+  * LUKS swap device should keep UUID and label only, not using dd mode.
+    Thanks to Swâmi Petaramesh for reporting this.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/400/
+
 * Wed Jan 18 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.8-drbl1
   * Improve get_luks_mapped_dev_name_from_os of ocs-functions. Support more
     device format in crypttab.
