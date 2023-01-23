@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.9
+Version:	5.3.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jan 23 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.10-drbl1
+  * ocs-chkimg: check the LUKS swap device info instead of dd image.
+
 * Mon Jan 23 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.9-drbl1
   * LUKS swap device should keep UUID and label only, not using dd mode.
     Thanks to Swâmi Petaramesh for reporting this.
