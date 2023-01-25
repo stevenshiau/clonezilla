@@ -179,12 +179,12 @@ _EOT_
 } # end of img_check_by_partclone
 #
 do_partition_or_lv_img_check() {
-  # part is like: /dev/hda1
   local target_d="$1"
-  local img_file="$(to_filename $2)"
-  local rc hdtmp partition
-  image_name_="$(basename $target_d)"
-  # get the cat program: cat, zcat or bzcat
+  local part="$2" # e.g., /dev/sda1
+  local pt_swap rc img_file partition
+
+  img_file="$(to_filename $part)"
+  pt_swap="$(grep -Eo "^/dev/$part[[:space:]]+swap[[:space:]]+" $target_d/dev-fs.list 2>/dev/null)"
 
   if [ -f "$target_d/$img_file.000" -o \
        -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" -o \
@@ -264,13 +264,22 @@ do_partition_or_lv_img_check() {
       fi
     fi
   else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "This image file for partition $img_file was not found!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    rc=1
-    if [ "$ocs_batch_mode" != "on" ]; then
-      echo -n "$msg_press_enter_to_continue..."
-      read
+    # The last possibility is the swap info file.
+    if [ -n "$pt_swap" ]; then
+        task_check_swap_info_file $target_d $part
+        rc=$?
+        if [ "$rc" -eq 0 ]; then
+          return 0
+        fi
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "This image file for partition $img_file was not found!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      rc=1
+      if [ "$ocs_batch_mode" != "on" ]; then
+        echo -n "$msg_press_enter_to_continue..."
+        read
+      fi
     fi
   fi
 
@@ -352,9 +361,32 @@ task_logv_check() {
   return $rctlv
 } # end of task_logv_check
 #
+task_check_swap_info_file() {
+  local tgt_dir_fp="$1"
+  local idev="$2"
+  local fn rc
+  echo $msg_delimiter_star_line
+  fn="$(to_filename $idev)"
+  if [ -e "$tgt_dir_fp/swappt-${fn}.info" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Found the swap partition /dev/mapper/$idev info file \"$tgt_dir_fp/swappt-${fn}.info\"."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo $msg_delimiter_star_line
+    rc=0
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "The swap partition /dev/mapper/$idev info file \"$tgt_dir_fp/swappt-${fn}.info\" was not found."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    sleep 2
+    rc=1
+  fi
+  echo $msg_delimiter_star_line
+  return $rc
+} # end of task_check_swap_info_file
+#
 task_luks_img_check() {
   local lks_maps_rt="$*"  # e.g., ocs_luks_XYO ocs_luks_ABX
-  local clted_luks_devs_pv_rt rc rcp rcplv LUKS_F
+  local clted_luks_devs_pv_rt rc rcp rcplv
 
   rcp=0
   for id in $lks_maps_rt; do
@@ -363,26 +395,7 @@ task_luks_img_check() {
       clted_luks_devs_pv_rt="$clted_luks_devs_pv_rt mapper/$id"
       continue
     fi
-    # If swap, check swap info
-    LUKS_F="$(grep -Eo "^/dev/mapper/$id[[:space:]]+swap[[:space:]]+" $target_dir_fullpath/dev-fs.list 2>/dev/null)"
-    if [ -n "$LUKS_F" ]; then
-      echo $msg_delimiter_star_line
-      fn="$(to_filename $id)"
-      if [ -e "$target_dir_fullpath/swappt-${fn}.info" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "Found the swap partition /dev/mapper/$id info file \"$target_dir_fullpath/swappt-${fn}.info\"."
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo $msg_delimiter_star_line
-      else
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "The swap partition /dev/mapper/$id info file \"$target_dir_fullpath/swappt-${fn}.info\" was not found."
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	sleep 2
-      fi
-      echo $msg_delimiter_star_line
-    else
-      do_partition_or_lv_img_check $target_dir_fullpath $id
-    fi
+    do_partition_or_lv_img_check $target_dir_fullpath $id
     rc=$?
     rcp="$(($rcp + $rc))"
   done
@@ -404,7 +417,7 @@ task_checkimage() {
   local target_dir="$1"
   local target_parts="$2"
   local parts_included target_dir_fullpath
-  local p_type rc rct part_is_lvm ecryptfs_rc
+  local p_type rc rct part_is_lvm ecryptfs_rc pt_swap
 
   if [ "$target_dir" = "ask_user" ]; then
     get_target_dir_name_when_checking_img_restorable # output: target_dir
@@ -573,7 +586,7 @@ task_checkimage() {
       esac
     done
   else
-    echo "This is not an image for whole disk. Skip checking swap partition info..." | tee --append ${OCS_LOGFILE}
+    echo "This is not an image for whole disk. Swap partition info file might not be checked..." | tee --append ${OCS_LOGFILE}
   fi
 
   echo $msg_delimiter_star_line
