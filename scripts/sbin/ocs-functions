@@ -1189,7 +1189,10 @@ output_swap_partition_uuid_label() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
   sp_size="$(ocs-get-dev-info $swap_dev size 2>/dev/null)"
-  echo "$swap_dev swap $sp_size" >> "$(LC_ALL=C dirname $output_swap_info)"/dev-fs.list
+  if [ -z "$(grep -Eo "^$swap_dev swap $sp_size" "$(LC_ALL=C dirname $output_swap_info)"/dev-fs.list)" ]; then
+    # Avoid duplicated one.
+    echo "$swap_dev swap $sp_size" >> "$(LC_ALL=C dirname $output_swap_info)"/dev-fs.list
+  fi
   echo $msg_delimiter_star_line
 } # end of output_swap_partition_uuid_label
 #
@@ -1785,17 +1788,33 @@ image_save() {
       save_part_by_partclone dd
     elif [ "$USE_NTFSCLONE" = "yes" -a "$part_fs" = "ntfs" ]; then
       # case (1): ntfsclone is preferred
-      save_part_by_ntfsclone
+      if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
+	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_filename $(basename $source_dev)).info
+      else
+        save_part_by_ntfsclone
+      fi
     elif [ "$USE_PARTCLONE" = "yes" ] && `is_partclone_support_fs $part_fs`; then
       # case (2): partclone is preferred
-      save_part_by_partclone $part_fs
+      if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
+	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_filename $(basename $source_dev)).info
+      else
+        save_part_by_partclone $part_fs
+      fi
     elif `is_partimage_support_fs $part_fs`; then
       # case (3): partimage supported filesystem, we can use partimage to save it.
-      save_part_by_partimage
+      if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
+	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_filename $(basename $source_dev)).info
+      else
+        save_part_by_partimage
+      fi
     else
-      # case (4): not supported filesystem, the last choice is to use dd to dump.
+      # case (4): not supported filesystem, the last choice is to use dd to dump, unless it's swap.
       # save_part_by_dd
-      save_part_by_partclone dd
+      if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
+	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_filename $(basename $source_dev)).info
+      else
+        save_part_by_partclone dd
+      fi
     fi
     rc=$?
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
@@ -4403,7 +4422,7 @@ get_disk_or_part_hardware_info() {
     # No more using "continue" in this function.
     # Because >= bash 4.4 raises it as a warning, and then continue won't be run.
     [ "$rc" -gt 0 ] && return 8
-    [ -n "$(echo $part_type | grep -Eiw "(swap|extended|0x5|0xf)")" ] && return 8
+    [ -n "$(echo $part_type | grep -Eiw "(extended|0x5|0xf)")" ] && return 8
     if [ "$flag_skip_lvm" = "yes" ]; then
       [ -n "$(echo "$part_type" | grep -Ei "LVM")" ] && return 8
     fi
@@ -4595,9 +4614,12 @@ get_not_busy_disks_or_parts() {
 
   echo -n "Finding all disks and partitions.."
   case "$dev_type" in
-    harddisk|device)  
+    harddisk)
       dsk_list="$(get_disk_list $partition_table)" ;;
-    partition|device)
+    partition)
+      prt_list="$(get_part_list $partition_table)" ;;
+    device)
+      dsk_list="$(get_disk_list $partition_table)"
       prt_list="$(get_part_list $partition_table)" ;;
   esac
   echo
@@ -4773,7 +4795,7 @@ get_input_dev_name() {
           FILE="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem 2>/dev/null)"
           rc=$?
           if [ "$rc" = "0" ]; then
-            [ -n "$(echo $FILE | grep -Eiw "(swap|extended|0x5|0xf)")" ] && continue
+            [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue
           fi
 	  if [ "$skip_lvm" = "yes" ]; then
             # We should not skip LVM if the device is whole block disk (e.g., /dev/sdb which is PV)
@@ -4844,7 +4866,7 @@ get_input_dev_name() {
        FILE="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem 2>/dev/null)"
        rc=$?
        if [ "$rc" = "0" ]; then
-         [ -n "$(echo $FILE | grep -Eiw "(swap|extended|0x5|0xf)")" ] && continue
+         [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue
        fi
        if [ "$skip_lvm" = "yes" ]; then
          # We should not skip LVM if the device is whole block disk (e.g., /dev/sdb which is PV)
@@ -6170,12 +6192,14 @@ do_unicast_stdin_restore() {
   local target_d="$1"
   local img_file="$(to_filename $2)"
   local part="$(format_dev_name_with_leading_dev $3)"  # part is like /dev/sda1
-  local start_time end_time image_name_ split_by dd_report_sig_pid part_size hdtmp pt_type
+  local start_time end_time image_name_ split_by dd_report_sig_pid part_size hdtmp pt_type pt_swap fn
   # if the report_msg is empty, put the initial one: image_name_
   image_name_="$(basename $target_d)"
   [ -z "$report_msg" ] && report_msg="Unicast restored $image_name_,"
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   check_if_dev_busy $part
+
+  pt_swap="$(grep -Eo "^$part[[:space:]]+swap[[:space:]]+" $target_d/dev-fs.list 2>/dev/null)"
 
   echo $msg_delimiter_star_line
   # time_elapsed, time_elapsed_in_min and speed are global variables
@@ -6199,6 +6223,27 @@ do_unicast_stdin_restore() {
     # The saved image is from dd
     clean_filesystem_header_in_dev $part
     unicast_restore_by_dd
+  elif [ -n "$pt_swap" ]; then
+    # If the partition is swap, which only UUID/label was saved in the image.
+    fn="$(to_filename $(basename $part))"
+    if [ -e "$target_d/swappt-${fn}.info" ]; then
+      echo $msg_delimiter_star_line
+      echo "Found the swap partition $part info, create it by:"
+      UUID=""
+      LABEL=""
+      . "$target_d/swappt-${fn}.info"
+      [ -n "$UUID" ] && uuid_opt="-U $UUID"
+      [ -n "$LABEL" ] && label_opt="-L $LABEL"
+      mkswap_cmd="mkswap $label_opt $uuid_opt $part"
+      echo $mkswap_cmd
+      eval $mkswap_cmd
+      echo $msg_delimiter_star_line
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "The swap partition $part info file \"$target_d/swappt-${fn}.info\" was not found."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      sleep 2
+    fi
   fi
   echo "Finished unicast restoring image ${target_d##*/} to $part." | tee --append ${OCS_LOGFILE}
   sleep 1
