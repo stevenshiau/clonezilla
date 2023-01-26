@@ -180,11 +180,11 @@ _EOT_
 #
 do_partition_or_lv_img_check() {
   local target_d="$1"
-  local part="$2" # e.g., /dev/sda1
+  local img_file="$(to_filename $2)"
+  local part="$(format_dev_name_with_leading_dev $3)"  # part is like /dev/sda1, /dev/mapper/ocs_luks_UbO
   local pt_swap rc img_file partition
 
-  img_file="$(to_filename $part)"
-  pt_swap="$(grep -Eo "^/dev/$part[[:space:]]+swap[[:space:]]+" $target_d/dev-fs.list 2>/dev/null)"
+  pt_swap="$(grep -Eo "^$part[[:space:]]+swap[[:space:]]+" $target_d/dev-fs.list 2>/dev/null)"
 
   if [ -f "$target_d/$img_file.000" -o \
        -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" -o \
@@ -328,7 +328,7 @@ task_logv_check() {
    done
    # If not in the chosen partition, skip this, continue with the next.
    [ "$is_in_chosen_partition" = "no" ] && continue
-   fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
+   fn="$(to_ocs_dev_img_name $lv)"
    # create the swap if it's swap partition
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*)
@@ -363,19 +363,19 @@ task_logv_check() {
 #
 task_check_swap_info_file() {
   local tgt_dir_fp="$1"
-  local idev="$2"
+  local idev="$2" # e.g., /dev/sda1, /dev/mapper/ocs_luks_UbO
   local fn rc
   echo $msg_delimiter_star_line
-  fn="$(to_filename $idev)"
+  fn="$(to_ocs_dev_img_name $idev)"
   if [ -e "$tgt_dir_fp/swappt-${fn}.info" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Found the swap partition /dev/mapper/$idev info file \"$tgt_dir_fp/swappt-${fn}.info\"."
+    echo "Found the swap partition $idev info file \"$tgt_dir_fp/swappt-${fn}.info\"."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo $msg_delimiter_star_line
     rc=0
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The swap partition /dev/mapper/$idev info file \"$tgt_dir_fp/swappt-${fn}.info\" was not found."
+    echo "The swap partition $idev info file \"$tgt_dir_fp/swappt-${fn}.info\" was not found."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     sleep 2
     rc=1
@@ -395,7 +395,7 @@ task_luks_img_check() {
       clted_luks_devs_pv_rt="$clted_luks_devs_pv_rt mapper/$id"
       continue
     fi
-    do_partition_or_lv_img_check $target_dir_fullpath $id
+    do_partition_or_lv_img_check $target_dir_fullpath "$id" "mapper/$id"
     rc=$?
     rcp="$(($rcp + $rc))"
   done
@@ -626,6 +626,7 @@ task_checkimage() {
   do_LUKS_check="no"
   rct=0
   for partition in $target_parts; do
+    lks_mapper=""
     # sda1 -> sda
     hd_tmp="$(get_diskname $partition)"
     part_is_lvm="no"
@@ -683,7 +684,7 @@ task_checkimage() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Checking the partition $partition in the image \"$target_dir\"..."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    do_partition_or_lv_img_check $target_dir_fullpath $partition
+    do_partition_or_lv_img_check $target_dir_fullpath $partition /dev/$partition
     rc=$?
     rct="$(($rct + $rc))"
   done
