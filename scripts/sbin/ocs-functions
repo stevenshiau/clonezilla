@@ -1161,7 +1161,8 @@ trigger_dd_status_report() {
 output_swap_partition_uuid_label() {
   local swap_dev="$1"
   local output_swap_info="$2"
-  local sp_szie
+  local sp_szie swap_path
+  swap_path="$(LC_ALL=C dirname $output_swap_info)"
   # save the UUID/LABEL of swap partition so that we can create the same one in the future.
   # The result of blkid is like:
   # blkid /dev/hda5
@@ -1172,7 +1173,7 @@ output_swap_partition_uuid_label() {
   # about LABEL (used in FC):
   # /dev/sda3: TYPE="swap" LABEL="SWAP-sda3"
   if type blkid &>/dev/null; then
-    echo "Saving swap $swap_dev info in $output_swap_info..."
+    echo -n "Saving swap $swap_dev info in $output_swap_info... "
     blkinfo="$(mktemp /tmp/blkinfo.XXXXXX)"
     LC_ALL=C blkid -c /dev/null $swap_dev | grep -o -E '\<UUID="[^[:space:]]*"($|[[:space:]]+)' > $blkinfo
     LC_ALL=C blkid -c /dev/null $swap_dev | grep -o -E '\<LABEL="[^[:space:]]*"($|[[:space:]]+)' >> $blkinfo
@@ -1183,15 +1184,18 @@ output_swap_partition_uuid_label() {
     echo "UUID=\"$UUID\"" > $output_swap_info
     echo "LABEL=\"$LABEL\"" >> $output_swap_info
     [ -e "$blkinfo" ] && rm -f $blkinfo
+    echo "done!"
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Program blkid is NOT found! Without it, we can not find the UUID of swap partition! In some GNU/Linux, if it's /etc/fstab is based on UUID, swap partition maybe not be on after it's cloned! Since the swap partition is recreated by mkswap!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
   sp_size="$(ocs-get-dev-info $swap_dev size 2>/dev/null)"
-  if [ -z "$(grep -Eo "^$swap_dev swap $sp_size" "$(LC_ALL=C dirname $output_swap_info)"/dev-fs.list)" ]; then
+  if [ -z "$(grep -Eo "^$swap_dev swap $sp_size" $swap_path/dev-fs.list)" ]; then
     # Avoid duplicated one.
-    echo "$swap_dev swap $sp_size" >> "$(LC_ALL=C dirname $output_swap_info)"/dev-fs.list
+    echo "Writing swap info to $swap_path/dev-fs.list... "
+    echo "$swap_dev swap $sp_size" >> $swap_path/dev-fs.list
+    echo "done!"
   fi
   echo $msg_delimiter_star_line
 } # end of output_swap_partition_uuid_label
@@ -1789,21 +1793,21 @@ image_save() {
     elif [ "$USE_NTFSCLONE" = "yes" -a "$part_fs" = "ntfs" ]; then
       # case (1): ntfsclone is preferred
       if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
-	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_filename $(basename $source_dev)).info
+	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info
       else
         save_part_by_ntfsclone
       fi
     elif [ "$USE_PARTCLONE" = "yes" ] && `is_partclone_support_fs $part_fs`; then
       # case (2): partclone is preferred
       if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
-	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_filename $(basename $source_dev)).info
+	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info
       else
         save_part_by_partclone $part_fs
       fi
     elif `is_partimage_support_fs $part_fs`; then
       # case (3): partimage supported filesystem, we can use partimage to save it.
       if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
-	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_filename $(basename $source_dev)).info
+	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info
       else
         save_part_by_partimage
       fi
@@ -1811,7 +1815,7 @@ image_save() {
       # case (4): not supported filesystem, the last choice is to use dd to dump, unless it's swap.
       # save_part_by_dd
       if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
-	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_filename $(basename $source_dev)).info
+	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info
       else
         save_part_by_partclone dd
       fi
@@ -6191,7 +6195,7 @@ multicast_restore_by_dd() {
 do_unicast_stdin_restore() {
   local target_d="$1"
   local img_file="$(to_filename $2)"
-  local part="$(format_dev_name_with_leading_dev $3)"  # part is like /dev/sda1
+  local part="$(format_dev_name_with_leading_dev $3)"  # part is like /dev/sda1, /dev/centos/root, /dev/mapper/ocs_ZYX
   local start_time end_time image_name_ split_by dd_report_sig_pid part_size hdtmp pt_type pt_swap fn
   # if the report_msg is empty, put the initial one: image_name_
   image_name_="$(basename $target_d)"
@@ -6225,7 +6229,7 @@ do_unicast_stdin_restore() {
     unicast_restore_by_dd
   elif [ -n "$pt_swap" ]; then
     # If the partition is swap, which only UUID/label was saved in the image.
-    fn="$(to_filename $(basename $part))"
+    fn="$(to_ocs_dev_img_name $part)"
     if [ -e "$target_d/swappt-${fn}.info" ]; then
       echo $msg_delimiter_star_line
       echo "Found the swap partition $part info, create it by:"
@@ -7015,7 +7019,7 @@ save_logv() {
   exec 3< $LOGV_PARSE_CONF
   while read -u 3 lv fs; do
    [ ! -e "$lv" ] && continue
-   fn="$(to_filename ${lv#/dev/*})"
+   fn="$(to_ocs_dev_img_name $lv)"
    echo "Saving $lv as filename: $fn. $lv info: $fs" | tee --append $OCS_LOGFILE
    # skip swap or extended partition
    case "$fs" in 
@@ -7200,7 +7204,7 @@ restore_logv() {
    # If not in the chosen partition, skip this, continue with the next.
    [ "$is_in_chosen_partition" = "no" ] && continue
    # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
-   fn="$(to_filename ${lv#/dev/*})"
+   fn="$(to_ocs_dev_img_name $lv)"
    # Log the logical volume which is restored. The leading "/dev/" is removed, i.e. the results might be: lucid-server/root lucid-server/usr
    target_logv="$target_logv ${lv#/dev/*}"
    # create the swap if it's swap partition
@@ -7385,7 +7389,7 @@ feed_LVM_multicast() {
    done
    [ "$is_in_chosen_partition" = "no" ] && continue
    # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
-   fn="$(to_filename ${lv#/dev/*})"
+   fn="$(to_ocs_dev_img_name $lv)"
    # Skip feeding swap
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*) continue;; 
@@ -7449,7 +7453,7 @@ feed_bittorrent_LVM() {
    done
    [ "$is_in_chosen_partition" = "no" ] && continue
    # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
-   fn="$(to_filename ${lv#/dev/*})"
+   fn="$(to_ocs_dev_img_name $lv)"
    # Skip feeding swap
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*) continue;; 
@@ -10125,7 +10129,7 @@ task_restoreparts() {
       while read -u 3 lv fs; do
        [ ! -e $lv ] && continue
        # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
-       fn="$(to_filename ${lv#/dev/*})"
+       fn="$(to_ocs_dev_img_name $lv)"
        # Log the logical volume which is restored. The leading "/dev/" is removed, i.e. the results might be: lucid-server/root lucid-server/usr
        target_logv="$target_logv ${lv#/dev/*}"
        case "$fs" in 
@@ -14705,7 +14709,7 @@ create_LVM_bt_image_files_from_partclone_img() {
    done
    [ "$is_in_chosen_partition" = "no" ] && continue
    # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
-   fn="$(to_filename ${lv#/dev/*})"
+   fn="$(to_ocs_dev_img_name $lv)"
    # Skip feeding swap
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*) continue;; 
@@ -15611,7 +15615,7 @@ onthefly_receive_partition_or_lv_in_client() {
       # if it's swap, output the labe and uuid only.
       case "$fs" in 
         *[Ss][Ww][Aa][Pp]*)
-          fn="$(echo $lv | sed -e "s|^/dev/||" -e "s|/|-|g")"
+          fn="$(to_ocs_dev_img_name $lv)"
           echo "Found the swap partition $lv, create it by:"
           # read LABEL, UUID info for $partition if swappt-${fn}.info exists
           uuid_opt=""
@@ -16119,7 +16123,7 @@ save_luks_dev_fs(){
     # If it's swap, save UUID and label only.
     LUKS_F="$(LC_ALL=C ocs-get-dev-info "/dev/mapper/$id" type filesystem 2>/dev/null)"
     if [ -n "$(echo $LUKS_F | grep -Eiw "swap")" ]; then
-      output_swap_partition_uuid_label /dev/mapper/$id $target_dir_fullpath/swappt-$(to_filename ${id}).info
+      output_swap_partition_uuid_label /dev/mapper/$id $target_dir_fullpath/swappt-$(to_ocs_dev_img_name /dev/mapper/$id).info
     else
       image_save /dev/mapper/$id $target_dir_fullpath $id
     fi
@@ -16157,7 +16161,7 @@ restore_luks_dev_fs(){
     # If it's swap, save UUID and label only.
     LUKS_F="$(grep -Eo "^/dev/mapper/$id[[:space:]]+swap[[:space:]]+" $target_dir_fullpath/dev-fs.list 2>/dev/null)"
     if [ -n "$LUKS_F" ]; then
-      fn="$(to_filename $id)"
+      fn="$(to_ocs_dev_img_name /dev/mapper/$id)"
       # read LABEL, UUID info for $partition if swappt-${fn}.info exists
       uuid_opt=""
       label_opt=""
@@ -16478,3 +16482,35 @@ show_ocs_related_pkgs_ver() {
   echo "$installed_pkgs"
   echo "*********************************************************"
 } # end of show_ocs_related_pkgs_ver
+#
+to_ocs_dev_img_name() {
+  local idev="$(format_dev_name_with_leading_dev $1)"  # e.g., /dev/sda1, /dev/centos/root, /dev/mapper/ocs_luks_UbO
+  local dfn
+  # Basically there are 3 types of device name, including classic device, LVM, LUKS (the last two are actually multipath device), will be converted to Clonezilla device-related image name
+  # Classic image file:
+  #   nvme0n1p2.ext4-ptcl-img.zst
+  #   swappt-nvme0n1p3.info
+  #
+  # LVM:
+  #   /dev/fedora_fedora/root xfs:
+  #   fedora_fedora-root.xfs-ptcl-img.zst
+  #   /dev/vg_sars006/lv_home ext4,            /dev/vg_sars006/lv_root ext4:
+  #   vg_sars006-lv_home.ext4-ptcl-img.gz.aa,  vg_sars006-lv_root.ext4-ptcl-img.gz.aa
+  #   /dev/centos/swap swap 2G:
+  #   swappt-centos-swap.info
+  #
+  # DM Multipath:
+  #   /dev/cciss/c0d0p1 ext4:
+  #   cciss-c0d0p1.ext4-ptcl-img.gz.aa
+  #
+  # LUKS:
+  #   /dev/mapper/luks-9f36038f-7cb9-4058-9811-923af5ec3b38 xfs:
+  #   luks-9f36038f-7cb9-4058-9811-923af5ec3b38.xfs-ptcl-img.zst
+  #   /dev/mapper/luks-447df7b9-d87b-49df-b645-c5def6cefaf2 swap:
+  #   swappt-luks-447df7b9-d87b-49df-b645-c5def6cefaf2.info
+  case "$idev" in
+    /dev/mapper/*) dfn="$(to_filename ${idev#/dev/mapper/*})" ;;
+    *)             dfn="$(to_filename ${idev#/dev/*})";;
+  esac
+  echo $dfn
+} # end of to_ocs_dev_img_name
