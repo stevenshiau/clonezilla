@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.15
+Version:	5.3.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jan 26 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.16-drbl1
+  * Add function to_ocs_dev_img_name to better deal with device-related
+    image name. The LUKS device, classic device, and LVM device names
+    can be process better now.
+
 * Wed Jan 25 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.15-drbl1
   * The swap partition is shown in the saveparts dialog menu.
   * Swap partition can be saved in two modes: only keep UUID/label or
