@@ -16122,7 +16122,7 @@ save_luks_dev_fs(){
     fi
     # If it's swap, save UUID and label only.
     LUKS_F="$(LC_ALL=C ocs-get-dev-info "/dev/mapper/$id" type filesystem 2>/dev/null)"
-    if [ -n "$(echo $LUKS_F | grep -Eiw "swap")" ]; then
+    if [ -n "$(echo $LUKS_F | grep -Eiw "swap")" ] && [ "$FORCE_TO_USE_DD" = "no" ]; then
       output_swap_partition_uuid_label /dev/mapper/$id $target_dir_fullpath/swappt-$(to_ocs_dev_img_name /dev/mapper/$id).info
     else
       image_save /dev/mapper/$id $target_dir_fullpath $id
@@ -16151,41 +16151,7 @@ restore_luks_dev_fs(){
       clted_luks_devs_pv_rt="$clted_luks_devs_pv_rt mapper/$id"
       continue
     fi
-    # The data in the file dev-fs.list is like:
-    # <Device name>   <File system>   <Size>
-    # File system is got from ocs-get-dev-info. It might be different from that of blkid or parted.
-    # /dev/nvme0n1p1 vfat 297M
-    # /dev/nvme0n1p2 ext4 1G
-    # /dev/mapper/ocs_luks_Xg4 swap 472.3M
-    # /dev/mapper/luks-73ad2e74-b444-461d-9676-6061cbfc1276 btrfs 18.2G
-    # If it's swap, save UUID and label only.
-    LUKS_F="$(grep -Eo "^/dev/mapper/$id[[:space:]]+swap[[:space:]]+" $target_dir_fullpath/dev-fs.list 2>/dev/null)"
-    if [ -n "$LUKS_F" ]; then
-      fn="$(to_ocs_dev_img_name /dev/mapper/$id)"
-      # read LABEL, UUID info for $partition if swappt-${fn}.info exists
-      uuid_opt=""
-      label_opt=""
-      if [ -e "$target_dir_fullpath/swappt-${fn}.info" ]; then
-        echo $msg_delimiter_star_line
-        echo "Found the swap partition /dev/mapper/$id info, create it by:"
-        UUID=""
-        LABEL=""
-        . "$target_dir_fullpath/swappt-${fn}.info"
-        [ -n "$UUID" ] && uuid_opt="-U $UUID"
-        [ -n "$LABEL" ] && label_opt="-L $LABEL"
-        mkswap_cmd="mkswap $label_opt $uuid_opt /dev/mapper/$id"
-        echo $mkswap_cmd
-        eval $mkswap_cmd
-        echo $msg_delimiter_star_line
-      else
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "The swap partition /dev/mapper/$id info file \"$target_dir_fullpath/swappt-${fn}.info\" was not found."
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	sleep 2
-      fi
-    else
-      do_unicast_stdin_restore $target_dir_fullpath "$id" "mapper/$id"
-    fi
+    do_unicast_stdin_restore $target_dir_fullpath "$id" "mapper/$id"
     rc_restorepts="$(($rc_restorepts + $?))"
   done
 
