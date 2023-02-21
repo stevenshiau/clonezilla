@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.3.17
+Version:	5.4.0
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Feb 21 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.0-drbl1
+  * Update programs to work with ezio v2.0. 
+  * Remove extra "stop" in parameters when stopping lighttpd.
+
 * Fri Jan 27 2023 Steven Shiau <steven _at_ clonezilla org> 5.3.17-drbl1
   * Bugs fixed: 
     (1) Failed to dump raw data if dd mode is forced when saving.
