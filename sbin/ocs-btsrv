@@ -178,14 +178,13 @@ start_bitorrent_client_program_in_seeder() {
     case "$bt_slices_from_dev" in
     img)
       # Collect multiple torrent files. Make it like:
-      # ezio -U -T sda1.torrent -L /home/partimag/btzone/myimg/sda1/ -T sda2.torrent -L /home/partimag/btzone/myimg/sda2/
-      ezio_start_seeding_param="$ezio_start_seeding_param -T $ocsroot_btzone/${idir}.torrent -L $ocsroot_btzone/$(dirname ${idir})"
+      # "sda1.torrent /some/sda1_image_path sda1.torrent /some/sda1_image_path..."
+      ezio_start_seeding_param="$ezio_start_seeding_param $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$(dirname ${idir})"
       ;;
     raw-dev)
-      # Squeeze multiple spaces to one only
       # Collect multiple torrent files. Make it like:
-      # ezio -U -T sda1.torrent -L /dev/sda1 -T sda2.torrent -L /dev/sda2
-      ezio_start_seeding_param="$ezio_start_seeding_param -T $ocsroot_btzone/${idir}.torrent -L /dev/$ipt"
+      # "sda1.torrent /dev/sda1 sda2.torrent /dev/sda2"
+      ezio_start_seeding_param="$ezio_start_seeding_param $ocsroot_btzone/${idir}.torrent /dev/$ipt"
       ;;
     esac
   elif [ "$bt_client" = "btdownloadheadless" ]; then
@@ -226,15 +225,15 @@ start_bitorrent_client_program_in_seeder() {
 start_bitorrent_client_program_in_leecher() {
   # No matter bt_slices_from_dev is "img" or "raw-dev", in the leecher the command for ezio is the same
   # Collect multiple torrent files. Make it like:
-  # ezio -U -T sda1.torrent -L /dev/sda1 -T sda2.torrent -L /dev/sda2
-  ezio_start_seeding_param="$ezio_start_seeding_param -T $ocsroot_btzone/${idir}.torrent -L /dev/$ipt"
+  # sda1.torrent /dev/sda1 sda2.torrent /dev/sda2
+  ezio_start_seeding_param="$ezio_start_seeding_param $ocsroot_btzone/${idir}.torrent /dev/$ipt"
 } # end of start_bitorrent_client_program_in_leecher
 #
 start_bt_srv() {
   local ipt idir idir_name
   local cpu_no cmd_make_metainfo cmd_update_metainfo
   local existing_ip existing_port 
-  local cmd_start_seeding ezio_start_seeding_param ezio_ram_size_KB ezio_cache_opt ct_pid_log_prefix
+  local cmd_start_seeding ezio_start_seeding_param ezio_ram_size_KB ct_pid_log_prefix
   local rc_leecher
   if [ -z "$img_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -304,12 +303,10 @@ start_bt_srv() {
       start_tarcker
       echo $msg_delimiter_star_line
       # Part 3: start bitorrent client program
-      ezio_seeder_leecher_opt="$ezio_seeder_opt -U"
       start_bitorrent_client_program_in_seeder
     else
       # For leecher:
       # Start bitorrent client program
-      ezio_seeder_leecher_opt="$ezio_leecher_opt"
       start_bitorrent_client_program_in_leecher
     fi
   done
@@ -317,35 +314,20 @@ start_bt_srv() {
   # start_bitorrent_client_program_in_leecher we only collect the options. Now run it.
   if [ -n "$ezio_start_seeding_param" ]; then
      get_ezio_prog  # get the variable ezio_prog
-     # //NOTE// The working dir for ezio is the working dir as torrent file
-     # E.g., ezio -U -f /home/partimag/btzone/xenial-x64-20161104/sda1.torrrent /home/partimag/btzone/xenial-x64-20161104
-     ezio_cache_opt=""
-     if [ -n "$($ezio_prog -h | grep -Eo -- "--cache")" ]; then
-       # Set memory limit
-       ezio_ram_size_KB="$(LC_ALL=C vmstat -s -S k | grep "free memory" | awk -F" " '{print $1}')"
-       # Do not use all the free memory. ezio_cache_ratio is from drbl-ocs.conf.
-       ezio_ram_size_KB="$(LC_ALL=C printf "%.0f" "$(echo "($ezio_ram_size_KB*$ezio_cache_ratio)" | bc -l)")"
-       ezio_cache_opt="--cache $ezio_ram_size_KB"
-     fi
      # Log and pid
      # Remove the leading ~
      ct_pid_log_prefix="$(echo $ct_pid_log_prefix | sed -e "s/^~//g")"
      ct_pid_log="$btlog_dir/${ct_pid_log_prefix}-torrent.pid"
-     if [ "$bt_slices_from_dev" = "img" -a "$run_mode" = "seeder" ]; then
-       # For image format (img) in the seeder, we have to add option "-f" for ezio, while for "raw-dev", no need.
-       # E.g., 
-       # img: ezio -U -t -T sda1.torrent -L /dev/sda1 -T sda2.torrent -L /dev/sda2
-       # raw-dev: ezio -U -T sda1.torrent -L /dev/sda1 -T sda2.torrent -L /dev/sda2
-       ezio_seeder_leecher_opt="$ezio_seeder_leecher_opt -f"
-     fi
-     cmd_start_seeding="$ezio_prog $ezio_common_opt $ezio_seeder_leecher_opt $ezio_cache_opt $ezio_start_seeding_param 2>&1" 
-     # Squeeze multiple spaces to one only
-     cmd_start_seeding="$(echo $cmd_start_seeding | sed -r -e "s|[[:space:]]+| |g")"
+
      if [ "$run_mode" = "seeder" ]; then
        # For seeder:
        # Run it in the background & redirect the output to log file
        ocs_log_rotate $ezio_seeding_log
-       cmd_start_seeding="$cmd_start_seeding > $ezio_seeding_log 2>&1 &"
+       if [ "$bt_slices_from_dev" = "img" ]; then
+         # For image format (img) in the seeder, we have to add option "-m img" for ocs-ezio-seeder, while for "raw-dev", no need.
+         ezio_seeder_opt="-m img"
+       fi
+       cmd_start_seeding="ocs-ezio-seeder $ezio_seeder_opt $ezio_start_seeding_param 2>&1"
        echo "Start seeding by:"
        echo "$cmd_start_seeding"
        eval $cmd_start_seeding
@@ -358,7 +340,7 @@ start_bt_srv() {
        # For leecher:
        # Just run it in the foreground & copy the output in the log file
        ocs_log_rotate $ezio_leeching_log
-       cmd_start_seeding="$cmd_start_seeding | tee $ezio_leeching_log"
+       cmd_start_seeding="ocs-ezio-leecher $ezio_start_seeding_param 2>&1"
        echo "Start leeching by:"
        echo "$cmd_start_seeding"
        eval $cmd_start_seeding
@@ -401,7 +383,7 @@ stop_bt_srv() {
     done
     if [ -n "$all_pid" ]; then
       echo "Found pid..."
-      kill_cmd="kill -9 $all_pid"
+      kill_cmd="kill -15 $all_pid"
       echo "Running: $kill_cmd"
       eval $kill_cmd
       rc=$?
