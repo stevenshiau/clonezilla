@@ -1,0 +1,93 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to start ezio in client machine.
+# (1) ezio (for daemon and always on)
+# (2) Add torrent in leecher, e.g.,
+#     ezio_add_torrent.py sda1.torrent /dev/sda1; ezio_add_torrent.py sda2.torrent /dev/sda2 … 
+# (3) ezio_ui.py (for stop ezio automatically)
+# Ref: https://hackmd.io/1i7cRjd8Rc2ywzXtxCc1LQ
+		
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+USAGE() {
+    echo "$ocs - To start ezio in the Clonezilla client machine"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs TORRENT_FILE DEVICE"
+    echo "TORRENT_FILE is the torrent file"
+    echo "DEVICE is the source raw device name, e.g., sda1, sda2, or /dev/sda1, /dev/sda2..."
+    echo
+    echo "Ex:"
+    echo "To start the leecher in client machine for /dev/sda1 with sda1.torrent, /dev/sda2 with sda2.torrent, use"
+    echo "   $ocs sda1.torrent /dev/sda1 sda2.torrent /dev/sda2"
+    echo
+} # end of USAGE
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -*)  echo "${0}: ${1}: invalid option in program $ocs_file." >&2
+         USAGE >& 2
+         exit 2 ;;
+    *)   break ;;
+  esac
+done
+#
+torrent_imgpath_pairs=$*
+torrent_param=$#
+if [ $((torrent_param%2)) -ne 0 ]; then
+  # The inputted parameters must be in a pair, e.g., "sda1.torrent /dev/sda1"; "sda2.torrent /dev/sda2"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Wrong number of inputted parameters in program $ocs_file."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  exit 1
+fi
+if [ -z "$torrent_imgpath_pairs" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "No inputted parameters in program $ocs_file."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  exit 1
+fi
+
+pkill -f -15 "^ezio"
+pkill -f -15 "^ezio-static"
+ezio &
+# Parse the inputted parameters.
+while [ $# -gt 0 ]; do
+  bt_f=$1; shift
+  rawdev=$(format_dev_name_with_leading_dev $1); shift  # e.g., /dev/sda1
+  if [ ! -e "$bt_f" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Input torrent file $bt_f not found."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 1
+  fi
+  if [ ! -b "$rawdev" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Input block device \"$rawdev\" not found."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 1
+  fi
+  ezio_add_torrent_cmd="ezio_add_torrent.py $bt_f $rawdev"
+  echo "Running: $ezio_add_torrent_cmd"
+  eval $ezio_add_torrent_cmd
+  sleep 0.5
+done
+sleep 1
+ezio_ui.py
+
+wait # wait for all processes to finish before exit
