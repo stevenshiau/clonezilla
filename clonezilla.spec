@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.4.0
+Version:	5.4.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,23 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Mar 14 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.1-drbl1
+  * Add option "-K" (--ignoreactivationskip) to vgchange so that snapshots
+    can be dealed with. Thanks to Felipe Piero Benjamin Solari Agüela
+    (fsolari _at_ pucp.edu.pe) for suggesting this.
+  * Removed the stale workaround for Ubuntu DNS.
+    Do not link /etc/resolv.conf to ../run/systemd/resolve/stub-resolv.conf.
+    Ref:
+    https://sourceforge.net/p/clonezilla/bugs/404/
+    https://github.com/stevenshiau/clonezilla/issues/87
+  * Set allow_disk_with_fs as yes in the function check_input_partition of
+    ocs-functions.
+    This makes ocs-prep-cache to be the same behaviors as that in ocs-sr
+    and ocs-onthelfy. The should make /dev/md127 to be shown in the TUI when
+    restoring partitions.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/8627eabf99/?limit=25&page=1#9b16/b174
+
 * Tue Feb 21 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.0-drbl1
   * Update programs to work with ezio v2.0. 
   * Remove extra "stop" in parameters when stopping lighttpd.
