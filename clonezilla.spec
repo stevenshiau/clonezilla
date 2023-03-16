@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.4.1
+Version:	5.4.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Mar 16 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.2-drbl1
+  * Functions check_if_disk_busy and is_partition of ocs-functions were improved.
+    Fake/firmware RAID support should be improved.
+    Thanks to Michael McGrath.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/8627eabf99/?limit=25&page=1#9b16/b174
+
 * Tue Mar 14 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.1-drbl1
   * Add option "-K" (--ignoreactivationskip) to vgchange so that snapshots
     can be dealed with. Thanks to Felipe Piero Benjamin Solari Agüela
