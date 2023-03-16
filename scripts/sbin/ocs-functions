@@ -11002,7 +11002,7 @@ check_if_disk_busy() {
     if [ -n "$(grep -Ew -- "^${src_dev_}([0-9]*|(p[0-9]+))" /proc/swaps)" ]; then
       # Is busy (swap on)
       rc_d=0
-    elif [ -n "$(LC_ALL=C lsblk -npr -o name,type ${src_dev_} | awk -F" " '$2 ~ IGNORECASE=1;/lvm/ {print $1}')" ]; then
+    elif [ -n "$(LC_ALL=C lsblk -npr -o name,type ${src_dev_} | awk 'BEGIN { IGNORECASE=1;-F" " }; $2 ~ /lvm/ {print $1}')" ]; then
       # Is busy (LV active)
       rc_d=0
     else
@@ -12263,22 +12263,7 @@ is_partition() {
   # we treat it as a partition in Clonezilla.
   # When there is file system on a bare block device (/dev/sda, /dev/md0, not /dev/sda1, /dev/nvme0n1p1...)
   # -> It's a partition.
-  if [ -n "$(echo "$ocs_sr_type" | grep -Ei "save")" ]; then
-    if is_block_device_with_fs $dev_; then
-      # File system on a bare block device when saving. Treat it as a partition.
-      rc=0
-    elif [ -n "$(echo $dev_ | grep -E "md[0-9]+$")" ]; then
-      # Especially for /dev/md, e.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition (rc=1).
-      if grep -Eq "${dev_}p[1-9]+" /proc/partitions; then
-        rc=1
-      else
-        rc=0
-      fi
-    else
-      echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9|$RE10)$"
-      rc=$?
-    fi
-  elif [ -n "$(echo "$ocs_sr_type" | grep -Ei "restore")" ]; then
+  if [ -n "$(echo "$ocs_sr_type" | grep -Ei "restore")" ]; then
     if [ -n "$(echo $dev_ | grep -E "md[0-9]+$")" ]; then
       src_dk="$(cat $ocsroot/$target_dir/disk 2>/dev/null)"
       # TODO: what if there are 2 or more source disks?
@@ -12289,6 +12274,9 @@ is_partition() {
         # Especially for /dev/md, e.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition (rc=1).
         if grep -Eq "^${dev_}p[1-9]+" $ocsroot/$target_dir/blkdev.list; then
           rc=1
+        elif grep -Ewq "/dev/${dev_}" $ocsroot/$target_dir/lvm_vg_dev.list; then
+          # Maybe there is only LVM exists on this device, no partition at all. If so, it's not a partition.
+          rc=1
         else
           rc=0
         fi
@@ -12298,8 +12286,24 @@ is_partition() {
       rc=$?
     fi
   else
-    echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9|$RE10)$"
-    rc=$?
+    # For save* or cloning mode.
+    if is_block_device_with_fs $dev_; then
+      # File system on a bare block device when saving. Treat it as a partition.
+      rc=0
+    elif [ -n "$(echo $dev_ | grep -E "md[0-9]+$")" ]; then
+      # Especially for /dev/md, e.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition (rc=1).
+      if grep -Eq "${dev_}p[1-9]+" /proc/partitions; then
+        rc=1
+      elif [ -n "$(LC_ALL=C pvs -o+lv_name | grep -Ew "/dev/${dev_}")" ]; then
+        # Maybe there is only LVM exists on this device, no partition at all. If so, it's not a partition.
+        rc=1
+      else
+        rc=0
+      fi
+    else
+      echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9|$RE10)$"
+      rc=$?
+    fi
   fi
   return $rc
 } # end of is_partition
