@@ -1274,6 +1274,12 @@ case "$ocs_sr_type" in
 
     parse_target_dir_with_reserved_name_saving_mode # obtain target_dir
 
+    # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
+    if grep -Eq '[[:space:]]+md[0-9]+' /proc/partitions; then
+      list_local_dev_mode="both_type_dev"
+      use_dev_list_cache="no"
+    fi
+
     if [ "$ocs_sr_dev" = "ask_user" ]; then
       # To get $target_hd
       get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
@@ -1399,6 +1405,12 @@ case "$ocs_sr_type" in
     check_input_target_image "$ocsroot/$target_dir"
     source_dsk_no="$(get_disk_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
 
+    # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
+    if grep -Eq '^md[0-9]+' $ocsroot/$target_dir/blkdev.list; then
+      list_local_dev_mode="both_type_dev"
+      use_dev_list_cache="no"
+    fi
+
     if [ "$ocs_sr_dev" = "ask_user" ]; then
       if [ "$source_dsk_no" -eq 1 ]; then
         dia_sel_opt="menu"
@@ -1481,7 +1493,13 @@ case "$ocs_sr_type" in
 
     parse_target_dir_with_reserved_name_saving_mode # obtain target_dir
 
-    if [ "$ocs_user_mode" = "expert" ]; then
+    # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
+    if grep -Eq '[[:space:]]+md[0-9]+' /proc/partitions; then
+      list_local_dev_mode="both_type_dev"
+      use_dev_list_cache="no"
+    fi
+
+    if [ "$ocs_user_mode" = "expert" ] && [ -z "$list_local_dev_mode" ]; then
       ask_list_device_mode  # get $list_local_dev_mode
     fi
     if [ "$ocs_sr_dev" = "ask_user" ]; then
@@ -1623,12 +1641,19 @@ case "$ocs_sr_type" in
         source_part="$(cat $ANS_TMP | tr -d \")"
         [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
       fi
+
+      # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
+      if grep -Eq '^md[0-9]+' $ocsroot/$target_dir/blkdev.list; then
+        list_local_dev_mode="both_type_dev"
+        use_dev_list_cache="no"
+      fi
+
       # target name exists, but file "parts" is empty ?
       check_target_parts $ocsroot/$target_dir/parts "$source_part"
       src_parts_no="$(LC_ALL=C echo $source_part | wc -w)"
       if [ "$src_parts_no" -eq 1 ]; then
         dia_sel_opt="menu"
-        if [ "$ocs_user_mode" = "expert" ]; then
+        if [ "$ocs_user_mode" = "expert" ] && [ -z "$list_local_dev_mode" ]; then
           ask_list_device_mode  # get $list_local_dev_mode
         fi
         if [ "$list_local_dev_mode" = "both_type_dev" ]; then
