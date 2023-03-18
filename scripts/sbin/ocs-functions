@@ -4543,18 +4543,26 @@ get_disk_or_part_hardware_info() {
 check_if_use_disklist_cache() {
   local part_table=$1
   # use_disklist_cache is a global variable (output).
+  # use_dev_list_cache is a global variable in drbl-ocs.conf or ocs-live.conf.
   use_disklist_cache=""
-  if [ -e $dev_list_cache_dir/pttable_for_disk.txt ]; then
-    if [ -z "$(diff <(awk '{print $3,$4}' $dev_list_cache_dir/pttable_for_disk.txt) \
-	            <(awk '{print $3,$4}' $part_table))" ]; then
-      # The partition table has no difference. Use cache one.
-      use_disklist_cache="yes"
+  if [ "$use_dev_list_cache" = "no" ]; then
+    # It's assigned (in boot parameter, configuration file or due to /dev/md*) 
+    # not to create any devices list cache, so do not generate disks list cache.
+    use_disklist_cache="no"
+  fi
+  if [ -z "$use_disklist_cache" ]; then
+    if [ -e $dev_list_cache_dir/pttable_for_disk.txt ]; then
+      if [ -z "$(diff <(awk '{print $3,$4}' $dev_list_cache_dir/pttable_for_disk.txt) \
+                      <(awk '{print $3,$4}' $part_table))" ]; then
+        # The partition table has no difference. Use cache one.
+        use_disklist_cache="yes"
+      else
+        use_disklist_cache="no"
+      fi
     else
+      # No pttable_for_disk.txt file, new status.
       use_disklist_cache="no"
     fi
-  else
-    # No pttable_for_disk.txt file, new status.
-    use_disklist_cache="no"
   fi
   if [ "$use_disklist_cache" = "no" ]; then
     # Clean the cache file and source partition table file in $dev_list_cache_dir so they won't be found
@@ -4566,18 +4574,26 @@ check_if_use_disklist_cache() {
 check_if_use_partlist_cache() {
   local part_table=$1
   # use_partlist_cache is a global variable (output).
+  # use_dev_list_cache is a global variable in drbl-ocs.conf or ocs-live.conf.
   use_partlist_cache=""
-  if [ -e $dev_list_cache_dir/pttable_for_part.txt ]; then
-    if [ -z "$(diff <(awk '{print $3,$4}' $dev_list_cache_dir/pttable_for_part.txt) \
-	            <(awk '{print $3,$4}' $part_table))" ]; then
-      # The partition table has no difference. Use cache one.
-      use_partlist_cache="yes"
+  if [ "$use_dev_list_cache" = "no" ]; then
+    # It's assigned (in boot parameter, configuration file or due to /dev/md*) 
+    # not to create any devices list cache, so do not generate partitions list cache.
+    use_partlist_cache="no"
+  fi
+  if [ -z "$use_partlist_cache" ]; then
+    if [ -e $dev_list_cache_dir/pttable_for_part.txt ]; then
+      if [ -z "$(diff <(awk '{print $3,$4}' $dev_list_cache_dir/pttable_for_part.txt) \
+                      <(awk '{print $3,$4}' $part_table))" ]; then
+        # The partition table has no difference. Use cache one.
+        use_partlist_cache="yes"
+      else
+        use_partlist_cache="no"
+      fi
     else
+      # No pttable_for_part.txt file, new status.
       use_partlist_cache="no"
     fi
-  else
-    # No pttable_for_part.txt file, new status.
-    use_partlist_cache="no"
   fi
   if [ "$use_partlist_cache" = "no" ]; then
     # Clean the cache file and source partition table file in $dev_list_cache_dir so they won't be found
