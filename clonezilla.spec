@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.4.3
+Version:	5.4.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Mar 19 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.4-drbl1
+  * If block dev has a file system found in the image when restoring,
+    treat it as a partition.
+  * ocs-onthefly: disable devices list cache mechanism if /dev/md* exists.
+
 * Sat Mar 18 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.3-drbl1
   * ocs-sr: if /dev/md* exists, list both disk and parts in TUI, and disable
     devices list cache mechanism.
