@@ -12280,7 +12280,10 @@ is_partition() {
   # When there is file system on a bare block device (/dev/sda, /dev/md0, not /dev/sda1, /dev/nvme0n1p1...)
   # -> It's a partition.
   if [ -n "$(echo "$ocs_sr_type" | grep -Ei "restore")" ]; then
-    if [ -n "$(echo $dev_ | grep -E "md[0-9]+$")" ]; then
+    if [ -n "$(grep -Ew "^/dev/$dev_" $ocsroot/$target_dir/dev-fs.list | awk -F" " '{print $2}')" ]; then
+      # When a file system on a bare block device, treat it as a partition.
+      rc=0
+    elif [ -n "$(echo $dev_ | grep -E "md[0-9]+$")" ]; then
       src_dk="$(cat $ocsroot/$target_dir/disk 2>/dev/null)"
       # TODO: what if there are 2 or more source disks?
       if [ "$src_dk" != "${dev_}" ]; then
@@ -12294,6 +12297,8 @@ is_partition() {
           # Maybe there is only LVM exists on this device, no partition at all. If so, it's not a partition.
           rc=1
         else
+          # E.g., /dev/md126, not containing a file system, no /dev/md126p1, no LV on it. Then it can be a disk, or a partition.
+	  # We just treat it as a partition.
           rc=0
         fi
       fi
@@ -12314,6 +12319,8 @@ is_partition() {
         # Maybe there is only LVM exists on this device, no partition at all. If so, it's not a partition.
         rc=1
       else
+        # E.g., /dev/md126, not containing a file system, no /dev/md126p1, no LV on it. Then it can be a disk, or a partition.
+	# We just treat it as a partition.
         rc=0
       fi
     else
