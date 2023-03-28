@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.4.4
+Version:	5.4.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Mar 28 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.5-drbl1
+  * ocs-cvtimg-comp:
+    Suppress the syntax error about size when dd image is converted.
+    Rename the existing destination image name if it exists.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Help/thread/e182121ea0
+
 * Sun Mar 19 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.4-drbl1
   * If block dev has a file system found in the image when restoring,
     treat it as a partition.
