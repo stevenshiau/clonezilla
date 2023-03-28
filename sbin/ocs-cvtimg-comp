@@ -281,7 +281,10 @@ img_covert_to_diff_compression() {
   $unzip_stdin_cmd | partclone.info -s - &> $img_info
   used_size="$(LC_ALL=C awk -F":" '/^Space in use/ {print $2}' $img_info | sed -r -e "s/^.*[[:space:]]=//g" -e "s/^[[:space:]]*//g" -e "s/[[:space:]]*Blocks//g")"
   block_size="$(LC_ALL=C awk -F":" '/^Block size/ {print $2}' $img_info | sed -r -e "s/^[[:space:]]*//g" -e "s/Byte$//g")"
-  used_size_byte="$(LC_ALL=C echo "scale=0; $used_size * $block_size / 1" | bc -l)"
+  if [ -n "$used_size" -o -n "$block_size" ]; then
+    # When the image is saved by Partclone in dd mode, it contains no info about used_size & block_size. 
+    used_size_byte="$(LC_ALL=C echo "scale=0; $used_size * $block_size / 1" | bc -l)"
+  fi
   if [ -n "$used_size_byte" ]; then
     # Option for pv. The -s option only accepts integer
     used_size_opt="-s $used_size_byte"
@@ -808,6 +811,13 @@ check_if_old_format_img "$ocs_src_img_name"
 if [ "$ecryptfs_rc" -eq 0 ]; then
   # The image to be processed is encrypted, and we have to let create-ocs-tmp-img create the image in the original image repository
   ocsroot="$ocsroot_orig"
+fi
+
+if [ -d "$ocsroot/$ocs_dest_img_name" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Rename the existing destination image..."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  mv -v "$ocsroot/$ocs_dest_img_name" "$ocsroot/$ocs_dest_img_name-saved-`LC_ALL=C date +%Y%m%d%H%M`"
 fi
 # Use create-ocs-tmp-img to create a temp dir in image repository, then we will convert all link files to regular files.
 create-ocs-tmp-img $ocs_tmp_img_opt -n -t $ocsroot "$ocs_src_img_name" "$ocs_dest_img_name"
