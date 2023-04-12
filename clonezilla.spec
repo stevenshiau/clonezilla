@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.4.5
+Version:	5.4.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -37,6 +37,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* The Apr 13 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.6-drbl1
+  * create-ubuntu-live: add v86d in runtime when creating.
+    Since Ubuntu >= 23.04 removed v86d, we will add v86d in runtime.
+    This is not done in Debian-based as v86d is still in Debian repository.
+
 * Tue Mar 28 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.5-drbl1
   * ocs-cvtimg-comp:
     Suppress the syntax error about size when dd image is converted.
