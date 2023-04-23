@@ -9,7 +9,9 @@ URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
 Requires:	bash, perl, drbl >= 5.2.5, psmisc, udpcast, partclone >= 0.3.23, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
-#BuildRequires:  make
+%if 0%{?fedora} >= 37
+BuildRequires:  make
+%endif
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
