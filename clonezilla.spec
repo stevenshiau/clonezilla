@@ -1,14 +1,15 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
 Version:	5.4.6
-Release:	drbl1
+Release:	drbl2
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.2.5, psmisc, udpcast, partclone >= 0.3.23, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid
+Requires:	bash, perl, drbl >= 5.2.5, psmisc, udpcast, partclone >= 0.3.23, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+#BuildRequires:  make
 
 %description
 Clonezilla, based on DRBL, partclone, and udpcast, allows you to do bare metal backup and recovery. Two types of Clonezilla are available, Clonezilla live and Clonezilla SE (Server Edition). Clonezilla live is suitable for single machine backup and restore. While Clonezilla SE is for massive deployment, it can clone many (40 plus!) computers simultaneously.
@@ -37,7 +38,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-* The Apr 13 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.6-drbl1
+* Sun Apr 23 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.7-drbl2
+  * Update clonezilla.spec.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/c870bcd449
+
+* Thu Apr 13 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.6-drbl1
   * create-ubuntu-live: add v86d in runtime when creating.
     Since Ubuntu >= 23.04 removed v86d, we will add v86d in runtime.
     This is not done in Debian-based as v86d is still in Debian repository.
