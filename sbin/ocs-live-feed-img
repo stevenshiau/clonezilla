@@ -538,8 +538,26 @@ config_netcard() {
   local status_done
   # nic_dev_only is global variable
   # Get the NIC device name for the only one device
-  # TODO: find a better way to find when there are multiple NICs?
-  nic_dev_only="$(get-nic-devs | head -n 1)"
+  local nic_n
+  nic_n="$(LC_ALL=C get-nic-devs | wc -l)"
+  if [ "$nic_n" -eq 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No any ethernet card found!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop"
+    exit 1
+  elif [ "$nic_n" -eq 1 ]; then
+    nic_dev_only="$(LC_ALL=C get-nic-devs)"
+  else
+    # Multiple NICs, let user choose
+    [ -z "$ocs_nic_type" ] && ocs_nic_type="wired"
+    [ -z "$ocs_netlink_timeout" ] && ocs_netlink_timeout="12"
+    ask_nic_dev -e "$msg_choose_nic?" menu 1 # Obtain $chosen_nics
+    if [ -n "$chosen_nics" ]; then
+      echo "Chosen NIC: $chosen_nics"
+      nic_dev_only="$chosen_nics"
+    fi
+  fi
   ip address add $ipadd_closed_lan/$netmask_closed_lan dev ${nic_dev_only}
   ip link set ${nic_dev_only} up
   # Set the routing
