@@ -1,14 +1,14 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.4.6
-Release:	drbl3
+Version:	5.4.7
+Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
 Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.2.5, psmisc, udpcast, partclone >= 0.3.23, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.2.11, psmisc, udpcast, partclone >= 0.3.23, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,7 +40,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-* Sun Apr 23 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.7-drbl2
+* Sun May 07 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.7-drbl1
+  * Allow choosing NIC in lite server mode when multiple network cards exist.
+    Thanks to Date Huang and Nate Carr for asking this.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/6fedbfd6c3
+
+* Sun Apr 23 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.6-drbl2
   * Update clonezilla.spec.
     Ref: https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/c870bcd449
 
