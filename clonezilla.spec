@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.4.7
+Version:	5.4.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed May 18 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.8-drbl1
+  * ocs-live-boot-menu: Add comment "memtest86+ia32.bin -> mt86+x32.mbr".
+
 * Sun May 07 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.7-drbl1
   * Allow choosing NIC in lite server mode when multiple network cards exist.
     Thanks to Date Huang and Nate Carr for asking this.
