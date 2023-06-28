@@ -4399,7 +4399,7 @@ get_disk_serial_no() {
 } # end of get_disk_serial_no
 #
 get_disk_or_part_hardware_info() {
-  # ///NOTE/// TO use this function, the device must exist in this system. Otherwise the hardware info (for example, if /dev/hda1 is not created yet) won't be found.
+  # ///NOTE/// To use this function, the device must exist in this system. Otherwise the hardware info (for example, if /dev/hda1 is not created yet) won't be found.
   # DEV_MODEL is a global variable to output
   local p="$1"  # p is like hda, sda, or hda1, sda1
   local flag_skip_lvm="$2"  # yes/no/default, default is no
@@ -4453,12 +4453,17 @@ get_disk_or_part_hardware_info() {
       DEV_MODEL_EXT=${x}
     fi
     [ -n "$DEV_MODEL_EXT" ] && DEV_MODEL="${DEV_MODEL}(In_${DEV_MODEL_EXT})"
+
+    # Put ID path
+    get_disk_id_path $dsk_  # get id_path_tag
+    [ -n "$id_path_tag" ] && DEV_MODEL="${DEV_MODEL}_${id_path_tag}"
+
     # Put serial #
     if is_ide_disk "$dsk_"; then
       serialno="$(cat /sys/block/$(to_sysblock_name $(get_diskname $dsk_))/device/serial 2>/dev/null | sed -e "s/ //g")"
     else
       #serialno="$(LC_ALL=C cat $lshw_disk_info | grep -A3 -Ewi "logical name: /dev/$dsk_" | grep -i "serial: " | awk -F":" '{print $2}' | sed -e "s/ //g")"
-      get_disk_serial_no $dsk_
+      get_disk_serial_no -s $dsk_
     fi
     if [ -n "$serialno" ]; then
       serialno="_${serialno}"
@@ -4520,17 +4525,22 @@ get_disk_or_part_hardware_info() {
       [ -n "$part_fst" ] && dsize="${dsize}${part_fst}_"
       # Serial #
       #serialno="$(LC_ALL=C cat $lshw_disk_info | grep -A3 -Ewi "logical name: /dev/$p" | grep -i "serial: " | awk -F":" '{print $2}' | sed -e "s/ //g")"
-      get_disk_serial_no $p
+      get_disk_serial_no -s $p
       if [ -n "$serialno" ]; then
          serialno="_${serialno}"
       else
          serialno="_No_disk_serial_no"
       fi
       # The result is like 8590MB_VMware_Virtual_IDE
+
+      # Put ID path
+      get_disk_id_path $p  # get id_path_tag
+      [ -n "$id_path_tag" ] && id_path_tag="_${id_path_tag}"
+
       if [ -L /dev/$p ]; then
-        DEV_MODEL="${dsize}${x}_$(readlink -f /dev/$p)"
+        DEV_MODEL="${dsize}${x}${id_path_tag}$(readlink -f /dev/$p)"
       else
-        DEV_MODEL="${dsize}${x}${serialno}"
+        DEV_MODEL="${dsize}${x}${id_path_tag}${serialno}"
       fi
     fi
   fi
@@ -16333,3 +16343,21 @@ to_ocs_dev_img_name() {
   esac
   echo $dfn
 } # end of to_ocs_dev_img_name
+#
+get_disk_id_path() {
+  # root@debian$ udevadm info -q env -n /dev/sda | grep ID_PATH_TAG
+  # ID_PATH_TAG=pci-0000_02_04_0-ata-1_0
+  local dsk_=${1#/dev/*} # Input is like /dev/sda or sda, so dsk_ becomes sda
+  id_path_tag=""  # reset global variable id_path_tag
+  [ -z "$dsk_" ] && echo "No input value for dsk_!" && exit 1
+  if type udevadm &>/dev/null; then
+    id_path_tag="$(LC_ALL=C udevadm info -q env -n /dev/${dsk_} | grep -E "^ID_PATH_TAG=" | sed -r -e "s/^ID_PATH_TAG=//g" | tr " " "_")"
+  fi
+  if [ -z "$id_path_tag" ]; then
+    # lrwxrwxrwx 1 root root  9 Mar  6 18:14 pci-0000:00:1f.2-ata-3 -> ../../sda
+    id_path_tag="$(LC_ALL=C find /dev/disk/by-path/ -lname "*${dsk_}" -print 2>/dev/null | sort | uniq | head -n 1 | xargs basename  2>/dev/null | tr ":" "_")"
+  fi
+  # id_path_tag result, e.g.: 
+  # pci-0000_02_04_0-ata-1_0
+
+} # end of get_disk_id_path 
