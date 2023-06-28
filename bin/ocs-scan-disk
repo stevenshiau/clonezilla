@@ -33,12 +33,13 @@ for idsk in $dev_list; do
   x="$(cat /sys/block/$(to_sysblock_name $(get_diskname ${idsk}))/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr ' ' _ 2>/dev/null)"
   x=${x#*\"}
   x=${x%\"*}
-  get_disk_serial_no $idsk
+  get_disk_serial_no -s $idsk
   if [ -z "$serialno" ]; then
     serialno="No_disk_serial_no"
   fi
+  get_disk_id_path $idsk  # get id_path_tag
   dsize="$(LC_ALL=C parted -s /dev/${idsk} print 2>/dev/null | grep -E "^[[:space:]]*Disk[[:space:]]+/dev/" | awk -F":" '{print $2}' | sed -e "s/ //g")"
-  echo "/dev/${idsk}: $x $serialno $dsize"
+  echo "/dev/${idsk}: $dsize $x $id_path_tag $serialno"
 done
 echo "==================================="
 echo -en '\033[1;33m'
