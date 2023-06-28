@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.4.8
+Version:	5.4.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.2.11, psmisc, udpcast, partclone >= 0.3.23, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.2.14, psmisc, udpcast, partclone >= 0.3.23, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,16 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jun 28 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.10-drbl1
+  * ocs-functions: add function get_disk_id_path and show disk ID path in
+    the disk info.
+  * ocs-scan-disk: show disk ID path in the disk info.
+
+* Thu Jun 08 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.9-drbl1
+  * S03prep-drbl-clonezilla: parse ocs_screen_blank.
+    When ocs_screen_blank="no" is assigned in the boot parameters,
+    screen_not_blank won't run.
+
 * Wed May 18 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.8-drbl1
   * ocs-live-boot-menu: Add comment "memtest86+ia32.bin -> mt86+x32.mbr".
 
