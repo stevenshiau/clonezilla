@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.4.10
+Version:	5.4.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,17 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jul 06 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.11-drbl1
+  * ocs-live-feed-img: implement options -ssnf & -iui.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/416d0fe630/
+  * Allow bt_restoredisk mode to restore image to different device name.
+    However, ezio has to be improved so that the display device name can be
+    from save_path, not torrent name.
+    Ref:
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/09d819bcbf/?limit=25#e267/46b4
+    https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/70b7ca6263/?limit=25#2d08
+
 * Wed Jun 28 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.10-drbl1
   * ocs-functions: add function get_disk_id_path and show disk ID path in
     the disk info.
