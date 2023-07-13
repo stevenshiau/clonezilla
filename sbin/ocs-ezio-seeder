@@ -45,6 +45,7 @@ USAGE() {
     echo
     echo "Options:"
     echo "-m, --mode img|raw-dev   Run seeding in image or raw-dev format."
+    echo "-g, --log-dir DIR        Use DIR as the log dir. Default value is \"$btlog_dir\""
     echo
     echo "Ex:"
     echo "To start the seeder in source machine for /dev/sda1 with sda1.torrent, /dev/sda2 with sda2.torrent, use"
@@ -73,12 +74,28 @@ while [ $# -gt 0 ]; do
          fi
          [ -z "$ezio_mode" ] && USAGE && exit 1
          ;;
+    -g|--log-dir)
+         shift; 
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+           btlog_dir="$1"
+           shift;
+         fi
+         [ -z "$btlog_dir" ] && USAGE && exit 1
+         ;;
     -*)  echo "${0}: ${1}: invalid option in program $ocs_file." >&2
          USAGE >& 2
          exit 2 ;;
     *)   break ;;
   esac
 done
+
+#
+ask_and_load_lang_set
+
+#
+ezio_pid_log="$btlog_dir/ezio-seeder.pid"
+
 # Process the rest parameters.
 torrent_imgpath_pairs=$*
 torrent_param=$#
@@ -96,11 +113,17 @@ if [ -z "$torrent_imgpath_pairs" ]; then
 fi
 
 pkill -f -15 "^ezio"
-pkill -f -15 "^ezio-static"
+rm -f $ezio_pid_log
 case "$ezio_mode" in
   img) ezio_daemon_opt="-F";
 esac
 ezio $ezio_daemon_opt &
+ezio_pid="$!"
+echo "$ezio_pid" > $ezio_pid_log
+sleep 0.5
+countdown 10
+echo
+echo $msg_delimiter_star_line
 # Parse the rest parameters.
 while [ $# -gt 0 ]; do
   bt_f=$1; shift
