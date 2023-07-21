@@ -108,6 +108,19 @@ task_run_restoring() {
   ocs_sr_opt=""
   ocs_restore_dev=""
   . /tmp/ocs-client-run.conf # Get the above variables.
+  # /tmp/ocs-client-run.conf contents example,
+  # BT:
+  # pseudo_img="img-wo-fs.tar.xz"
+  # img_prefix="raw-psdo-20230718-031037"
+  # ocs_sr_opt="--ocsroot /tmp/ -l en_US.UTF-8 --batch  -g auto -e1 auto -e2 -r --clone-hidden-data -k0 -p true -scr bt_restoredisk"
+  # ocs_restore_dev="nvme0n1"
+  #
+  # Multicast: 
+  # pseudo_img="img-wo-fs.tar.xz"
+  # img_prefix="raw-psdo-20230718-011414"
+  # ocs_sr_opt="--ocsroot /tmp/ -l en_US.UTF-8 --batch  -g auto -e1 auto -e2 -r --clone-hidden-data -k0 -p true -scr --mcast-port 2232 multicast_restoredisk"
+  # ocs_restore_dev="nvme0n1"
+
   if [ -z "$pseudo_img" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "No pseudo_img was assigned in /tmp/ocs-client-run.conf!" | tee -a ${OCS_LOGFILE}
@@ -137,7 +150,7 @@ task_run_restoring() {
   fi
   new_img_flag="no"
   if [ -d "/tmp/${img_prefix}" ]; then
-    # If image already exists in /tmp, create a random dir.
+    # If the image already exists in /tmp, create a random dir.
     image_abs_path="$(mktemp -d /tmp/${img_prefix}.XXXXXX)"
     new_img_flag="yes"
   else
@@ -146,14 +159,57 @@ task_run_restoring() {
   fi
   ocs_restore_img="$(basename $image_abs_path)"
   tar -xJf /tmp/$pseudo_img -C $image_abs_path | tee -a ${OCS_LOGFILE}
+  # The content of img-wo-fs.tar.xz is like (It contains the dir "btzone" for BT from raw device. However, it does not contain the dir "btzone" for multicast):
+  # root@lite-client:/tmp# tar tvJf img-wo-fs.tar.xz
+  # -rw-r--r-- 00-pseudo-img-note.txt
+  # -rw-r--r-- blkdev.list
+  # -rw-r--r-- blkid.list
+  # drwxr-xr-x btzone/
+  # drwxr-xr-x btzone/raw-psdo-20230720-104231/
+  # -rw------- btzone/raw-psdo-20230720-104231/nvme0n1p2.torrent
+  # -rw------- btzone/raw-psdo-20230720-104231/nvme0n1p1.torrent
+  # -rw------- btzone/raw-psdo-20230720-104231/cl-root.torrent
+  # -rw-r--r-- clonezilla-img
+  # -rw-r--r-- dev-fs.list
+  # -rw-r--r-- disk
+  # -rw-r--r-- dmraid.table
+  # -rw-r--r-- efi-nvram.dat
+  # -rw-r--r-- Info-dmi.txt
+  # -rw-r--r-- Info-img-id.txt
+  # -rw-r--r-- Info-img-size.txt
+  # -rw-r--r-- Info-lshw.txt
+  # -rw-r--r-- Info-lspci.txt
+  # -rw-r--r-- Info-OS-prober.txt
+  # -rw-r--r-- Info-packages.txt
+  # -rw-r--r-- Info-saved-by-cmd.txt
+  # -rw-r--r-- Info-smart.txt
+  # -rw------- lvm_cl.conf
+  # -rw-r--r-- lvm_logv.list
+  # -rw-r--r-- lvm_vg_dev.list
+  # -rw-r--r-- nvme0n1-chs.sf
+  # -rw-r--r-- nvme0n1-gpt-1st
+  # -rw-r--r-- nvme0n1-gpt-2nd
+  # -rw-r--r-- nvme0n1-gpt.gdisk
+  # -rw-r--r-- nvme0n1-gpt.sgdisk
+  # -rw-r--r-- nvme0n1-mbr
+  # -rw-r--r-- nvme0n1-pt.parted
+  # -rw-r--r-- nvme0n1-pt.parted.compact
+  # -rw-r--r-- nvme0n1-pt.sf
+  # -rw-r--r-- parts
+  # -rw-r--r-- swappt-cl-swap.info
   if [ "$new_img_flag" = "yes" ]; then
      # We have to do the corresponding change for the new image name under btzone/
-     mv -v $image_abs_path/btzone/${img_prefix} $image_abs_path/btzone/$ocs_restore_img
+     if [ -e "$image_abs_path/btzone/${img_prefix}" ]; then
+       mv -v $image_abs_path/btzone/${img_prefix} $image_abs_path/btzone/$ocs_restore_img
+     fi
   fi
   if [ -d "$image_abs_path/btzone" ]; then
+    # Move the extracted image dir under "btzone" to new image repository "/tmp/btzone/"
     mkdir -p /tmp/btzone/ | tee -a ${OCS_LOGFILE}
-    mv $image_abs_path/btzone/$ocs_restore_img /tmp/btzone/ | tee -a ${OCS_LOGFILE}
-    rmdir $image_abs_path/btzone/
+    if [ -e "$image_abs_path/btzone/$ocs_restore_img" ]; then
+      mv -v $image_abs_path/btzone/$ocs_restore_img /tmp/btzone/ | tee -a ${OCS_LOGFILE}
+      rmdir $image_abs_path/btzone/
+    fi
   fi
   # Run restoring
   # Before running, replace the new created image name

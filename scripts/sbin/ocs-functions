@@ -1833,7 +1833,7 @@ image_save() {
     fi
   else
     # File system is not saved, so add a tag file.
-    echo "Pseudo image for \"BT from device\" mode use or other purpose only. This image is not really restorable, and it can be safely removed." > "$tgt_dir/00-pseudo-img-note.txt"
+    echo "Pseudo image for \"Multicast/BT from device\" mode use or other purpose only. This image is not really restorable, and it can be safely removed." > "$tgt_dir/00-pseudo-img-note.txt"
   fi
 
   #
@@ -6056,17 +6056,23 @@ multicast_restore_by_ntfsclone() {
 #
 multicast_restore_by_partclone() {
   local file_ fs_ partclone_img_info_tmp IP file_basename cmd_partclone_rest
-  # First, we find the filesystem 
-  # Image files are like: sda2.hfsp-img.aa  sda2.hfsp-img.ab  sda2.hfsp-img.ac
-  file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
-  file_basename="$(basename ${file_})"
-  if [ -n "${file_}" ]; then
-    if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
-      # new format, image file is like: sda1.ext4-ptcl-img.gz, sda1.ext4-ptcl-img.gz.aa
-      fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-ptcl-img.*//g")"
-    else
-      # old format, image file is like: sda2.hfsp-img.aa  sda2.hfsp-img.ab  sda2.hfsp-img.ac
-      fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-img.*//g")"
+  unzip_stdin_cmd=""
+  fs_="$1"
+  unzip_stdin_cmd="$2"
+
+  if [ -z "$fs_" ]; then
+    # First, we find the filesystem 
+    # Image files are like: sda2.hfsp-img.aa  sda2.hfsp-img.ab  sda2.hfsp-img.ac
+    file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
+    file_basename="$(basename ${file_})"
+    if [ -n "${file_}" ]; then
+      if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
+        # new format, image file is like: sda1.ext4-ptcl-img.gz, sda1.ext4-ptcl-img.gz.aa
+        fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-ptcl-img.*//g")"
+      else
+        # old format, image file is like: sda2.hfsp-img.aa  sda2.hfsp-img.ab  sda2.hfsp-img.ac
+        fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-img.*//g")"
+      fi
     fi
   fi
   if [ -z "${fs_}" ]; then
@@ -6077,15 +6083,17 @@ multicast_restore_by_partclone() {
     exit 1
   fi
 
-  # get $unzip_stdin_cmd from image file
-  # No matter it split or not, ${file_basename} or ${file_} can be .aa file or the single image itself. We only need one file to test.
-  # Since server will feed the image, therefore here we do not have to prepare a variable "$img_file_prefix" like that in function unicast_restore_by_partclone
-  if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img")" ]; then
-    # New format, decide by file name, so we do not have to include dir name. It's better to do so since maybe user will assing a image name (dir name) with the "magic" keyword in a coincidence
-    get_image_cat_zip_cmd ${file_basename}
-  else
-    # Old format, since it's tested by command "file -Ls", we need the absolute path so file command can access it.
-    get_image_cat_zip_cmd ${file_}
+  if [ -z "$unzip_stdin_cmd" ]; then
+    # get $unzip_stdin_cmd from image file
+    # No matter it split or not, ${file_basename} or ${file_} can be .aa file or the single image itself. We only need one file to test.
+    # Since server will feed the image, therefore here we do not have to prepare a variable "$img_file_prefix" like that in function unicast_restore_by_partclone
+    if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img")" ]; then
+      # New format, decide by file name, so we do not have to include dir name. It's better to do so since maybe user will assing a image name (dir name) with the "magic" keyword in a coincidence
+      get_image_cat_zip_cmd ${file_basename}
+    else
+      # Old format, since it's tested by command "file -Ls", we need the absolute path so file command can access it.
+      get_image_cat_zip_cmd ${file_}
+    fi
   fi
 
   # assign partclone tmp file.
@@ -6286,13 +6294,13 @@ do_unicast_stdin_restore() {
 } # end of do_unicast_stdin_restore
 #
 do_multicast_udpcast_restore() {
-  # part is like: /dev/hda1
+  # part is like: /dev/sda1
   # port is a global variable
   # time_elapsed, time_elapsed_in_min and speed are global variables
   local target_d="$1"
   local img_file="$2"
   local part="$3"
-  local start_time end_time time_limit time image_name_ dd_report_sig_pid part_size hdtmp pt_type
+  local start_time end_time time_limit time image_name_ dd_report_sig_pid part_size hdtmp pt_type ptfs
   # if the report_msg is empty, put the initial one: image_name_
   image_name_="$(basename $target_d)"
   [ -z "$report_msg" ] && report_msg="Multicast restored $image_name_,"
@@ -6318,6 +6326,19 @@ do_multicast_udpcast_restore() {
     # The saved image is from dd
     clean_filesystem_header_in_dev $part
     multicast_restore_by_dd
+  elif [ -e "$target_d/00-pseudo-img-note.txt" ]; then
+    # Multicast mode as the file 00-pseudo-img-note.txt exists.
+    # Apparently there is no image, so directly read from server.
+    clean_filesystem_header_in_dev $part
+    ptfs="$(grep -Ew "^$part" $target_d/dev-fs.list | awk -F" " '{print $2}')"
+    if ! `is_partclone_support_fs $ptfs`; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "The file system \"$ptfs\" on /dev/$part is not supported by Partclone. Use Partclone dd mode for raw device deployment." | tee --append $OCS_LOGFILE
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      # Set the file system as "dd".
+      ptfs="dd"
+    fi
+    multicast_restore_by_partclone "$ptfs" "$mcast_rawdev_unzip_std"
   fi
   echo "Finished restoring image ${target_d##*/} to $part." | tee --append ${OCS_LOGFILE}
   echo $msg_delimiter_star_line
@@ -6501,13 +6522,23 @@ multicast_feed_img_for_dd() {
   $udpcast_send_cmd 2>$udpcast_stderr
 } # multicast_feed_img_for_dd
 #
-udp_send_part_img() {
+udp_send_part_img_or_dev() {
   # part is like: hda1 or lv0l0
   # imagedir, port and ipart are global variable
-  local target_d="$1"
-  local img_file="$(to_filename $2)"  # e.g. sda1.ext4-ptcl-img.gz.aa or cciss-c0d0p1.ext4-ptcl-img.gz.aa
-  local part="$3"      # e.g. sda1
+  local target_d img_file part
   local n split_by
+  local from_rawdev ptfs
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -f|--from-raw-dev)
+	 from_rawdev="yes"
+         shift;;
+      *) break ;;
+    esac
+  done
+  target_d="$1"
+  img_file="$(to_filename $2)"  # e.g. sda1.ext4-ptcl-img.gz.aa or cciss-c0d0p1.ext4-ptcl-img.gz.aa
+  part="$(format_dev_name_without_leading_dev $3)" # e.g., sda1, sda2
   # for the 2nd and other partition, we should shorten the preparation time
   [ -n "$mcast_wait_time" -a $ipart -gt 1 ] && udpcast_hold_opt1="--min-wait $PART_PREPARE_TIME" 
   [ -n "$mcast_max_wait_time" -a $ipart -gt 1 ] && udpcast_hold_opt3="--max-wait $PART_PREPARE_TIME" 
@@ -6519,27 +6550,56 @@ udp_send_part_img() {
      exit 1
   fi
   udpcast_send_cmd="udp-sender $udp_sender_extra_opt $udpcast_hold_opt1 $udpcast_hold_opt2 $udpcast_hold_opt3 --interface $eth_for_multicast --nokbd --mcast-all-addr $MULTICAST_ALL_ADDR --portbase $port $TIME_TO_LIVE_OPT"
-  if [ -f "$imagedir/$target_d/$img_file.000" -o \
-       -n "$(ls $imagedir/$target_d/$img_file.aa* 2>/dev/null)" -o \
-       -f "$imagedir/$target_d/$img_file" ]; then
-    # The saved image is from partimage
-    multicast_feed_img_for_partimage
-  elif [ -f "$imagedir/$target_d/$img_file.ntfs-img" -o \
-	 -n "$(ls $imagedir/$target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
-    # The saved image is from ntfsclone
-    multicast_feed_img_for_ntfsclone
-  elif is_partclone_image $imagedir/$target_d $img_file; then
-    # The saved image is from partclone
-    multicast_feed_img_for_partclone
-  elif is_dd_image $imagedir/$target_d $img_file; then
-    # The saved image is from dd
-    multicast_feed_img_for_dd
+  if [ "$from_rawdev" = "yes" ]; then
+    # From raw device
+    # E.g., partclone.ext4 $PARTCLONE_SAVE_OPT -L $PARTCLONE_LOG  -c -s $src_p -o - 2>/dev/null | zstdmt -c | udp-sender --full-duplex --min-clients 1 --max-wait 300 --interface eth0 --nokbd --mcast-all-addr 224.0.0.1 --portbase 2232 --ttl 1
+    #(1) Decide the file system
+    #(2) Decide the compression method
+    check_if_source_dev_busy_before_saving "/dev/$part" "dummy"
+  
+    # get the filesystem
+    ptfs="$(ocs-get-dev-info /dev/$part filesystem 2>/dev/null)"
+    if [ -z "$ptfs" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Unable to identify the file system on /dev/$part." | tee --append $OCS_LOGFILE
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop." | tee --append $OCS_LOGFILE
+      exit 1
+    fi
+    if ! `is_partclone_support_fs $ptfs`; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "The file system \"$ptfs\" on /dev/$part is not supported by Partclone. Use Partclone dd mode for raw device deployment." | tee --append $OCS_LOGFILE
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      # Set the file system as "dd".
+      ptfs="dd"
+    fi
+    LC_ALL=C partclone.${ptfs} $PARTCLONE_SAVE_OPT -L $PARTCLONE_LOG  -c -s /dev/$part -o - 2>/dev/null \
+    | $mcast_rawdev_zip_std \
+    | $udpcast_send_cmd 2>$udpcast_stderr
+  else
+    # From image
+    if [ -f "$imagedir/$target_d/$img_file.000" -o \
+         -n "$(ls $imagedir/$target_d/$img_file.aa* 2>/dev/null)" -o \
+         -f "$imagedir/$target_d/$img_file" ]; then
+      # The saved image is from partimage
+      multicast_feed_img_for_partimage
+    elif [ -f "$imagedir/$target_d/$img_file.ntfs-img" -o \
+           -n "$(ls $imagedir/$target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
+      # The saved image is from ntfsclone
+      multicast_feed_img_for_ntfsclone
+    elif is_partclone_image $imagedir/$target_d $img_file; then
+      # The saved image is from partclone
+      multicast_feed_img_for_partclone
+    elif is_dd_image $imagedir/$target_d $img_file; then
+      # The saved image is from dd
+      multicast_feed_img_for_dd
+    fi
   fi
   # prepare parameters for the next 
   ipart="$((ipart+1))"
   port="$((port+2))"
   [ -n "$verbose" ] && echo "done!"
-} # end of udp_send_part_img
+} # end of udp_send_part_img_or_dev
 #
 get_mail_client_prog() {
   # mail_client is a global variable.
@@ -6563,7 +6623,7 @@ is_MTA_running(){
   if lsof -i :25 >/dev/null 2>&1; then
     return 0
   else
-    echo "No MTA is running. Skip mailing the results of Clonezilla job to root."
+    echo "No MTA is running. Skip mailing the results of Clonezilla job to root." | tee --append ${OCS_LOGFILE}
     return 1
   fi
 } # end of is_MTA_running
@@ -6580,9 +6640,19 @@ mail_clonezilla_log_to_root() {
 # function to feed multicast for restoring partitions
 feed_multicast_restoreparts() {
   # This is for None-LVM parts
-  local tgt_dir="$1"
-  local tgt_parts="$2"
+  local tgt_dir local tgt_parts
   local time_to_pause_before_mail mail_client="" time_tag part_is_lvm
+  local from_rawdev_opt
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -f|--from-raw-dev)
+	 from_rawdev_opt="-f"
+         shift;;
+      *) break ;;
+    esac
+  done
+  tgt_dir="$1"
+  tgt_parts="$2"
   get_mail_client_prog # return $mail_client
   # Set the initial value for ipart and port.
   ipart=1
@@ -6597,12 +6667,12 @@ feed_multicast_restoreparts() {
       part_is_lvm="yes"
       continue
     fi
-    udp_send_part_img $tgt_dir $partition $partition
+    udp_send_part_img_or_dev $from_rawdev_opt $tgt_dir $partition $partition
   done
   # We have to do restore LVM (PV/VG/LV) together, not follow every partition
   if [ "$part_is_lvm" = "yes" ]; then
     # LVM exists, feed images to restore PV/VG/LV.
-    feed_LVM_multicast "$tgt_parts" $port
+    feed_LVM_multicast $from_rawdev_opt "$tgt_parts" $port
   fi
   # spawn a background program to wait and mail the clonezilla-jogs.log to root
   # if we can find mail/mutt program then we do it, otherwise skip.
@@ -6643,7 +6713,7 @@ feed_multicast_restoreparts() {
       fi
     fi
     echo $msg_delimiter_star_line
-    feed_multicast_restoreparts "$tgt_dir" "$tgt_parts"
+    feed_multicast_restoreparts $from_rawdev_opt "$tgt_dir" "$tgt_parts"
   fi
 } # end of feed_multicast_restoreparts
 # function to feed bittorrent for restoring partitions
@@ -6849,7 +6919,7 @@ do_d2d_network_restore() {
     # For whole disk clone over net, we support part clone one to one,
     # i.e., sda1 -> sda1 or sda1 -> sdb1, not sda1 -> sda2 or sda1 -> sdb2.
     # Hence we can get fs from target device.
-    part_fs="$(grep -Ew "/dev/$part" $tgt_pt_info | awk -F" " '{print $2}')" ;;
+    part_fs="$(grep -Ew "^/dev/$part" $tgt_pt_info | awk -F" " '{print $2}')" ;;
   "nd2d_restoreparts")
     # For part clone over net, the source and target part maybe different,
     # so we have to get from the info file
@@ -7377,9 +7447,19 @@ create_bittorrent_slices() {
 feed_LVM_multicast() {
   # This is for LVM parts
   # imagedir, port and ipart are global variable
-  local tgt_parts="$1"
-  local port="$2"
+  local tgt_parts port
   local volg n
+  local from_rawdev ptfs
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -f|--from-raw-dev)
+	 from_rawdev="yes"
+         shift;;
+      *) break ;;
+    esac
+  done
+  tgt_parts="$1"
+  port="$2"
   if [ -z "$port" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "To feed multicast/broadcast LVM, you must specify the port!!!" | tee --append ${OCS_LOGFILE}
@@ -7393,7 +7473,7 @@ feed_LVM_multicast() {
   [ ! -f "$PV_PARSE_CONF" ] && exit 1
   [ ! -f "$LOGV_PARSE_CONF" ] && exit 1
   
-  # To avoid the stdin/stdout in ntfsclone/partimage/partclone (udp_send_part_img $target_dir $fn $lv) conflict with "while read", here we use different file descriptor  (3)
+  # To avoid the stdin/stdout in ntfsclone/partimage/partclone (udp_send_part_img_or_dev $target_dir $fn $lv) conflict with "while read", here we use different file descriptor  (3)
   exec 3< $LOGV_PARSE_CONF
   while read -u 3 lv fs; do
    # Process the real data partition, only those in the chosen partitions
@@ -7419,15 +7499,18 @@ feed_LVM_multicast() {
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*) continue;; 
    esac
-   if [ -z "$(unalias ls 2>/dev/null; ls $imagedir/$target_dir/${fn}* 2>/dev/null)" ]; then
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "$imagedir/$target_dir/${fn}* was not found! The restored OS might be uncompleted!"
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-     echo -n "$msg_press_enter_to_continue..."
-     read
-     continue
+   if [ "$from_rawdev" != "yes" ]; then
+     # From the image file, check if the file exists.
+     if [ -z "$(unalias ls 2>/dev/null; ls $imagedir/$target_dir/${fn}* 2>/dev/null)" ]; then
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+       echo "$imagedir/$target_dir/${fn}* was not found! The restored OS might be uncompleted!"
+       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+       echo -n "$msg_press_enter_to_continue..."
+       read
+       continue
+     fi
    fi
-   udp_send_part_img $target_dir $fn $lv
+   udp_send_part_img_or_dev $from_rawdev_opt $target_dir $fn $lv
   done
   exec 3<&-
 } # end of feed_LVM_multicast
@@ -7578,9 +7661,12 @@ stop_ocs_service() {
     #[ "$clean_client_all_ocs_related_srv" = "yes" ] && rm -f $RCX_ROOTDIR/rc[06].d/S05ocs-srv-reset
     
     # kill drbl-ocs, ocsmgrd and udpcast daemon
-    kill_ps_by_kill_9 $main_prog
-    kill_ps_by_killall_9 ocsmgrd
-    kill_ps_by_killall_9 udp-sender
+    # mcast_rawdev_zip_std is like "zstdmt -c", we just need the 1st one.
+    mcast_srv_2_term="$main_prog ocsmgrd udp-sender partclone\.[[:print:]]+"
+    echo "Brutally kill service if available: $mcast_srv_2_term ..."
+    for isv in $mcast_srv_2_term; do
+      pkill -f -15 $isv
+    done
 
     # Stop BT-related services
     ocs-btsrv -b stop
@@ -7962,7 +8048,11 @@ start_ocs_service() {
         echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
         exit 1
       fi
-      feed_multicast_restoreparts "$target_dir" "$target_parts" &
+      if [ "$from_raw_dev" = "yes" ]; then
+        # This is from raw device, so add an option
+        raw_dev_opt="-f"
+      fi
+      feed_multicast_restoreparts $raw_dev_opt "$target_dir" "$target_parts" &
       ;;
 
     "multicast_restoreparts")
@@ -7975,7 +8065,11 @@ start_ocs_service() {
         echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
         exit 1
       fi
-      feed_multicast_restoreparts "$target_dir" "$target_parts" &
+      if [ "$from_raw_dev" = "yes" ]; then
+        # This is from raw device, so add an option
+        raw_dev_opt="-f"
+      fi
+      feed_multicast_restoreparts $raw_dev_opt "$target_dir" "$target_parts" &
       ;;
 
     "bt_restoredisk")
@@ -10956,7 +11050,7 @@ USAGE_common_general() {
 } # end of USAGE_common_general
 #
 check_if_source_dev_busy_before_saving() {
-  local src_dev="$1"
+  local src_dev="$(format_dev_name_with_leading_dev $1)"  # e.g., /dev/sda1
   local img_name="$2"
   [ -z "$src_dev" ] && return 1
   if [ -n "$(mount | grep -Ew "^$src_dev")" ]; then
@@ -15249,7 +15343,7 @@ onthefly_receive_partition_from_server_then_write() {
     case "$S2S_CLONE_PROG_IN_OCS_ONTHEFLY" in 
      dd)
       echo "Filesystem in $src_p is not well supported. Use dd to clone..." | tee --append $OCS_LOGFILE 
-      pt_size="$(grep -Ew "$tgt_p" $tgt_pt_info | awk -F" " '{print $3}')"
+      pt_size="$(grep -Ew "^$tgt_p" $tgt_pt_info | awk -F" " '{print $3}')"
       trigger_dd_status_report $tgt_p $pt_size &
       $netpipe_cli_cmd | $net_filter_decomp | \
       LC_ALL=C dd bs=1M of=$tgt_p
