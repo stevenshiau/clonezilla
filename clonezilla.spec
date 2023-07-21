@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.4.12
+Version:	5.5.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jul 21 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.1-drbl1
+  * Add the mechanism for multicast deployment from raw devices.
+    Note:
+    The options -bdt and -bsdf of ocs-live-feed-img are deprecated. They
+    are replaced by -cdt and -csdf, it means cast (including bittorrent
+    and multicast), not only for bittorrent only.
+
 * Thu Jul 13 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.12-drbl1
   * Improved the start/stop mechanism of ezio process.
 
