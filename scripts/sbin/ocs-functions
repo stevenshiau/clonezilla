@@ -7660,13 +7660,19 @@ stop_ocs_service() {
     # From clonezilla 2.0, the ocs-srv-reset is almost useless. Comment it.
     #[ "$clean_client_all_ocs_related_srv" = "yes" ] && rm -f $RCX_ROOTDIR/rc[06].d/S05ocs-srv-reset
     
-    # kill drbl-ocs, ocsmgrd and udpcast daemon
+    # Kill: (1) drbl-ocs/ocs-live-feed-img ($main_prog), (2) ocsmgrd, udpcast, partclone...
     # mcast_rawdev_zip_std is like "zstdmt -c", we just need the 1st one.
-    mcast_srv_2_term="$main_prog ocsmgrd udp-sender partclone\.[[:print:]]+"
-    echo "Brutally kill service if available: $mcast_srv_2_term ..."
+    mcast_srv_2_term="ocsmgrd udp-sender partclone\.[[:print:]]+"
+    echo "Brutally kill service if available: $main_prog $mcast_srv_2_term ..."
+    # Part (1):
+    # To avoid kill the process itself (e.g., drbl-ocs start will kill drbl-ocs first)
+    # ocs_myself_id is the main program PID, global variable from drbl-ocs or ocs-live-feed-img.
+    echo "Killing $main_prog..."
+    kill_ps_by_kill_9 $main_prog
+    # Part (2):
     for isv in $mcast_srv_2_term; do
-      # To avoid kill the process itself (e.g., drbl-ocs start will kill drbl-ocs first), we set it will only kill the process older than 30 secs.
-      pkill -f -O 30 -15 $isv
+      echo "Killing $isv"
+      pkill -f -15 $isv
     done
 
     # Stop BT-related services
@@ -10417,7 +10423,7 @@ check_boot_kernel_arg_cmdline() {
 }
 #
 kill_ps_by_kill_9() {
-  # kill drbl-ocs or ocs-sr process
+  # kill drbl-ocs, ocs-sr or ocs-live-feed-img process
   # This is better than killall -9, more exactly
   # ocs_myself_ppid is global variable, it will be excluded when killing
   local prog="$1"
