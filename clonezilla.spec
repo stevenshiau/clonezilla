@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.1
+Version:	5.5.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,16 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Jul 28 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.3-drbl1
+  * Better mechanism to kill ocs related services when stopping drbl-ocs or
+    ocs-live-feed-img.
+
+* Thu Jul 27 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.2-drbl1
+  * stop_ocs_service: only kill the process older than 30 secs.
+  * gparted-live-hook: use root:root in chown, not root.root.
+  * ocs-ezio-seeder: wait for 2 secs instead of 0.5 secs
+    after starting ezio process.
+
 * Fri Jul 21 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.1-drbl1
   * Add the mechanism for multicast deployment from raw devices.
     Note:
