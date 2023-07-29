@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.3
+Version:	5.5.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Jul 29 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.4-drbl1
+  * Separate the stdout and stderr of ezio to different log files in
+    ocs-ezio-seeder and ocs-ezio-leecher.
+
 * Fri Jul 28 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.3-drbl1
   * Better mechanism to kill ocs related services when stopping drbl-ocs or
     ocs-live-feed-img.
