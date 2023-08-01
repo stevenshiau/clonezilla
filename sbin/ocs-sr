@@ -1284,7 +1284,8 @@ case "$ocs_sr_type" in
       # To get $target_hd
       get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
       target_hd="$(select_VG "$target_hd")"
-    elif [ "$ocs_sr_dev" = "all" ]; then
+    elif [ "$ocs_sr_dev" = "all" -o \
+	   "$ocs_sr_dev" = "unmounted_disk" ]; then
       get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
       target_hd="$dev_list"
     elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "(PTUUID=|SERIALNO=)")" ]; then
@@ -1403,7 +1404,7 @@ case "$ocs_sr_type" in
     fi
 
     check_input_target_image "$ocsroot/$target_dir"
-    source_dsk_no="$(get_disk_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+    source_hd_no="$(get_disk_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
 
     # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
     if grep -Eq '^md[0-9]+' $ocsroot/$target_dir/blkdev.list; then
@@ -1412,15 +1413,29 @@ case "$ocs_sr_type" in
     fi
 
     if [ "$ocs_sr_dev" = "ask_user" ]; then
-      if [ "$source_dsk_no" -eq 1 ]; then
+      if [ "$source_hd_no" -eq 1 ]; then
         dia_sel_opt="menu"
       else
         dia_sel_opt="checklist"
       fi
       # To get $target_hd
       get_target_hd_name_from_local_machine "$msg_choose_the_disks_to_restore \n$msg_linux_disk_naming $msg_press_space_to_mark_selection" $dia_sel_opt
-    elif [ "$ocs_sr_dev" = "all" ]; then
-      target_hd="$(get_disk_list_from_img $ocsroot/$target_dir)"
+    elif [ "$ocs_sr_dev" = "all" -o \
+	   "$ocs_sr_dev" = "unmounted_disk" ]; then
+      get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
+      target_hd="$dev_list"
+      target_hd_no="$(LC_ALL=C echo $target_hd | wc -w)"
+      if [ "$source_hd_no" != "$target_hd_no" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "The source disk number from the image does not match to that of destination disk." | tee --append ${OCS_LOGFILE}
+	echo "Source disk number: $source_hd_no" | tee --append ${OCS_LOGFILE}
+	echo "Destination disk number: $target_hd_no" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "$msg_press_enter_to_continue..."
+        read
+        echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+	exit 1
+      fi
     elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "SERIALNO=")" ]; then
       # Input might be multiple devices like: 
       # SERIALNO="36000c292124c4d6554f924089bd9b83a" sdb
@@ -1509,7 +1524,8 @@ case "$ocs_sr_type" in
       else
 	get_target_parts_name_from_local_machine  # get $target_parts
       fi
-    elif [ "$ocs_sr_dev" = "all" ]; then
+    elif [ "$ocs_sr_dev" = "all" -o \
+	   "$ocs_sr_dev" = "unmounted_parts" ]; then
       get_not_busy_disks_or_parts partition "" ""  # we will get dev_list
       target_parts="$dev_list"
     elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "(UUID=|PARTUUID=)")" ]; then
@@ -1630,6 +1646,8 @@ case "$ocs_sr_type" in
       target_dir="$ocs_sr_img_name"
     fi
     check_input_target_image "$ocsroot/$target_dir"
+    # This is actually the max avaiable partitions number from image
+    source_parts_no="$(get_parts_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
     
     if [ "$ocs_sr_dev" = "ask_user" ]; then
       if [ -z "$source_part" ]; then
@@ -1650,8 +1668,9 @@ case "$ocs_sr_type" in
 
       # target name exists, but file "parts" is empty ?
       check_target_parts $ocsroot/$target_dir/parts "$source_part"
-      src_parts_no="$(LC_ALL=C echo $source_part | wc -w)"
-      if [ "$src_parts_no" -eq 1 ]; then
+      # User might choose the partitions when it's ask_user, so here we have to calculate the number again.
+      source_parts_no="$(LC_ALL=C echo $source_part | wc -w)"
+      if [ "$source_parts_no" -eq 1 ]; then
         dia_sel_opt="menu"
         if [ "$ocs_user_mode" = "expert" ] && [ -z "$list_local_dev_mode" ]; then
           ask_list_device_mode  # get $list_local_dev_mode
@@ -1676,8 +1695,21 @@ case "$ocs_sr_type" in
         fi
       fi
     elif [ "$ocs_sr_dev" = "all" -o \
-	   "$ocs_sr_dev" = "unmounted_disk" ]; then
-      target_parts="$(get_parts_list_from_img $ocsroot/$target_dir)"
+	   "$ocs_sr_dev" = "unmounted_parts" ]; then
+      get_not_busy_disks_or_parts partition "" ""  # we will get dev_list
+      target_parts="$dev_list"
+      target_parts_no="$(LC_ALL=C echo $target_parts | wc -w)"
+      if [ "$source_parts_no" != "$target_parts_no" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "The source partition(s) number from the image does not match to that of destination partition(s)." | tee --append ${OCS_LOGFILE}
+	echo "Source partition(s) number: $source_parts_no" | tee --append ${OCS_LOGFILE}
+	echo "Destination partition(s) number: $target_parts_no" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "$msg_press_enter_to_continue..."
+        read
+        echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+	exit 1
+      fi
     else
       target_parts="$ocs_sr_dev"
     fi
