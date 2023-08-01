@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.4
+Version:	5.5.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Aug 01 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.5-drbl1
+  * Improved the mechanism for the reserved word name "all" when in the
+    restoredisk/restoreparts mode. The reserved name "unmounted_disk" and
+    "unmounted_parts" for restoredisk and restoreparts modes were added,
+    respectively.
+
 * Sat Jul 29 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.4-drbl1
   * Separate the stdout and stderr of ezio to different log files in
     ocs-ezio-seeder and ocs-ezio-leecher.
