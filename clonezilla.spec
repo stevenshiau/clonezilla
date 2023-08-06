@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.5
+Version:	5.5.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.2.14, psmisc, udpcast, partclone >= 0.3.23, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.2.21, psmisc, udpcast, partclone >= 0.3.24, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Aug 06 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.6-drbl1
+  * Bug fixed: cloning paritition loop for multiple LVs. 
+    Thanks for all the bug reporters.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/f6a7e860c9
+
 * Tue Aug 01 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.5-drbl1
   * Improved the mechanism for the reserved word name "all" when in the
     restoredisk/restoreparts mode. The reserved name "unmounted_disk" and
