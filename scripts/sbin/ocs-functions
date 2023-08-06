@@ -7136,11 +7136,10 @@ save_logv() {
 # Part of these codes are from http://www.trickytools.com/php/clonesys.php
 # Thanks to Jerome Delamarche (jd@inodes-fr.com)
 restore_logv() {
-  # mode is unicast or multicast
   local tgt_parts="$1"  # tgt_parts is like: sda1 sda2 sda5
-  local mode="$2"
+  local mode="$2" # mode is unicast, multicast, d2d, bittorrent, or netcat_nuttcp
   local port="$3"
-  local volg is_in_chosen_partition lvm_tmp ipt lsrc_dev rc
+  local volg is_in_chosen_partition lvm_tmp ipt lsrc_dev rc lv_corr_pt_his lv_corr_pt 
   # target_dir_fullpath is local (in function task_saveparts) global variable, since restore_logv is used in function task_restoreparts 
   # source_hd and target_hd are from ocs-onthefly.
   check_ocs_variables_if_fails_quit restore_logv \
@@ -7157,22 +7156,22 @@ restore_logv() {
   # Clean the filesystem header in partition where PV exists
   # This is an insurance, since later when we use partimage/ntfsclone to clone, it will not overwrite file header in that partition, it will only overwrite the data in LV. Then parted, blkid will give wrong info.
   while read lv fs; do
-   # we process the real data partition, only those in the chosen partitions
-   # Ex:
-   # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
-   # Then lvol0 is belong to VG vg3
-   volg="$(echo "$lv" | awk -F"/" '{print $3}')"
-   # Find if the LV is in the chosen partition (via VG, we can determine that)
-   # EX: tgt_parts: hda1, hda3, hda5...
-   #     vg3 /dev/hda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
-   for ipt in $tgt_parts; do
-     if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
-       # Found the chosen partitions is in the VG
-       if check_LVM_partition /dev/$ipt; then
-         clean_filesystem_header_in_dev /dev/$ipt
-       fi
-     fi
-   done
+    # We process the real data partition, only those in the chosen partitions
+    # Ex:
+    # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
+    # Then lvol0 is belong to VG vg3
+    volg="$(echo "$lv" | awk -F"/" '{print $3}')"
+    # Find if the LV is in the chosen partition (via VG, we can determine that)
+    # EX: tgt_parts: sda1, sda3, sda5...
+    #     vg3 /dev/sda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
+    for ipt in $tgt_parts; do
+      if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
+        # Found the chosen partitions is in the VG
+        if check_LVM_partition /dev/$ipt; then
+          clean_filesystem_header_in_dev /dev/$ipt
+        fi
+      fi
+    done
   done < $LOGV_PARSE_CONF
 
   if [ ! -e "$PV_PARSE_CONF" ]; then
@@ -7277,101 +7276,114 @@ restore_logv() {
   # To avoid the stdin/stdout in ntfsclone/partimage/partclone ( do_unicast_stdin_restore $target_dir_fullpath $fn $lv; do_multicast_udpcast_restore $target_dir_fullpath $fn $lv) conflict with "while read", here we use different file descriptor  (3)
   exec 3< $LOGV_PARSE_CONF
   while read -u 3 lv fs; do
-   [ ! -e $lv ] && continue
-   # Then we process the real data partition, only those in the chosen partitions
-   # Ex:
-   # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
-   # Then lvol0 is belong to VG vg3
-   volg="$(echo "$lv" | awk -F"/" '{print $3}')"
-   # Find if the LV is in the chosen partition (via VG, we can determine that)
-   # EX: tgt_parts: sda1, sda3, sda5...
-   #     vg3 /dev/sda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
-   is_in_chosen_partition="no"
-   for ipt in $tgt_parts; do
-     for i in $(sed -e 's!^.*/dev/\([^[:space:]]\{3,\}\)[[:space:]]*.*$!\1!g' $PV_PARSE_CONF); do
-       if [ "$ipt" = "$(get_master_dev_of_multipath $i)" ]; then
-         is_in_chosen_partition="yes"
-         continue
-       fi
-     done
-   done
-   # ipt is the chosen partition
-   # If not in the chosen partition, skip this, continue with the next.
-   [ "$is_in_chosen_partition" = "no" ] && continue
-   # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
-   fn="$(to_ocs_dev_img_name $lv)"
-   # Log the logical volume which is restored. The leading "/dev/" is removed, i.e. the results might be: lucid-server/root lucid-server/usr
-   target_logv="$target_logv ${lv#/dev/*}"
-   # create the swap if it's swap partition
-   case "$fs" in 
-     *[Ss][Ww][Aa][Pp]*)
-        echo $msg_delimiter_star_line
-        echo "Found the swap partition $lv info, create it by:"
-	# read LABEL, UUID info for $partition if swappt-$(to_filename ${fn}).info exists
-        uuid_opt=""
-        label_opt=""
-	if [ -e "$target_dir_fullpath/swappt-$(to_filename ${fn}).info" ]; then
-          UUID=""
-          LABEL=""
-	  . "$target_dir_fullpath/swappt-$(to_filename ${fn}).info"
-          [ -n "$UUID" ] && uuid_opt="-U $UUID"
-          [ -n "$LABEL" ] && label_opt="-L $LABEL"
+    [ ! -e $lv ] && continue
+    # Then we process the real data partition, only those in the chosen partitions
+    # Ex:
+    # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
+    # Then lvol0 is belong to VG vg3
+    volg="$(echo "$lv" | awk -F"/" '{print $3}')"
+    # Find if the LV is in the chosen partition (via VG, we can determine that)
+    # EX: tgt_parts: sda1, sda3, sda5...
+    #     vg3 /dev/sda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
+    is_in_chosen_partition="no"
+    lv_corr_pt=""
+    for ipt in $tgt_parts; do
+      if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
+        # Found the chosen partitions is in the VG
+        is_in_chosen_partition="yes"
+	lv_corr_pt="$ipt"
+        break
+      fi
+    done
+    # If LV is not in the chosen partition, skip this, continue with the next LV.
+    [ "$is_in_chosen_partition" = "no" ] && continue
+    # Now lv_corr_pt is the corresponding partition of LV we want to deal with. This is especially for local device cloning.
+    # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
+    fn="$(to_ocs_dev_img_name $lv)"
+    # Log the logical volume which is restored. The leading "/dev/" is removed, i.e. the results might be: lucid-server/root lucid-server/usr
+    target_logv="$target_logv ${lv#/dev/*}"
+    # create the swap if it's swap partition
+    case "$fs" in 
+      *[Ss][Ww][Aa][Pp]*)
+         echo $msg_delimiter_star_line
+         echo "Found the swap partition $lv info, create it by:"
+         # read LABEL, UUID info for $partition if swappt-$(to_filename ${fn}).info exists
+         uuid_opt=""
+         label_opt=""
+         if [ -e "$target_dir_fullpath/swappt-$(to_filename ${fn}).info" ]; then
+           UUID=""
+           LABEL=""
+           . "$target_dir_fullpath/swappt-$(to_filename ${fn}).info"
+           [ -n "$UUID" ] && uuid_opt="-U $UUID"
+           [ -n "$LABEL" ] && label_opt="-L $LABEL"
+         fi
+         echo "mkswap $label_opt $uuid_opt $lv"
+         mkswap $label_opt $uuid_opt $lv
+         echo $msg_delimiter_star_line
+         # then skip the rest.
+         continue;; 
+    esac
+    echo "Restoring device $fn..." | tee --append $OCS_LOGFILE
+    rc=""
+    case "$mode" in
+      "unicast")
+        do_unicast_stdin_restore $target_dir_fullpath $fn $lv
+        rc="$?"
+        ;;
+      "multicast")
+        do_multicast_udpcast_restore $target_dir_fullpath $fn $lv
+        rc="$?"
+        ;;
+      "bittorrent")
+        collect_bittorrent_restore_dev $target_dir_fullpath $fn $lv
+        rc="$?"
+        ;;
+      "d2d")
+        # Local device to local device
+        check_ocs_variables_if_fails_quit restore_logv \
+        target_hd source_hd | tee --append $OCS_LOGFILE
+        [ "${PIPESTATUS[0]}" -gt 0 ] && exit 1
+        if [ "$source_hd" = "$target_hd" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "Wrong assignment in restore_logv! source_hd should not be the same as target_hd!" | tee --append ${OCS_LOGFILE}
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "$msg_program_stop"      | tee --append ${OCS_LOGFILE}
+          echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+          exit 1
         fi
-        echo "mkswap $label_opt $uuid_opt $lv"
-        mkswap $label_opt $uuid_opt $lv
-        echo $msg_delimiter_star_line
-	# then skip the rest.
-        continue;; 
-   esac
-   echo "Restoring device $fn..." | tee --append $OCS_LOGFILE
-   case "$mode" in
-     "unicast")
-       do_unicast_stdin_restore $target_dir_fullpath $fn $lv
-       rc="$?"
-       ;;
-     "multicast")
-       do_multicast_udpcast_restore $target_dir_fullpath $fn $lv
-       rc="$?"
-       ;;
-     "bittorrent")
-       collect_bittorrent_restore_dev $target_dir_fullpath $fn $lv
-       rc="$?"
-       ;;
-     "d2d")
-       # Local device to local device
-       check_ocs_variables_if_fails_quit restore_logv \
-       target_hd source_hd | tee --append $OCS_LOGFILE
-       [ "${PIPESTATUS[0]}" -gt 0 ] && exit 1
-       if [ "$source_hd" = "$target_hd" ]; then
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-         echo "Wrong assignment in restore_logv! source_hd should not be the same as target_hd!" | tee --append ${OCS_LOGFILE}
-         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-         echo "$msg_program_stop"      | tee --append ${OCS_LOGFILE}
-         echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-	 exit 1
-       fi
-       lsrc_dev="$(echo $ipt | replace_disk_name_stdin $target_hd $source_hd)"
-       do_d2d_local_restore $target_dir_fullpath $lsrc_dev $ipt
-       rc="$?"
-       ;;
-     "netcat_nuttcp")
-       # Device to device via network
-       netcat_nuttcp_check
-       set_onthefly_net_filter_program
-       # We use NC_PORT to receive data from onthefly server
-       do_d2d_network_restore $target_dir_fullpath $lv
-       rc="$?"
-       ;;
-   esac
-   if [ $rc -gt 0 ]; then
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-     echo "Failed to restore partition image file $target_dir_fullpath/${fn}* to $lv. Maybe this image is corrupt." | tee --append $OCS_LOGFILE
-     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-     echo "$msg_program_stop"      | tee --append ${OCS_LOGFILE}
-     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-     [ "$save_restore_error_log" = "yes" ] && copy_error_log
-     exit 1
-   fi
+        lsrc_dev="$(echo $lv_corr_pt | replace_disk_name_stdin $target_hd $source_hd)"
+	echo "Processing local LV $fn with corresponding device $lsrc_dev to $lv_corr_pt cloning..."
+	if [ -z "$(echo $lv_corr_pt_his | grep -E "$target_dir_fullpath $lsrc_dev $lv_corr_pt")" ]; then
+          # Since there might be multiple LVs in the same corresponding partition, we only have to do once.
+          # E.g., LV: root, home, var, etc in /dev/nvme0n1p3, but we only do once:
+	  # do_d2d_local_restore /tmp/d2d-pseudo-tmp-cnvted nvme0n1p3 sda3
+          # Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/f6a7e860c9
+          do_d2d_local_restore $target_dir_fullpath $lsrc_dev $lv_corr_pt
+          rc="$?"
+	  # It's done once, so keep the process history in lv_corr_pt_his.
+	  lv_corr_pt_his="$target_dir_fullpath $lsrc_dev $lv_corr_pt"
+        else
+          echo "The cloning for local LV $fn with corresponding device $lsrc_dev to $lv_corr_pt was done previously. No need to do it again..."
+	fi
+        ;;
+      "netcat_nuttcp")
+        # Device to device via network
+        netcat_nuttcp_check
+        set_onthefly_net_filter_program
+        # We use NC_PORT to receive data from onthefly server
+        do_d2d_network_restore $target_dir_fullpath $lv
+        rc="$?"
+        ;;
+    esac
+    if [ $rc -gt 0 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Failed to restore partition image file $target_dir_fullpath/${fn}* to $lv. Maybe this image is corrupt." | tee --append $OCS_LOGFILE
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop"      | tee --append ${OCS_LOGFILE}
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+      [ "$save_restore_error_log" = "yes" ] && copy_error_log
+      exit 1
+    fi
   done
   exec 3<&-
   return $rc
@@ -7543,42 +7555,42 @@ feed_bittorrent_LVM() {
   [ ! -f "$LOGV_PARSE_CONF" ] && exit 1
   
   while read lv fs; do
-   # Process the real data partition, only those in the chosen partitions
-   # Ex:
-   # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
-   # Then lvol0 is belong to VG vg3
-   volg="$(echo "$lv" | awk -F"/" '{print $3}')"
-   # Find if the LV is in the chosen partition (via VG, we can determine that)
-   # EX: tgt_parts: hda1, hda3, hda5...
-   #     vg3 /dev/hda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
-   is_in_chosen_partition="no"
-   for ipt in $tgt_parts; do
-     if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
-       # Found the chosen partitions is in the VG
-       is_in_chosen_partition="yes"
-       break
-     fi
-   done
-   [ "$is_in_chosen_partition" = "no" ] && continue
-   # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
-   fn="$(to_ocs_dev_img_name $lv)"
-   # Skip feeding swap
-   case "$fs" in 
-     *[Ss][Ww][Aa][Pp]*) continue;; 
-   esac
-   if [ -z "$from_rawdev_opt" ]; then
-     # from image, not from raw dev. Check BT slices dir.
-     if [ ! -d "$ocsroot_btzone/$tgt_dir/$fn" ]; then
-       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-       echo "$ocsroot_btzone/$tgt_dir/$fn was not found! The restored OS might be uncompleted!"
-       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-       echo -n "$msg_press_enter_to_continue..."
-       read
-       continue
-     fi
-   fi
-   # Collect all LVs
-   lv_list_bt="$lv_list_bt ${lv#/dev/*}"
+    # Process the real data partition, only those in the chosen partitions
+    # Ex:
+    # /dev/vg3/lvol0  Linux rev 1.0 ext3 filesystem data (large files)
+    # Then lvol0 is belong to VG vg3
+    volg="$(echo "$lv" | awk -F"/" '{print $3}')"
+    # Find if the LV is in the chosen partition (via VG, we can determine that)
+    # EX: tgt_parts: hda1, hda3, hda5...
+    #     vg3 /dev/hda3 nPMQQ0-D2yN-YRHL-9fBM-0cUm-vgcw-DCUTri
+    is_in_chosen_partition="no"
+    for ipt in $tgt_parts; do
+      if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
+        # Found the chosen partitions is in the VG
+        is_in_chosen_partition="yes"
+        break
+      fi
+    done
+    [ "$is_in_chosen_partition" = "no" ] && continue
+    # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
+    fn="$(to_ocs_dev_img_name $lv)"
+    # Skip feeding swap
+    case "$fs" in 
+      *[Ss][Ww][Aa][Pp]*) continue;; 
+    esac
+    if [ -z "$from_rawdev_opt" ]; then
+      # from image, not from raw dev. Check BT slices dir.
+      if [ ! -d "$ocsroot_btzone/$tgt_dir/$fn" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "$ocsroot_btzone/$tgt_dir/$fn was not found! The restored OS might be uncompleted!"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "$msg_press_enter_to_continue..."
+        read
+        continue
+      fi
+    fi
+    # Collect all LVs
+    lv_list_bt="$lv_list_bt ${lv#/dev/*}"
   done < $LOGV_PARSE_CONF
   # Pass lv_list_bt to parent function
   #
@@ -10173,6 +10185,7 @@ task_restoreparts() {
     echo "LVM exists, restoring PV/VG/LV." | tee --append ${OCS_LOGFILE}
     # Append the whole disk to the partitions list. Althouth it's a disk, but it contains LV.
     # However, we do not put the disk name to $target_parts otherwise it might cause confusion.
+    # E.g., restore_logv 'sda1 sda2 sda3 sda4' d2d ld2d
     restore_logv "$target_parts" $net_mode $port
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
