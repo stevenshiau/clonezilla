@@ -7306,7 +7306,7 @@ restore_logv() {
     case "$fs" in 
       *[Ss][Ww][Aa][Pp]*)
          echo $msg_delimiter_star_line
-         echo "Found the swap partition $lv info, create it by:"
+         echo "Found the swap partition $lv info, create it by:" | tee --append ${OCS_LOGFILE}
          # read LABEL, UUID info for $partition if swappt-$(to_filename ${fn}).info exists
          uuid_opt=""
          label_opt=""
@@ -7317,8 +7317,8 @@ restore_logv() {
            [ -n "$UUID" ] && uuid_opt="-U $UUID"
            [ -n "$LABEL" ] && label_opt="-L $LABEL"
          fi
-         echo "mkswap $label_opt $uuid_opt $lv"
-         mkswap $label_opt $uuid_opt $lv
+         echo "mkswap $label_opt $uuid_opt $lv" | tee --append ${OCS_LOGFILE}
+         mkswap $label_opt $uuid_opt $lv | tee --append ${OCS_LOGFILE}
          echo $msg_delimiter_star_line
          # then skip the rest.
          continue;; 
@@ -7352,7 +7352,8 @@ restore_logv() {
           exit 1
         fi
         lsrc_dev="$(echo $lv_corr_pt | replace_disk_name_stdin $target_hd $source_hd)"
-	echo "Processing local LV $fn with corresponding device $lsrc_dev to $lv_corr_pt cloning..."
+	echo "Processing local LV $fn with corresponding device $lsrc_dev to $lv_corr_pt cloning..." \
+	| tee --append ${OCS_LOGFILE}
 	if [ -z "$(echo $lv_corr_pt_his | grep -E "$target_dir_fullpath $lsrc_dev $lv_corr_pt")" ]; then
           # Since there might be multiple LVs in the same corresponding partition, we only have to do once.
           # E.g., LV: root, home, var, etc in /dev/nvme0n1p3, but we only do once:
@@ -7363,7 +7364,8 @@ restore_logv() {
 	  # It's done once, so keep the process history in lv_corr_pt_his.
 	  lv_corr_pt_his="$target_dir_fullpath $lsrc_dev $lv_corr_pt"
         else
-          echo "The cloning for local LV $fn with corresponding device $lsrc_dev to $lv_corr_pt was done previously. No need to do it again..."
+          echo "The cloning for local LV $fn with corresponding device $lsrc_dev to $lv_corr_pt was done previously. No need to do it again..." \
+	  | tee --append ${OCS_LOGFILE}
 	fi
         ;;
       "netcat_nuttcp")
