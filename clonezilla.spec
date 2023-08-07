@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.6
+Version:	5.5.7
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Aug 07 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.7-drbl1
+  * Log more info about local LV cloning.
+
 * Sun Aug 06 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.6-drbl1
   * Bug fixed: cloning paritition loop for multiple LVs. 
     Thanks for all the bug reporters.
