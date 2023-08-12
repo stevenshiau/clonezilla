@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.7
+Version:	5.5.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Aug 12 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.8-drbl1
+  * ocs-prep-cache: improved the device cache mechanism so that a whole disk
+    with LV/LUKS will be used correctly.
+
 * Mon Aug 07 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.7-drbl1
   * Log more info about local LV cloning.
 
