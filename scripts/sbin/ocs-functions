@@ -12613,14 +12613,29 @@ to_sysblock_name() {
 } # end of to_sysblock_name
 #
 get_part_list() {
-  local part_table=$1
+  local part_table
   local prt_list devs dev devs_cand
+  local use_partlist_cache
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -n)  shift; use_partlist_cache="no" ;;
+      -*)  echo "${0}: ${1}: invalid option in function get_disk_list"
+           echo "$msg_program_stop"
+           [ "$save_restore_error_log" = "yes" ] && copy_error_log
+           exit 2 ;;
+      *)   break ;;
+    esac
+  done
+  part_table=$1
   shift
   # devs_cand is used to narrow the range of devices
   devs_cand=$*
   # When devs_cand devs are assigned, maybe they are not in the part_table.
 
-  check_if_use_partlist_cache $part_table # output $use_partlist_cache
+  if [ -z "$use_partlist_cache" ]; then
+    # Not assigned, so we have to check.
+    check_if_use_partlist_cache $part_table # output $use_partlist_cache
+  fi
   if [ "$use_partlist_cache" = "yes" ]; then
     prt_list="$(cat $dev_list_cache_dir/part_list.cache)"
   else
@@ -12652,14 +12667,29 @@ get_part_list() {
 } # end of get_part_list
 #
 get_disk_list() {
-  local part_table=$1
+  local part_table
   local disk_list devs dev devs_cand
-  shift
+  local use_disklist_cache
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -n)  shift; use_disklist_cache="no" ;;
+      -*)  echo "${0}: ${1}: invalid option in function get_disk_list"
+           echo "$msg_program_stop"
+           [ "$save_restore_error_log" = "yes" ] && copy_error_log
+           exit 2 ;;
+      *)   break ;;
+    esac
+  done
   # devs_cand is used to narrow the range of devices
   # When devs_cand devs are assigned, maybe they are not in the part_table.
+  part_table=$1
+  shift
   devs_cand=$*
 
-  check_if_use_disklist_cache $part_table # output $use_disklist_cache
+  if [ -z "$use_disklist_cache" ]; then
+    # Not assigned, so we have to check.
+    check_if_use_disklist_cache $part_table # output $use_disklist_cache
+  fi
   if [ "$use_disklist_cache" = "yes" ]; then
     disk_list="$(cat $dev_list_cache_dir/disk_list.cache)"
   else

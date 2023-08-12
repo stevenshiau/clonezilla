@@ -58,10 +58,13 @@ USAGE() {
 #
 gen_dev_list_file() {
   if [ -e "$dev_list_cache_dir/pttable_for_disk.txt" ]; then
-    if [ -n "$(diff <(awk '{print $3,$4}' $dev_list_cache_dir/pttable_for_disk.txt) \
-	            <(awk '{print $3,$4}' /proc/partitions))" ]; then
+    # Not only the /proc/partitions, but also the results of blkid we have to compare, because
+    # The changes in a whole disk, e.g., /dev/sda, having LUKS or LV on it will not change /proc/partitions,
+    # but blkid will change.
+    if [ -n "$(diff <(LC_ALL=C awk '{print $3,$4}' /proc/partitions; blkid) \
+	     <(cat $dev_list_cache_dir/pttable_blkid_for_dev.txt))" ]; then
       echo "Finding all disk(s)..."
-      dsk_list="$(get_disk_list /proc/partitions)"
+      dsk_list="$(get_disk_list -n /proc/partitions)"
     else
       echo "The file /proc/partitions remains the same. Skip generating disk(s) list file."
       # Still we need dsk_list for later use in gen_dev_fs_cache_file_job
@@ -69,13 +72,16 @@ gen_dev_list_file() {
     fi
   else
     echo "Finding all disk(s)..."
-    dsk_list="$(get_disk_list /proc/partitions)"
+    dsk_list="$(get_disk_list -n /proc/partitions)"
   fi
   if [ -e "$dev_list_cache_dir/pttable_for_part.txt" ]; then
-    if [ -n "$(diff <(awk '{print $3,$4}' $dev_list_cache_dir/pttable_for_part.txt) \
-	            <(awk '{print $3,$4}' /proc/partitions))" ]; then
+    # Not only the /proc/partitions, but also the results of blkid we have to compare, because
+    # The changes in a whole disk, e.g., /dev/sda, having LUKS or LV on it will not change /proc/partitions,
+    # but blkid will change.
+    if [ -n "$(diff <(LC_ALL=C awk '{print $3,$4}' /proc/partitions; blkid) \
+	     <(cat $dev_list_cache_dir/pttable_blkid_for_dev.txt))" ]; then
        echo "Finding all partition(s)..."
-       prt_list="$(get_part_list /proc/partitions)"
+       prt_list="$(get_part_list -n /proc/partitions)"
     else
       echo "The file /proc/partitions remains the same. Skip generating partitions(s) list file."
       # Still we need dsk_list for later use in gen_dev_fs_cache_file_job
@@ -83,7 +89,7 @@ gen_dev_list_file() {
     fi
   else
     echo "Finding all partition(s)..."
-    prt_list="$(get_part_list /proc/partitions)"
+    prt_list="$(get_part_list -n /proc/partitions)"
   fi
 } # end of gen_dev_list_file
 #
@@ -166,7 +172,8 @@ if [ "$use_dev_list_cache" = "yes" ]; then
   case "$mode" in
     dev-list) gen_dev_list_file ;;
            *) gen_dev_list_file # dsk_list & prt_list are required
-  	    gen_dev_fs_cache_file ;;
+  	      gen_dev_fs_cache_file
+	      ;;
   esac
 else
   echo "use_dev_list_cache is set as no. Do not prepar device name cache files in $dev_list_cache_dir/..."
