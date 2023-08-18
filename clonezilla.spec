@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.8
+Version:	5.5.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.2.21, psmisc, udpcast, partclone >= 0.3.24, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.2.22, psmisc, udpcast, partclone >= 0.3.24, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Aug 18 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.9-drbl1
+  * Since grub commands "linux/initrd" works for uEFI boot,
+    no matter it's secure boot or not. Just use them,
+    not using linuxefi/initrdefi.
+
 * Sat Aug 12 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.8-drbl1
   * ocs-prep-cache: improved the device cache mechanism so that a whole disk
     with LV/LUKS will be used correctly.
