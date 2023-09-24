@@ -101,7 +101,13 @@ case "$part_fs" in
 		 exit 1
 	      fi
 	      fat_fs_size="$(LC_ALL=C lsblk -b -n -d -o size ${partition})"
-	      fatresize -p --verbose -s $fat_fs_size ${partition}
+	      # A workaround to avoid fatresize 1.1.0 bug. We do not extend it to the boundary.
+	      # Just try to resize it smaller.
+	      # If we run fatresize with "-s max", it will complain:
+	      # .Error: Can't have overlapping partitions.
+	      # Ref: https://github.com/ya-mouse/fatresize/issues/18
+              #      https://gitlab.tails.boum.org/tails/tails/-/issues/18699
+	      fatresize -p --verbose -s $((fat_fs_size - 1)) ${partition}
               ;;
    ext2|ext3|ext4)
               if ! command -v e2fsck &> /dev/null || ! command -v resize2fs &> /dev/null ; then
