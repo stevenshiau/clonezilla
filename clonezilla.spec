@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.9
+Version:	5.5.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.2.22, psmisc, udpcast, partclone >= 0.3.24, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.2.22, psmisc, udpcast, partclone >= 0.3.26, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 28 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.10-drbl1
+  * Add the mechanism to use direct IO for partclone if the destination disk
+    is NVMe/SSD.
+  * ocs-resize-part: workaround to avoid fatresize bug.
+    A workaround to avoid fatresize 1.1.0 bug. We do not extend it to the boundary.
+    Just try to resize it smaller.
+    Ref: https://github.com/ya-mouse/fatresize/issues/18
+
 * Fri Aug 18 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.9-drbl1
   * Since grub commands "linux/initrd" works for uEFI boot,
     no matter it's secure boot or not. Just use them,
