@@ -69,7 +69,13 @@ for idisk in $all_disks; do
        echo "done!"
      done
    fi
-   if [ -n "$(smartctl -a /dev/$idisk | grep 'Rotation Rate')" ]; then
+   # Ref: https://linuxopsys.com/topics/check-disk-type-ssd-in-linux
+   # Use lsblk to read rota value. 0: SSD, 1: HDD
+   # Another method: smartctl -a /dev/$idisk | grep 'Rotation Rate', but for SSD, it will show:
+   # SSD: "Rotation Rate: Solid State Device".
+   rota_v="$(LC_ALL=C lsblk -n -d -o rota /dev/$idisk 2>/dev/null)"
+   rota_v="$(echo $rota_v)" # Clean leading white spaces.
+   if [ "$rota_v" = "1" ]; then
      echo -n "Parking the hard disk drive /dev/$idisk... "
      hdparm -q -y /dev/$idisk
      echo "done!"
