@@ -5676,7 +5676,6 @@ unicast_restore_by_partclone() {
   local file_ fs_ partclone_img_info_tmp file_basename
   local unzip_cmd_error cmd_partclone_rest split_flag link_flag restore_flag run_cmd_
   local -a retcodes='()'
-  local hdtmp_ ptcl_dio_opt
   # First, we find the filesystem 
   file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
   if [ -n "${file_}" ]; then
@@ -5764,7 +5763,7 @@ unicast_restore_by_partclone() {
     restore_flag="cat" 
   fi
 
-  get_partclone_direct_io $part # Obtain ptcl_dio_opt
+  get_partclone_direct_io_opt $part # Obtain ptcl_dio_opt
 
   start_time="$(date +%s%N)"
   if [ "$fs_" != "dd" ]; then
@@ -6117,7 +6116,7 @@ multicast_restore_by_partclone() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo $msg_delimiter_star_line | tee --append  ${OCS_LOGFILE}
 
-  get_partclone_direct_io $part # Obtain ptcl_dio_opt
+  get_partclone_direct_io_opt $part # Obtain ptcl_dio_opt
 
   start_time="$(date +%s%N)"
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
@@ -15087,7 +15086,8 @@ force_to_dd_clone_local_part() {
     ;;
    partclone)
     echo "Using partclone to clone the file system sector by sector..." | tee --append $OCS_LOGFILE 
-    cmd_partclone="partclone.dd $PARTCLONE_RESTORE_OPT -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
+    get_partclone_direct_io_opt $tgt_p # Obtain ptcl_dio_opt
+    cmd_partclone="partclone.dd $PARTCLONE_RESTORE_OPT $ptcl_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
     echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     ret=$?
@@ -15146,12 +15146,13 @@ local_partition_to_partiton_clone() {
     ret=$?
   elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
     # Ex: partclone.reiserfs -b -s /dev/hda3 -O /dev/hdc1
+    get_partclone_direct_io_opt $tgt_p # Obtain ptcl_dio_opt
     echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
     if [ "$pt_fs" != "dd" ]; then
-      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT -L $PARTCLONE_LOG -b -s $src_p -O $tgt_p"
+      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $ptcl_dio_opt -L $PARTCLONE_LOG -b -s $src_p -O $tgt_p"
     else
       # Some parameters for partclone.dd are not required. Here "-b" is not provided by partclone.dd when run in dev to dev
-      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
+      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $ptcl_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
     fi
     echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
@@ -16515,33 +16516,33 @@ get_disk_id_path() {
 
 } # end of get_disk_id_path 
 #
-check_if_direct_io() {
+check_if_nvme_ssd() {
   # Return 0: true, 1: false
+  # Ref: https://linuxopsys.com/topics/check-disk-type-ssd-in-linux
   local dev_="$(format_dev_name_with_leading_dev $1)"  # e.g., /dev/sda
-  local rc
+  local rc=1
   if [ -z "$dev_" -o ! -e "$dev_" ]; then
     return 32
   fi
+  # ROTA 0: SSD, 1: HDD
   rota_v="$(LC_ALL=C lsblk -n -d -o rota $dev_ 2>/dev/null)"
   rota_v="$(echo $rota_v)" # Clean leading white spaces.
-  # ROTA
-  # 0: SSD
-  # 1: HDD
-  case "$rota_v" in
-    0) rc=0;;
-    1) rc=1;;
-    *) rc=32;;
-  esac
+  if [ "$rota_v" = "0" ]; then
+    case "$dev_" in 
+      /dev/nvme*) rc=0;;
+    esac
+  fi
   return $rc
-} # end of check_if_direct_io
+} # end of check_if_nvme_ssd
 #
-get_partclone_direct_io() {
+get_partclone_direct_io_opt() {
   local i_part_="$1"
+  local hdtmp_
   # ptcl_dio_opt is a global variable
-  # Direct IO for NVMe/SSD?
+  # Only when the block device is NVMe SSD, use direct IO option of Partclone.
   hdtmp_="/dev/$(get_diskname $i_part_)"
   ptcl_dio_opt=""
-  if `check_if_direct_io $hdtmp_`; then
+  if `check_if_nvme_ssd $hdtmp_`; then
     ptcl_dio_opt="--direct-io"
   fi
-} # end of get_partclone_direct_io
+} # end of get_partclone_direct_io_opt
