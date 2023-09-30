@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.10
+Version:	5.5.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Sep 30 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.11-drbl1
+  * Only NVMe SSD will use --direct-io of Partclone.
+    The --direct-io of Partclone for partition to partition cloning is
+    implemented.
+  * ocs-park-disks: only park HDD, not SSD.
+
 * Thu Sep 28 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.10-drbl1
   * Add the mechanism to use direct IO for partclone if the destination disk
     is NVMe/SSD.
