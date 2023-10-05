@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.11
+Version:	5.5.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.2.22, psmisc, udpcast, partclone >= 0.3.26, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.2.23, psmisc, udpcast, partclone >= 0.3.27, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 05 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.12-drbl1
+  * Separate the direct IO options for reading and writing NVMe SSD.
+  * Add the option "-edio" to enable direct IO when using Partclone to save or
+    restore NVMe SSD.
+
 * Fri Sep 30 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.11-drbl1
   * Only NVMe SSD will use --direct-io of Partclone.
     The --direct-io of Partclone for partition to partition cloning is
