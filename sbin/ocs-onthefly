@@ -45,6 +45,8 @@ keep_netpipe="no"
 do_update_initrd="yes"
 #
 d2d_psuedo_img="d2d-pseudo"
+# By default we do not enable read/write direct IO for Partclone
+enable_dio="no"
 
 # Local functions:
 # check if the user input /dev/hda, /dev/hdb...
@@ -483,6 +485,7 @@ USAGE() {
     echo "-bm, --beginner-mode     Run in beginner mode. This is a short way for \"-um beginner\"."
     echo "-em, --expert-mode       Run in expert mode. This is a short way for \"-um expert\"."
     echo "-um, --user-mode [beginner|expert]      Specify the mode to use."
+    echo "-edio, --enable-direct-io   Enable the direct IO mode of Partclone when reading from or writing to NVMe SSD."
     echo "Ex:"
     echo "1. To clone local sda to local sdb, run"
     echo "   $ocs -f sda -d sdb"
@@ -687,6 +690,7 @@ set_ocs_onthefly_extra_param() {
     "-cmf "        "$msg_ocs_onthefly_param_cmf" off \
     "-v "          "$msg_ocs_onthefly_param_v" off \
     "-ps "         "$msg_ocs_onthefly_param_ps" off \
+    "-edio "       "$msg_ocs_onthefly_param_edio" off \
     2> $OCS_PARAM_TMP
     # Ask about compression program for clone server
     if [ "$STATUS" = "clone_server" ]; then
@@ -988,8 +992,9 @@ parse_ocs_onthefly_cmd_options() {
       -cmf|--chk-chksum-for-files-in-dev) shift; chksum_for_files_in_dev="yes" ;;
       -ro|--remote-clone-only) shift; show_remote_menu_in_ocs_onthefly="yes";;
       -lo|--local-clone-only)  shift; show_local_menu_in_ocs_onthefly="yes";;
-      -kn|--keep-netpipe) shift; keep_netpipe="yes" ;;
-      -v|--verbose) shift; verbose="on" ;;
+      -kn|--keep-netpipe) shift; keep_netpipe="yes";;
+      -edio|--enable-direct-io) shift; enable_dio="yes";;
+      -v|--verbose) shift; verbose="on";;
       -*)     echo "${0}: ${1}: invalid option" >&2
               USAGE >& 2
               exit 2 ;;

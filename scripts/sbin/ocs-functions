@@ -1412,6 +1412,8 @@ save_part_by_partclone() {
   img_out_err="$(mktemp /tmp/img_out_err.XXXXXX)"
   trap "[ -f "$TMP" ] && rm -f $img_out_err" HUP INT QUIT TERM EXIT
 
+  get_partclone_direct_io_opt read $source_dev # Obtain ptcl_read_dio_opt
+
   # Special case for no compression + no splitting. To get the best performance, reduce the usage of pipe to cat and split.
   # Ref: https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/46706796eb
   if [ "$compress_prog_opt" = "cat" -a "$VOL_LIMIT" = "0" ]; then
@@ -1419,21 +1421,21 @@ save_part_by_partclone() {
       dd)
          # Special case, dd, no compression + no splitting.
          # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT --buffer_size ${partclone_dd_bs}  -L $partclone_img_info_tmp -s $source_dev --output $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}"
+         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}"
          ;;
        *)
          # Special case, not dd, no compression + no splitting
-         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -c -s $source_dev --output $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}"
+         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $partclone_img_info_tmp -c -s $source_dev --output $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}"
          ;;
     esac
   else
     case "$fs_p" in
       dd)
          # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
+         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
          ;;
        *)
-         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT -L $partclone_img_info_tmp -c -s $source_dev --output - | $compress_prog_opt"
+         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $partclone_img_info_tmp -c -s $source_dev --output - | $compress_prog_opt"
          ;;
     esac
     case "$VOL_LIMIT" in
@@ -1663,7 +1665,9 @@ save_part_by_dd() {
     img_out_err="$(mktemp /tmp/img_out_err.XXXXXX)"
     trap "[ -f "$TMP" ] && rm -f $img_out_err" HUP INT QUIT TERM EXIT
 
-    cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
+    get_partclone_direct_io_opt read $source_dev # Obtain ptcl_read_dio_opt
+
+    cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
     case "$VOL_LIMIT" in
       [1-9]*)
          # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary make the output file is like hda1.dd-img.aa, hda1.dd-img.ab. We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.$dd-img.001)
@@ -5763,14 +5767,14 @@ unicast_restore_by_partclone() {
     restore_flag="cat" 
   fi
 
-  get_partclone_direct_io_opt $part # Obtain ptcl_dio_opt
+  get_partclone_direct_io_opt write $part # Obtain ptcl_write_dio_opt
 
   start_time="$(date +%s%N)"
   if [ "$fs_" != "dd" ]; then
-    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_dio_opt -L $partclone_img_info_tmp -s - -r -o $part"
+    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt -L $partclone_img_info_tmp -s - -r -o $part"
   else
     # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when restoring
-    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_dio_opt --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part"
+    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part"
   fi
   # partclone_hfsp does not put any header, so just cat them
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
@@ -6116,15 +6120,15 @@ multicast_restore_by_partclone() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo $msg_delimiter_star_line | tee --append  ${OCS_LOGFILE}
 
-  get_partclone_direct_io_opt $part # Obtain ptcl_dio_opt
+  get_partclone_direct_io_opt write $part # Obtain ptcl_write_dio_opt
 
   start_time="$(date +%s%N)"
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
   if [ "${fs_}" != "dd" ]; then
-    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_dio_opt -L $partclone_img_info_tmp -s - -r -o $part"
+    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt -L $partclone_img_info_tmp -s - -r -o $part"
   else
     # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when restoring
-    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_dio_opt --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part"
+    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part"
   fi
 cat <<_EOT_ >> ${OCS_LOGFILE}
   $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
@@ -6577,7 +6581,8 @@ udp_send_part_img_or_dev() {
       # Set the file system as "dd".
       ptfs="dd"
     fi
-    LC_ALL=C partclone.${ptfs} $PARTCLONE_SAVE_OPT -L $PARTCLONE_LOG  -c -s /dev/$part -o - 2>/dev/null \
+    get_partclone_direct_io_opt read /dev/$part # Obtain ptcl_read_dio_opt
+    LC_ALL=C partclone.${ptfs} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG  -c -s /dev/$part -o - 2>/dev/null \
     | $mcast_rawdev_zip_std \
     | $udpcast_send_cmd 2>$udpcast_stderr
   else
@@ -11072,6 +11077,7 @@ USAGE_common_general() {
     echo " -bm, --beginner-mode     Run in beginner mode. This is a short way for \"-um beginner\"."
     echo " -em, --expert-mode       Run in expert mode. This is a short way for \"-um expert\"."
     echo " -um, --user-mode [beginner|expert]      Specify the mode to use. If not specified, default mode is for a beginner."
+    echo " -edio, --enable-direct-io   Enable the direct IO mode of Partclone when reading from or writing to NVMe SSD."
     echo " -v, --verbose            Prints verbose information"
 } # end of USAGE_common_general
 #
@@ -15086,8 +15092,9 @@ force_to_dd_clone_local_part() {
     ;;
    partclone)
     echo "Using partclone to clone the file system sector by sector..." | tee --append $OCS_LOGFILE 
-    get_partclone_direct_io_opt $tgt_p # Obtain ptcl_dio_opt
-    cmd_partclone="partclone.dd $PARTCLONE_RESTORE_OPT $ptcl_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
+    get_partclone_direct_io_opt read $src_p # Obtain ptcl_read_dio_opt
+    get_partclone_direct_io_opt write $tgt_p # Obtain ptcl_write_dio_opt
+    cmd_partclone="partclone.dd $PARTCLONE_RESTORE_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
     echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     ret=$?
@@ -15146,13 +15153,14 @@ local_partition_to_partiton_clone() {
     ret=$?
   elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
     # Ex: partclone.reiserfs -b -s /dev/hda3 -O /dev/hdc1
-    get_partclone_direct_io_opt $tgt_p # Obtain ptcl_dio_opt
+    get_partclone_direct_io_opt read $src_p # Obtain ptcl_read_dio_opt
+    get_partclone_direct_io_opt write $tgt_p # Obtain ptcl_write_dio_opt
     echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
     if [ "$pt_fs" != "dd" ]; then
-      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $ptcl_dio_opt -L $PARTCLONE_LOG -b -s $src_p -O $tgt_p"
+      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -b -s $src_p -O $tgt_p"
     else
       # Some parameters for partclone.dd are not required. Here "-b" is not provided by partclone.dd when run in dev to dev
-      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $ptcl_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
+      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
     fi
     echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
@@ -15448,13 +15456,14 @@ feed_dev_in_onthefly_server() {
     ret=$?
   elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
     # Ex: partclone.reiserfs -c -s /dev/hda3 -o -
+    get_partclone_direct_io_opt read $src_p # Obtain ptcl_read_dio_opt
     echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
     if [ "$pt_fs" != "dd" ]; then
-      cmd_partclone="partclone.${pt_fs} $PARTCLONE_SAVE_OPT -L $PARTCLONE_LOG -c -s $src_p -o - 2>/dev/null | \
+      cmd_partclone="partclone.${pt_fs} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG -c -s $src_p -o - 2>/dev/null | \
       $net_filter_comp | $netpipe_srv_cmd &"
     else
       # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-      cmd_partclone="partclone.${pt_fs} $PARTCLONE_SAVE_OPT -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
+      cmd_partclone="partclone.${pt_fs} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
       $net_filter_comp | $netpipe_srv_cmd &"
     fi
     echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
@@ -15479,8 +15488,9 @@ feed_dev_in_onthefly_server() {
      partclone)
       echo "Filesystem in $src_p is not well supported. Use partclone.dd to clone..." | tee --append $OCS_LOGFILE 
       # Ex: partclone.reiserfs -c -s /dev/hda3 -o -
+      get_partclone_direct_io_opt read $src_p # Obtain ptcl_read_dio_opt
       echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
-      cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
+      cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
       $net_filter_comp | $netpipe_srv_cmd &"
       echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
       LC_ALL=C eval "((${cmd_partclone}) && exit \${PIPESTATUS[0]})"
@@ -16536,13 +16546,29 @@ check_if_nvme_ssd() {
 } # end of check_if_nvme_ssd
 #
 get_partclone_direct_io_opt() {
-  local i_part_="$1"
+  local i_type_="$1"
+  local i_part_="$2"
   local hdtmp_
-  # ptcl_dio_opt is a global variable
+  # ptcl_write_dio_opt/ptcl_read_dio_opt/enable_dio is a global variable
+  # Only reset the wanted variable. E.g., if we want is write, only reset ptcl_write_dio_opt, and vice versa.
+  # Otherwise it might affect others. E.g., when we need both ptcl_read_dio_opt & ptcl_write_dio_opt in local device cloning:
+  #  get_partclone_direct_io_opt read $src_p # Obtain ptcl_read_dio_opt
+  #  get_partclone_direct_io_opt write $tgt_p # Obtain ptcl_write_dio_opt
+  #  cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -b -s $src_p -O $tgt_p"
+  case "$i_type_" in 
+    write) ptcl_write_dio_opt="";;
+    read)  ptcl_read_dio_opt="";;
+  esac
+  if [ "$enable_dio" != "yes" ]; then
+    # Direct IO is not enabled, no optitons for Partclone.
+    return
+  fi
   # Only when the block device is NVMe SSD, use direct IO option of Partclone.
   hdtmp_="/dev/$(get_diskname $i_part_)"
-  ptcl_dio_opt=""
   if `check_if_nvme_ssd $hdtmp_`; then
-    ptcl_dio_opt="--direct-io"
+    case "$i_type_" in 
+      write) ptcl_write_dio_opt="--write-direct-io";;
+      read)  ptcl_read_dio_opt="--read-direct-io";;
+    esac
   fi
 } # end of get_partclone_direct_io_opt
