@@ -1094,6 +1094,501 @@ get_extra_param_when_type_is_ask_user_and_interactive_mode() {
    parse_ocs_sr_cmd_options_with_dash $OCS_OPTS
   fi
 } # end of get_extra_param_when_type_is_ask_user_and_interactive_mode
+#
+do_savedisk_job(){
+  task_preprocessing "$ocs_sr_type"
+
+  # Set VOL_LIMIT_IN_INTERACTIVE 4096 if the image repo is using FAT file system.
+  check_if_repo_fat_tune_image_vol_limit
+
+  MULTIPATH_INFODIR="$(mktemp -d /tmp/multipath_info.XXXXXX)"
+
+  parse_target_dir_with_reserved_name_saving_mode # obtain target_dir
+
+  # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
+  if grep -Eq '[[:space:]]+md[0-9]+' /proc/partitions; then
+    list_local_dev_mode="both_type_dev"
+    use_dev_list_cache="no"
+  fi
+
+  if [ "$ocs_sr_dev" = "ask_user" ]; then
+    # To get $target_hd
+    get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
+    target_hd="$(select_VG "$target_hd")"
+  elif [ "$ocs_sr_dev" = "all" -o \
+         "$ocs_sr_dev" = "unmounted_disk" ]; then
+    get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
+    target_hd="$dev_list"
+  elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "(PTUUID=|SERIALNO=)")" ]; then
+    # Input might be multiple devices like: 
+    # PTUUID="f722833a" PTUUID="271e1971" SERIALNO="36000c292124c4d6554f924089bd9b83a"
+    # PTUUID="f722833a" sdb
+
+    # Format the input PTUUID= and SERIALNO= to be uppercase
+    ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/ptuuid=/PTUUID=/gi" -e "s/serialno=/SERIALNO=/gi")"
+    target_hd=""
+    for id in $ocs_sr_dev; do
+      found_hd=""
+      if [ -n "$(echo "$id" | grep -Ei "^PTUUID=")" ]; then
+        # E.g., PTUUID="f722833a"
+        get_block_dev_from_PTUUID $id    # we will get blk_dev
+        found_hd="$blk_dev"
+        if [ -n "$found_hd" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Found $id is device: $found_hd"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          if [ -z "$(echo $target_hd | grep -Ewo "$found_hd")" ]; then
+            # Avoid duplication
+            target_hd="$target_hd $found_hd"
+          else
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Assigned device $found_hd is already in the list."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          fi
+        fi
+      elif [ -n "$(echo "$id" | grep -Ei "^SERIALNO=")" ]; then
+        # E.g., SERIALNO="36000c292124c4d6554f924089bd9b83a"
+        get_block_dev_from_SERIALNO $id   # we will get blk_dev
+        found_hd="$blk_dev"
+        if [ -n "$found_hd" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Found $id is device: $found_hd"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          if [ -z "$(echo $target_hd | grep -Ewo "$found_hd")" ]; then
+            # Avoid duplication
+            target_hd="$target_hd $found_hd"
+          else
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Assigned device $found_hd is already in the list."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          fi
+        fi
+      else
+        # E.g., sdb
+        if [ -z "$(echo $target_hd | grep -Ewo "$id")" ]; then
+          # Avoid duplication
+          target_hd="$target_hd $id"
+        else
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Assigned device $id is already in the list."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        fi
+      fi
+    done
+  else
+    target_hd="$ocs_sr_dev"
+  fi
+  # check if the device exists
+  ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
+  trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+  check_if_input_device_exist $ANS_TMP $target_hd 
+  target_hd="$(cat $ANS_TMP | tr -d \")"
+  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+  get_extra_param_when_type_is_ask_user_and_interactive_mode
+  wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
+
+  run_ocs_sr_again_prompt "$target_dir" "$target_hd"
+
+  # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+  # The original ones will be kept as ocsroot_orig and target_dir_orig.
+  prepare_ecryptfs_mount_point_if_necessary
+
+  task_processing_after_parameters_checked
+
+  ocs-run-boot-param ocs_savedisk_prerun
+  rc_savedisk=""
+  task_savedisk "$target_dir" "$target_hd"
+  rc_savedisk="$?"
+  ocs-run-boot-param ocs_savedisk_postrun
+
+  #
+  if [ -d "$MULTIPATH_INFODIR" -a \
+       -n "$(echo $MULTIPATH_INFODIR | grep -w "multipath_info")" ]; then
+    rm -rf "$MULTIPATH_INFODIR"
+  fi
+
+  # Dump software RAID info
+  dump_software_raid_info_if_exists $ocsroot/$target_dir
+
+  # Dump hardware info
+  dump_hardware_software_info $ocsroot/$target_dir
+
+  if [ "$ocs_sr_mode" = "interactive" ]; then
+    echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_hd" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
+  else
+    echo $0 $orig_ocs_opt > $ocsroot/$target_dir/Info-saved-by-cmd.txt
+  fi
+
+  task_postprocessing "$ocs_sr_type" "$target_dir"
+} # end of do_savedisk_job
+#
+do_restoredisk_job(){
+  task_preprocessing "$ocs_sr_type"
+  MULTIPATH_INFODIR="$(mktemp -d /tmp/multipath_info.XXXXXX)"
+
+  if [ "$ocs_sr_img_name" = "ask_user" ]; then
+    get_target_dir_name_when_restoring_disk  # get $target_dir
+  elif [ "$ocs_sr_img_name" = "autoproductname" ]; then
+    # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
+    target_dir="$(get_vendor_product_name)-img"
+  else
+    target_dir="$ocs_sr_img_name"
+  fi
+
+  check_input_target_image "$ocsroot/$target_dir"
+  source_hd_no="$(get_disk_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+
+  # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
+  if grep -Eq '^md[0-9]+' $ocsroot/$target_dir/blkdev.list; then
+    list_local_dev_mode="both_type_dev"
+    use_dev_list_cache="no"
+  fi
+
+  if [ "$ocs_sr_dev" = "ask_user" ]; then
+    if [ "$source_hd_no" -eq 1 ]; then
+      dia_sel_opt="menu"
+    else
+      dia_sel_opt="checklist"
+    fi
+    # To get $target_hd
+    get_target_hd_name_from_local_machine "$msg_choose_the_disks_to_restore \n$msg_linux_disk_naming $msg_press_space_to_mark_selection" $dia_sel_opt
+  elif [ "$ocs_sr_dev" = "all" -o \
+         "$ocs_sr_dev" = "unmounted_disk" ]; then
+    get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
+    target_hd="$dev_list"
+    target_hd_no="$(LC_ALL=C echo $target_hd | wc -w)"
+    if [ "$source_hd_no" != "$target_hd_no" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "The source disk number from the image does not match to that of destination disk." | tee --append ${OCS_LOGFILE}
+      echo "Source disk number: $source_hd_no" | tee --append ${OCS_LOGFILE}
+      echo "Destination disk number: $target_hd_no" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo -n "$msg_press_enter_to_continue..."
+      read
+      echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+      exit 1
+    fi
+  elif [ "$ocs_sr_dev" = "auto-matchsize" ]; then
+    get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
+    target_hd="$dev_list"
+    target_hd_no="$(LC_ALL=C echo $target_hd | wc -w)"
+    if [ "$source_hd_no" != "$target_hd_no" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "The source disk number from the image does not match to that of destination disk." | tee --append ${OCS_LOGFILE}
+      echo "Source disk number: $source_hd_no" | tee --append ${OCS_LOGFILE}
+      echo "Destination disk number: $target_hd_no" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo -n "$msg_press_enter_to_continue..."
+      read
+      echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+      exit 1
+    fi
+    # Since it's auto-matchsize mode, we have to reorder the destination disks.
+    # (1) Find the sizes of source disks
+    # (2) Map them
+    # TODO:
+    source_hd_no="$(get_disk_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g")"
+  elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "SERIALNO=")" ]; then
+    # Input might be multiple devices like: 
+    # SERIALNO="36000c292124c4d6554f924089bd9b83a" sdb
+
+    # Format the input SERIALNO= to be uppercase
+    ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/serialno=/SERIALNO=/gi")"
+    target_hd=""
+    for id in $ocs_sr_dev; do
+      found_hd=""
+      if [ -n "$(echo "$id" | grep -Ei "^SERIALNO=")" ]; then
+        # E.g., SERIALNO="36000c292124c4d6554f924089bd9b83a"
+        get_block_dev_from_SERIALNO $id   # we will get blk_dev
+        found_hd="$blk_dev"
+        if [ -n "$found_hd" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Found $id is device: $found_hd"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          if [ -z "$(echo $target_hd | grep -Ewo "$found_hd")" ]; then
+            # Avoid duplication
+            target_hd="$target_hd $found_hd"
+          else
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Assigned device $found_hd is already in the list."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          fi
+        fi
+      else
+        # E.g., sdb
+        if [ -z "$(echo $target_hd | grep -Ewo "$id")" ]; then
+          # Avoid duplication
+          target_hd="$target_hd $id"
+        else
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Assigned device $id is already in the list."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        fi
+      fi
+    done
+  else
+    target_hd="$ocs_sr_dev"
+  fi
+  get_extra_param_when_type_is_ask_user_and_interactive_mode
+  wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
+
+  run_ocs_sr_again_prompt "$target_dir" "$target_hd"
+
+  # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+  # The original ones will be kept as ocsroot_orig and target_dir_orig.
+  prepare_ecryptfs_mount_point_if_necessary
+
+  task_processing_after_parameters_checked
+
+  ocs-run-boot-param ocs_restoredisk_prerun
+  task_restoredisk "$target_dir" "$target_hd"
+  ocs-run-boot-param ocs_restoredisk_postrun
+
+  #
+  if [ -d "$MULTIPATH_INFODIR" -a \
+       -n "$(echo $MULTIPATH_INFODIR | grep -w "multipath_info")" ]; then
+    rm -rf "$MULTIPATH_INFODIR"
+  fi
+
+  task_postprocessing "$ocs_sr_type" "$target_dir"
+} # end of do_restoredisk_job
+#
+do_saveparts_job() {
+  task_preprocessing "$ocs_sr_type"
+
+  # Set VOL_LIMIT_IN_INTERACTIVE 4096 if the image repo is using FAT file system.
+  check_if_repo_fat_tune_image_vol_limit
+
+  parse_target_dir_with_reserved_name_saving_mode # obtain target_dir
+
+  # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
+  if grep -Eq '[[:space:]]+md[0-9]+' /proc/partitions; then
+    list_local_dev_mode="both_type_dev"
+    use_dev_list_cache="no"
+  fi
+
+  if [ "$ocs_user_mode" = "expert" ] && [ -z "$list_local_dev_mode" ]; then
+    ask_list_device_mode  # get $list_local_dev_mode
+  fi
+  if [ "$ocs_sr_dev" = "ask_user" ]; then
+    if [ "$list_local_dev_mode" = "both_type_dev" ]; then
+      get_target_device_name_from_local_machine # get $tgt_devs
+      target_parts="$tgt_devs"
+    else
+      get_target_parts_name_from_local_machine  # get $target_parts
+    fi
+  elif [ "$ocs_sr_dev" = "all" -o \
+         "$ocs_sr_dev" = "unmounted_parts" ]; then
+    get_not_busy_disks_or_parts partition "" ""  # we will get dev_list
+    target_parts="$dev_list"
+  elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "(UUID=|PARTUUID=)")" ]; then
+    # Input might be multiple devices like: 
+    # UUID="B5F8-50F8" UUID="46f141f2-8ea6-47e4-81f0-052cb95a5e79" PARTUUID="271e1971-01"
+    # UUID="B5F8-50F8" sda5 PARTUUID="271e1971-01"
+
+    # Format the input PARTUUID= (must be 1st in sed) and UUID=
+    # to be uppercase
+    ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/partuuid=/PARTUUID=/gi" -e "s/uuid=/UUID=/gi")"
+    target_parts=""
+    for id in $ocs_sr_dev; do
+      found_part=""
+      if [ -n "$(echo "$id" | grep -Ei "^PARTUUID=")" ]; then
+        # E.g., PARTUUID="f722833a-01"
+        get_block_dev_from_PARTUUID $id   # we will get blk_dev
+        found_part="$blk_dev"
+        if [ -n "$found_part" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Found $id is device: $found_part"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          if [ -z "$(echo $target_parts | grep -Ewo "$found_part")" ]; then
+            # Avoid duplication
+            target_parts="$target_parts $found_part"
+          else
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Assigned device $found_part is already in the list."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          fi
+        fi
+      elif [ -n "$(echo "$id" | grep -Ei "^UUID=")" ]; then
+        # E.g., UUID="f722833a"
+        found_part="$(LC_ALL=C blkid --uuid ${id/UUID=/})"
+        found_part=${found_part#/dev/*}
+        if [ -n "$found_part" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Found $id is device: $found_part"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          if [ -z "$(echo $target_parts | grep -Ewo "$found_part")" ]; then
+            # Avoid duplication
+            target_parts="$target_parts $found_part"
+          else
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "Assigned device $found_part is already in the list."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          fi
+        fi
+      else
+        # E.g., sdb
+        if [ -z "$(echo $target_parts | grep -Ewo "$id")" ]; then
+            # Avoid duplication
+          target_parts="$target_parts $id"
+        else
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Assigned device $id is already in the list."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        fi
+      fi
+    done
+  else
+    target_parts="$ocs_sr_dev"
+  fi
+  
+  # check if the device exists
+  ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
+  trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+  check_if_input_device_exist $ANS_TMP $target_parts
+  # we have to remove " (comes with checklist in dialog) so that for loop
+  # will work (Specially for FC3/4...)
+  target_parts="$(cat $ANS_TMP | tr -d \")"
+  [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+  get_extra_param_when_type_is_ask_user_and_interactive_mode
+  wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
+
+  run_ocs_sr_again_prompt "$target_dir" "$target_parts"
+
+  # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+  # The original ones will be kept as ocsroot_orig and target_dir_orig.
+  prepare_ecryptfs_mount_point_if_necessary
+
+  task_processing_after_parameters_checked
+
+  ocs-run-boot-param ocs_saveparts_prerun
+  rc_saveparts=""
+  task_saveparts "$target_dir" "$target_parts"
+  rc_saveparts="$?"
+  ocs-run-boot-param ocs_saveparts_postrun
+
+  #
+  if [ -d "$MULTIPATH_INFODIR" -a \
+       -n "$(echo $MULTIPATH_INFODIR | grep -w "multipath_info")" ]; then
+    rm -rf "$MULTIPATH_INFODIR"
+  fi
+
+  # Dump software RAID info
+  dump_software_raid_info_if_exists $ocsroot/$target_dir
+
+  # Dump hardware info
+  dump_hardware_software_info $ocsroot/$target_dir
+
+  if [ "$ocs_sr_mode" = "interactive" ]; then
+    echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_parts" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
+  else
+    echo $0 $orig_ocs_opt > $ocsroot/$target_dir/Info-saved-by-cmd.txt
+  fi
+
+  task_postprocessing "$ocs_sr_type" "$target_dir"
+} # end of do_saveparts_job
+#
+do_restoreparts_job(){
+  task_preprocessing "$ocs_sr_type"
+
+  if [ "$ocs_sr_img_name" = "ask_user" ]; then
+    get_target_dir_name_when_restoring_parts  # get $target_dir
+  elif [ "$ocs_sr_img_name" = "autoproductname" ]; then
+    # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
+    target_dir="$(get_vendor_product_name)-img"
+  else
+    target_dir="$ocs_sr_img_name"
+  fi
+  check_input_target_image "$ocsroot/$target_dir"
+  # This is actually the max avaiable partitions number from image
+  source_parts_no="$(get_parts_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+  
+  if [ "$ocs_sr_dev" = "ask_user" ]; then
+    if [ -z "$source_part" ]; then
+      ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
+      trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
+      get_existing_partitions_from_img $ANS_TMP $ocsroot/$target_dir no select_from_img
+      # we have to remove " (comes with checklist in dialog) 
+      # so that for loop will work (Specially for FC3/4...)
+      source_part="$(cat $ANS_TMP | tr -d \")"
+      [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+    fi
+
+    # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
+    if grep -Eq '^md[0-9]+' $ocsroot/$target_dir/blkdev.list; then
+      list_local_dev_mode="both_type_dev"
+      use_dev_list_cache="no"
+    fi
+
+    # target name exists, but file "parts" is empty ?
+    check_target_parts $ocsroot/$target_dir/parts "$source_part"
+    # User might choose the partitions when it's ask_user, so here we have to calculate the number again.
+    source_parts_no="$(LC_ALL=C echo $source_part | wc -w)"
+    if [ "$source_parts_no" -eq 1 ]; then
+      dia_sel_opt="menu"
+      if [ "$ocs_user_mode" = "expert" ] && [ -z "$list_local_dev_mode" ]; then
+        ask_list_device_mode  # get $list_local_dev_mode
+      fi
+      if [ "$list_local_dev_mode" = "both_type_dev" ]; then
+        get_target_device_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt  # Obtain tgt_devs
+        target_parts="$tgt_devs"
+      else
+        get_target_parts_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt  # Obtain target_parts
+      fi
+    else
+      # In this case, it's too complicated to restore partitions to different partitions on destination disk.
+      # Therefore we only allow original partitions to partitions, i.e. e.g., sda1, sda2 from image -> sda1, sda2 on destination disk. Therefore "source_part" is reset to none, i.e., not to convert the image to different device name's image.
+      target_parts="$source_part"
+      source_part=""
+      if [ "$ocs_batch_mode" != "on" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "$msg_2_or_more_parts_only_same_parts_on_dest"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "$msg_press_enter_to_continue"
+        read 
+      fi
+    fi
+  elif [ "$ocs_sr_dev" = "all" -o \
+         "$ocs_sr_dev" = "unmounted_parts" ]; then
+    get_not_busy_disks_or_parts partition "" ""  # we will get dev_list
+    target_parts="$dev_list"
+    target_parts_no="$(LC_ALL=C echo $target_parts | wc -w)"
+    if [ "$source_parts_no" != "$target_parts_no" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "The source partition(s) number from the image does not match to that of destination partition(s)." | tee --append ${OCS_LOGFILE}
+      echo "Source partition(s) number: $source_parts_no" | tee --append ${OCS_LOGFILE}
+      echo "Destination partition(s) number: $target_parts_no" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo -n "$msg_press_enter_to_continue..."
+      read
+      echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+      exit 1
+    fi
+  else
+    target_parts="$ocs_sr_dev"
+  fi
+  #
+  get_extra_param_when_type_is_ask_user_and_interactive_mode
+  wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
+  # Append the option if restoring to different partition on the destination disk.
+  if [ -n "$source_part" ]; then
+      OCS_OPTS="$OCS_OPTS -f $source_part"
+  fi
+
+  run_ocs_sr_again_prompt "$target_dir" "$target_parts"
+
+  # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
+  # The original ones will be kept as ocsroot_orig and target_dir_orig.
+  prepare_ecryptfs_mount_point_if_necessary
+
+  task_processing_after_parameters_checked
+
+  ocs-run-boot-param ocs_restoreparts_prerun
+  task_restoreparts "$target_dir" "$target_parts"
+  ocs-run-boot-param ocs_restoreparts_postrun
+
+  task_postprocessing "$ocs_sr_type" "$target_dir"
+} # end of do_restoreparts_job
 
 # OCS_OPT is for drbl-ocs using, will not put into the partimage command options
 # PARTIMAGE_RESTORE_OPT & PARTIMAGE_SAVE_OPT will put into partimage command options
@@ -1269,484 +1764,17 @@ overwrite_postaction_if_assigned $ocs_sr_type
 
 #
 case "$ocs_sr_type" in
-  "savedisk")
-    task_preprocessing "$ocs_sr_type"
-
-    # Set VOL_LIMIT_IN_INTERACTIVE 4096 if the image repo is using FAT file system.
-    check_if_repo_fat_tune_image_vol_limit
-
-    MULTIPATH_INFODIR="$(mktemp -d /tmp/multipath_info.XXXXXX)"
-
-    parse_target_dir_with_reserved_name_saving_mode # obtain target_dir
-
-    # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
-    if grep -Eq '[[:space:]]+md[0-9]+' /proc/partitions; then
-      list_local_dev_mode="both_type_dev"
-      use_dev_list_cache="no"
-    fi
-
-    if [ "$ocs_sr_dev" = "ask_user" ]; then
-      # To get $target_hd
-      get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
-      target_hd="$(select_VG "$target_hd")"
-    elif [ "$ocs_sr_dev" = "all" -o \
-	   "$ocs_sr_dev" = "unmounted_disk" ]; then
-      get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
-      target_hd="$dev_list"
-    elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "(PTUUID=|SERIALNO=)")" ]; then
-      # Input might be multiple devices like: 
-      # PTUUID="f722833a" PTUUID="271e1971" SERIALNO="36000c292124c4d6554f924089bd9b83a"
-      # PTUUID="f722833a" sdb
-
-      # Format the input PTUUID= and SERIALNO= to be uppercase
-      ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/ptuuid=/PTUUID=/gi" -e "s/serialno=/SERIALNO=/gi")"
-      target_hd=""
-      for id in $ocs_sr_dev; do
-        found_hd=""
-        if [ -n "$(echo "$id" | grep -Ei "^PTUUID=")" ]; then
-          # E.g., PTUUID="f722833a"
-          get_block_dev_from_PTUUID $id    # we will get blk_dev
-          found_hd="$blk_dev"
-          if [ -n "$found_hd" ]; then
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-            echo "Found $id is device: $found_hd"
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    if [ -z "$(echo $target_hd | grep -Ewo "$found_hd")" ]; then
-              # Avoid duplication
-	      target_hd="$target_hd $found_hd"
-            else
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-              echo "Assigned device $found_hd is already in the list."
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    fi
-	  fi
-        elif [ -n "$(echo "$id" | grep -Ei "^SERIALNO=")" ]; then
-          # E.g., SERIALNO="36000c292124c4d6554f924089bd9b83a"
-          get_block_dev_from_SERIALNO $id   # we will get blk_dev
-	  found_hd="$blk_dev"
-          if [ -n "$found_hd" ]; then
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-            echo "Found $id is device: $found_hd"
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    if [ -z "$(echo $target_hd | grep -Ewo "$found_hd")" ]; then
-              # Avoid duplication
-	      target_hd="$target_hd $found_hd"
-            else
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-              echo "Assigned device $found_hd is already in the list."
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    fi
-          fi
-        else
-          # E.g., sdb
-	  if [ -z "$(echo $target_hd | grep -Ewo "$id")" ]; then
-            # Avoid duplication
-	    target_hd="$target_hd $id"
-          else
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-            echo "Assigned device $id is already in the list."
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	  fi
-	fi
-      done
-    else
-      target_hd="$ocs_sr_dev"
-    fi
-    # check if the device exists
-    ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
-    trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-    check_if_input_device_exist $ANS_TMP $target_hd 
-    target_hd="$(cat $ANS_TMP | tr -d \")"
-    [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
-    get_extra_param_when_type_is_ask_user_and_interactive_mode
-    wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
-
-    run_ocs_sr_again_prompt "$target_dir" "$target_hd"
-
-    # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
-    # The original ones will be kept as ocsroot_orig and target_dir_orig.
-    prepare_ecryptfs_mount_point_if_necessary
-
-    task_processing_after_parameters_checked
-
-    ocs-run-boot-param ocs_savedisk_prerun
-    rc_savedisk=""
-    task_savedisk "$target_dir" "$target_hd"
-    rc_savedisk="$?"
-    ocs-run-boot-param ocs_savedisk_postrun
-
-    #
-    if [ -d "$MULTIPATH_INFODIR" -a \
-	 -n "$(echo $MULTIPATH_INFODIR | grep -w "multipath_info")" ]; then
-      rm -rf "$MULTIPATH_INFODIR"
-    fi
-
-    # Dump software RAID info
-    dump_software_raid_info_if_exists $ocsroot/$target_dir
-
-    # Dump hardware info
-    dump_hardware_software_info $ocsroot/$target_dir
-
-    if [ "$ocs_sr_mode" = "interactive" ]; then
-      echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_hd" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
-    else
-      echo $0 $orig_ocs_opt > $ocsroot/$target_dir/Info-saved-by-cmd.txt
-    fi
-
-    task_postprocessing "$ocs_sr_type" "$target_dir"
-    ;;
-  "restoredisk")
-    task_preprocessing "$ocs_sr_type"
-    MULTIPATH_INFODIR="$(mktemp -d /tmp/multipath_info.XXXXXX)"
-
-    if [ "$ocs_sr_img_name" = "ask_user" ]; then
-      get_target_dir_name_when_restoring_disk  # get $target_dir
-    elif [ "$ocs_sr_img_name" = "autoproductname" ]; then
-      # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
-      target_dir="$(get_vendor_product_name)-img"
-    else
-      target_dir="$ocs_sr_img_name"
-    fi
-
-    check_input_target_image "$ocsroot/$target_dir"
-    source_hd_no="$(get_disk_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
-
-    # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
-    if grep -Eq '^md[0-9]+' $ocsroot/$target_dir/blkdev.list; then
-      list_local_dev_mode="both_type_dev"
-      use_dev_list_cache="no"
-    fi
-
-    if [ "$ocs_sr_dev" = "ask_user" ]; then
-      if [ "$source_hd_no" -eq 1 ]; then
-        dia_sel_opt="menu"
-      else
-        dia_sel_opt="checklist"
-      fi
-      # To get $target_hd
-      get_target_hd_name_from_local_machine "$msg_choose_the_disks_to_restore \n$msg_linux_disk_naming $msg_press_space_to_mark_selection" $dia_sel_opt
-    elif [ "$ocs_sr_dev" = "all" -o \
-	   "$ocs_sr_dev" = "unmounted_disk" ]; then
-      get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
-      target_hd="$dev_list"
-      target_hd_no="$(LC_ALL=C echo $target_hd | wc -w)"
-      if [ "$source_hd_no" != "$target_hd_no" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "The source disk number from the image does not match to that of destination disk." | tee --append ${OCS_LOGFILE}
-	echo "Source disk number: $source_hd_no" | tee --append ${OCS_LOGFILE}
-	echo "Destination disk number: $target_hd_no" | tee --append ${OCS_LOGFILE}
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo -n "$msg_press_enter_to_continue..."
-        read
-        echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-	exit 1
-      fi
-    elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "SERIALNO=")" ]; then
-      # Input might be multiple devices like: 
-      # SERIALNO="36000c292124c4d6554f924089bd9b83a" sdb
-
-      # Format the input SERIALNO= to be uppercase
-      ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/serialno=/SERIALNO=/gi")"
-      target_hd=""
-      for id in $ocs_sr_dev; do
-        found_hd=""
-        if [ -n "$(echo "$id" | grep -Ei "^SERIALNO=")" ]; then
-          # E.g., SERIALNO="36000c292124c4d6554f924089bd9b83a"
-          get_block_dev_from_SERIALNO $id   # we will get blk_dev
-	  found_hd="$blk_dev"
-          if [ -n "$found_hd" ]; then
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-            echo "Found $id is device: $found_hd"
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    if [ -z "$(echo $target_hd | grep -Ewo "$found_hd")" ]; then
-              # Avoid duplication
-	      target_hd="$target_hd $found_hd"
-            else
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-              echo "Assigned device $found_hd is already in the list."
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    fi
-          fi
-        else
-          # E.g., sdb
-	  if [ -z "$(echo $target_hd | grep -Ewo "$id")" ]; then
-            # Avoid duplication
-	    target_hd="$target_hd $id"
-          else
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-            echo "Assigned device $id is already in the list."
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	  fi
-	fi
-      done
-    else
-      target_hd="$ocs_sr_dev"
-    fi
-    get_extra_param_when_type_is_ask_user_and_interactive_mode
-    wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
-
-    run_ocs_sr_again_prompt "$target_dir" "$target_hd"
-
-    # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
-    # The original ones will be kept as ocsroot_orig and target_dir_orig.
-    prepare_ecryptfs_mount_point_if_necessary
-
-    task_processing_after_parameters_checked
-
-    ocs-run-boot-param ocs_restoredisk_prerun
-    task_restoredisk "$target_dir" "$target_hd"
-    ocs-run-boot-param ocs_restoredisk_postrun
-
-    #
-    if [ -d "$MULTIPATH_INFODIR" -a \
-	 -n "$(echo $MULTIPATH_INFODIR | grep -w "multipath_info")" ]; then
-      rm -rf "$MULTIPATH_INFODIR"
-    fi
-
-    task_postprocessing "$ocs_sr_type" "$target_dir"
-    ;;
-  "saveparts")
-    task_preprocessing "$ocs_sr_type"
-
-    # Set VOL_LIMIT_IN_INTERACTIVE 4096 if the image repo is using FAT file system.
-    check_if_repo_fat_tune_image_vol_limit
-
-    parse_target_dir_with_reserved_name_saving_mode # obtain target_dir
-
-    # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
-    if grep -Eq '[[:space:]]+md[0-9]+' /proc/partitions; then
-      list_local_dev_mode="both_type_dev"
-      use_dev_list_cache="no"
-    fi
-
-    if [ "$ocs_user_mode" = "expert" ] && [ -z "$list_local_dev_mode" ]; then
-      ask_list_device_mode  # get $list_local_dev_mode
-    fi
-    if [ "$ocs_sr_dev" = "ask_user" ]; then
-      if [ "$list_local_dev_mode" = "both_type_dev" ]; then
-        get_target_device_name_from_local_machine # get $tgt_devs
-	target_parts="$tgt_devs"
-      else
-	get_target_parts_name_from_local_machine  # get $target_parts
-      fi
-    elif [ "$ocs_sr_dev" = "all" -o \
-	   "$ocs_sr_dev" = "unmounted_parts" ]; then
-      get_not_busy_disks_or_parts partition "" ""  # we will get dev_list
-      target_parts="$dev_list"
-    elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "(UUID=|PARTUUID=)")" ]; then
-      # Input might be multiple devices like: 
-      # UUID="B5F8-50F8" UUID="46f141f2-8ea6-47e4-81f0-052cb95a5e79" PARTUUID="271e1971-01"
-      # UUID="B5F8-50F8" sda5 PARTUUID="271e1971-01"
-
-      # Format the input PARTUUID= (must be 1st in sed) and UUID=
-      # to be uppercase
-      ocs_sr_dev="$(echo $ocs_sr_dev | sed -r -e "s/partuuid=/PARTUUID=/gi" -e "s/uuid=/UUID=/gi")"
-      target_parts=""
-      for id in $ocs_sr_dev; do
-        found_part=""
-        if [ -n "$(echo "$id" | grep -Ei "^PARTUUID=")" ]; then
-          # E.g., PARTUUID="f722833a-01"
-          get_block_dev_from_PARTUUID $id   # we will get blk_dev
-	  found_part="$blk_dev"
-          if [ -n "$found_part" ]; then
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-            echo "Found $id is device: $found_part"
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    if [ -z "$(echo $target_parts | grep -Ewo "$found_part")" ]; then
-              # Avoid duplication
-	      target_parts="$target_parts $found_part"
-            else
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-              echo "Assigned device $found_part is already in the list."
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    fi
-          fi
-        elif [ -n "$(echo "$id" | grep -Ei "^UUID=")" ]; then
-          # E.g., UUID="f722833a"
-          found_part="$(LC_ALL=C blkid --uuid ${id/UUID=/})"
-          found_part=${found_part#/dev/*}
-          if [ -n "$found_part" ]; then
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-            echo "Found $id is device: $found_part"
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    if [ -z "$(echo $target_parts | grep -Ewo "$found_part")" ]; then
-              # Avoid duplication
-	      target_parts="$target_parts $found_part"
-            else
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-              echo "Assigned device $found_part is already in the list."
-              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	    fi
-          fi
-        else
-          # E.g., sdb
-	  if [ -z "$(echo $target_parts | grep -Ewo "$id")" ]; then
-              # Avoid duplication
-	    target_parts="$target_parts $id"
-          else
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-            echo "Assigned device $id is already in the list."
-            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-	  fi
-	fi
-      done
-    else
-      target_parts="$ocs_sr_dev"
-    fi
-    
-    # check if the device exists
-    ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
-    trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-    check_if_input_device_exist $ANS_TMP $target_parts
-    # we have to remove " (comes with checklist in dialog) so that for loop
-    # will work (Specially for FC3/4...)
-    target_parts="$(cat $ANS_TMP | tr -d \")"
-    [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
-    get_extra_param_when_type_is_ask_user_and_interactive_mode
-    wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
-
-    run_ocs_sr_again_prompt "$target_dir" "$target_parts"
-
-    # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
-    # The original ones will be kept as ocsroot_orig and target_dir_orig.
-    prepare_ecryptfs_mount_point_if_necessary
-
-    task_processing_after_parameters_checked
-
-    ocs-run-boot-param ocs_saveparts_prerun
-    rc_saveparts=""
-    task_saveparts "$target_dir" "$target_parts"
-    rc_saveparts="$?"
-    ocs-run-boot-param ocs_saveparts_postrun
-
-    #
-    if [ -d "$MULTIPATH_INFODIR" -a \
-	 -n "$(echo $MULTIPATH_INFODIR | grep -w "multipath_info")" ]; then
-      rm -rf "$MULTIPATH_INFODIR"
-    fi
-
-    # Dump software RAID info
-    dump_software_raid_info_if_exists $ocsroot/$target_dir
-
-    # Dump hardware info
-    dump_hardware_software_info $ocsroot/$target_dir
-
-    if [ "$ocs_sr_mode" = "interactive" ]; then
-      echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_parts" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
-    else
-      echo $0 $orig_ocs_opt > $ocsroot/$target_dir/Info-saved-by-cmd.txt
-    fi
-
-    task_postprocessing "$ocs_sr_type" "$target_dir"
-    ;;
-  "restoreparts")
-    task_preprocessing "$ocs_sr_type"
-
-    if [ "$ocs_sr_img_name" = "ask_user" ]; then
-      get_target_dir_name_when_restoring_parts  # get $target_dir
-    elif [ "$ocs_sr_img_name" = "autoproductname" ]; then
-      # Ref: https://sourceforge.net/projects/clonezilla/forums/forum/663168/topic/5103006
-      target_dir="$(get_vendor_product_name)-img"
-    else
-      target_dir="$ocs_sr_img_name"
-    fi
-    check_input_target_image "$ocsroot/$target_dir"
-    # This is actually the max avaiable partitions number from image
-    source_parts_no="$(get_parts_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
-    
-    if [ "$ocs_sr_dev" = "ask_user" ]; then
-      if [ -z "$source_part" ]; then
-        ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
-        trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-        get_existing_partitions_from_img $ANS_TMP $ocsroot/$target_dir no select_from_img
-        # we have to remove " (comes with checklist in dialog) 
-        # so that for loop will work (Specially for FC3/4...)
-        source_part="$(cat $ANS_TMP | tr -d \")"
-        [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
-      fi
-
-      # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
-      if grep -Eq '^md[0-9]+' $ocsroot/$target_dir/blkdev.list; then
-        list_local_dev_mode="both_type_dev"
-        use_dev_list_cache="no"
-      fi
-
-      # target name exists, but file "parts" is empty ?
-      check_target_parts $ocsroot/$target_dir/parts "$source_part"
-      # User might choose the partitions when it's ask_user, so here we have to calculate the number again.
-      source_parts_no="$(LC_ALL=C echo $source_part | wc -w)"
-      if [ "$source_parts_no" -eq 1 ]; then
-        dia_sel_opt="menu"
-        if [ "$ocs_user_mode" = "expert" ] && [ -z "$list_local_dev_mode" ]; then
-          ask_list_device_mode  # get $list_local_dev_mode
-        fi
-        if [ "$list_local_dev_mode" = "both_type_dev" ]; then
-          get_target_device_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt  # Obtain tgt_devs
-	  target_parts="$tgt_devs"
-        else
-          get_target_parts_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt  # Obtain target_parts
-        fi
-      else
-	# In this case, it's too complicated to restore partitions to different partitions on destination disk.
-	# Therefore we only allow original partitions to partitions, i.e. e.g., sda1, sda2 from image -> sda1, sda2 on destination disk. Therefore "source_part" is reset to none, i.e., not to convert the image to different device name's image.
-        target_parts="$source_part"
-        source_part=""
-        if [ "$ocs_batch_mode" != "on" ]; then
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	  echo "$msg_2_or_more_parts_only_same_parts_on_dest"
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-          echo -n "$msg_press_enter_to_continue"
-          read 
-        fi
-      fi
-    elif [ "$ocs_sr_dev" = "all" -o \
-	   "$ocs_sr_dev" = "unmounted_parts" ]; then
-      get_not_busy_disks_or_parts partition "" ""  # we will get dev_list
-      target_parts="$dev_list"
-      target_parts_no="$(LC_ALL=C echo $target_parts | wc -w)"
-      if [ "$source_parts_no" != "$target_parts_no" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-        echo "The source partition(s) number from the image does not match to that of destination partition(s)." | tee --append ${OCS_LOGFILE}
-	echo "Source partition(s) number: $source_parts_no" | tee --append ${OCS_LOGFILE}
-	echo "Destination partition(s) number: $target_parts_no" | tee --append ${OCS_LOGFILE}
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-        echo -n "$msg_press_enter_to_continue..."
-        read
-        echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
-	exit 1
-      fi
-    else
-      target_parts="$ocs_sr_dev"
-    fi
-    #
-    get_extra_param_when_type_is_ask_user_and_interactive_mode
-    wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
-    # Append the option if restoring to different partition on the destination disk.
-    if [ -n "$source_part" ]; then
-	OCS_OPTS="$OCS_OPTS -f $source_part"
-    fi
-
-    run_ocs_sr_again_prompt "$target_dir" "$target_parts"
-
-    # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
-    # The original ones will be kept as ocsroot_orig and target_dir_orig.
-    prepare_ecryptfs_mount_point_if_necessary
-
-    task_processing_after_parameters_checked
-
-    ocs-run-boot-param ocs_restoreparts_prerun
-    task_restoreparts "$target_dir" "$target_parts"
-    ocs-run-boot-param ocs_restoreparts_postrun
-
-    task_postprocessing "$ocs_sr_type" "$target_dir"
-    ;;
-  "recovery-iso-zip") create_clonezilla_live_recovery_iso_zip ;;
-  "chk-img-restorable") ocs-chkimg ;;
+  "savedisk")            do_savedisk_job ;;
+  "restoredisk")         do_restoredisk_job ;;
+  "saveparts")           do_saveparts_job ;;
+  "restoreparts")        do_restoreparts_job ;;
+  "recovery-iso-zip")    create_clonezilla_live_recovery_iso_zip ;;
+  "chk-img-restorable")  ocs-chkimg ;;
   "cvt-img-compression") ocs-cvtimg-comp ;;
-  "encrypt-img") ocs-encrypt-img ;;
-  "decrypt-img") ocs-decrypt-img ;;
-  "p2v-img") ocs-img-2-vdk ;;
-  "1-2-mdisks") ocs-restore-mdisks -um $ocs_user_mode ;;
+  "encrypt-img")         ocs-encrypt-img ;;
+  "decrypt-img")         ocs-decrypt-img ;;
+  "p2v-img")             ocs-img-2-vdk ;;
+  "1-2-mdisks")          ocs-restore-mdisks -um $ocs_user_mode ;;
   "multicast_restoredisk")
     task_preprocessing "$ocs_sr_type"
     task_processing_after_parameters_checked
