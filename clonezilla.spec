@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.13
+Version:	5.5.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Oct 30 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.14-drbl1
+  * create-ubuntu-live: bug fixed. Append "(-|$)" after linux modules version.
+
 * Mon Oct 30 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.13-drbl1
   * create-ubuntu-live: bug fixed. Append "-" after linux modules version.
 
