@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.14
+Version:	5.5.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.2.23, psmisc, udpcast, partclone >= 0.3.27, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.2.26, psmisc, udpcast, partclone >= 0.3.27, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Nov 02 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.15-drbl1
+  * Support an extra dir "root" for the root fs with grub reinstallation.
+    This is for the case that Fedora >= 38 uses an extra dir "root"
+    for root file system, i.e., /root/ under the root partition. 
+    Older system just puts the dirs (boot, usr, var, lib) in the / of root file system.
+    Thanks to Bob Bobsled for reporting this issue.
+    Ref: https://sourceforge.net/p/clonezilla/mailman/message/42287717/
+
 * Mon Oct 30 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.14-drbl1
   * create-ubuntu-live: bug fixed. Append "(-|$)" after linux modules version.
 
