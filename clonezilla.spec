@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.15
+Version:	5.5.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Nov 07 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.16-drbl1
+  * create-ubuntu-live: support Noble, retired Kinetic.
+
 * Thu Nov 02 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.15-drbl1
   * Support an extra dir "root" for the root fs with grub reinstallation.
     This is for the case that Fedora >= 38 uses an extra dir "root"
