@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.17
+Version:	5.5.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 04 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.18-drbl1
+  * ocs-ezio-leecher: Use Ezio simple output mode when the terminal is
+    smaller than 80x24.
+
 * Sat Nov 25 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.17-drbl1
   * ocs-prep-cache: fixed testing wrong file name.
 
