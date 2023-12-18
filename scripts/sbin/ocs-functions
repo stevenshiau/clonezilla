@@ -7737,15 +7737,19 @@ stop_ocs_service() {
   # When removing ocs_opt etc in pxelinux cfg, PXE_CONF is a global variable.
   if [ "$diskless_client_os" = "clonezilla-live" ]; then
     if [ -d "$pxecfg_pd" ]; then
-      remove_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run
-      remove_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run
-      # Update the description to avoid confusion.
-      # (1) PXE
-      force_pxe_clients_boot_label Clonezilla-live "Clonezilla Live"
-      hide_reveal_pxe_img Clonezilla-live hide $PXE_CONF
-      # (2) uEFI (GRUB)
-      force_grub_efi_clients_boot_label clonezilla-live-client "Clonezilla-live"
-      hide_reveal_grub_efi_ent "clonezilla-live-client" hide $GRUB_CONF
+      # For Clonezilla lite server, if the clinet is boot from local media,
+      # no need to modify netboot config files on server.
+      if [ "$client_boot_mode" != "local-boot-media" ]; then
+        remove_opt_in_pxelinux_cfg_block Clonezilla-live ocs_live_run
+        remove_opt_in_grub_efi_cfg_block "clonezilla-live-client" ocs_live_run
+        # Update the description to avoid confusion.
+        # (1) PXE
+        force_pxe_clients_boot_label Clonezilla-live "Clonezilla Live"
+        hide_reveal_pxe_img Clonezilla-live hide $PXE_CONF
+        # (2) uEFI (GRUB)
+        force_grub_efi_clients_boot_label clonezilla-live-client "Clonezilla-live"
+        hide_reveal_grub_efi_ent "clonezilla-live-client" hide $GRUB_CONF
+      fi
     else
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "Dir $pxecfg_pd not found. Assume it is in Singularity mode."
@@ -7826,7 +7830,6 @@ stop_ocs_service() {
     fi
     echo $msg_delimiter_star_line
   fi
-
 } # end of stop_ocs_service
 #
 start_ocsmgrd_daemon() {
