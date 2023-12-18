@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.19
+Version:	5.5.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Dec 18 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.20-drbl1
+  * The netboot files will be modified at stopping when the client is
+    using netboot.
+  * Show Clonezilla live version in grub netboot in the lite client.
+  * Show the massive deployment mode in the boot menu of netboot clients.
+
 * Thu Dec 14 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.19-drbl1
   * A better mechanism learned from newer Debian to load unifont in Debian.
     This should solve the issue blocked by grub security policy when loading
