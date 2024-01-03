@@ -13153,7 +13153,7 @@ output_blkid_info() {
 #
 get_latest_kernel_ver_in_repository() {
   # Since we might run this on gutsy to create hardy live, so we can not use apt-cache to search that. Another approach is to use apt-file to do that. However, it looks like the file http://opensource.nchc.org.tw/ubuntu/dists/hardy/Contents-i386.gz which apt-file fetched is not updated with repository.
-  local ktmp kver dist_path_chklist
+  local ktmp kver dist_path_chklist ocs_live_kernel_filter1 ocs_live_kernel_filter2
   local arch_s="$1"
   # release_kernel_ver is global variable
   # If arch_s is not assigned, use amd64 as default.
@@ -13196,8 +13196,9 @@ get_latest_kernel_ver_in_repository() {
     # ocs_live_exclude_kernels is from drbl-ocs.conf
     # We only want the kernel: 686, amd64, arm64, armmp, generic, generic-lpae
     # They are assigned by "ocs_live_only_kernels" in drbl-ocs.conf 
-    ocs_live_kernel_filter="grep -E -- $ocs_live_only_kernels"
-    kver="$(LC_ALL=C xzgrep -E '^Package: linux-image-[[:digit:]]+\.[[:digit:]]+.*-' $ktmp/Packages.xz | $ocs_live_kernel_filter | sort -r -V | uniq | head -n 1 | sed -r -e 's|^Package: linux-image-||g' | awk -F"-" '{print $1"-"$2}')" 
+    ocs_live_kernel_filter1="grep -E -- $ocs_live_only_kernels"
+    ocs_live_kernel_filter2="grep -Ev -- $ocs_live_exclude_kernels" 
+    kver="$(LC_ALL=C xzgrep -E '^Package: linux-image-[[:digit:]]+\.[[:digit:]]+.*-' $ktmp/Packages.xz | $ocs_live_kernel_filter1 | $ocs_live_kernel_filter2 | sort -r -V | uniq | head -n 1 | sed -r -e 's|^Package: linux-image-||g' | awk -F"-" '{print $1"-"$2}')" 
 
     if [ -z "$kver" ]; then
       # Clean Packages.xz to avoid wget using another name like Packages.xz.1 then search the next again
