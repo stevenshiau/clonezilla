@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.21
+Version:	5.5.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jan 03 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.22-drbl1
+  * Improved the function get_latest_kernel_ver_in_repository of
+    ocs-functions to get the correct version number for new naming of Debian
+    linux kernel package name, i.e., less "-" in new format, e.g.,
+    linux-image-6.5.0-5-amd64 -> linux-image-6.6.9-amd64
+
 * Wed Jan 03 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.21-drbl1
   * Update function get_latest_kernel_ver_in_repository of ocs-functions,
     exclude some unwanted kernel, e.g., -rt-amd64.
