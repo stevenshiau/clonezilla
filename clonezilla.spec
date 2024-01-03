@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.20
+Version:	5.5.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jan 03 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.21-drbl1
+  * Update function get_latest_kernel_ver_in_repository of ocs-functions,
+    exclude some unwanted kernel, e.g., -rt-amd64.
+
 * Mon Dec 18 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.20-drbl1
   * The netboot files will be modified at stopping when the client is
     using netboot.
