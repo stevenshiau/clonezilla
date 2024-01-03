@@ -13193,12 +13193,18 @@ get_latest_kernel_ver_in_repository() {
     # Ubuntu armhf:
     # Package: linux-image-5.4.0-14-generic
     # Package: linux-image-5.4.0-14-generic-lpae
+    # Debian Sid kernel version >= 6.6 is like:
+    # linux-image-6.5.0-5-amd64
+    # linux-image-6.6.9-amd64
     # ocs_live_exclude_kernels is from drbl-ocs.conf
     # We only want the kernel: 686, amd64, arm64, armmp, generic, generic-lpae
     # They are assigned by "ocs_live_only_kernels" in drbl-ocs.conf 
     ocs_live_kernel_filter1="grep -E -- $ocs_live_only_kernels"
     ocs_live_kernel_filter2="grep -Ev -- $ocs_live_exclude_kernels" 
-    kver="$(LC_ALL=C xzgrep -E '^Package: linux-image-[[:digit:]]+\.[[:digit:]]+.*-' $ktmp/Packages.xz | $ocs_live_kernel_filter1 | $ocs_live_kernel_filter2 | sort -r -V | uniq | head -n 1 | sed -r -e 's|^Package: linux-image-||g' | awk -F"-" '{print $1"-"$2}')" 
+    kver="$(LC_ALL=C xzgrep -E '^Package: linux-image-[[:digit:]]+\.[[:digit:]]+.*-' $ktmp/Packages.xz |\
+	    $ocs_live_kernel_filter1 | $ocs_live_kernel_filter2 |\
+	    sort -r -V | uniq | head -n 1 | sed -r -e 's|^Package: linux-image-||g' |\
+	    sed -r -e 's|(^[0-9\.]+)-[[:alnum:]-]+$|\1|g')"
 
     if [ -z "$kver" ]; then
       # Clean Packages.xz to avoid wget using another name like Packages.xz.1 then search the next again
