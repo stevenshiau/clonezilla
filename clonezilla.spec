@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.23
+Version:	5.5.24
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Feb 28 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.24-drbl1
+  * Applied Helmut Grohne's patch.
+    Thanks to Georges Khaznadar, too.
+    Ref: https://bugs.debian.org/1064450
+
 * Wed Jan 03 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.23-drbl1
   * Make get_latest_kernel_ver_in_repository work for Debian and Ubuntu
     kernel package naming, i.e., all of these should be OK:
