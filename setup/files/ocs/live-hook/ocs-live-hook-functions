@@ -288,21 +288,41 @@ remove_start_stop_daemon_diverts(){
   # root@debian:/sbin# ls -alFh start-stop-da*
   # -rwxr-xr-x 1 root root 27K Mar 18 06:16 start-stop-daemon.distrib*
   lb_3_start_stop_daemon_revert_flag="false"
-  if [ -e /sbin/start-stop-daemon.distrib ]; then
+  if [ -e /usr/sbin/start-stop-daemon.distrib ]; then
     # Remove the existing text exec script file, otherwise dpkg-divert won't revert.
     # Then dpkg-divert will rename /sbin/start-stop-daemon.distrib as /sbin/start-stop-daemon
     # //NOTE// For live-build v3.x, after drblpush, we have to revert the status to fake, temp one, so the rest of chroot_dpkg command won't remove the real /sbin/start-stop-daemon.
-    rm -f /sbin/start-stop-daemon
-    dpkg-divert --rename --remove /sbin/start-stop-daemon
+    rm -f /usr/sbin/start-stop-daemon
+    dpkg-divert --rename --remove /usr/sbin/start-stop-daemon
     lb_3_start_stop_daemon_revert_flag="true"
   fi
+  # begin-remove-after: released:trixie
+  # The diversion may be duplicated by live-build due to the target having been
+  # moved to /usr/sbin. See DEP17 P3 M18.
+  lb_3_start_stop_daemon_revert_aliased_flag="false"
+  if [ -e /sbin/start-stop-daemon.distrib.usr-is-merged ]; then
+    rm -f /sbin/start-stop-daemon
+    dpkg-divert --rename --remove /sbin/start-stop-daemon
+    lb_3_start_stop_daemon_revert_aliased_flag="true"
+  fi
+  # end-remove-after
 }
 #
 set_start_stop_daemon_diverts(){
   # For live-build v3.x, after drblpush, we have to revert the status to fake, temp one, so the rest of chroot_dpkg command won't remove the real /sbin/start-stop-daemon.
   # Ref: /usr/lib/live/build/chroot_dpkg
   if [ "$lb_3_start_stop_daemon_revert_flag" = "true" ]; then
-    dpkg-divert --rename --add /sbin/start-stop-daemon
+    dpkg-divert --rename --add /usr/sbin/start-stop-daemon
+    cat > /usr/sbin/start-stop-daemon << EOF
+#!/bin/sh
+
+exit 0
+EOF
+    chmod 755 /usr/sbin/start-stop-daemon
+  fi
+  # begin-remove-after: released:trixie
+  if [ "$lb_3_start_stop_daemon_revert_aliased_flag" = "true" ]; then
+    dpkg-divert --rename --add --divert /sbin/start-stop-daemon.distrib.usr-is-merged /sbin/start-stop-daemon
     cat > /sbin/start-stop-daemon << EOF
 #!/bin/sh
 
@@ -310,6 +330,7 @@ exit 0
 EOF
     chmod 755 /sbin/start-stop-daemon
   fi
+  # end-remove-after
 }
 #
 remove_service_in_system() {
