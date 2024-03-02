@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.24
+Version:	5.5.25
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Mar 02 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.25-drbl1
+  * Removed "ip=" from boot parameters.
+    Thanks to Robert Spitzenpfeil for mentioning that.
+    Ref: https://sourceforge.net/p/clonezilla/bugs/415/
+
 * Wed Feb 28 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.24-drbl1
   * Applied Helmut Grohne's patch.
     Thanks to Georges Khaznadar, too.
