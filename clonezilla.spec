@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.25
+Version:	5.5.26
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Mar 12 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.26-drbl1
+  * Do not run disable_apt_lang_translation in create-*-live. It's not
+    required and will hinder mmdebstrap.
+
 * Sat Mar 02 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.25-drbl1
   * Removed "ip=" from boot parameters.
     Thanks to Robert Spitzenpfeil for mentioning that.
