@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.26
+Version:	5.5.27
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Mar 12 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.27-drbl1
+  * Do not remove orphan packages when creating live system
+    since some are required.
+
 * Tue Mar 12 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.26-drbl1
   * Do not run disable_apt_lang_translation in create-*-live. It's not
     required and will hinder mmdebstrap.
