@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.27
+Version:	5.5.28
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Mar 13 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.28-drbl1
+  * create-ubuntu-live: include apt in debootstrap option
+    so that mmdebstrap will work.
+
 * Tue Mar 12 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.27-drbl1
   * Do not remove orphan packages when creating live system
     since some are required.
