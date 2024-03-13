@@ -47,6 +47,7 @@ hexedit gvfs \
 $debian_pkgs_for_gparted $Xorg_pkgs $font_pkgs"
 categories_default="main contrib"
 cpu_flavor_default="amd64"
+bootstrap_default="mmdebstrap"
 workdir="debian-live"
 # RAM as the working dir. Speed up the live system creation, but need RAM space.
 use_ramfs="no"
@@ -83,6 +84,7 @@ USAGE() {
     echo "OPTION:"
     language_help_prompt_by_idx_no
     echo "-b, --branch [s|stable|t|testing|u|unstable|e|experimental]  Sepcify the DRBL branch to be used in Live CD. Default is stable."
+    echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (debootstrap or mmdebstrap). If not specified, $bootstrap_default will be used."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
     echo "-d, --debian-dist [stable|testing|unstable|jessie|strech|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
     echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 586, 686 or amd64. If it's not assigned, $cpu_flavor_default will be used."
@@ -589,6 +591,15 @@ while [ $# -gt 0 ]; do
             fi
 	    [ -z "$drbl_branch" ] && USAGE && exit 1
             ;;
+    -bt|--bootstrap)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case
+              bootstrap="$1"
+              shift
+            fi
+	    [ -z "$bootstrap" ] && USAGE && exit 1
+            ;;
     -c|--categories)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -790,6 +801,7 @@ rm -rf ${workdir}/.stage/
 [ -z "$mirror_url" ] && mirror_url="$debian_mirror_url_def"
 [ -z "$mirror_security_url" ] && mirror_security_url="$debian_mirror_security_url_def"
 [ -z "$cpu_flavor" ] && cpu_flavor="$cpu_flavor_default"
+[ -z "$bootstrap" ] && bootstrap=$bootstrap_default
 
 # Append the extra packages
 [ -n "$extra_pkgs" ] && pkgs="$pkgs $extra_pkgs"
@@ -942,6 +954,8 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   $pref lb config --mirror-chroot $mirror_url --mirror-chroot-security $mirror_security_url
   # From live-build 3.0~a58-1, no --bootstrap-flavour option.
   #$pref lb config --bootstrap-flavour $debian_type 
+  
+  $pref lb config --bootstrap $bootstrap
 
   # Due to this issue: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=830696
   # We have to add gnupg in the base environment

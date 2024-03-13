@@ -21,6 +21,7 @@ DEBIAN_DIST_DEF="sid"
 pkgs="$PKG_FROM_DBN_WHICH_OCS_LIVE_NEED drbl $PKG_FROM_DBN $PKG_FROM_DRBL"
 categories_default="main contrib"
 cpu_flavor_default="amd64"
+bootstrap_default="mmdebstrap"
 workdir="debian-live"
 # RAM as the working dir. Speed up the live system creation, but need RAM space.
 use_ramfs="no"
@@ -53,6 +54,7 @@ USAGE() {
     language_help_prompt_by_idx_no
     echo "-a, --initsystem [sysvinit|systemd]   Specify the init system for live system. Default is systemd"
     echo "-b, --branch [s|stable|t|testing|u|unstable|e|experimental]  Specify the DRBL branch to be used in Live CD. Default is stable."
+    echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (debootstrap or mmdebstrap). If not specified, $bootstrap_default will be used."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
     echo "-d, --debian-dist [stable|testing|unstable|lenny|squeeze|wheezy|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
     echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 586 or 686. If it's not assigned, $cpu_flavor_default will be used."
@@ -596,6 +598,15 @@ while [ $# -gt 0 ]; do
             fi
 	    [ -z "$drbl_branch" ] && USAGE && exit 1
             ;;
+    -bt|--bootstrap)
+            shift
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case
+              bootstrap="$1"
+              shift
+            fi
+	    [ -z "$bootstrap" ] && USAGE && exit 1
+            ;;
     -c|--categories)
             shift
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -797,6 +808,7 @@ rm -rf ${workdir}/.stage/
 [ -z "$mirror_url" ] && mirror_url="$debian_mirror_url_def"
 [ -z "$mirror_security_url" ] && mirror_security_url="$debian_mirror_security_url_def"
 [ -z "$cpu_flavor" ] && cpu_flavor="$cpu_flavor_default"
+[ -z "$bootstrap" ] && bootstrap=$bootstrap_default
 [ -z "$live_initsystem" ] && live_initsystem=$live_initsystem_def
 
 # Append the extra packages
@@ -951,6 +963,9 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   export DEBOOTSTRAP_OPTIONS="$DEBOOTSTRAP_OPTIONS --include=gnupg"
   # From live-build 3.0~a58-1, no --bootstrap-flavour option.
   #$pref lb config --bootstrap-flavour $debian_type
+  
+  $pref lb config --bootstrap $bootstrap
+
   if [ -n "$debian_type" ]; then
     $pref lb config --debootstrap-options="${DEBOOTSTRAP_OPTIONS} --variant=$debian_type"
   fi
