@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.29
+Version:	5.5.30
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Mar 13 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.30-drbl1
+  * create-*live: add option -bt so that bootstrap program (debootstrap or
+    mmdebstrap) can be assigned.
+
 * Wed Mar 13 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.29-drbl1
   * drbl-ocs.conf: add the variable mmdebstrap_ver_required
 
@@ -98,7 +102,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 * Sat Nov 25 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.17-drbl1
   * ocs-prep-cache: fixed testing wrong file name.
 
-* Wed Nov 07 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.16-drbl1
+* Tue Wed Nov 07 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.16-drbl1
   * create-ubuntu-live: support Noble, retired Kinetic.
 
 * Thu Nov 02 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.15-drbl1
@@ -120,7 +124,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
   * Add the option "-edio" to enable direct IO when using Partclone to save or
     restore NVMe SSD.
 
-* Fri Sep 30 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.11-drbl1
+* Sat Fri Sep 30 2023 Steven Shiau <steven _at_ clonezilla org> 5.5.11-drbl1
   * Only NVMe SSD will use --direct-io of Partclone.
     The --direct-io of Partclone for partition to partition cloning is
     implemented.
@@ -202,7 +206,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
     When ocs_screen_blank="no" is assigned in the boot parameters,
     screen_not_blank won't run.
 
-* Wed May 18 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.8-drbl1
+* Thu Wed May 18 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.8-drbl1
   * ocs-live-boot-menu: Add comment "memtest86+ia32.bin -> mt86+x32.mbr".
 
 * Sun May 07 2023 Steven Shiau <steven _at_ clonezilla org> 5.4.7-drbl1
@@ -376,7 +380,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
     "grep -F" to avoid grep >= 3.8 showing warnings.
   * Add authentication example for grub config file.
 
-* Wed Aug 26 2022 Steven Shiau <steven _at_ clonezilla org> 5.2.3-drbl1
+* Fri Wed Aug 26 2022 Steven Shiau <steven _at_ clonezilla org> 5.2.3-drbl1
   * Disable glances service in live system.
 
 * Sat Jul 09 2022 Steven Shiau <steven _at_ clonezilla org> 5.2.2-drbl1
@@ -441,7 +445,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
   * ocs-onthefly: force to use "-luks no" so that LUKS device
     can be cloned.
 
-* Tue May 02 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.1-drbl1
+* Mon Tue May 02 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.1-drbl1
   * Add a prompt to decide if opening LUKS dev or not.
 
 * Thu Apr 28 2022 Steven Shiau <steven _at_ clonezilla org> 5.1.0-drbl1
@@ -757,7 +761,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
     Thanks to fiddyschmitt for requesting this.
     Ref: https://github.com/stevenshiau/clonezilla/issues/58
 
-* Thu Jun 18 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.2-drbl1
+* Fri Thu Jun 18 2021 Steven Shiau <steven _at_ clonezilla org> 4.4.2-drbl1
   * ocs-clean-part-fs is renamed as ocs-clean-disk-part-fs.
   * Add the mechanism to clean the RAID metadata in disk in
     ocs-clean-disk-part-fs.
@@ -767,7 +771,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
   * ocs-expand-lvm: add a new program to expand LVM.
   * ocs-resize-part: instead of checking device format, check if it exists.
 
-* Tue Jun 09 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.29-drbl1
+* Wed Tue Jun 09 2021 Steven Shiau <steven _at_ clonezilla org> 4.3.29-drbl1
   * Bug fixed: image checking should be before encrypted image is unmounted.
     Thanks to Brian Connolly for reporting this issue.
 
@@ -1094,7 +1098,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
     For partition: UUID or PARTUUID, 
     e.g., UUID=0b51ce79-7bc0-4111-8a40-839461a9b12f"
 
-* Mon Nov 17 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.9-drbl1
+* Tue Mon Nov 17 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.9-drbl1
   * Implement a better mechanism to get block device about UUID.
 
 * Mon Nov 16 2020 Steven Shiau <steven _at_ clonezilla org> 4.1.8-drbl1
@@ -1377,7 +1381,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
     Thanks to panreyes for this idea.
     Ref: https://sourceforge.net/p/clonezilla/bugs/342/
 
-* Mon Apr 14 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.11-drbl1
+* Tue Mon Apr 14 2020 Steven Shiau <steven _at_ clonezilla org> 3.38.11-drbl1
   * Add batch mode, and instead of countdown, pause it when rc is not 0
     for ocs-run-boot-param.
 
@@ -1648,7 +1652,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
   * Update the mechanism to generate new machine-id for restored GNU/Linux.
     Thanks to Peter Sun for reporting the issue and providing the solution.
 
-* Fri Jul 21 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.4-drbl1
+* Sun Fri Jul 21 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.4-drbl1
   * Add hotkey for boot menu "To RAM" (R) and KMS (K) modes.
 
 * Thu Jul 18 2019 Steven Shiau <steven _at_ clonezilla org> 3.35.3-drbl1
@@ -1703,7 +1707,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 * Wed May 29 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.36-drbl1
   * Add prompt about entering uEFI firmware setup.
 
-* Fri May 25 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.35-drbl1
+* Sat Fri May 25 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.35-drbl1
   * uEFI boot menu of GParted live was corrected. It was Clonezilla live.
 
 * Thu May 23 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.34-drbl1
@@ -1747,7 +1751,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
   * Sorted the boot menu, and added a hotkey (l) for large font boot
     menu in Clonezilla live uEFI booting.
 
-* Sun May 11 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.25-drbl1
+* Sat Sun May 11 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.25-drbl1
   * Append dirs "boot,.disk,utils" to toram parameter. This would make To
     RAM option can be used for creating recovery iso/zip.
 
@@ -1778,7 +1782,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
     Thanks to Zibarov Volodymyr.
     Ref: https://sourceforge.net/p/clonezilla/bugs/318/
 
-* Thu Mar 27 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.17-drbl1
+* Wed Thu Mar 27 2019 Steven Shiau <steven _at_ clonezilla org> 3.33.17-drbl1
   * Bug fixed: should only keep libgl1-mesa-dri, while remove other packages.
     i.e., assign unnecessary_packages="xorg-docs-core xfonts-100dpi
     xfonts-75dpi xfonts-scalable" for GParted live.
@@ -2362,7 +2366,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 * Thu Aug 10 2017 Steven Shiau <steven _at_ clonezilla org> 3.27.17-drbl1
   * Speech synthesis is added the boot menu of Clonezilla live.
 
-* Wed Aug 01 2017 Steven Shiau <steven _at_ clonezilla org> 3.27.16-drbl1
+* Tue Wed Aug 01 2017 Steven Shiau <steven _at_ clonezilla org> 3.27.16-drbl1
   * Add udftools in GParted live packages list.
 
 * Mon Jul 31 2017 Steven Shiau <steven _at_ clonezilla org> 3.27.15-drbl1
@@ -2430,11 +2434,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
   * Rotate log file ocsmgrd-notify.log instead of overwritting it.
   * Add more prompts to ocs-scan-disk.
 
-* Sun May 06 2017 Steven Shiau <steven _at_ clonezilla org> 3.27.1-drbl1
+* Sat Sun May 06 2017 Steven Shiau <steven _at_ clonezilla org> 3.27.1-drbl1
   * Bug fixed: ocsmgrd command with pipe did not protected with nohup.
     It failed when CJK language is used in Jfbterm.
 
-* Sun May 06 2017 Steven Shiau <steven _at_ clonezilla org> 3.26.39-drbl1
+* Sat Sun May 06 2017 Steven Shiau <steven _at_ clonezilla org> 3.26.39-drbl1
   * Move the codes about making the ocsmgrd outputs won't be overwritten
     by dialog to ocs-live-feed-img instead of clonezilla.
 
@@ -2635,7 +2639,7 @@ make install DESTDIR=$RPM_BUILD_ROOT/
   - Improve function feed_multicast_restoreparts so that it can work with
     ocs-live-feed-img.
 
-* Sat Apr 04 2017 Steven Shiau <steven _at_ clonezilla org> 3.25.28-drbl1
+* Tue Sat Apr 04 2017 Steven Shiau <steven _at_ clonezilla org> 3.25.28-drbl1
   - Update partition layout to kernel before EBR is restored.
     Thanks to Ron (https://sourceforge.net/u/norotops/) for reporting.
     Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/c047c8d2/
@@ -3752,7 +3756,7 @@ an issue: https://github.com/s3fs-fuse/s3fs-fuse/issues/166
 * Thu Mar 12 2015 Steven Shiau <steven _at_ clonezilla org> 3.14.0-drbl1
 - Adding systemd for Clonezilla live.
 
-* Tue Mar 09 2015 Steven Shiau <steven _at_ clonezilla org> 3.13.32-drbl1
+* Mon Tue Mar 09 2015 Steven Shiau <steven _at_ clonezilla org> 3.13.32-drbl1
 - Default to remove the ntfs volume dirty flag after it's restored.
 - Default to remove the dbus machine id file (/var/lib/dbus/machine-id) after a GNU/Linux system is restored.
 
@@ -4291,7 +4295,7 @@ an issue: https://github.com/s3fs-fuse/s3fs-fuse/issues/166
 * Sat Dec 07 2013 Steven Shiau <steven _at_ clonezilla org> 3.8.17-drbl1
 - Switched to use pixz instead of pxz for -z5p.
 
-* Wed Dec 05 2013 Steven Shiau <steven _at_ clonezilla org> 3.8.16-drbl1
+* Thu Wed Dec 05 2013 Steven Shiau <steven _at_ clonezilla org> 3.8.16-drbl1
 - Bug fixed: the dir of EFI in live zip file should be mode 755, not read-only.
 
 * Wed Nov 27 2013 Steven Shiau <steven _at_ clonezilla org> 3.8.15-drbl1
@@ -4462,13 +4466,13 @@ an issue: https://github.com/s3fs-fuse/s3fs-fuse/issues/166
 - Forcing to add grub-efi-ia32-bin and grub-efi-amd64-bin when downloading in ocs-gen-grub2-efi-bldr. Otherwise somehow in some cases they won't be downloaded.
 - The signed EFI 1st and 2nd stage files from Ubuntu are used for secure booting in Ubuntu-based Clonezilla live. While for Debian-based one, we still follow the distribution, i.e. do not support uEFI secure boot.
 
-* Fri Sep 10 2013 Steven Shiau <steven _at_ clonezilla org> 3.5.37-drbl1
+* Tue Fri Sep 10 2013 Steven Shiau <steven _at_ clonezilla org> 3.5.37-drbl1
 - Put the extra boot prompt in the 1st line of help text for syslinux/pxelinux boot menu.
 
-* Fri Sep 10 2013 Steven Shiau <steven _at_ clonezilla org> 3.5.36-drbl1
+* Tue Fri Sep 10 2013 Steven Shiau <steven _at_ clonezilla org> 3.5.36-drbl1
 - An option "-r" was added in ocs-live-boot-menu so that we can add more prompt in the boot menu.
 
-* Thu Sep 09 2013 Steven Shiau <steven _at_ clonezilla org> 3.5.35-drbl1
+* Mon Thu Sep 09 2013 Steven Shiau <steven _at_ clonezilla org> 3.5.35-drbl1
 - The lvm2 service is disabled in GParted live (https://bugzilla.gnome.org/show_bug.cgi?id=702461).
 
 * Mon Sep 09 2013 Steven Shiau <steven _at_ clonezilla org> 3.5.34-drbl1
@@ -4604,7 +4608,7 @@ an issue: https://github.com/s3fs-fuse/s3fs-fuse/issues/166
 * Sat Jun 22 2013 Steven Shiau <steven _at_ clonezilla org> 3.4.11-drbl1
 - A summary of ocs-chkimg will be shown after image is checked.  Thanks to Elke Moritz <moritz _at_ linuxtag org> for this suggestion.
 
-* Tue Jun 19 2013 Steven Shiau <steven _at_ clonezilla org> 3.4.10-drbl2
+* Wed Tue Jun 19 2013 Steven Shiau <steven _at_ clonezilla org> 3.4.10-drbl2
 - Required partclone version was updated to 0.2.62 due to a jfs bug has been fixed.
 
 * Sun Jun 16 2013 Steven Shiau <steven _at_ clonezilla org> 3.4.10-drbl1
@@ -4655,7 +4659,7 @@ an issue: https://github.com/s3fs-fuse/s3fs-fuse/issues/166
 * Mon May 13 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.44-drbl1
 - Bug fixed: get_mkswap_uuid_cmd in ocs-functions failed to detect mkswap command for util-linux >= 2.20.
 
-* Wed May 06 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.43-drbl1
+* Mon Wed May 06 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.43-drbl1
 - Bug fixed: ocs-lvm2-stop did not load function disable_lvm2_udevd_rules from drbl-functions.
 - Bug fixed: Function reduce_multipath_dev should use its own temp file.
 
@@ -4762,18 +4766,18 @@ an issue: https://github.com/s3fs-fuse/s3fs-fuse/issues/166
 * Fri Mar 01 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.11-drbl1
 - Minix support was enabled since partclone 0.2.49 now works for minix.
 
-* Tue Feb 25 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.10-drbl1
+* Mon Tue Feb 25 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.10-drbl1
 - Bug fixed: ocs-chkimg failed to check the swap partition of cciss devices.
 
-* Tue Feb 25 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.9-drbl1
+* Mon Tue Feb 25 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.9-drbl1
 - Minor improvement in function install_grub_hd.
 - Bug fixed: grub2-install failed to install the correct path in some cases.
 
-* Fri Feb 21 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.8-drbl1
+* Thu Fri Feb 21 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.8-drbl1
 - Bug fixed: duplicated function get_partition_list in ocs-functions was removed.
 - Bug fixed: local part to local part clone failed.
 
-* Fri Feb 21 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.7-drbl1
+* Thu Fri Feb 21 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.7-drbl1
 - Bug fixed: failed to locate grub partition on cciss disk.
 
 * Sun Feb 17 2013 Steven Shiau <steven _at_ clonezilla org> 3.3.6-drbl1
@@ -5211,7 +5215,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 - The prompt in ocs-update-syslinux was updated.
 - Force the kernel to re-read the partition table after sgdisk --zap-all the disk.
 
-* Fri Feb 05 2012 Steven Shiau <steven _at_ clonezilla org> 2.5.10-1drbl
+* Sun Fri Feb 05 2012 Steven Shiau <steven _at_ clonezilla org> 2.5.10-1drbl
 - Command fsck with options will be shown before running.
 
 * Thu Feb 02 2012 Steven Shiau <steven _at_ clonezilla org> 2.5.9-1drbl
@@ -5261,7 +5265,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Tue Jan 10 2012 Steven Shiau <steven _at_ clonezilla org> 2.4.34-1drbl
 - The mismatched GPT and MBR partition table on a disk will be detected.
 
-* Wed Jan 05 2012 Steven Shiau <steven _at_ clonezilla org> 2.4.33-1drbl
+* Thu Wed Jan 05 2012 Steven Shiau <steven _at_ clonezilla org> 2.4.33-1drbl
 - An option to create source tarball was added in create-drbl-live-by-pkg.
 - Git was added in the packages list in create-drbl-live-by-pkg.
 
@@ -5459,13 +5463,13 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Fri Aug 05 2011 Steven Shiau <steven _at_ clonezilla org> 2.3.58-1drbl
 - German language files were added. Thanks to Michael Vinzenz <michael.vinzenz _at_ scalaris com>.
 
-* Wed Jun 27 2011 Steven Shiau <steven _at_ clonezilla org> 2.3.57-1drbl
+* Mon Wed Jun 27 2011 Steven Shiau <steven _at_ clonezilla org> 2.3.57-1drbl
 - Bug fixed: sgdisk failed to reload a GPT table if no inital GPT table on a new disk.
 
-* Wed Jun 27 2011 Steven Shiau <steven _at_ clonezilla org> 2.3.56-1drbl
+* Mon Wed Jun 27 2011 Steven Shiau <steven _at_ clonezilla org> 2.3.56-1drbl
 - Program create-ubuntu-live supports Oneiric now.
 
-* Tue Jun 26 2011 Steven Shiau <steven _at_ clonezilla org> 2.3.55-1drbl
+* Sun Tue Jun 26 2011 Steven Shiau <steven _at_ clonezilla org> 2.3.55-1drbl
 - The URL for GParted project was updated to be "http://gparted.org".
 
 * Thu Jun 23 2011 Steven Shiau <steven _at_ clonezilla org> 2.3.54-1drbl
@@ -5982,7 +5986,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Sun Jul 18 2010 Steven Shiau <steven _at_ clonezilla org> 2.3.6-42
 - S03prep-drbl-clonezilla for drbl-live.d was patched with ocs-live-run-menu started automatically when X not existing in the system. Thanks to Orgad Shaneh for this patch.
 
-* Wed Jun 26 2010 Steven Shiau <steven _at_ clonezilla org> 2.3.6-41
+* Sat Wed Jun 26 2010 Steven Shiau <steven _at_ clonezilla org> 2.3.6-41
 - Bug fixed: an extra shift should not exist in create-gparted-live and create-drbl-by-pkg.
 
 * Sat Jun 26 2010 Steven Shiau <steven _at_ clonezilla org> 2.3.6-40
@@ -6092,11 +6096,11 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Thu Apr 29 2010 Steven Shiau <steven _at_ clonezilla org> 2.3.6-10
 - Package "discover1" was removed in the packages list in create-gparted-live since it does not exist on Sid/Squeeze. Thanks to Scott Hsiao for this bug report.
 
-* Tue Apr 26 2010 Steven Shiau <steven _at_ clonezilla org> 2.3.6-9
+* Mon Tue Apr 26 2010 Steven Shiau <steven _at_ clonezilla org> 2.3.6-9
 - Functions get_ocs_live_autologin_account and get_ocs_live_auto_login_id_home were added in ocs-functions.
 - The exec of ocs-live-run-menu in ~user/.bash_profile will be commented after clonezilla job is done in drbl-ocs-live mode. This will avoid it's run again if just a logout.
 
-* Tue Apr 26 2010 Steven Shiau <steven _at_ clonezilla org> 2.3.6-8
+* Mon Tue Apr 26 2010 Steven Shiau <steven _at_ clonezilla org> 2.3.6-8
 - More boot parameters (vga and video) will be removed in pxelinux config when running dcs to start clonezilla-live based Clonezilla SE service.
 - drbl-ocs-live-prep was improved to allow assigning clonezilla live iso URL with command line option.
 
@@ -6503,7 +6507,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Thu Oct 15 2009 Steven Shiau <steven _at_ clonezilla org> 2.3.4-7
 - Some more network drivers were added in Clonezilla live initramfs module lists (extra_module_list_in_initramfs="atl1 atl1c atl2 bnx2 bnx2x") in ocs-live-hook.conf. PXE booting Clonezilla live might need that.
 
-* Sun Oct 10 2009 Steven Shiau <steven _at_ clonezilla org> 2.3.4-6
+* Sat Sun Oct 10 2009 Steven Shiau <steven _at_ clonezilla org> 2.3.4-6
 - Minor updates in create-gparted-live.
 
 * Fri Oct 09 2009 Steven Shiau <steven _at_ clonezilla org> 2.3.4-5
@@ -6953,7 +6957,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Sun Mar 15 2009 Steven Shiau <steven _at_ clonezilla org> 2.3.2-63
 - The option for -e2 (to use the CHS from EDD when running sfdisk) will also be used with ocs-expand-mbr-pt.
 
-* Fri Mar 14 2009 Steven Shiau <steven _at_ clonezilla org> 2.3.2-62
+* Sat Fri Mar 14 2009 Steven Shiau <steven _at_ clonezilla org> 2.3.2-62
 - vim-common (for /usr/bin/xdd) was added for gparted live. Since xdd is required for NTFS moves and copies.
 - An option -e2 (to use the CHS from EDD when running sfdisk) was added in ocs-sr and ocs-onthefly. Thanks to Orgad Shaneh for this idea.
 
@@ -7102,7 +7106,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 - live hook files will be copied recursively for those create-*-live.
 - ttyS0 for Ubuntu upstart will be copied to Ubuntu-based clonezilla live.
 
-* Mon Dec 09 2008 Steven Shiau <steven _at_ clonezilla org> 2.3.2-24
+* Tue Mon Dec 09 2008 Steven Shiau <steven _at_ clonezilla org> 2.3.2-24
 - parse_cmdline_option in gl-functions was updated.
 - GParted live will honor gp_prerun boot parameter.
 - Show serial no of disk when saving parts. Thanks to Eric Lu.
@@ -7748,7 +7752,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Tue Apr 01 2008 Steven Shiau <steven _at_ clonezilla org> 2.2.4-44
 - Bug fixed: /usr/sbin and /sbin should be in the PATH in gparted live.
 
-* Sun Mar 29 2008 Steven Shiau <steven _at_ clonezilla org> 2.2.4-43
+* Sat Sun Mar 29 2008 Steven Shiau <steven _at_ clonezilla org> 2.2.4-43
 - Use a smaller font ttf-arphic-newsung instead of ttf-arphic-uming in create-gparted-live.
 - An option of port for sshfs was added in prep-ocsroot. Thanks to Rob Wynne for this idea.
 - Allow nonempty mountpoint in sshfs in clonezilla.
@@ -7919,11 +7923,11 @@ Bug fixed: partition table should be initialized before using function check_mbr
 - A New program ocs-create-gpt was added.
 - Codes to deal with gpt partition was added in ocs-functions.
 
-* Sun Jan 05 2008 Steven Shiau <steven _at_ clonezilla org> 2.2.4-2
+* Sat Sun Jan 05 2008 Steven Shiau <steven _at_ clonezilla org> 2.2.4-2
 - Partclone was installed when creating debian/ubuntu template for clonezilla-live.
 - Only when /sbin/start-stop-daemon.REAL exists, we will run apt-get -y --purge remove cdebootstrap-helper-diverts.
 
-* Sun Jan 05 2008 Steven Shiau <steven _at_ clonezilla org> 2.2.4-1
+* Sat Sun Jan 05 2008 Steven Shiau <steven _at_ clonezilla org> 2.2.4-1
 - An experimental option -q2 for clonezilla was added (Priority: ntfsclone, partclone > partimage > dd).
 - An global variable partclone_support_fs was added in drbl-ocs.conf.
 - Partclone was added for hfs+, reiser4, ext2, ext3 and reiserfs. Now we can clone Intel Mac efficiently.
@@ -8590,7 +8594,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Mon Feb 26 2007 Steven Shiau <steven _at_ clonezilla org> 2.1.2-1
 - Add dd to save and restore unknown filesystem. Therefore BSD* can be cloned.
 
-* Sun Feb 24 2007 Steven Shiau <steven _at_ clonezilla org> 2.1.1-7
+* Sat Sun Feb 24 2007 Steven Shiau <steven _at_ clonezilla org> 2.1.1-7
 - update comment in ocs-functions.
 - clonezilla now accepts image name like "2007-2-24-img", not only "2007-02-24-img", by using "$(echo $tgt_img_name | grep -E "(^|[[:space:]]+)([1-6ab]|-b)($|[[:space:]]+)")" instead of "$(echo $tgt_img_name | grep -Ew "([1-6ab]|-b)")" in ocs-functions.
 
@@ -9273,7 +9277,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Wed Oct 05 2005 Steven Shiau <steven _at_ clonezilla org> 1.3.5-17
 - use get-nic-devs to get netdevices, which gives more general network device name.
 
-* Sat Oct 02 2005 Steven Shiau <steven _at_ clonezilla org> 1.3.5-16
+* Sun Sat Oct 02 2005 Steven Shiau <steven _at_ clonezilla org> 1.3.5-16
 - show "-bz2 is not implemented yet" in partimage_stdin usage.
 - comment the "Options for saving:" (-z0, -z1) in usage in drbl-ocs, since now only gzip format image (-z1) works in unicast/multicast restoring.
 - fix the bug for unable to make partimage no-gui.
@@ -9442,7 +9446,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 - change "gunzip < $gzipped_image | wc -c" to "zcat $gzipped_image | wc -c".
 - change the VOL_LIMIT to 600 from 2000 to avoid the gzip file bug (> 2 GB).
 
-* Wed Feb 24 2005 Steven Shiau <steven _at_ clonezilla org> 1.3.2-13
+* Thu Wed Feb 24 2005 Steven Shiau <steven _at_ clonezilla org> 1.3.2-13
 - change "Program stop" to "Program terminated".
 
 * Tue Feb 22 2005 Steven Shiau <steven _at_ clonezilla org> 1.3.2-12
@@ -9510,10 +9514,10 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Tue Dec 7 2004 Steven Shiau <steven _at_ clonezilla org> 1.2.3-2
 - fix the bug when saving SATA
 
-* Wed Nov 18 2004 Steven Shiau <steven _at_ clonezilla org> 1.2.3-1
+* Thu Wed Nov 18 2004 Steven Shiau <steven _at_ clonezilla org> 1.2.3-1
 - use drbl-conf-functions in drbl-ocs.
 
-* Fri Nov 6 2004 Steven Shiau <steven _at_ clonezilla org> 1.2.2-1drbl
+* Sat Fri Nov 6 2004 Steven Shiau <steven _at_ clonezilla org> 1.2.2-1drbl
 - add -m|--module and -s|--skip-hw-detect for drbl-ocs
 - add kudzu/harddrake service default
 - rewrite some codes, now use ocsmgrd.lock (no more /home/pargimag/ocsmgrd) and /opt/drbl/sbin/drbl-ocs (no more copy and run in /sbin/drbl-ocs in client)
@@ -9561,10 +9565,10 @@ Bug fixed: partition table should be initialized before using function check_mbr
 - fix bug for multicast, sync_server should be assigned runtime in client.
 - multicast default gateway should listen on one ethernet port.
 
-* Mon Apr 08 2004 Steven Shiau <steven _at_ clonezilla org> 1.1-15drbl
+* Thu Mon Apr 08 2004 Steven Shiau <steven _at_ clonezilla org> 1.1-15drbl
 - fix the bugs for multicast ocs, we can NOT remove the files mcastListener mcastSender partimage_stdin in dir $drbl_common_root/sbin in drbl-ocs script.
 
-* Mon Mar 16 2004 Steven Shiau <steven _at_ clonezilla org> 1.1-14drbl
+* Tue Mon Mar 16 2004 Steven Shiau <steven _at_ clonezilla org> 1.1-14drbl
 - add colorful and some warning outputs for drbl-ocs.
 
 * Fri Mar 12 2004 Steven Shiau <steven _at_ clonezilla org> 1.1-13drbl
@@ -9618,7 +9622,7 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Fri Jan 02 2004 Steven Shiau <steven _at_ clonezilla org> 1.0-11drbl
 - fix the bug related to the variable changed in /etc/sysconfig/dhcpd.
 
-* Sat Nov 30 2003 Steven Shiau <steven _at_ clonezilla org> 1.0-10drbl
+* Sun Sat Nov 30 2003 Steven Shiau <steven _at_ clonezilla org> 1.0-10drbl
 - add "no PXE only" note for local mode for drbl-client-switch.
 
 * Sat Nov 29 2003 Steven Shiau <steven _at_ clonezilla org> 1.0-9drbl
@@ -9639,5 +9643,5 @@ Bug fixed: partition table should be initialized before using function check_mbr
 * Wed Oct 1 2003 Steven Shiau <steven _at_ clonezilla org> 1.0-3drbl
 - add more functions for drbl-client-switch
 
-* Wed Sep 25 2003 Steven Shiau <steven _at_ clonezilla org> 1.0-1drbl
+* Thu Wed Sep 25 2003 Steven Shiau <steven _at_ clonezilla org> 1.0-1drbl
 - Release the clonezilla for RedHat Linux.
