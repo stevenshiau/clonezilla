@@ -1,4 +1,4 @@
-#!/bin/sh -x
+#!/bin/bash -x
 PKG="clonezilla"
 RPMBUILD="${HOME}/rpmbuild/"
 SPEC_FILE="$PKG.spec"
@@ -47,3 +47,4 @@ cp -fv $RPMBUILD/SRPMS/$PKG-$VER-$RELEASE.src.rpm $RPMBUILD/RPMS/$PKG-$VER-$RELE
 #clean the used file
 [ -d ~/rpmbuild/SOURCES/$PKG-$VER ] && rm -rf ~/rpmbuild/SOURCES/$PKG-$VER
 [ -d ~/rpmbuild/BUILD/$PKG-$VER ] && rm -rf ~/rpmbuild/BUILD/$PKG-$VER
+exit 0

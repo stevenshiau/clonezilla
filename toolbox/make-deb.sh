@@ -27,3 +27,4 @@ cp -a debian debforge/$PKG-$VER/
 cd debforge/$PKG-$VER
 debuild
 rm -f $TARBALL_ORIG
+exit 0
