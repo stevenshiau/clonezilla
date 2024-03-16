@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.30
+Version:	5.5.31
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Mar 16 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.31-drbl1
+  * ocs-functions: update disable_sudo_use_pty,
+    negate it explicitly, not just comment it.
+    This should avoid distortion of gpm with jfbterm.
+    Thanks to ottokang for reporting this issue.
+
 * Wed Mar 13 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.30-drbl1
   * create-*live: add option -bt so that bootstrap program (debootstrap or
     mmdebstrap) can be assigned.
