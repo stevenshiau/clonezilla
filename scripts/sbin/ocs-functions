@@ -10241,10 +10241,18 @@ task_restoreparts() {
   # We have collected all the devices to be deployed by BT mechanism
   # in collect_bittorrent_restore_dev, so now run it
   if [ -n "$all_bt_part_lv" ]; then
+    report_msg=
     echo "The device(s) to be deployed by BT mechanism: $all_bt_part_lv" | tee --append ${OCS_LOGFILE}
+    start_time="$(date +%s%N)"
     bt_cmd_="ocs-btsrv --for-leecher -r $ocsroot_btzone start $target_dir $all_bt_part_lv"
     echo "Running: $bt_cmd_" | tee --append ${OCS_LOGFILE}
     eval $bt_cmd_
+    rc=$?
+    end_time="$(date +%s%N)"
+    calculate_elapsed_time $start_time $end_time
+    echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append ${OCS_LOGFILE}
+    conv_return_code_to_human_read $rc
+    report_msg="$report_msg $all_bt_part_lv, $clone_status, $time_elapsed_in_min mins;"
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
