@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.31
+Version:	5.5.32
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Mar 27 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.32-drbl1
+  * fix: not message was sent to ocsmgrd in BT mode.
+
 * Sat Mar 16 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.31-drbl1
   * ocs-functions: update disable_sudo_use_pty,
     negate it explicitly, not just comment it.
