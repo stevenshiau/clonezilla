@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.5.32
+Version:	5.5.33
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Apr 07 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.33-drbl1
+  * New format messages sending to ocsmgrd. A comma (,) is
+    used to separate the messages.
+  * Rotate log files & receive new format messages from clients.
+
 * Wed Mar 27 2024 Steven Shiau <steven _at_ clonezilla org> 5.5.32-drbl1
   * fix: not message was sent to ocsmgrd in BT mode.
 
