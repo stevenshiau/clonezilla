@@ -23,6 +23,7 @@ use strict;
 use IO::Select;
 use IO::Socket;
 use POSIX qw(strftime);
+use Logfile::Rotate;
 
 $|++;
 
@@ -77,9 +78,15 @@ if ("$whoiam" ne "root") {
   exit(1);
 }
 
-# clean the stale log files.
-unlink ($config{logfile}) if -f $config{logfile};
-unlink ($config{joblogfile}) if -f $config{joblogfile};
+# Rotate the stale log files.
+my $logf1 = new Logfile::Rotate( File  => "$config{logfile}",
+			         Count  => 10);
+my $logf2 = new Logfile::Rotate( File  => "$config{joblogfile}",
+			         Count  => 10);
+$logf1->rotate();
+$logf2->rotate();
+undef $logf1;
+undef $logf2;
 
 # start the ocsmgrd server
 # print "Client jobs are logged in $config{joblogfile}\n";
@@ -185,8 +192,11 @@ sub start_server(%) {
         } else {
           # child: deal with the connection
           my $peeraddr_mac = $fh->getline;
+          # E.g.:
+	  # 192.168.120.5,00:0c:29:1d:9a:d1,1,,,/dev/sda1,success,10.251 mins;
+          # 192.168.120.5,00:0c:29:1d:9a:d1,1,,,/dev/nvme0n1p1 /dev/nvme0n1p2 /dev/cl/root,success,4.721 mins;
           chomp($peeraddr_mac);
-	  my @peerdata=split(" ",$peeraddr_mac);
+	  my @peerdata=split(",",$peeraddr_mac);
 	  my $peeraddr="$peerdata[0]";
 	  my $peermac="$peerdata[1]";
 	  my $peerefioslable="$peerdata[2]";  # for EFI client
