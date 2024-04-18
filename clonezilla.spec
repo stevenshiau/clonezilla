@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.1
+Version:	5.6.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Apr 18 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.2-drbl1
+  * create-gparted-live: remove deborphan in packages list.
+
 * Sun Apr 07 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.1-drbl1
   * fix: only rotating file when it exists.
   * Prompt about spawned by server (DRBL or Clonezilla lite server) is updated.
