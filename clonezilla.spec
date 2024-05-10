@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.2
+Version:	5.6.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat May 11 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.3-drbl1
+  * Add missing function USAGE in ocs-live-nicbonding.
+  * Fixed: ocs_nic_type was not exported so that ocs-live-nicbonding failed
+    to run in ocs-live-netcfg.
+
 * Thu Apr 18 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.2-drbl1
   * create-gparted-live: remove deborphan in packages list.
 
