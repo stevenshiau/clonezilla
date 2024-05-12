@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.3
+Version:	5.6.4
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun May 12 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.4-drbl1
+  * Set a bigger scrollback for screen in live system.
+    It's easier to debug.
+  * Support oracular, drop lunar in create-ubuntu-live.
+
 * Sat May 11 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.3-drbl1
   * Add missing function USAGE in ocs-live-nicbonding.
   * Fixed: ocs_nic_type was not exported so that ocs-live-nicbonding failed
