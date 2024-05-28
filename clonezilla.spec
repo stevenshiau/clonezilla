@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.4
+Version:	5.6.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue May 28 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.5-drbl1
+  * Support zst kernel module and firmware name when exacting NIC firmware.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/3ef47e6fbe/
+
 * Sun May 12 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.4-drbl1
   * Set a bigger scrollback for screen in live system.
     It's easier to debug.
