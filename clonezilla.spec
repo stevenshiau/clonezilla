@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.5
+Version:	5.6.6
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jun 04 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.6-drbl1
+  * Force to use zenity as the dialog in GParted live's program gl-screenshot.
+    No more using gdialog or Xdialog since they are not available in Debian
+    repo.
+
 * Tue May 28 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.5-drbl1
   * Support zst kernel module and firmware name when exacting NIC firmware.
     Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/3ef47e6fbe/
