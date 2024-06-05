@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.7
+Version:	5.6.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Jun 05 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.8-drbl1
+  * gl-screenshot: image preview w/o assigning size
+
 * Wed Jun 05 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.7-drbl1
   * Removed thin-provisioning-tools in the packages list for GParted live
     since it's not available in Debian repo anymore.
