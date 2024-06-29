@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.9
+Version:	5.6.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Jun 29 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.10-drbl1
+  * get-latest-ocs-live-ver: add "-V" for sort since we need to have version
+    sorting.
+
 * Wed Jun 09 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.9-drbl1
   * Bug fixed: ocs-onthefly failing in local part cloning in command line mode, while
     interactive mode works.
