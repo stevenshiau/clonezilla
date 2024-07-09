@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.10
+Version:	5.6.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Jul 09 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.11-drbl1
+  * ocs-resize-part: add option "-f" for fatresize in batch mode.
+
 * Sun Jun 29 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.10-drbl1
   * get-latest-ocs-live-ver: add "-V" for sort since we need to have version
     sorting.
