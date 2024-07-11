@@ -16120,10 +16120,19 @@ get_luks_dev_from_local_machine() {
 save_luks_dev_header(){
   local img_d_="$1"
   local lk_dev_="$(format_dev_name_without_leading_dev $2)" # e.g., sda1
-  local lks_hdbk_cmd
-  lks_hdbk_cmd="cryptsetup luksHeaderBackup --header-backup-file ${img_d_}/${lk_dev_}-luksHeader.bin /dev/${lk_dev_}"
+  local lks_hdbk_cmd tmphbin
+  # A workaround to avoid some buggy/missing mechanisms in CIFS, i.e., LUKS+CIFS+Encrypt
+  # A combination of the source disk being LUKS, the image repo being SMB share, and choosing to encrypt the saved image.
+  # Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/67c5389b20/
+  # We do not directly save the header file to image repo, not using cp nor mv, use cat.
+  tmphbin="$(mktemp -u /tmp/${lk_dev_}-luksHeader.XXXXXX)"
+  lks_hdbk_cmd="cryptsetup luksHeaderBackup --header-backup-file $tmphbin /dev/${lk_dev_}"
   echo "Running: $lks_hdbk_cmd"
   eval $lks_hdbk_cmd
+  lks_hdbk_cmd="cat $tmphbin > ${img_d_}/${lk_dev_}-luksHeader.bin"
+  echo "Running: $lks_hdbk_cmd"
+  eval $lks_hdbk_cmd
+  rm -f $tmpbin
 } # end of save_luks_dev_header
 #
 restore_luks_dev_header(){
