@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.11
+Version:	5.6.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Jul 11 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.12-drbl1
+  * A workaround to solve LUKS+CIFS+Encrypt issue.
+    There is an issue for a combination of the source disk being LUKS,
+    the image repo being SMB share, and choosing to encrypt the saved image.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/67c5389b20/
+
 * Tue Jul 09 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.11-drbl1
   * ocs-resize-part: add option "-f" for fatresize in batch mode.
 
