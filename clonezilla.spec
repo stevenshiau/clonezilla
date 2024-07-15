@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.12
+Version:	5.6.13
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Mon Jul 15 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.13-drbl1
+  * Replace the command to clean super blocks of fakeraid.
+    Use mdadm, no more using dmraid since dmraid is not maintained anymore.
+
 * Thu Jul 11 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.12-drbl1
   * A workaround to solve LUKS+CIFS+Encrypt issue.
     There is an issue for a combination of the source disk being LUKS,
