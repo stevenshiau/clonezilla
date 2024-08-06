@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.13
+Version:	5.6.14
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.2.26, psmisc, udpcast, partclone >= 0.3.27, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.3.3, psmisc, udpcast, partclone >= 0.3.32, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Aug 06 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.14-drbl1
+  *  Allow "%" in the autoname format of image name in TUI when saving an image.
+     Thanks to Batiste DONDOGLIO for reporting this.
+     Ref: https://sourceforge.net/p/clonezilla/discussion/Help/thread/1063f63aa9/
+
 * Mon Jul 15 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.13-drbl1
   * Replace the command to clean super blocks of fakeraid.
     Use mdadm, no more using dmraid since dmraid is not maintained anymore.
