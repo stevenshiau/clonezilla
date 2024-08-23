@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.14
+Version:	5.6.15
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Tue Aug 23 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.15-drbl1
+  * live-build >= 1:20240810 does not generated
+    /EFI/boot/bootia32.efi for amd64 distribution. Corresponding changes
+    for create-gparted-live, ocs-iso & ocs-live-dev were done.
+  * create-gparted-live: polkitd & pkexec have replaced policykit-1 in
+    Debian Sid repo.
+
 * Tue Aug 06 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.14-drbl1
   *  Allow "%" in the autoname format of image name in TUI when saving an image.
      Thanks to Batiste DONDOGLIO for reporting this.
