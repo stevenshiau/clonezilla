@@ -14413,7 +14413,7 @@ inspect_chksum_for_files_in_dev() {
       chksum_file_lines="$(LC_ALL=C zcat $chksum_file | wc -l)"
       echo "Inspecting $chksum_cmd checksum for totally $chksum_file_lines files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
       LC_ALL=C zcat $chksum_file | $chksum_cmd -c | pv -N "/dev/$sum_part" -peltf -s $chksum_file_lines \
-      | tee --append ${OCS_LOGFILE} | cat - > /var/log/$(to_filename ${sum_part})-${chksum_cmd}-results.log
+      | grep -Ev ': OK$' | tee -a ${OCS_LOGFILE} /var/log/$(to_filename $sum_part)-${chksum_cmd}-results.log - | awk 'NR<9'
       rc_chk="${PIPESTATUS[1]}"
       # Strip the mount point path before going on
       perl -pi -e "s|$sum_part_tmpd||g" /var/log/$(to_filename ${sum_part})-${chksum_cmd}-results.log
