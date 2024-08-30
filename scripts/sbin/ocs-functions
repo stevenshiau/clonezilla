@@ -9562,8 +9562,15 @@ task_restoredisk() {
     # //NOTE// Now this method only works for unicast. Not for multicast/broadcast.
     gen_proc_partitions_map_file
     # Exclude loop* device.
-    target_hd="$(get_disk_list $partition_table | sed -r -e "s/loop[[:digit:]]*//" | awk -F" " '{print $1}')"
+    target_hd="$((get_not_busy_disks_or_parts harddisk >/dev/null 2>&1; echo $dev_list) | sed -r -e "s/loop[[:digit:]]*//" | awk -F" " '{print $1}')"
     [ -f "$partition_table" ] && rm -f $partition_table
+    if [ -n "$target_hd" ]; then
+      echo $msg_delimiter_star_line
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Destination disk: $target_hd"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo $msg_delimiter_star_line
+    fi
     ;;
   esac
   
