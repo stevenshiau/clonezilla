@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.15
+Version:	5.6.16
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,19 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Aug 30 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.16-drbl1
+  * Make 1st-disk skip mounted disk. Thanks to trfl.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/27e0b4559d/
+  * Bug fixed: OOM issue about checksums of all files
+    The feature to verify checksums of all files inside the restored
+    filesystems may OOM because it produces a very large logfile in
+    ramdisk. Fix: filter the log to only include failed files
+    Thanks to trfl.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/27e0b4559d/
+  * ocs-onthefly: -j2 and -e2 should not be on when running ocs-sr. It
+    should be assigned by user.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/b3ce8cfeb0/
+
 * Tue Aug 23 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.15-drbl1
   * live-build >= 1:20240810 does not generated
     /EFI/boot/bootia32.efi for amd64 distribution. Corresponding changes
