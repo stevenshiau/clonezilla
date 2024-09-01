@@ -9321,12 +9321,16 @@ task_saveparts() {
   do_LUKS_save="no"
   ask_luks_flag="yes"
   for partition in $target_parts; do
-    if check_LVM_partition /dev/$partition; then
-      # LVM
-      # We have to do save LVM (PV/VG/LV) together, not follow every partition
-      do_LVM_save="yes"
-      continue
+    if [ -n "$(LC_ALL=C pvscan | grep -E '^[[:space:]]*PV /' |\
+	       awk '{print $2}' | grep -Ew "^/dev/${partition}$")" ]; then
+      if check_LVM_partition /dev/$partition; then
+        # LVM
+        # We have to do save LVM (PV/VG/LV) together, not follow every partition
+        do_LVM_save="yes"
+        continue
+      fi
     fi
+    # NB: "cryptsetup isLuks --" doesn't work for LUKS2 with detached header (needs the --header argument)
     if cryptsetup isLuks -- /dev/$partition; then
       if [ -z "$enable_luks" ]; then
         # Ask if enabling LUKS
