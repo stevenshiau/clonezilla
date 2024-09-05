@@ -895,17 +895,10 @@ get_image_cat_zip_cmd() {
               unzip_stdin_cmd="lrzip -q -d -o -"
               ;;
       zst)    
-              if [ "$cpu_no" -gt 1 ] && \
-                 [ "$use_parallel_decompression" = "yes" ] && \
-                 type zstdmt &>/dev/null; then
-                cat_prog="zstdmt -dc"
-                zip_stdin_cmd="zstdmt -c"
-                unzip_stdin_cmd="zstdmt -dc"
-              else
-                cat_prog="zstd -dc"
-                zip_stdin_cmd="zstd -c"
-                unzip_stdin_cmd="zstd -dc"
-              fi
+	      # 2024/Sep/02 Merge zstd and zstdmt, always use zstd with option "-T*" (in $extra_zstd_opt).
+              cat_prog="zstd -dc $extra_zstd_dc_opt"
+              zip_stdin_cmd="zstd -c $extra_zstd_opt"
+              unzip_stdin_cmd="zstd -dc $extra_zstd_dc_opt"
               ;;
     esac
   fi
@@ -981,17 +974,9 @@ get_image_cat_zip_cmd() {
       fi
     elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "Zstandard compressed data")" ]; then
       # Ex: hdb1.ntfs-img: lzop compressed data - version 1.010, LZO1X-1, os: Unix
-      if [ "$cpu_no" -gt 1 ] && \
-         [ "$use_parallel_decompression" = "yes" ] && \
-         type zstdmt &>/dev/null; then
-         cat_prog="zstdmt -dc"
-         zip_stdin_cmd="zstdmt -c"
-         unzip_stdin_cmd="zstdmt -dc"
-      else
-         cat_prog="zstd -dc"
-         zip_stdin_cmd="zstd -c"
-         unzip_stdin_cmd="zstd -dc"
-      fi
+      cat_prog="zstd -dc $extra_zstd_dc_opt"
+      zip_stdin_cmd="zstd -c $extra_zstd_opt"
+      unzip_stdin_cmd="zstd -dc $extra_zstd_dc_opt"
     elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "lzip compressed data")" ]; then
       # Ex: sda1.ntfs-img.aa: lzip compressed data - version 1, os: Unix
       if [ "$cpu_no" -gt 1 ] && \
@@ -1374,7 +1359,7 @@ save_part_by_partclone() {
   fs_pre="${fs_save}-ptcl"  # image name prefix, e.g. sda1."ext4-ptcl"-img.gz
 
   compress_prog_opt="$IMG_CLONE_CMP"
-  [ -z "$IMG_CLONE_CMP" ] && compress_prog_opt="gzip -c $extra_gzip_opt"
+  [ -z "$IMG_CLONE_CMP" ] && compress_prog_opt="zstd -c $extra_zstd_opt"
   compress_prog_prompt="$(echo "$compress_prog_opt" | sed -e "s/ -.*//g")"
   comp_suf="$(ocs-get-comp-suffix $compress_prog_opt)"
 
@@ -11088,7 +11073,7 @@ USAGE_common_save(){
     echo " -z8, --lz4-compress      Compress using lz4 when saving."
     echo " -z8p, --lz4mt-compress   Compress using lz4mt when saving."
     echo " -z9, --zstd-compress     Compress using zstd when saving."
-    echo " -z9p, --zstdmt-compress   Compress using zstdmt when saving."
+    echo " -z9p, --zstdmt-compress   Compress using zstdmt (multicores) when saving."
 } # end of USAGE_common_save
 #
 USAGE_reserved_word_for_save() {
@@ -15397,12 +15382,9 @@ case "$net_filter" in
        fi
        ;;
    *)
-       if type zstdmt &>/dev/null; then
-         net_filter_comp="zstdmt -c $extra_zstdmt_opt_onthefly"
-         net_filter_decomp="zstdmt -dc"
-       elif type zstd &>/dev/null; then
+       if type zstd &>/dev/null; then
          net_filter_comp="zstd -c $extra_zstd_opt_onthefly"
-         net_filter_decomp="zstd -cd"
+         net_filter_decomp="zstd -dc $extra_zstd_dc_opt_onthefly"
        else
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
          echo "zstd is NOT found." | tee --append $OCS_LOGFILE
