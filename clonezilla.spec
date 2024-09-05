@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.16
+Version:	5.6.17
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,18 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 05 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.17-drbl1
+  * Batch mode did not just quit when failing to restore a partition.
+    Thanks to Ron for reporting this.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/07b08bf1e4/?limit=25#4637/b907
+  * Merged zstd and zstdmt, use "zstd -T0" by default. Hence the following extra_zstdmt_* variables are dropped:
+    extra_zstdmt_opt, extra_zstdmt_dc_opt, extra_zstdmt_opt_onthefly & extra_zstdmt_dc_opt_onthefly.
+    This will be easier for user to customize that using boot parameters.
+    Now only available variables for zstd are:
+    extra_zstd_opt, extra_zstd_dc_opt, extra_zstd_opt_onthefly & extra_zstd_dc_opt_onthefly.
+    Thanks to trfl for asking.
+    Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/27e0b4559d/?limit=25#0d85/99ae
+
 * Fri Aug 30 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.16-drbl1
   * Make 1st-disk skip mounted disk. Thanks to trfl.
     Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/27e0b4559d/
