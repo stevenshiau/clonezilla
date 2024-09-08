@@ -24,23 +24,14 @@ echo "$now"
 [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
 echo -e "$msg_insert_storage_dev_now"
 [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-# We have to assign ocs_sr_type as save so that when there is file system on a bare block device (e.g., /dev/sda), it can be listed, i.e., in the functions is_whole_disk and is_partition of ocs-functions.
-ocs_sr_type="save"
-get_not_busy_disks_or_parts harddisk # Obtain dev_list
 echo "Scanning devices... Available disk(s) on this machine:"
+# Show it like:
+# NAME    TYPE  SIZE MODEL                          FSTYPE SERIAL
+# nvme0n1 disk   64G VMware Virtual NVMe Disk              VMware NVME_0000
+# nvme0n2 disk 1000G VMware Virtual NVMe Disk              VMware NVME_0000
+# sda     disk   60G VMware Virtual SATA Hard Drive ext4   00000000000000000001
 echo "==================================="
-for idsk in $dev_list; do
-  x="$(cat /sys/block/$(to_sysblock_name $(get_diskname ${idsk}))/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr ' ' _ 2>/dev/null)"
-  x=${x#*\"}
-  x=${x%\"*}
-  get_disk_serial_no -s $idsk
-  if [ -z "$serialno" ]; then
-    serialno="No_disk_serial_no"
-  fi
-  get_disk_id_path $idsk  # get id_path_tag
-  dsize="$(LC_ALL=C parted -s /dev/${idsk} print 2>/dev/null | grep -E "^[[:space:]]*Disk[[:space:]]+/dev/" | awk -F":" '{print $2}' | sed -e "s/ //g")"
-  echo "/dev/${idsk}: $dsize $x $id_path_tag $serialno"
-done
+LC_ALL=C lsblk -d -o name,type,size,model,fstype,serial -e 1,7,11 -x name
 echo "==================================="
 echo -en '\033[1;33m'
 echo Updates periodically. Press Ctrl-C to exit this window.
