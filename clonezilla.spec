@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.17
+Version:	5.6.18
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.3.3, psmisc, udpcast, partclone >= 0.3.32, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.3.4, psmisc, udpcast, partclone >= 0.3.32, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Sep 08 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.18-drbl1
+  * ocs-scan-disk: use lsblk so the codes is neater. The block device with
+    file system (e.g., sda has ntfs file system) can be correctly shown now.
+    Ref: https://github.com/stevenshiau/clonezilla/issues/67
+
 * Thu Sep 05 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.17-drbl1
   * Batch mode did not just quit when failing to restore a partition.
     Thanks to Ron for reporting this.
