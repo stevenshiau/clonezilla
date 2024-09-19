@@ -276,15 +276,15 @@ local_dev_clone() {
   case "$source_type" in
     partition)
       restore_psuedo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_src_tmp -l en_US.UTF-8 --batch -scr -p true $opt_for_ocs_sr_restore_this_run ld2d_restoreparts $d2d_psuedo_img $tgt_dev"
-      echo "Cloning the source device to /dev/$tgt_dev. Running:"
-      echo "$restore_psuedo_img_cmd"
+      echo "Cloning the source device to /dev/$tgt_dev. Running:" | tee --append ${OCS_LOGFILE}
+      echo "$restore_psuedo_img_cmd" | tee --append ${OCS_LOGFILE}
       eval $restore_psuedo_img_cmd
       ;;
     disk)
       echo $msg_delimiter_star_line
       restore_psuedo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_src_tmp -l en_US.UTF-8 --batch -scr -p true $opt_for_ocs_sr_restore_this_run ld2d_restoredisk $d2d_psuedo_img $target_hd"
-      echo "Cloning the source device to /dev/$tgt_dev. Running:"
-      echo "$restore_psuedo_img_cmd"
+      echo "Cloning the source device to /dev/$tgt_dev. Running:" | tee --append ${OCS_LOGFILE}
+      echo "$restore_psuedo_img_cmd" | tee --append ${OCS_LOGFILE}
       eval $restore_psuedo_img_cmd
       ;;
    esac
@@ -342,15 +342,15 @@ clone_over_net() {
       partition)
          echo $msg_delimiter_star_line
          restore_psuedo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_tgt_tmp -l en_US.UTF-8 --batch -j2 -scr -p true --data-port $NC_PORT $opt_for_ocs_sr_restore_assigned_from_src $opt_for_ocs_sr_restore_this_run nd2d_restoreparts $d2d_psuedo_img $tgt_dev"
-         echo "Cloning the source device to /dev/$tgt_dev. Running:"
-         echo "$restore_psuedo_img_cmd"
+         echo "Cloning the source device to /dev/$tgt_dev. Running:" | tee --append ${OCS_LOGFILE}
+         echo "$restore_psuedo_img_cmd" | tee --append ${OCS_LOGFILE}
          eval $restore_psuedo_img_cmd
          ;;
       disk)
          echo $msg_delimiter_star_line
 	 restore_psuedo_img_cmd="LC_ALL=C ocs-sr --ocsroot $hd_tgt_tmp -l en_US.UTF-8 --batch -j2 -scr -p true --data-port $NC_PORT $opt_for_ocs_sr_restore_assigned_from_src $opt_for_ocs_sr_restore_this_run nd2d_restoredisk $d2d_psuedo_img $target_hd"
-         echo "Cloning the source device to /dev/$tgt_dev. Running:"
-         echo "$restore_psuedo_img_cmd"
+         echo "Cloning the source device to /dev/$tgt_dev. Running:" | tee --append ${OCS_LOGFILE}
+         echo "$restore_psuedo_img_cmd" | tee --append ${OCS_LOGFILE}
          eval $restore_psuedo_img_cmd
          ;;
     esac
@@ -366,15 +366,15 @@ clone_over_net() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     if [ "$(echo $my_ip | wc -w)" -gt 1 ]; then
       my_ip_one="$(echo $my_ip | awk -F" " '{print $1}')"
-      echo "Multiple IP addresses exist ($my_ip). Show only one as an example in the following: $my_ip_one."
+      echo "Multiple IP addresses exist ($my_ip). Show only one as an example in the following: $my_ip_one." | tee --append ${OCS_LOGFILE}
     else
       my_ip_one="$my_ip"
     fi
-    echo "$msg_now_run_this_cmd_in_target_machine:"
-    echo "sudo su -"
-    echo "ocs-live-netcfg ($msg_setup_network_first)"
-    echo "$ocs $net_filter_opt $use_netcat_nuttcp_opt -s $my_ip_one -d [TARGET_DEV]"
-    echo "TARGET_DEV example: $example_target"
+    echo "$msg_now_run_this_cmd_in_target_machine:" | tee --append ${OCS_LOGFILE}
+    echo "sudo su -" | tee --append ${OCS_LOGFILE}
+    echo "ocs-live-netcfg ($msg_setup_network_first)" | tee --append ${OCS_LOGFILE}
+    echo "$ocs $net_filter_opt $use_netcat_nuttcp_opt -s $my_ip_one -d [TARGET_DEV]" | tee --append ${OCS_LOGFILE}
+    echo "TARGET_DEV example: $example_target" | tee --append ${OCS_LOGFILE}
     case "$source_type" in
     partition)
       echo "$msg_if_clone_the_partition_to_hda1_in_target_machine:" | tee --append $OCS_LOGFILE
@@ -1045,7 +1045,7 @@ do_fsck_in_source_dev_if_assigned() {
          part_fs="$(grep -Ew "/dev/$src_dev" $src_pt_info | awk -F" " '{print $2}')"
          if [ -z "$part_fs" ]; then
             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-  	  echo "No file system was found in /dev/$src_dev! Skip fsck." | tee --append $OCS_LOGFILE
+  	    echo "No file system was found in /dev/$src_dev! Skip fsck." | tee --append $OCS_LOGFILE
             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
          else
 	    fsck_partition $part_fs /dev/$src_dev $fsck_extra_opt
