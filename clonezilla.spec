@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.18
+Version:	5.6.19
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Sep 19 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.19-drbl1
+  * Output more info in the clonezilla log file.
+
 * Sun Sep 08 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.18-drbl1
   * ocs-scan-disk: use lsblk so the codes is neater. The block device with
     file system (e.g., sda has ntfs file system) can be correctly shown now.
