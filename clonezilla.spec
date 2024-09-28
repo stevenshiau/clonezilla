@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.19
+Version:	5.6.20
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.3.4, psmisc, udpcast, partclone >= 0.3.32, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.3.6, psmisc, udpcast, partclone >= 0.3.32, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Sep 28 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.20-drbl1
+  * Remove sudo when halting & rebooting in the GParted live menu since it is
+    not necessary and the GUI won't start.
+
 * Thu Sep 19 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.19-drbl1
   * Output more info in the clonezilla log file.
 
