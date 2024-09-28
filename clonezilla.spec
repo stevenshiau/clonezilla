@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.20
+Version:	5.6.21
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Sep 28 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.21-drbl1
+    clonezilla: add missing option "-n" in the usage.
+    Thanks to tim-cyb for reporting this.
+    Ref: https://github.com/stevenshiau/clonezilla/issues/119
+
 * Sat Sep 28 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.20-drbl1
   * Remove sudo when halting & rebooting in the GParted live menu since it is
     not necessary and the GUI won't start.
