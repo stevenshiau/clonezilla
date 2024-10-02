@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.21
+Version:	5.6.22
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,11 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Oct 02 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.22-drbl1
+  * Replace reboot with "systemctl -f reboot" so that root over NFS won't
+    hang when rebooting. Same for poweroff command.
+    The option HALT_REBOOT_OPT is set as "-f" in drbl-ocs.conf.
+
 * Sat Sep 28 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.21-drbl1
     clonezilla: add missing option "-n" in the usage.
     Thanks to tim-cyb for reporting this.
