@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.6.22
+Version:	5.6.23
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,13 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Oct 10 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.23-drbl1
+  * ocs-live-feed-img: missing -edio option.
+    Thanks to Sainthol.
+    https://sourceforge.net/p/clonezilla/discussion/Help/thread/dede4020e7/?limit=25#a008
+  * Typo fixed. Thanks to Rachad-Alabi-ADEKAMBI.
+    Ref: https://github.com/stevenshiau/clonezilla/pull/125
+
 * Wed Oct 02 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.22-drbl1
   * Replace reboot with "systemctl -f reboot" so that root over NFS won't
     hang when rebooting. Same for poweroff command.
