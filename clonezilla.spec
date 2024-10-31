@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.7.1
+Version:	5.7.2
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,7 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
-* Thu Oct 29 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.1-drbl1
+* Thu Oct 31 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.2-drbl1
+  * create-debian-live: support creating live system for riscv64 arch.
+
+* Tue Oct 29 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.1-drbl1
   * create-ubuntu-live: Support creating Plucky-based Clonezilla live.
 
 * Thu Oct 10 2024 Steven Shiau <steven _at_ clonezilla org> 5.6.23-drbl1
