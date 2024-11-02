@@ -56,7 +56,7 @@ USAGE() {
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
     echo "-d, --debian-dist [stable|testing|unstable|lenny|squeeze|wheezy|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
     echo "-e, --ramfs-size  SIZE  Use SIZE (bytes) as the size of RAM for working dir. Default is $ramfs_size_def."
-    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 586, 686, amd64, arm64 or armhf. If it's not assigned, $cpu_flavor_default will be used."
+    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 586, 686, amd64, arm64, armhf or riscv64. If it's not assigned, $cpu_flavor_default will be used."
     echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
     echo "-k, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
@@ -146,17 +146,22 @@ build_it() {
 	   pkgs="$pkgs $PKG_FROM_DBN_WHICH_OCS_LIVE_NEED_X86_ONLY"
 	   ;;
     amd64) 
+           # Adding libc6-i386 for AMD64 arch. This will allow 32-bit program to run on AMD64 arch.
+	   # Secure boot is also enabled for amd64.
+           pkgs="$pkgs libc6-i386" 
            # Default bootloaders in live-build is syslinux,grub-efi (for i386/amd64)
            # No need to run "$pref lb config --bootloaders syslinux,grub-efi"
            # //NOTE// This option "--binary-images" is for template iso only, not for Clonezilla live iso.
            $pref lb config --binary-images iso-hybrid
-	   # Add those x86 only packages
+           $pref lb config --uefi-secure-boot enable
+	   # Add those x86_64 only packages
 	   pkgs="$pkgs $PKG_FROM_DBN_WHICH_OCS_LIVE_NEED_X86_64_ONLY"
 	   ;;
     arm64) 
            $pref lb config --bootloaders grub-efi
            $pref lb config --binary-images iso
-	   # Add those x86 only packages
+           $pref lb config --uefi-secure-boot enable
+	   # Add those arm64 only packages
 	   pkgs="$pkgs $PKG_FROM_DBN_WHICH_OCS_LIVE_NEED_ARM64_ONLY"
 	   ;;
     armhf) 
@@ -164,6 +169,13 @@ build_it() {
            $pref lb config --binary-images iso
 	   # Add those armhf only packages
 	   pkgs="$pkgs $PKG_FROM_DBN_WHICH_OCS_LIVE_NEED_ARMHF_ONLY"
+	   ;;
+    riscv64) 
+           $pref lb config --bootloaders grub-efi
+           $pref lb config --binary-images iso
+           $pref lb config --uefi-secure-boot disable
+	   # Add those riscv64 only packages
+	   pkgs="$pkgs $PKG_FROM_DBN_WHICH_OCS_LIVE_NEED_RISCV64_ONLY"
 	   ;;
   esac
   
@@ -507,11 +519,6 @@ if [ "$debian_dist" = "squeeze" -o \
     686*|586*|486*|amd64) pkgs="$pkgs v86d";;
     arm86) true;;
   esac
-fi
-# Adding libc6-i386 for AMD64 arch. This will allow 32-bit program to run on AMD64 arch. Secure boot is also enabled for amd64.
-if [ "$cpu_flavor" = "amd64" ]; then
-  pkgs="$pkgs libc6-i386 grub-efi-amd64-signed shim-signed"
-  $pref lb config --uefi-secure-boot enable
 fi
 
 if [ "$verbose" = "on" ]; then
