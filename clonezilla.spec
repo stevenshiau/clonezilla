@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.7.2
+Version:	5.7.3
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.3.6, psmisc, udpcast, partclone >= 0.3.32, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.3.10, psmisc, udpcast, partclone >= 0.3.32, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,9 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Nov 02 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.3-drbl1
+  * Improved creating riscv64 live system.
+
 * Thu Oct 31 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.2-drbl1
   * create-debian-live: support creating live system for riscv64 arch.
 
