@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.7.4
+Version:	5.7.5
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Nov 03 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.5-drbl1
+  * ocs-iso/ocs-live-dev: fit the riscv64 linux kernel name vmlinux-*, not
+    vmlinuz-*.
+
 * Sun Nov 03 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.4-drbl1
   * ocs-iso/ocs-live-dev: add supporting riscv64 arch.
 
