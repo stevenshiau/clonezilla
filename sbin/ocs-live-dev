@@ -1047,28 +1047,31 @@ else
   fi
 fi
 
-echo "Preparing syslinux, syslinux.exe, makeboot.sh, and makeboot.bat in dir utils... "
-# If it's in Clonezilla live environment, we have those files
-if [ -e "$LIVE_MEDIA/utils/linux/x64/syslinux" -a \
-     -e "$LIVE_MEDIA/utils/linux/x86/syslinux" -a \
-     -e "$LIVE_MEDIA/utils/mbr/mbr.bin" -a \
-     -e "$LIVE_MEDIA/utils/win64/syslinux64.exe" -a \
-     -e "$LIVE_MEDIA/utils/win32/syslinux.exe" ]; then
-  cp -af $LIVE_MEDIA/utils $USB_TMP
-  if [ -d "$LIVE_MEDIA/syslinux" ]; then
-    # Since syslinux (for GNU/Linux) and syslinux*.exe are copied, to make the version consistent,
-    # the other related files should be copied, too.
-    cp -af $LIVE_MEDIA/syslinux/{*.c32,*.bin,memdisk} $USB_TMP/syslinux/
-  fi
-else
-  # Since we can not judge the version from any files in $USB_TMP/syslinux, we use $USB_TMP/isolinux/isolinux.bin.
-  if [ -z "$isolinux_ver" ]; then
-    isolinux_ver="$(LC_ALL=C strings $USB_TMP/syslinux/isolinux.bin 2>/dev/null | grep "^ISOLINUX" | awk -F" " '{print $2}')"
-  fi
-  if [ -n "$isolinux_ver" ]; then
-    put_syslinux_makeboot_for_usb_flash $USB_TMP $isolinux_ver
+if [ "$cpu_arch_type" = "x86" ]; then
+  echo "Preparing syslinux, syslinux.exe, makeboot.sh, and makeboot.bat in dir utils... "
+  # If it's in Clonezilla live environment, we have those files
+  if [ -e "$LIVE_MEDIA/utils/linux/x64/syslinux" -a \
+       -e "$LIVE_MEDIA/utils/linux/x86/syslinux" -a \
+       -e "$LIVE_MEDIA/utils/mbr/mbr.bin" -a \
+       -e "$LIVE_MEDIA/utils/win64/syslinux64.exe" -a \
+       -e "$LIVE_MEDIA/utils/win32/syslinux.exe" ]; then
+    cp -af $LIVE_MEDIA/utils $USB_TMP
+    if [ -d "$LIVE_MEDIA/syslinux" ]; then
+      # Since syslinux (for GNU/Linux) and syslinux*.exe are copied, to make the version consistent,
+      # the other related files should be copied, too.
+      cp -af $LIVE_MEDIA/syslinux/{*.c32,*.bin,memdisk} $USB_TMP/syslinux/
+    fi
+  else
+    # Since we can not judge the version from any files in $USB_TMP/syslinux, we use $USB_TMP/isolinux/isolinux.bin.
+    if [ -z "$isolinux_ver" ]; then
+      isolinux_ver="$(LC_ALL=C strings $USB_TMP/syslinux/isolinux.bin 2>/dev/null | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+    fi
+    if [ -n "$isolinux_ver" ]; then
+      put_syslinux_makeboot_for_usb_flash $USB_TMP $isolinux_ver
+    fi
   fi
 fi
+
 #
 if [ "$target_mode" = "boot_dev" ]; then
   mkbt_opt=""
