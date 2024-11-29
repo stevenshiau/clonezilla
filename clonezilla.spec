@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.7.7
+Version:	5.7.8
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Thu Nov 28 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.8-drbl1
+  * A workdaround to avoid grub has no video output on some systems
+    Ref: https://savannah.gnu.org/bugs/?65503#comment2
+    https://sourceforge.net/p/clonezilla/bugs/424/
+    Thanks to Fab Stz.
+
 * Fri Nov 08 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.7-drbl1
   * The files create-(debian|ubuntu|gparted)-live:
     A workaround to run bootstrap "debootstrap". Not always using mmdebstrap.
