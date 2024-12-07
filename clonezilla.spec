@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.7.8
+Version:	5.7.9
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sat Dec 07 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.9-drbl1
+  * Generate the checksums of files in a file system in batch mode, not
+    right after the image of device is saved.
+    Thanks to barkoder for asking this.
+    Ref: https://github.com/stevenshiau/clonezilla/issues/126
+
 * Thu Nov 28 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.8-drbl1
   * A workdaround to avoid grub has no video output on some systems
     Ref: https://savannah.gnu.org/bugs/?65503#comment2
