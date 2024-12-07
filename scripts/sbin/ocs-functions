@@ -1825,13 +1825,6 @@ image_save() {
     echo "Pseudo image for \"Multicast/BT from device\" mode use or other purpose only. This image is not really restorable, and it can be safely removed." > "$tgt_dir/00-pseudo-img-note.txt"
   fi
 
-  #
-  if [ "$gen_chksum_for_files_in_dev" = "yes" ]; then
-    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-    gen_chksum_for_files_in_dev "$source_dev" "$tgt_dir"
-    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-  fi
-
   # We put the complete log in clonezilla-img file, not here.
   #copy_log ${tgt_dir} ${source_dev}
   return $rc
@@ -4020,7 +4013,7 @@ task_postprocessing() {
   local mode="$1"
   local img_dir="$ocsroot/$2"
   local ipart retv
-  local disk_list parts_list img_time disk_size_ disks_size_all
+  local dev_ disk_list parts_list img_time disk_size_ disks_size_all
   #
   echo "*****************************************************"
   case "$change_win_hostname" in
@@ -4078,6 +4071,16 @@ task_postprocessing() {
   #
   case "$mode" in
     "saveparts"|"savedisk")
+      if [ "$gen_chksum_for_files_in_dev" = "yes" ]; then
+        # Generate the checksums of files in the partition/LV
+        echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+        while read dev_ x y; do
+          [ "$dev_" = "#" ] && continue
+          gen_chksum_for_files_in_dev "$dev_" "$img_dir"
+        done < $img_dir/dev-fs.list
+        echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+      fi
+
       # Output a file name to tag the image and put the log for saving the image. It's easier for us to identify in the future.
       echo "This image was saved by Clonezilla at $(LC_ALL=C date +%F' '%T' '%Z)." > $img_dir/clonezilla-img
       append_clonezilla_live_ver_des_if_available $img_dir/clonezilla-img
@@ -14324,7 +14327,7 @@ gen_chksum_for_files_in_dev() {
   sum_part_tmpd="$(LC_ALL=C mktemp -d /tmp/chksum_tmpd.XXXXXX)"
   part_reg_f_list="$(LC_ALL=C mktemp /tmp/part_f_temp.XXXXXX)"
   # Generate checksum
-  mount -o ro /dev/$sum_part $sum_part_tmpd
+  mount -o ro /dev/$sum_part $sum_part_tmpd 2>/dev/null
   rc=$?
   trap "[ -d "$sum_part_tmpd" ] && umount $sum_part_tmpd &>/dev/null" HUP INT QUIT TERM EXIT
   if [ "$rc" -eq 0 ]; then
@@ -14353,7 +14356,8 @@ gen_chksum_for_files_in_dev() {
     umount /dev/$sum_part
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_fail_to_mount_maybe_linux_not_support: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
+    echo "$msg_fail_to_mount_maybe_linux_not_support:" | tee --append ${OCS_LOGFILE}
+    LC_ALL=C blkid /dev/$sum_part | tee --append ${OCS_LOGFILE}
     echo "$msg_unsble_to_create_checksum_file" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     if [ "$ocs_batch_mode" != "on" ]; then
@@ -14405,6 +14409,7 @@ inspect_chksum_for_files_in_dev() {
       # unit for chksum_file_lines is line number.
       chksum_file_lines="$(LC_ALL=C zcat $chksum_file | wc -l)"
       echo "Inspecting $chksum_cmd checksum for totally $chksum_file_lines files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
+      echo "# Only the files failed to be checked by \"$chksum_cmd\" will be listed in this file." > /var/log/$(to_filename $sum_part)-${chksum_cmd}-results.log
       LC_ALL=C zcat $chksum_file | $chksum_cmd -c | pv -N "/dev/$sum_part" -peltf -s $chksum_file_lines \
       | grep -Ev ': OK$' | tee -a ${OCS_LOGFILE} /var/log/$(to_filename $sum_part)-${chksum_cmd}-results.log - | awk 'NR<9'
       rc_chk="${PIPESTATUS[1]}"
@@ -14425,7 +14430,8 @@ inspect_chksum_for_files_in_dev() {
       umount /dev/$sum_part
     else
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "$msg_fail_to_mount_maybe_linux_not_support: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
+      echo "$msg_fail_to_mount_maybe_linux_not_support:" | tee --append ${OCS_LOGFILE}
+      LC_ALL=C blkid /dev/$sum_part | tee --append ${OCS_LOGFILE}
       echo "$msg_unsble_to_inspect_checksum" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       if [ "$ocs_batch_mode" != "on" ]; then
