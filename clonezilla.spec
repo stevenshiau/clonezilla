@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.7.9
+Version:	5.7.10
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,14 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Dec 08 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.10-drbl1
+  * Improve the checksum creation for LV and interactive mode.
+    Do not wait for input from stdin otherwise it will skip the rest of device in
+    dev-fs.list. Skip file checksum creation about Linux swap &
+    MS_Reserved_Partition partitions.
+  * Improve the checksum inspection mechanism. Make the log file in a
+    directory to avoid confusion.
+
 * Sat Dec 07 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.9-drbl1
   * Generate the checksums of files in a file system in batch mode, not
     right after the image of device is saved.
