@@ -4013,7 +4013,7 @@ task_postprocessing() {
   local mode="$1"
   local img_dir="$ocsroot/$2"
   local ipart retv
-  local dev_ disk_list parts_list img_time disk_size_ disks_size_all
+  local dev_ x_fs disk_list parts_list img_time disk_size_ disks_size_all
   #
   echo "*****************************************************"
   case "$change_win_hostname" in
@@ -4072,10 +4072,16 @@ task_postprocessing() {
   case "$mode" in
     "saveparts"|"savedisk")
       if [ "$gen_chksum_for_files_in_dev" = "yes" ]; then
-        # Generate the checksums of files in the partition/LV
+        echo "Generate the checksums of files in the partition/LV..."
         echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-        while read dev_ x y; do
+        ocs-lvm2-start
+	echo "Device file system lists:"
+        echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+        cat $img_dir/dev-fs.list
+        echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+        while read dev_ x_fs y; do
           [ "$dev_" = "#" ] && continue
+          [ "$x_fs" = "swap" -o "$x_fs" = "MS_Reserved_Partition" ] && continue
           gen_chksum_for_files_in_dev "$dev_" "$img_dir"
         done < $img_dir/dev-fs.list
         echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
@@ -14360,10 +14366,6 @@ gen_chksum_for_files_in_dev() {
     LC_ALL=C blkid /dev/$sum_part | tee --append ${OCS_LOGFILE}
     echo "$msg_unsble_to_create_checksum_file" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    if [ "$ocs_batch_mode" != "on" ]; then
-      echo -n "$msg_press_enter_to_continue..."
-      read
-    fi
   fi
   if [ -d "$sum_part_tmpd" ]; then
     rmdir $sum_part_tmpd
