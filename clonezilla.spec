@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.7.10
+Version:	5.7.11
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -40,6 +40,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Wed Dec 11 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.11-drbl1
+  * Improve the checksums mechanism for Clonezilla image. Make it read once
+    and pass to multiple checksum programs.
+    Thanks to barkoder.
+    Ref: https://github.com/stevenshiau/clonezilla/issues/127
+
 * Sun Dec 08 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.10-drbl1
   * Improve the checksum creation for LV and interactive mode.
     Do not wait for input from stdin otherwise it will skip the rest of device in
