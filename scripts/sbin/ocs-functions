@@ -30,7 +30,7 @@ unmount_wait_and_try() {
 #
 gen_checksums_for_img_if_assigned() {
   local img_dir="$1"  # absolute path
-  local imtd check_mtd_flag out_f
+  local imtd check_mtd_flag total_cksum out_f ifname_
   # checksum_method_for_img is from drbl-ocs.conf.
   # Generate MD5SUMS, SHA1SUMS, B2SUMS...
   # E.g.,
@@ -38,14 +38,57 @@ gen_checksums_for_img_if_assigned() {
   #   echo "Generating B2SUMS for image $target_dir. This might take a while..."
   #   (cd $img_dir; time b2sum * > B2SUMS)
   # fi
-  for imtd in $checksum_method_for_img; do
-    eval check_mtd_flag="\$gen_$imtd"
-    out_f="$(echo $imtd | tr "[a-z]" "[A-Z]")S" # e.g., b2sum -> B2SUMS
-    if [ "$check_mtd_flag" = "yes" ]; then
-      echo "Generating $out_f for image $target_dir. This might take a while..."
-      (cd $img_dir; time $imtd * > $out_f)
+  #for imtd in $checksum_method_for_img; do
+  #  eval check_mtd_flag="\$gen_$imtd"
+  #  out_f="$(echo $imtd | tr "[a-z]" "[A-Z]")S" # e.g., b2sum -> B2SUMS
+  #  if [ "$check_mtd_flag" = "yes" ]; then
+  #    echo "Generating $out_f for image $target_dir. This might take a while..."
+  #    (cd $img_dir; time $imtd * > $out_f)
+  #  fi
+  #done
+  # Another way to make use of Linux kernel cache is to run in background and use "wait" to be finished.
+  # E.g., 
+  # -----------------------------------------
+  #    (cd $img_dir; time $imtd * > $out_f &)
+  #    wait
+  # -----------------------------------------
+  # However, the following should be the best. Thanks to barkoder.
+  # 2024/12/10 Improvement: read once, pass to all of the checksum programs.
+  # Ref: https://github.com/stevenshiau/clonezilla/issues/127
+  total_cksum="$(echo $checksum_method_for_img | wc -w)"
+  echo "Generating checksums for image $target_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
+  for i in $img_dir/*; do
+    ifname_="$(basename $i)"
+    count=1
+    gen_cmd=""
+    for imtd in $checksum_method_for_img; do
+      eval check_mtd_flag="\$gen_$imtd"
+      out_f="$img_dir/$(echo $imtd | tr "[a-z]" "[A-Z]")S" # e.g., b2sum -> B2SUMS
+      if [ "$check_mtd_flag" = "yes" ]; then
+        # The command is like:
+        # cat "$i" | tee >(md5sum >> $img_dir/MD5SUMS; perl -pi -e "s| -$| $ifname_|" $img_dir/MD5SUMS) |\
+        #           tee >(sha1sum >> $img_dir/SHA1SUMS; perl -pi -e "s| -$| $ifname_|" $img_dir/SHA1SUMS) |\
+        #           b2sum >> $img_dir/B2SUMS; perl -pi -e "s| -$| $ifname_|" $img_dir/B2SUMS;
+        if [ "$count" -eq "$total_cksum" ]; then
+        # last one
+          gen_cmd="$gen_cmd | $imtd | sed -r -e \"s| -$| $ifname_|\" >> $out_f; echo -n ."
+        else
+          gen_cmd="$gen_cmd | tee >($imtd | sed -r -e \"s| -$| $ifname_|\" >> $out_f)"
+          # Prepare the next count
+          count="$((count +1))"
+        fi
+      fi
+    done
+    if [ -n "$gen_cmd" ]; then
+      if [ "$verbose" = "on" ] ; then
+        echo
+        echo "Generating checksums $checksum_method_for_img for file $i in image $img_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
+      fi
+      eval cat "$i" $gen_cmd
     fi
   done
+  echo "Done!"
+  echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
 } # end of gen_checksums_for_img_if_assigned
 #
 check_checksums_for_img() {
