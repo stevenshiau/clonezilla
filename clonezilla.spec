@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.7.11
+Version:	5.7.12
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.3.10, psmisc, udpcast, partclone >= 0.3.32, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.3.14, psmisc, udpcast, partclone >= 0.3.33, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,10 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Fri Dec 13 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.12-drbl1
+  * Bug fixed: an extra "-" file was created when inspecting the checksums
+    of files in a file system.
+
 * Wed Dec 11 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.11-drbl1
   * Improve the checksums mechanism for Clonezilla image. Make it read once
     and pass to multiple checksum programs.
