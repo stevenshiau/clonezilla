@@ -4499,10 +4499,10 @@ get_disk_or_part_hardware_info() {
     [ -n "$dsize" ] && DEV_MODEL="${dsize}"
     # File system
     part_fst="$(LC_ALL=C ocs-get-dev-info /dev/$p filesystem 2>/dev/null)"
-    [ -n "$part_fst" ] && DEV_MODEL="${DEV_MODEL}_${part_fst}"
+    [ -n "$part_fst" ] && DEV_MODEL="${DEV_MODEL}|${part_fst}"
     # Volume name
     part_v="$(LC_ALL=C get_part_vol_name /dev/$p $part_fst)"
-    [ -n "$part_v" ] && DEV_MODEL="${DEV_MODEL}_${part_v}"
+    [ -n "$part_v" ] && DEV_MODEL="${DEV_MODEL}|${part_v}"
     # show more info (From which disk). The result is like:
     # 20GB_ext3(In_VMware_Virtual_IDE_Hard_Drive)
     # The disk is either hdx or sdx here.
@@ -4522,7 +4522,7 @@ get_disk_or_part_hardware_info() {
 
     # Put ID path
     get_disk_id_path $dsk_  # get id_path_tag
-    [ -n "$id_path_tag" ] && DEV_MODEL="${DEV_MODEL}_${id_path_tag}"
+    [ -n "$id_path_tag" ] && DEV_MODEL="${DEV_MODEL}|${id_path_tag}"
 
     # Put serial #
     if is_ide_disk "$dsk_"; then
@@ -4532,12 +4532,12 @@ get_disk_or_part_hardware_info() {
       get_disk_serial_no -s $dsk_
     fi
     if [ -n "$serialno" ]; then
-      serialno="_${serialno}"
+      serialno="|${serialno}"
     else
-      serialno="_No_disk_serial_no"
+      serialno="|No_disk_serial_no"
     fi
     if [ -L /dev/$p ]; then
-      DEV_MODEL="${DEV_MODEL}_$(readlink -f /dev/$p)"
+      DEV_MODEL="${DEV_MODEL}|$(readlink -f /dev/$p)"
     else
       DEV_MODEL="${DEV_MODEL}${serialno}"
     fi
@@ -4581,32 +4581,32 @@ get_disk_or_part_hardware_info() {
        dsize="$(LC_ALL=C echo "scale=1; $(cat /sys/block/$(to_sysblock_name $(get_diskname $p))/size 2>/dev/null)*512/1000.0^3" | bc -l 2>/dev/null)GB"
       fi
       if [ -n "$dsize" ]; then
-         dsize="${dsize}_"
+         dsize="${dsize}|"
       else
-         dsize="Unknown_size_"
+         dsize="Unknown_size|"
       fi
       # File system. It might be disk block device with file system
       part_fst="$(LC_ALL=C ocs-get-dev-info /dev/$p filesystem 2>/dev/null)"
       # Append it
-      [ -n "$part_fst" ] && dsize="${dsize}${part_fst}_"
+      [ -n "$part_fst" ] && dsize="${dsize}${part_fst}|"
       # Serial #
       #serialno="$(LC_ALL=C cat $lshw_disk_info | grep -A3 -Ewi "logical name: /dev/$p" | grep -i "serial: " | awk -F":" '{print $2}' | sed -e "s/ //g")"
       get_disk_serial_no -s $p
       if [ -n "$serialno" ]; then
-         serialno="_${serialno}"
+         serialno="|${serialno}"
       else
-         serialno="_No_disk_serial_no"
+         serialno="|No_disk_serial_no"
       fi
       # The result is like 8590MB_VMware_Virtual_IDE
 
       # Put ID path
       get_disk_id_path $p  # get id_path_tag
-      [ -n "$id_path_tag" ] && id_path_tag="_${id_path_tag}"
+      [ -n "$id_path_tag" ] && id_path_tag="|${id_path_tag}"
 
       if [ -L /dev/$p ]; then
-        DEV_MODEL="${dsize}${x}${id_path_tag}$(readlink -f /dev/$p)"
+        DEV_MODEL="${dsize}${x}${id_path_tag}|$(readlink -f /dev/$p)"
       else
-        DEV_MODEL="${dsize}${x}${id_path_tag}${serialno}"
+        DEV_MODEL="${dsize}${x}${id_path_tag}|${serialno}"
       fi
     fi
   fi
