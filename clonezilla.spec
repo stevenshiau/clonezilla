@@ -1,6 +1,6 @@
 Summary:	Opensource Clone System (ocs), clonezilla
 Name:		clonezilla
-Version:	5.7.12
+Version:	5.8.1
 Release:	drbl1
 License:	GPL
 Group:		Development/Clonezilla
@@ -8,7 +8,7 @@ Source0:	%{name}-%{version}.tar.xz
 URL:		http://clonezilla.org
 BuildArch:	noarch
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	bash, perl, drbl >= 5.3.14, psmisc, udpcast, partclone >= 0.3.33, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
+Requires:	bash, perl, drbl >= 5.3.15, psmisc, udpcast, partclone >= 0.3.33, ntfsprogs >= 1.13.1, bc, smartmontools, dmraid, dialog
 %if 0%{?fedora} >= 37
 BuildRequires:  make
 %endif
@@ -40,6 +40,12 @@ make install DESTDIR=$RPM_BUILD_ROOT/
 /etc/drbl/*
 
 %changelog
+* Sun Dec 29 2024 Steven Shiau <steven _at_ clonezilla org> 5.8.1-drbl1
+  * Disable btrfs support since partclone does not support it well.
+
+* Fri Dec 13 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.12-drbl2
+  * Update control file for packaging. 
+
 * Fri Dec 13 2024 Steven Shiau <steven _at_ clonezilla org> 5.7.12-drbl1
   * Bug fixed: an extra "-" file was created when inspecting the checksums
     of files in a file system.
