@@ -127,7 +127,7 @@ orig_parted_tab="${orig_sf/.sf/.parted}"
 orig_parted_dir="$(dirname $orig_sf)"
 if [ ! -e "$orig_parted_tab" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "$orig_parted_tab was not found! It is required so that we know the original disk size! Maybe your Clonezilla image is too old ? You can try to create such an file in your source machine by: \"parted -s /dev/$SOURCE_DEV unit s print > $orig_parted_tab\" (Replace $SOURCE_DEV with your device name)"
+  echo "$orig_parted_tab was not found! It is required so that we know the original disk size! Maybe your Clonezilla image is too old ? You can try to create such an file in your source machine by: \"parted -s /dev/\$SOURCE_DEV unit s print > $orig_parted_tab\" (Replace \$SOURCE_DEV with your device name)"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "$msg_program_stop!"
   exit 1
@@ -312,13 +312,22 @@ while read dev start start_no size size_no type uuid name attrs; do
 	echo "\"Microsoft Reserved Partition (MSR)\" found. Not to expand this partition."
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       fi
-      # If we found the partition is MS Windows "system reserved partition", keep the size.
+      # If we found the partition is MS Windows "Recovery Environment", keep the size.
       # Windows Recovery Environment 	DE94BBA4-06D1-4D40-A16A-BFD50179D6AC
       # Ref: https://en.wikipedia.org/wiki/GUID_Partition_Table
       if [ -n "$(echo $type | grep -iE "type=DE94BBA4-06D1-4D40-A16A-BFD50179D6AC")" ]; then
         expand="false"
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "\"Windows Recovery Environment\" found. Not to expand this partition."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      fi
+      # If we found the partition is "Apple Boot partition (recovery HD)", keep the size.
+      # Apple Boot partition (Recovery HD) 	426F6F74-0000-11AA-AA11-00306543ECAC
+      # Ref: https://en.wikipedia.org/wiki/GUID_Partition_Table
+      if [ -n "$(echo $type | grep -iE "type=426F6F74-0000-11AA-AA11-00306543ECAC")" ]; then
+        expand="false"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+	echo "\"Apple Boot partition (Recovery HD)\" found. Not to expand this partition."
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       fi
       # For newer Clonezilla (>=2.4.36-1drbl), a tag file (sda1.info) might exist
