@@ -127,15 +127,15 @@ check_checksums_for_img() {
     if [ "$check_mtd_flag" = "yes" ]; then
       if [ -e "$img_dir/$out_f" ]; then
         echo $msg_delimiter_star_line
-        echo "Checking $out_f for image $img_dir. This might take a while..."
-        (cd $img_dir; LC_ALL=C $imtd -c $out_f)
-        rc=$?
+        echo "Checking $out_f for image $img_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
+        (cd $img_dir; LC_ALL=C $imtd -c $out_f) | tee --append ${OCS_LOGFILE}
+        rc="${PIPESTATUS[0]}"
         if [ "$rc" -gt 0 ]; then
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	  eval out_err_var="msg_${out_f}_check_failed"
-          echo "$out_err_var"
-          confirm_continue_or_not_default_quit
+	  eval out_err_var="\$msg_${out_f}_check_failed"
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "$out_err_var" | tee --append ${OCS_LOGFILE}
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          confirm_continue_or_not_default_quit
         fi
         chk_checksum_for_img_flag="done"
         echo $msg_delimiter_star_line
