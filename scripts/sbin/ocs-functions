@@ -30,7 +30,7 @@ unmount_wait_and_try() {
 #
 gen_checksums_for_img_if_assigned() {
   local img_dir="$1"  # absolute path
-  local imtd check_mtd_flag total_cksum out_f ifname_
+  local count imtd imtd_shown check_mtd_flag total_cksum out_f ifname_
   # checksum_method_for_img is from drbl-ocs.conf.
   # Generate MD5SUMS, SHA1SUMS, B2SUMS...
   # E.g.,
@@ -55,8 +55,17 @@ gen_checksums_for_img_if_assigned() {
   # However, the following should be the best. Thanks to barkoder.
   # 2024/12/10 Improvement: read once, pass to all of the checksum programs.
   # Ref: https://github.com/stevenshiau/clonezilla/issues/127
-  total_cksum="$(echo $checksum_method_for_img | wc -w)"
-  echo "Generating checksums for image $target_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
+  count=0
+  for imtd in $checksum_method_for_img; do
+    eval check_mtd_flag="\$gen_$imtd"
+    if [ "$check_mtd_flag" = "yes" ]; then
+      count="$((count +1))"
+      imtd_shown="$imtd_shown $imtd"
+    fi
+  done
+  total_cksum="$count"
+  imtd_shown="$(echo $imtd_shown | sed -r -e "s/^ //g")" # Remove the leading space
+  echo -n "Generating checksums ($imtd_shown) for image $target_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
   for i in $img_dir/*; do
     ifname_="$(basename $i)"
     count=1
@@ -66,9 +75,9 @@ gen_checksums_for_img_if_assigned() {
       out_f="$img_dir/$(echo $imtd | tr "[a-z]" "[A-Z]")S" # e.g., b2sum -> B2SUMS
       if [ "$check_mtd_flag" = "yes" ]; then
         # The command is like:
-        # cat "$i" | tee >(md5sum >> $img_dir/MD5SUMS; perl -pi -e "s| -$| $ifname_|" $img_dir/MD5SUMS) |\
-        #           tee >(sha1sum >> $img_dir/SHA1SUMS; perl -pi -e "s| -$| $ifname_|" $img_dir/SHA1SUMS) |\
-        #           b2sum >> $img_dir/B2SUMS; perl -pi -e "s| -$| $ifname_|" $img_dir/B2SUMS;
+        # cat "$i" | tee >(md5sum >> $img_dir/MD5SUMS; sed -r -e "s| -$| $ifname_|" $img_dir/MD5SUMS) |\
+        #           tee >(sha1sum >> $img_dir/SHA1SUMS; sed -r -e "s| -$| $ifname_|" $img_dir/SHA1SUMS) |\
+        #           b2sum >> $img_dir/B2SUMS; sed -r -e "s| -$| $ifname_|" $img_dir/B2SUMS;
         if [ "$count" -eq "$total_cksum" ]; then
         # last one
           gen_cmd="$gen_cmd | $imtd | sed -r -e \"s| -$| $ifname_|\" >> $out_f; echo -n ."
@@ -82,7 +91,7 @@ gen_checksums_for_img_if_assigned() {
     if [ -n "$gen_cmd" ]; then
       if [ "$verbose" = "on" ] ; then
         echo
-        echo "Generating checksums $checksum_method_for_img for file $i in image $img_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
+        echo -n "Generating checksums $checksum_method_for_img for file $i in image $img_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
       fi
       eval cat "$i" $gen_cmd
     fi
