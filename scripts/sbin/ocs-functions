@@ -1489,8 +1489,8 @@ save_part_by_partclone() {
   LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
   rc="$?"
   cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
-  ocs_log_rotate /var/log/partclone-$(to_filename ${source_dev#/dev/*}).log
-  cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${source_dev#/dev/*}).log
+  ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${source_dev#/dev/*}).log
+  cp "${partclone_img_info_tmp}" $ocs_log_dir/partclone-$(to_filename ${source_dev#/dev/*}).log
   end_time="$(date +%s%N)"
   if [ -s "$img_out_err" ]; then
     cat $img_out_err | tee --append ${OCS_LOGFILE}
@@ -1718,15 +1718,15 @@ save_part_by_dd() {
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     rc="$?"
     cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
-    ocs_log_rotate /var/log/partclone-$(to_filename ${source_dev#/dev/*}).log
-    cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${source_dev#/dev/*}).log
+    ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${source_dev#/dev/*}).log
+    cp "${partclone_img_info_tmp}" $ocs_log_dir/partclone-$(to_filename ${source_dev#/dev/*}).log
     end_time="$(date +%s%N)"
     if [ -s "$img_out_err" ]; then
       cat $img_out_err | tee --append ${OCS_LOGFILE}
     fi
     rm -f $img_out_err
     # sync_and_active_exec_files
-    # UGLY! Since we use partclone, then pipe to compression program, then IO redirect to file, the error control is weak. partclone wil not exit even if the disk is full. Therefore we check here.
+    # UGLY! Since we use partclone, then pipe to compression program, then IO redirect to file, the error control is weak. partclone will not exit even if the disk is full. Therefore we check here.
     echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename {tgt_file}).dd-img is incomplete! You have to increase the disk space, then start clonezilla save mode again."
     get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
     [ $rc -eq 0 ] && rc=$?
@@ -5900,8 +5900,8 @@ _EOT_
   esac
 
   cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
-  ocs_log_rotate /var/log/partclone-$(to_filename ${part#/dev/*}).log
-  cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${part#/dev/*}).log
+  ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
+  cp "${partclone_img_info_tmp}" $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
   if [ -s "$unzip_cmd_error" ]; then
     cat "$unzip_cmd_error" | tee --append ${OCS_LOGFILE}
   fi
@@ -6040,8 +6040,8 @@ _EOT_
     fi
     
     cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
-    ocs_log_rotate /var/log/partclone-$(to_filename ${part#/dev/*}).log
-    cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${part#/dev/*}).log
+    ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
+    cp "${partclone_img_info_tmp}" $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
     if [ -s "$unzip_cmd_error" ]; then
       cat "$unzip_cmd_error" | tee --append ${OCS_LOGFILE}
     fi
@@ -6210,8 +6210,8 @@ _EOT_
   rc="$?"
   end_time="$(date +%s%N)"
   cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
-  ocs_log_rotate /var/log/partclone-$(to_filename ${part#/dev/*}).log
-  cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${part#/dev/*}).log
+  ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
+  cp "${partclone_img_info_tmp}" $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
   # sync_and_active_exec_files
   get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
   echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append  ${OCS_LOGFILE}
@@ -6287,8 +6287,8 @@ multicast_restore_by_dd() {
     rc="$?"
     end_time="$(date +%s%N)"
     cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
-    ocs_log_rotate /var/log/partclone-$(to_filename ${part#/dev/*}).log
-    cp "${partclone_img_info_tmp}" /var/log/partclone-$(to_filename ${part#/dev/*}).log
+    ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
+    cp "${partclone_img_info_tmp}" $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
     # sync_and_active_exec_files
     get_partclone_image_info $partclone_img_info_tmp $start_time $end_time
     ;;
@@ -14468,8 +14468,8 @@ inspect_chksum_for_files_in_dev() {
       echo "$msg_this_might_take_some_time" | tee --append ${OCS_LOGFILE}
       # unit for chksum_file_lines is line number.
       chksum_file_lines="$(LC_ALL=C zcat $chksum_file | wc -l)"
-      mkdir -p /var/log/$(basename $tgt_dir)
-      chk_rlt_log="/var/log/$(basename $tgt_dir)/$(to_filename ${sum_part})-${chksum_cmd}-results.log"
+      mkdir -p $ocs_log_dir/$(basename $tgt_dir)
+      chk_rlt_log="$ocs_log_dir/$(basename $tgt_dir)/$(to_filename ${sum_part})-${chksum_cmd}-results.log"
       echo "Inspecting $chksum_cmd checksum for totally $chksum_file_lines files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
       echo "# Only the files failed to be checked by \"$chksum_cmd\" will be listed in this file." > $chk_rlt_log
       LC_ALL=C zcat $chksum_file | $chksum_cmd -c | pv -N "/dev/$sum_part" -peltf -s $chksum_file_lines \
@@ -14962,8 +14962,8 @@ _EOT_
     fi
     
     cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
-    ocs_log_rotate /var/log/partclone-btfiles.log
-    cp "${partclone_img_info_tmp}" /var/log/partclone-btfiles.log
+    ocs_log_rotate $ocs_log_dir/partclone-btfiles.log
+    cp "${partclone_img_info_tmp}" $ocs_log_dir/partclone-btfiles.log
     if [ -s "$unzip_stdin_cmd_error" ]; then
       cat "$unzip_stdin_cmd_error" | tee --append ${OCS_LOGFILE}
     fi
@@ -15209,8 +15209,8 @@ force_to_dd_clone_local_part() {
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     ret=$?
     cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
-    ocs_log_rotate /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
-    cp "${PARTCLONE_LOG}" /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
+    ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
+    cp "${PARTCLONE_LOG}" $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
     ;;
   esac
 } # end of force_to_dd_clone_local_part
@@ -15276,8 +15276,8 @@ local_partition_to_partiton_clone() {
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     ret=$?
     cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
-    ocs_log_rotate /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
-    cp "${PARTCLONE_LOG}" /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
+    ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
+    cp "${PARTCLONE_LOG}" $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
   elif `is_partimage_support_fs $pt_fs`; then
     echo "Using partimage to clone..."  
     partimage $DEFAULT_STDOUT_PARTIMAGE_SAVE_OPT save $src_p stdout 2> /dev/null | \
@@ -15372,7 +15372,7 @@ netcat_nuttcp_check() {
       exit 1
     fi
     NC_CMD="nuttcp"
-    ocs_nuttcp_log="/var/log/ocs-nuttcp-$$.log"
+    ocs_nuttcp_log="$ocs_log_dir/ocs-nuttcp-$$.log"
     ;;
   esac
   [ -f "$nc_tmp" ] && rm -f $nc_tmp
@@ -15503,8 +15503,8 @@ onthefly_receive_partition_from_server_then_write() {
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     ret=$?
     cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
-    ocs_log_rotate /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
-    cp "${PARTCLONE_LOG}" /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
+    ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
+    cp "${PARTCLONE_LOG}" $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
   elif `is_partimage_support_fs $pt_fs`; then
     echo "Using partimage to clone..."  
     [ "$verbose" = "on" ] && echo "$netpipe_cli_cmd | $net_filter_decomp | partimage $DEFAULT_STDIN_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_ONTHEFLY_OPT restore $tgt_p stdin"
@@ -15530,8 +15530,8 @@ onthefly_receive_partition_from_server_then_write() {
       LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
       ret=$?
       cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
-      ocs_log_rotate /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
-      cp "${PARTCLONE_LOG}" /var/log/partclone-$(to_filename ${tgt_p#/dev/*}).log
+      ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
+      cp "${PARTCLONE_LOG}" $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
       ;;
     esac
   fi

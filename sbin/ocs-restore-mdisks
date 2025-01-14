@@ -169,6 +169,8 @@ check_DIA_set_ESC $DIA
 #
 [ -z "$image_name" ] && image_name="ask_user"
 [ -z "$tgt_dsks" ] && tgt_dsks="ask_user"
+# Create log dir
+mkdir -p $ocs_log_dir
 
 #
 if [ "$batch_mode" = "false" ]; then
@@ -354,12 +356,12 @@ fi
 gen_proc_partitions_map_file
 for i in $tgt_dsks; do
   # Clean the stale file
-  rm -f /var/log/${image_name}_mdisks_${i}.log
+  rm -f $ocs_log_dir/${image_name}_mdisks_${i}.log
   [ -z "$(grep -Ew "$i" $partition_table)" ] && continue
   echo "Restoring image for disk $i..."
   # use -k to skip sfdisk since we have done that in the previous step.
   #ocs-sr -g auto -nogui -b -k -e1 auto -e2 -r -j2 -p true restoredisk "${image_name}_cnvt_${i}" "$i" &
-  ocs-sr --ocsroot $ocsroot $OCS_OPTS restoredisk "${image_name}_cnvt_${i}" "$i" 2>&1 | tee /var/log/${image_name}_mdisks_${i}.log &
+  ocs-sr --ocsroot $ocsroot $OCS_OPTS restoredisk "${image_name}_cnvt_${i}" "$i" 2>&1 | tee $ocs_log_dir/${image_name}_mdisks_${i}.log &
 done
 [ -f "$partition_table" ] && rm -f $partition_table
 

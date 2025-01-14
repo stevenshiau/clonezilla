@@ -127,13 +127,13 @@ img_check_by_partclone() {
     check_flag="cat" 
   fi
 
-  cmd_partclone_check="partclone.chkimg -L /var/log/${img_file}-img-chk.log $PARTCLONE_CHKIMG_OPT -s -"
+  cmd_partclone_check="partclone.chkimg -L $ocs_log_dir/${img_file}-img-chk.log $PARTCLONE_CHKIMG_OPT -s -"
 
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
   case "$check_flag" in
   cat)
     # Could be link + split image. Use for loop to cat the source image then unzip it.
-    cat <<_EOT_ | tee -a /var/log/ocs-chk-img.log
+    cat <<_EOT_ | tee -a $ocs_log_dir/ocs-chk-img.log
 ( for img in $target_d/$img_file_prefix; do
     cat \$img
   done
@@ -157,14 +157,14 @@ _EOT_
         # No compression, so the image file can be read directly.
         # Replace stdin "-s -" as the source file.
         cmd_partclone_check="$(echo $cmd_partclone_check | sed -r -e "s|-s -|-s $target_d/$img_file_prefix|")"
-        echo "LC_ALL=C $cmd_partclone_check" | tee -a /var/log/ocs-chk-img.log
+        echo "LC_ALL=C $cmd_partclone_check" | tee -a $ocs_log_dir/ocs-chk-img.log
         eval LC_ALL=C $cmd_partclone_check
 	rc=$?
         ;;
       *)
         # Compressed image. Use unzip command to output stdout
         run_cmd_="$unzip_stdin_cmd $target_d/$img_file_prefix | LC_ALL=C $cmd_partclone_check"
-        echo "$run_cmd_" | tee -a /var/log/ocs-chk-img.log
+        echo "$run_cmd_" | tee -a $ocs_log_dir/ocs-chk-img.log
         eval "$run_cmd_; retcodes=(\${PIPESTATUS[@]})"
         if [ "${retcodes[0]}" -eq 0 -a "${retcodes[1]}" -eq 0 ]; then
           rc=0
@@ -763,6 +763,9 @@ force_TERM_as_linux_if_necessary
 #
 check_if_root
 ask_and_load_lang_set
+
+# Create log dir
+mkdir -p $ocs_log_dir
 
 # imagedir is a variable which ask_user related function need
 imagedir="$ocsroot"
