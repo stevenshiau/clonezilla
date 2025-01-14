@@ -47,6 +47,8 @@ do_update_initrd="yes"
 d2d_psuedo_img="d2d-pseudo"
 # By default we do not enable read/write direct IO for Partclone
 enable_dio="no"
+# By default we do not try to put Clonezilla related log files to Clonezilla live USB drive
+put_log_usb="no"
 
 # Local functions:
 # check if the user input /dev/hda, /dev/hdb...
@@ -689,6 +691,7 @@ set_ocs_onthefly_extra_param() {
     "-batch "      "$msg_ocs_onthefly_param_b" off \
     "-cmf "        "$msg_ocs_onthefly_param_cmf" off \
     "-v "          "$msg_ocs_onthefly_param_v" off \
+    "-plu "        "$msg_ocs_onthefly_param_plu" off \
     "-ps "         "$msg_ocs_onthefly_param_ps" off \
     "-edio "       "$msg_ocs_onthefly_param_edio" off \
     2> $OCS_PARAM_TMP
@@ -937,6 +940,7 @@ parse_ocs_onthefly_cmd_options() {
               fi
               [ -z "$postaction" ] && USAGE && exit 1
               ;;
+      -plu|--put-log-files-usb) put_log_usb="yes"; shift;;
       -ps|--play-sound) ocs_play_sound="yes"; shift ;;
       -t|--no-restore-mbr)  restore_mbr="no"; shift ;;
       -t1|--restore-raw-mbr) restore_prebuild_mbr="yes"; shift ;;
@@ -1522,6 +1526,13 @@ esac
 
 # Restore the udevd rules (if exists) which were disabled by ocs-lvm2-stop.
 restore_lvm2_udevd_rules
+
+# Try to put Clonezilla related log files to Clonezilla live USB drive
+if [ "$put_log_usb" = "yes" ]; then
+  echo "Running: ocs-put-log-usb $target_dir" | tee --append $OCS_LOGFILE
+  ocs-put-log-usb $target_dir | tee --append $OCS_LOGFILE
+  echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+fi
 
 if [ "$STATUS" = "clone_server" ]; then
   echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
