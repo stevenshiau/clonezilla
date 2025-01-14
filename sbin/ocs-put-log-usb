@@ -1,0 +1,81 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to copy the Clonezilla related log files to Clonezilla live USB drive
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+USAGE() {
+    echo "$ocs - To copy the Clonezilla related log files to Clonezilla live USB drive"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] IMAGE"
+    echo "IMAGE is the image dir name, not absolute path. If IMAGE is missing, the log files under /var/log/IMAGE/ won't be copied."
+    echo "If IMAGE is assigned, but /var/log/IMAGE/ does not exist, it won't be copied, either."
+    echo "A directory \"ocslog-*\" based on date and time (say, ocslog-20250111-1705) will be created in Clonezilla live USB drive and Clonezilla related log files will be put under that dir."
+    echo
+    echo "Ex:"
+    echo "To copy the Clonezilla related log files to Clonezilla live USB drive after restoring the image my-image, run"
+    echo "   $ocs my-image"
+    echo
+} # end of USAGE
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+img_name="$1"
+
+#
+check_if_root
+ask_and_load_lang_set
+
+#
+get_live_media_mnt_point
+if [ -z "$LIVE_MEDIA" ]; then
+  exit 1
+fi
+save_time="$(LC_ALL=en_US.UTF-8 date +%Y%m%d-%H%M)"
+touch $LIVE_MEDIA/ocs-test.${save_time} 2>/dev/null
+rc=$?
+if [ "$rc" -eq 0 ]; then
+  # Writable
+  rm -f $LIVE_MEDIA/ocs-test.${save_time}
+  echo -n "Start copying Clonezilla related log files to Clonezilla live USB device..."
+else
+  mount -o remount,rw $LIVE_MEDIA 2>/dev/null
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo -n "Start copying Clonezilla related log files to Clonezilla live USB device..."
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Read-only device \"$LIVE_MEDIA\". Skipping copying Clonezilla related log files."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 3
+  fi
+fi
+mkdir -p $LIVE_MEDIA/ocslog-${save_time}
+# Clonezilla related log files, e.g.,
+# clonezilla.log, ocs-mount.log, ocs-netcfg.log, partclone.log, partclone-nvme0n1p1.log, partclone-nvme0n1p2.log...
+# Checksum results are put in /var/log/$IMAGE_NAME/
+rsync -a $ocs_log_dir $LIVE_MEDIA/ocslog-${save_time}/
+echo " done!"
