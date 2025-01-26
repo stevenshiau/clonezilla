@@ -64,6 +64,9 @@ gen_checksums_for_img_if_assigned() {
     fi
   done
   total_cksum="$count"
+  if [ "$total_cksum" -eq 0 ]; then
+    return 5
+  fi
   imtd_shown="$(echo $imtd_shown | sed -r -e "s/^ //g")" # Remove the leading space
   echo -n "Generating checksums ($imtd_shown) for image $target_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
   for i in $img_dir/*; do
@@ -4124,6 +4127,9 @@ task_postprocessing() {
   #
   case "$mode" in
     "saveparts"|"savedisk")
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+      gen_checksums_for_img_if_assigned $img_dir
+
       if [ "$gen_chksum_for_files_in_dev" = "yes" ]; then
         echo "Generate the checksums of files in the partition/LV..."
         echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
@@ -9039,8 +9045,6 @@ task_savedisk() {
   rc=$?
   if [ "$rc" -gt 0 ]; then
     show_warning_about_write_failed $ocsroot/$target_dir
-  else
-    gen_checksums_for_img_if_assigned $ocsroot/$target_dir
   fi
   rc_task_savedisk="$(($rc_task_savedisk + $?))"
 
@@ -9571,8 +9575,6 @@ task_saveparts() {
   rc=$?
   if [ "$rc" -gt 0 ]; then
     show_warning_about_write_failed $target_dir_fullpath
-  else
-    gen_checksums_for_img_if_assigned $target_dir_fullpath
   fi
 
   # TODO: show error message if failing; check image?
