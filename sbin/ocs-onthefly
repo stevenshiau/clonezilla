@@ -29,6 +29,16 @@ chksum_for_files_in_dev="no"
 ocs_play_sound="no"
 # Default not to remove the ntfs volume dirty flag before cloning
 rm_ntfs_vol_dirty_flag="no"
+# By default the prevous partclone and ONTHEFLY_NET_PIPE service will be killed
+keep_netpipe="no"
+# Default to run ocs-update-initrd to update the initramfs of restored OS
+do_update_initrd="yes"
+#
+d2d_psuedo_img="d2d-pseudo"
+# By default we do not enable read/write direct IO for Partclone
+enable_dio="no"
+# Put Clonezilla related log files to Clonezilla live USB drive or not.
+put_log_usb=""
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -39,16 +49,6 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
 # Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
-# By default the prevous partclone and ONTHEFLY_NET_PIPE service will be killed
-keep_netpipe="no"
-# Default to run ocs-update-initrd to update the initramfs of restored OS
-do_update_initrd="yes"
-#
-d2d_psuedo_img="d2d-pseudo"
-# By default we do not enable read/write direct IO for Partclone
-enable_dio="no"
-# By default we do not try to put Clonezilla related log files to Clonezilla live USB drive
-put_log_usb="no"
 
 # Local functions:
 # check if the user input /dev/hda, /dev/hdb...
@@ -667,7 +667,7 @@ set_ocs_onthefly_extra_param() {
 
   if [ "$ocs_user_mode" = "expert" ]; then
     $DIA --separate-output --backtitle "$msg_nchc_free_software_labs" --title  \
-    "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --checklist "$msg_choose_param_to_set:" \
+    "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --checklist "$msg_choose_param_to_set_multiple_choices:" \
     0 0 0 $DIA_ESC \
     "-g auto "     "$msg_ocs_onthefly_param_g" $inst_grub_opt \
     "-e1 auto "    "$msg_ocs_onthefly_param_e1" on \
@@ -691,7 +691,6 @@ set_ocs_onthefly_extra_param() {
     "-batch "      "$msg_ocs_onthefly_param_b" off \
     "-cmf "        "$msg_ocs_onthefly_param_cmf" off \
     "-v "          "$msg_ocs_onthefly_param_v" off \
-    "-plu "        "$msg_ocs_onthefly_param_plu" off \
     "-ps "         "$msg_ocs_onthefly_param_ps" off \
     "-edio "       "$msg_ocs_onthefly_param_edio" off \
     2> $OCS_PARAM_TMP
@@ -733,7 +732,7 @@ set_ocs_onthefly_extra_param() {
   # Question about fsck the source partition. By default, no matter it's beginner or advanced mode, we will ask.
   if [ -z "$fsck_src_part_intr" -a -z "$fsck_src_part_auto" ]; then
     $DIA --separate-output --backtitle "$msg_nchc_free_software_labs" --title  \
-    "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set:" \
+    "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set_single_choice:" \
     0 0 0 $DIA_ESC \
     "-sfsck "  "$msg_skip_check_source_fs" \
     "-fsck "   "$msg_ocs_onthefly_param_fsck_src_part" \
@@ -810,13 +809,30 @@ set_ocs_onthefly_extra_param() {
       echo "-icds ">> $OCS_PARAM_TMP
     fi
   fi
+
+  # Question about copy the log files to Clonezilla live USB drive. By default, no matter it's beginner or advanced mode, 
+  if [ -z "$put_log_usb" ]; then
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" --menu "$msg_put_log_usb_or_not \n$msg_choose_default_param_if_no_idea" \
+    0 0 0 $DIA_ESC \
+    "-plu "    "$msg_put_log_to_OCS_USB_drive" \
+    " "        "$msg_not_put_log_to_OCS_USB_drive" \
+    2>> $OCS_PARAM_TMP
+  else
+    case "$put_log_usb" in
+      yes) echo "-plu " >> $OCS_PARAM_TMP;;
+       no) echo " " >> $OCS_PARAM_TMP;;
+    esac
+  fi
+
   # For both beginner and expert modes, if user has specified postaction, then we do not have to set it. Otherwise, ask it.
   if [ -n "$postaction" ]; then
     echo "-p $postaction " >> $OCS_PARAM_TMP
   else
     ocs_onthefly_param_postaction_after_clone $OCS_PARAM_TMP
   fi
-  # parse them
+
+  # Parse them
   ocs_onthefly_all_opts="$(cat $OCS_PARAM_TMP)"
   ocs_onthefly_all_opts="$(echo $ocs_onthefly_all_opts)"  # make it one line
   parse_ocs_onthefly_cmd_options $ocs_onthefly_all_opts
