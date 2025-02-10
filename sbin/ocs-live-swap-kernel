@@ -169,11 +169,11 @@ do_swap_kernel_and_module(){
   fi
   echo $msg_delimiter_star_line
   echo "Removing old kernel modules in dir squashfs-root..."
-  lnx_ver_old="$(ls -1d squashfs-root/lib/modules/* | xargs basename)"
-  rm -rf $rm_vopt squashfs-root/lib/modules/*
+  lnx_ver_old="$(ls -1d squashfs-root/usr/lib/modules/* | xargs basename)"
+  rm -rf $rm_vopt squashfs-root/usr/lib/modules/*
   echo "Updating modules in dir squashfs-root..."
   [ "$verbose" = "on" ] && rsync_vopt="-vP"
-  cp_mod_cmd="rsync -a $rsync_vopt ../../$wd_tmp/lib/modules/ squashfs-root/lib/modules/"
+  cp_mod_cmd="rsync -a $rsync_vopt ../../$wd_tmp/usr/lib/modules/ squashfs-root/usr/lib/modules/"
   echo "Running: $cp_mod_cmd"
   eval $cp_mod_cmd
   # Prepare config-$lnx_ver so that it can be used to parsed if xz (CONFIG_RD_XZ) or gzip (CONFIG_RD_GZIP) used in initramfs.
@@ -284,9 +284,11 @@ if [ -e "$ocs_zip_f" ]; then
   unzip -q $ocs_zip_f -d $ocs_zip_tmpd
   # Decide mksquashfs option
   if [ -n "$(echo $ocs_zip_f | grep -Ew "(686|386|amd64|x86-64)")" ]; then
-    arch="i386" # Use i386, it's the same type with 686/x86-64 in function decide_MKSQUASHFS_OPTIONS
+    arch="x86_64" # Use i386, it's the same type with 686/x86-64 in function decide_MKSQUASHFS_OPTIONS
   elif [ -n "$(echo $ocs_zip_f | grep -Ew "arm.*")" ]; then
     arch="arm" 
+  elif [ -n "$(echo $ocs_zip_f | grep -Ew "riscv64.*")" ]; then
+    arch="riscv64" 
   fi
   # This decide_MKSQUASHFS_OPTIONS function will output "export MKSQUASHFS_OPTIONS"
   decide_MKSQUASHFS_OPTIONS $arch
@@ -367,14 +369,14 @@ case "$mode" in
        # ./boot/kernel7.img  -> For Raspberry Pi 2, 3, Compute Module 3
        # ./boot/kernel7l.img -> For Raspberry Pi 4
        # ./boot/kernel8.img
-       # ./lib/modules/{4.19.97+,4.19.97-v7+,4.19.97-v7l+,4.19.97-v8+}
+       # ./usr/lib/modules/{4.19.97+,4.19.97-v7+,4.19.97-v7l+,4.19.97-v8+}
        vmlnz="$wd_tmp/boot/$rpi_kernel"
        rpi_mod_ver="$(echo $rpi_kernel | sed -r -e "s/^kernel//g" -e "s/\.img$//g")"
        if [ -z "$rpi_mod_ver" ]; then
          # For Raspberry Pi 1, zero, Compute Module, we want 4.19.97+ for example.
-         rpi_mod_fn_filter="ls -1d $wd_tmp/lib/modules/*[0-9]+ | grep -v -- '-'"
+         rpi_mod_fn_filter="ls -1d $wd_tmp/usr/lib/modules/*[0-9]+ | grep -v -- '-'"
        else
-         rpi_mod_fn_filter="ls -1d $wd_tmp/lib/modules/*[0-9]*-v${rpi_mod_ver}+"
+         rpi_mod_fn_filter="ls -1d $wd_tmp/usr/lib/modules/*[0-9]*-v${rpi_mod_ver}+"
        fi
        if [ -e "$vmlnz" ]; then
          cp $cp_vopt $vmlnz $ocs_zip_tmpd/live/vmlinuz
