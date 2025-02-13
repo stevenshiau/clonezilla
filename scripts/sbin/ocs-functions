@@ -892,17 +892,10 @@ get_image_cat_zip_cmd() {
               zip_stdin_cmd="lzop -c"
               unzip_stdin_cmd="lzop -dc"
               ;;
-      lz4)    
-              if [ "$cpu_no" -gt 1 ] && \
-                 [ "$use_parallel_decompression" = "yes" ]; then
-	        cat_prog="lz4 -T0 -dc"
-                zip_stdin_cmd="lz4 -T0 -c"
-                unzip_stdin_cmd="lz4 -T0 -dc"
-              else
-	        cat_prog="lz4 -dc"
-                zip_stdin_cmd="lz4 -c"
-                unzip_stdin_cmd="lz4 -dc"
-              fi
+      lz4)    # 2025/Feb/13 Merge lz4 and lz4mt, always use lz4 with option "-T*" (in $extra_lz4_opt).
+	      cat_prog="lz4 -dc $extra_lz4_dc_opt"
+              zip_stdin_cmd="lz4 -c $extra_lz4_opt"
+              unzip_stdin_cmd="lz4 -dc $extra_lz4_dc_opt"
               ;;
       lzma)   cat_prog="lzcat"
               zip_stdin_cmd="lzma -c $extra_lzma_opt"
@@ -948,8 +941,7 @@ get_image_cat_zip_cmd() {
               zip_stdin_cmd="lrzip -q $extra_lrzip_opt -"
               unzip_stdin_cmd="lrzip -q -d -o -"
               ;;
-      zst)    
-	      # 2024/Sep/02 Merge zstd and zstdmt, always use zstd with option "-T*" (in $extra_zstd_opt).
+      zst)    # 2024/Sep/02 Merge zstd and zstdmt, always use zstd with option "-T*" (in $extra_zstd_opt).
               cat_prog="zstd -dc $extra_zstd_dc_opt"
               zip_stdin_cmd="zstd -c $extra_zstd_opt"
               unzip_stdin_cmd="zstd -dc $extra_zstd_dc_opt"
@@ -1015,16 +1007,10 @@ get_image_cat_zip_cmd() {
       unzip_stdin_cmd="unlzma -c"
     elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "lz4 compressed data")" ]; then
       # Ex: hdb1.ntfs-img: lzop compressed data - version 1.010, LZO1X-1, os: Unix
-      if [ "$cpu_no" -gt 1 ] && \
-         [ "$use_parallel_decompression" = "yes" ]; then
-        cat_prog="lz4 -T0 -dc"
-        zip_stdin_cmd="lz4 -T0 -c"
-        unzip_stdin_cmd="lz4 -T0 -dc"
-      else
-        cat_prog="lz4 -dc"
-        zip_stdin_cmd="lz4 -c"
-        unzip_stdin_cmd="lz4 -dc"
-      fi
+      # 2025/Feb/13 Merge lz4 and lz4mt, always use lz4 with option "-T*" (in $extra_lz4_opt).
+      cat_prog="lz4 -dc $extra_lz4_dc_opt"
+      zip_stdin_cmd="lz4 -c $extra_lz4_opt"
+      unzip_stdin_cmd="lz4 -dc $extra_lz4_dc_opt"
     elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "Zstandard compressed data")" ]; then
       # Ex: hdb1.ntfs-img: lzop compressed data - version 1.010, LZO1X-1, os: Unix
       cat_prog="zstd -dc $extra_zstd_dc_opt"
@@ -15421,8 +15407,8 @@ case "$net_filter" in
        ;;
    lz4)
        if type lz4 &>/dev/null; then
-         net_filter_comp="lz4 -c $extra_lz4_opt"
-         net_filter_decomp="lz4 -cd"
+         net_filter_comp="lz4 -c $extra_lz4_opt_onthefly"
+         net_filter_decomp="lz4 -dc $extra_lz4_dc_opt_onthefly"
        else
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
          echo "lz4 is NOT found." | tee --append $OCS_LOGFILE
