@@ -169,11 +169,24 @@ do_swap_kernel_and_module(){
   fi
   echo $msg_delimiter_star_line
   echo "Removing old kernel modules in dir squashfs-root..."
+  #
+  lib_mod_path_sq=""
+  if [ -d "squashfs-root/usr/lib/modules/" ]; then
+    lib_mod_path_sq="/usr/lib/modules/"
+  elif [ -d "squashfs-root/lib/modules/" ]; then
+    lib_mod_path_sq="/lib/modules/"
+  else
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "The path for Linux kernel modules were not found!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    ls -l squashfs-root
+    exit_this_program 1
+  fi
   lnx_ver_old="$(ls -1d squashfs-root/usr/lib/modules/* | xargs basename)"
-  rm -rf $rm_vopt squashfs-root/usr/lib/modules/*
+  rm -rf $rm_vopt squashfs-root/$lib_mod_path_sq/*
   echo "Updating modules in dir squashfs-root..."
   [ "$verbose" = "on" ] && rsync_vopt="-vP"
-  cp_mod_cmd="rsync -a $rsync_vopt ../../$wd_tmp/usr/lib/modules/ squashfs-root/usr/lib/modules/"
+  cp_mod_cmd="rsync -a $rsync_vopt ../../$wd_tmp/$lib_mod_path_ex/ squashfs-root/$lib_mod_path_sq/"
   echo "Running: $cp_mod_cmd"
   eval $cp_mod_cmd
   # Prepare config-$lnx_ver so that it can be used to parsed if xz (CONFIG_RD_XZ) or gzip (CONFIG_RD_GZIP) used in initramfs.
@@ -348,6 +361,20 @@ for ideb in $lnx_img_deb $lnx_mod_deb; do
   fi
 done
 
+# Some GNU/Linux distributions use /lib/modules/, some use /usr/lib/modules/. Find it now.
+lib_mod_path_ex=""
+if [ -d "$wd_tmp/usr/lib/modules/" ]; then
+  lib_mod_path_ex="/usr/lib/modules/"
+elif [ -d "$wd_tmp/lib/modules/" ]; then
+  lib_mod_path_ex="/lib/modules/"
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "The path for extracted Linux kernel modules were not found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  ls -l $wd_tmp
+  exit_this_program 1
+fi
+
 # B. Find the kernel version
 echo $msg_delimiter_star_line
 case "$mode" in
@@ -369,14 +396,14 @@ case "$mode" in
        # ./boot/kernel7.img  -> For Raspberry Pi 2, 3, Compute Module 3
        # ./boot/kernel7l.img -> For Raspberry Pi 4
        # ./boot/kernel8.img
-       # ./usr/lib/modules/{4.19.97+,4.19.97-v7+,4.19.97-v7l+,4.19.97-v8+}
+       # ./lib/modules/{4.19.97+,4.19.97-v7+,4.19.97-v7l+,4.19.97-v8+}
        vmlnz="$wd_tmp/boot/$rpi_kernel"
        rpi_mod_ver="$(echo $rpi_kernel | sed -r -e "s/^kernel//g" -e "s/\.img$//g")"
        if [ -z "$rpi_mod_ver" ]; then
          # For Raspberry Pi 1, zero, Compute Module, we want 4.19.97+ for example.
-         rpi_mod_fn_filter="ls -1d $wd_tmp/usr/lib/modules/*[0-9]+ | grep -v -- '-'"
+         rpi_mod_fn_filter="ls -1d $wd_tmp/$lib_mod_path_ex/*[0-9]+ | grep -v -- '-'"
        else
-         rpi_mod_fn_filter="ls -1d $wd_tmp/usr/lib/modules/*[0-9]*-v${rpi_mod_ver}+"
+         rpi_mod_fn_filter="ls -1d $wd_tmp/$lib_mod_path_ex/*[0-9]*-v${rpi_mod_ver}+"
        fi
        if [ -e "$vmlnz" ]; then
          cp $cp_vopt $vmlnz $ocs_zip_tmpd/live/vmlinuz
