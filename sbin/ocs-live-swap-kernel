@@ -189,6 +189,17 @@ do_swap_kernel_and_module(){
   cp_mod_cmd="rsync -a $rsync_vopt ../../$wd_tmp/$lib_mod_path_ex/ squashfs-root/$lib_mod_path_sq/"
   echo "Running: $cp_mod_cmd"
   eval $cp_mod_cmd
+
+  # Add required linux kernel modules for M1/M2 Mac
+  if [ "$mode" = "asahi" ]; then
+    echo "Adding Asahi Linux Modules..."
+cat  <<-MOD_END >> squashfs-root/etc/initramfs-tools/modules
+tps6598x
+phy_apple_atc
+typec
+MOD_END
+  fi
+
   # Prepare config-$lnx_ver so that it can be used to parsed if xz (CONFIG_RD_XZ) or gzip (CONFIG_RD_GZIP) used in initramfs.
   mkdir -p squashfs-root/boot/
   cp -av ../../$wd_tmp/boot/config-$lnx_ver squashfs-root/boot/
@@ -340,8 +351,12 @@ done
 #         modules: linux-modules-5.4.0-1006-raspi2_5.4.0-1006.6_armhf.deb
 #                  linux-modules-extra (x86)
 # Debian kernel+modules: linux-image-5.4.0-4-armmp-lpae_5.4.19-1_armhf.deb
+# M1/M2 Mac modules: linux-image-6.5.0-asahi-00780-g62806c2c6f29_6.5.0-00780-g62806c2c6f29-1_arm64.deb
+# (https://thomas.glanzmann.de/asahi/)
 if [ -n "$(echo $lnx_img_deb | grep -E "raspberrypi-kernel")" ]; then
   mode="raspbian"
+elif [ -n "$(echo $lnx_img_deb | grep -E "asahi-")" ]; then
+  mode="asahi"
 else
   mode="debian-ubuntu"
 fi
@@ -378,7 +393,7 @@ fi
 # B. Find the kernel version
 echo $msg_delimiter_star_line
 case "$mode" in
-  "debian-ubuntu")
+  "debian-ubuntu"|"asahi")
        vmlnz="$(ls -1 $wd_tmp/boot/vmlinuz* | head -n 1)"
        if [ -n "$vmlnz" ]; then
          cp $cp_vopt $vmlnz $ocs_zip_tmpd/live/vmlinuz
