@@ -732,37 +732,6 @@ gen_proc_partitions_map_file() {
   fi
 } # end of gen_proc_partitions_map_file
 #
-get_part_vol_name() {
-  local part_w="$1"  # part_w is like: /dev/sda1
-  local part_f="$2"
-  local part_v
-  # If no device or file system (possible, only partition is created, not formated), we should not give any error message in stdin. Otherwise it will become the part_v to be returned.
-  if [ -z "$part_w" ]; then
-    return 1 
-  fi
-  if [ -z "$part_f" ]; then
-    return 1 
-  fi
-  case "$part_f" in
-  ntfs|NTFS)
-    # Get volume name, and replace space with "_" to avoid dialog failure.
-    part_v="$(LC_ALL=C ntfsinfo -m $part_w 2>/dev/null | grep -iE "^[[:space:]]*Volume Name:" | awk -F":" '{print $2}' | sed -e "s/^[[:space:]]*//g" -e "s/[[:space:]]*$//g" -e "s/[[:space:]]/_/g")"
-    # Only show the first 12 characters
-    part_v="${part_v:0:12}"
-    ;;
-  fat*|vfat|FAT*|VFAT)
-    # Get volume name, and replace space with "_" to avoid dialog failure.
-    part_v="$(LC_ALL=C dosfslabel $part_w | sed -e "s/^[[:space:]]*//g" -e "s/[[:space:]]*$//g" -e "s/[[:space:]]/_/g")"
-    # Only show the first 12 characters
-    part_v="${part_v:0:12}"
-    ;;
-  esac
-
-  if [ -n "$part_v" ]; then
-    echo "$part_v"
-  fi 
-} # end of get_part_vol_name
-#
 get_dev_model_shown() {
   # dev_model_shown is a global variable
   local dev_list_="$1"
@@ -4508,7 +4477,7 @@ get_disk_or_part_hardware_info() {
     part_fst="$(LC_ALL=C ocs-get-dev-info /dev/$p filesystem 2>/dev/null)"
     [ -n "$part_fst" ] && DEV_MODEL="${DEV_MODEL}|${part_fst}"
     # Volume name
-    part_v="$(LC_ALL=C get_part_vol_name /dev/$p $part_fst)"
+    part_v="$(LC_ALL=C ocs-get-dev-info /dev/$p label)"
     [ -n "$part_v" ] && DEV_MODEL="${DEV_MODEL}|${part_v}"
     # show more info (From which disk). The result is like:
     # 20GB_ext3(In_VMware_Virtual_IDE_Hard_Drive)
