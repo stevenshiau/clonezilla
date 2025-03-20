@@ -430,6 +430,27 @@ get_fs_from_blkid() {
 	 fi
       fi
     fi
+
+    # APFS might be encrypted though blkid shows its type is "apfs"
+    # $/usr/bin/fsapfsinfo /dev/nvme0n1p2
+    # fsapfsinfo 20201107
+    # Unable to open: /dev/nvme0n1p2.
+    # libcaes_context_initialize: unable to set padding in context with error: error:00000000:lib(0)::reason(0).
+    # libcaes_tweaked_context_initialize: unable to initialize main context.
+    # libfsapfs_encryption_context_initialize: unable to initialize decryption context.
+    # libfsapfs_container_key_bag_read_file_io_handle: unable to initialize encryption context.
+    # libfsapfs_internal_container_open_read: unable to read container key bag at offset: 16803950592 (0x3e997f000).
+    # libfsapfs_container_open_file_io_handle: unable to read from file IO handle.
+    # info_handle_open_input: unable to open input container.
+    #
+    # Ref: https://blog.libthomas.org/article/apple-silicon-apfs
+      
+    if [ -n "$(echo $TYPE | grep -iE "vfat")" ]; then
+      if [ -n "$(LC_ALL=C fsapfsinfo $part_ 2>&1 | \
+	grep -Ei "libfsapfs_container_key_bag_read_file_io_handle: unable to initialize encryption context.")" ]; then
+	TYPE="apfs_encrypted"
+      fi
+    fi
     echo "$TYPE"
   fi
 } # end of get_fs_from_blkid
