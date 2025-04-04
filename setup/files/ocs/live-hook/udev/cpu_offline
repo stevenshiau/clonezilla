@@ -1,0 +1,22 @@
+#!/bin/sh
+# A mechanism to mitigate block devices naming in random order.
+# i.e., make only 1 CPU online when udev art started.
+if [ -z "$(grep -Ew ocs_1_cpu_udev /proc/cmdline)" ]; then
+  # Skip if ocs_1_cpu_udev does not exist.
+  exit 6
+fi
+echo -n "Disabling SMP-like behavior... "
+for cpu in `ls -dv /sys/devices/system/cpu/cpu[1-9]*`; do
+    if [ -e "$cpu/online" ]; then
+        echo -n "$(basename $cpu), "
+        echo 0 > "$cpu/online" 2>/dev/null || echo "Failed to disable $cpu"
+    fi
+done
+# Delay to avoid contention
+echo -n "Waiting for 1-CPU status... "
+exit_cond="false"
+while [ "$exit_cond" = "false" ]; do
+  cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)"
+  [ "$cpu_no" -eq 1 ] && exit_cond="true"
+done
+echo "done!"
