@@ -52,7 +52,33 @@ ask_and_load_lang_set
 #
 get_live_media_mnt_point
 if [ -z "$LIVE_MEDIA" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Mount point for Clonezilla live USB drive not found."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   exit 1
+fi
+# Even in "To RAM" option, the LIVE_MEDIA is mounted with tmpfs.
+# We have to switch another mount point
+if [ "$(LC_ALL=C findmnt -n -M $LIVE_MEDIA -o FSTYPE)" = "tmpfs" ]; then
+  # Check if To RAM option
+  if [ -n "$(grep -Ewo toram /proc/cmdline)" ]; then
+    # Found the Clonezilla live device then mount it.
+    ocs_live_part="$(ocs-find-live-key)"
+    if [ -n "$ocs_live_part" ]; then
+      # Use new mount point
+      LIVE_MEDIA="/mnt/ocs-live-medium"
+      mkdir -p $LIVE_MEDIA
+      mnt_cmd="mount $ocs_live_part $LIVE_MEDIA"
+      echo "Found Clonezilla live USB drive in the 'To RAM' mode."
+      echo "Running: $mnt_cmd"
+      eval $mnt_cmd
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Clonezilla live USB drive not found as in the 'To RAM' mode."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      exit 1
+    fi
+  fi
 fi
 save_time="$(LC_ALL=en_US.UTF-8 date +%Y%m%d-%H%M)"
 touch $LIVE_MEDIA/ocs-test.${save_time} 2>/dev/null
@@ -65,7 +91,7 @@ else
   mount -o remount,rw $LIVE_MEDIA 2>/dev/null
   rc=$?
   if [ "$rc" -eq 0 ]; then
-    echo -n "Start copying Clonezilla related log files to Clonezilla live USB device..."
+    echo -n "Start copying Clonezilla related log files to Clonezilla live USB device ($LIVE_MEDIA)..."
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Read-only device \"$LIVE_MEDIA\". Skipping copying Clonezilla related log files."
@@ -78,4 +104,7 @@ mkdir -p $LIVE_MEDIA/ocslog-${save_time}
 # clonezilla.log, ocs-mount.log, ocs-netcfg.log, partclone.log, partclone-nvme0n1p1.log, partclone-nvme0n1p2.log...
 # Checksum results are put in /var/log/$IMAGE_NAME/
 rsync -a $ocs_log_dir $LIVE_MEDIA/ocslog-${save_time}/
+umnt_cmd="umount $LIVE_MEDIA"
+echo -n " Running: $umnt_cmd "
+eval $umnt_cmd
 echo " done!"
