@@ -4458,8 +4458,6 @@ get_disk_or_part_hardware_info() {
     # We do not use the output of fdisk -l, it's type mabe like
     # Extended, Ext'd, it's not easy to tell... We use file to get the
     # partition type
-    echo "Getting /dev/$p info..."
-    #part_type="$(LC_ALL=C file -Ls "/dev/$p" 2>/dev/null)"
     part_type="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem 2>/dev/null)"
     rc=$?
     # The return "8" means return "continue" (8 characters). 
@@ -4582,7 +4580,7 @@ get_disk_or_part_hardware_info() {
       if [ -L /dev/$p ]; then
         DEV_MODEL="${dsize}${x}${id_path_tag}|$(readlink -f /dev/$p)"
       else
-        DEV_MODEL="${dsize}${x}${id_path_tag}|${serialno}"
+        DEV_MODEL="${dsize}${x}${id_path_tag}${serialno}"
       fi
     fi
   fi
@@ -4931,8 +4929,10 @@ get_input_dev_name() {
 
     :> $TMP # Clean the TMP file
     # prepare the dialog menu info
+    echo -n "Preparing the dialog menu info..."
     for p in $(reduce_multipath_dev $dev_list); do
        DEV_MODEL=""
+       echo -n "."
        #FILE="$(LC_ALL=C file -Ls "/dev/$p")"
        FILE="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem 2>/dev/null)"
        rc=$?
@@ -4965,6 +4965,7 @@ get_input_dev_name() {
        esac
        HARDDEVS="$HARDDEVS $p $DEV_MODEL $dev_chosen_def"
     done
+    echo " done!"
     :> $TMP # Clean the TMP file
     # If large number of devices, we must allow it to be scrolled down.
     if [ "$NUMDEV" -lt "$MAX_DIALOG_HEIGHT" ]; then
@@ -16595,11 +16596,29 @@ to_ocs_dev_img_name() {
 get_disk_id_path() {
   # root@debian$ udevadm info -q env -n /dev/sda | grep ID_PATH_TAG
   # ID_PATH_TAG=pci-0000_02_04_0-ata-1_0
+  # SATA: ID_PATH_TAG=pci-0000_00_1f.2-ata-1
+  # NVMe: ID_PATH_TAG=pci-0000_01_00.0-nvme-1
+  # SCSI: ID_PATH_TAG=pci-0000_02_00.0-scsi-0_0_0_0
+  # USB: ID_PATH_TAG=pci-0000_02_03.0-usb-0_1_1.0-scsi-0_0_0_0
+  # VirtIO: ID_PATH_TAG=pci-0000_00_04.0-virtio-0
+  # MMC/SD Card: ID_PATH_TAG=pci-0000_00_1e.0-mmc-0
+  # RAID Block Device (via MD): No
+  # When two or more PCI slots, e.g., 2 NVMe controller:
+  # pci-0000_0b_00.0-nvme-1
+  # pci-0000_0b_00.0-nvme-2
+  # pci-0000_0b_00.0-nvme-8
+  # pci-0000_13_00.0-nvme-1
+  # pci-0000_13_00.0-nvme-3
+  # Results: pci-.*-ata-1, pci-.*-nvme-1, pci-.*-usb-0...
+  # We use ID_PATH_TAG instead of ID_PATH is it uses "_" not ":" so it's easier to parse.
   local dsk_=${1#/dev/*} # Input is like /dev/sda or sda, so dsk_ becomes sda
   id_path_tag=""  # reset global variable id_path_tag
   [ -z "$dsk_" ] && echo "No input value for dsk_!" && exit 1
   if type udevadm &>/dev/null; then
-    id_path_tag="$(LC_ALL=C udevadm info -q env -n /dev/${dsk_} | grep -E "^ID_PATH_TAG=" | sed -r -e "s/^ID_PATH_TAG=//g" | tr " " "_")"
+    id_path_tag="$(LC_ALL=C udevadm info -q env -n /dev/${dsk_} | grep -E "^ID_PATH_TAG=" |\
+	           sed -r -e "s/^ID_PATH_TAG=//g" |\
+		   grep -Eo "pci-.*-(ata|nvme|scsi|virtio|mmc)-[[:digit:]]+" |\
+		   tr " " "_")"
   fi
   if [ -z "$id_path_tag" ]; then
     # lrwxrwxrwx 1 root root  9 Mar  6 18:14 pci-0000:00:1f.2-ata-3 -> ../../sda
