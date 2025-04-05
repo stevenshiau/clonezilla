@@ -1,0 +1,28 @@
+#!/bin/bash
+# Program to find Clonezilla live USB drive
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Find USB device with partition(s) only
+USB_parts_vfat="$(LC_ALL=C lsblk -Arnp -o NAME,RM,FSTYPE 2>/dev/null | 
+                  awk '$2 == "1" && $1 !~ /^sr/ && $1 ~ /[0-9]$/ && $3 == "vfat" {print $1}')"
+# Find the partition which has vfat for Clonezilla live system.
+live_mntpnt="$(mktemp -d /tmp/ocslive_tmp.XXXXXX)"
+ocs_live_part=""
+for ivfat in $USB_parts_vfat; do
+  mount -o ro $ivfat $live_mntpnt
+  if [ -n "$(grep -E "clonezilla-live-.*" $live_mntpnt/Clonezilla-Live-Version 2>/dev/null)" ]; then
+    # Found Clonezilla live USB device
+    ocs_live_part="$ivfat"
+    umount $live_mntpnt
+    break
+  fi
+  umount $live_mntpnt
+done
+[ -d "$live_mntpnt" -a -n "$(echo $live_mntpnt | grep "ocslive_tmp")" ] && rm -rf $live_mntpnt
+echo $ocs_live_part
