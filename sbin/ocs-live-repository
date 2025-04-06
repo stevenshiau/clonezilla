@@ -9,7 +9,7 @@
 # scheme:[//[user:password@]host[:port]][/]path[?query][#fragment]
 # General URI in Clonezilla:
 # [dev|smb|smb1|smb1.0|smb2|smb2.0|smb2.1|smb3|smb3.0|smb3.11|smb3.1.1|ssh|nfs|nfs4|http|https|ram]:[//[user:password@]host[:port]][/]path
-# local_dev:     dev:///dev/partition, dev:///LABEL|UUID|PARTLABEL|PARTUUID=uuid|label
+# local_dev:     dev:///dev/partition, dev:///LABEL|UUID|PARTLABEL|PARTUUID=uuid|label, dev:///OCS_LIVE_USB
 # nfs_server:    nfs|nfs4://host/path
 # samba_server:  smb://[domain;user:password@]host/path
 # samba_server with version assigned: (smb1|smb1.0|smb2|smb2.0|smb2.1|smb3|smb3.0|smb3.11|smb3.1.1)://[domain;user:password@]host/path
@@ -55,7 +55,7 @@ USAGE() {
     echo "-f, --force          Force to run $ocs, no matter it has been run successfully or not."
     echo "-s, --skip-ocsroot-mountpoint-chk   Skip checking if Clonezilla image $ocsroot is a mountpoint."
     echo "The support URI format:"
-    echo "local_dev:     dev:///dev/partition"
+    echo "local_dev:     dev:///dev/partition, dev:///LABEL|UUID|PARTLABEL|PARTUUID=uuid|label, dev:///OCS_LIVE_USB"
     echo "nfs_server:    nfs|nfs4://host/path"
     echo "samba_server:  smb://[domain;user:password@]host/path"
     echo "samba_server with version assigned:  smb1|smb1.0|smb2|smb2.0|smb2.1|smb3|smb3.0|smb3.11|smb3.1.1://[domain;user:password@]host/path"
@@ -64,9 +64,13 @@ USAGE() {
     echo "ram:           ram:// (Especially for RAM disk, no need to assign the path)"
     echo "The ocs_repository assigned in boot parameter can be, for example:"
     echo "ocs_repository=\"dev:///dev/sdf1\""
+    echo "ocs_repository=\"dev:///LABEL=my-img-repo\""
+    echo "ocs_repository=\"dev:///OCS_LIVE_USB\""
     echo "ocs_repository=\"nfs4://192.168.100.254/partimag/\""
     echo "ocs_repository=\"smb://administrator:mypasswd@192.168.100.175/images/\""
     echo "ocs_repository=\"smb3://administrator:mypasswd@192.168.100.175/images/\""
+    echo "Among them, dev:///OCS_LIVE_USB is reserved for Clonezilla live USB drive. When assigned, it means to use the Clonezilla live USB drive as the image repo, especially when Clonezilla live USB drive is booted in \"To RAM\" mode."
+    echo "//NOTE// The Clonezilla live USB drive has to be vFAT file system since it's used to boot in both uEFI and MBR mode. Hence it is not a good choice for image repo since vFAT file system has many restrictions. Better to use UUID or LABEL to assign the image repo.
     echo "Ex:"
     echo "To parse the boot parameter in my-cmdline and mount the one assigned in boot parameter \"ocs_live_repository\" with URI format as $ocsroot, run"
     echo "   $ocs -c my-cmdline"
@@ -110,10 +114,38 @@ do_uri_mount_local_dev() {
   # If it's LABEL=<label>, UUID=<uuid>, PARTLABEL=<label>, PARTUUID=<uuid>    
   # The input format is like: ocs_repository="dev:///UUID=XYZ"
   # we have to remove the leading "/"
-  target_part="$(echo $target_part | sed -r -e "s@^/(LABEL|UUID|PARTLABEL|PARTUUID)@\1@")"
+  target_part="$(echo $target_part | sed -r -e "s@^/(LABEL|UUID|PARTLABEL|PARTUUID|OCS_LIVE_USB)@\1@")"
   # TODO: Browse
   prepare_mnt_point_ocsroot
-  ocsroot_mnt_cmd_local="LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt $target_part $ocsroot"
+  case $target_part in
+    OCS_LIVE_USB)
+      ocs_usb_part="$(ocs-find-live-key)"
+      if [ -n "$ocs_usb_part" ]; then
+        # Check if Clonezilla live USB drive is mounted or not.
+        if ! findmnt $ocs_usb_part > /dev/null 2>&1; then
+          ocsroot_mnt_cmd_local="LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt $ocs_usb_part $ocsroot"
+        else
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+	  echo "Clonezilla live USB drive ($ocs_usb_part) is busy! It can not be mounted as the image repository." | tee --append ${OCS_LOGFILE}
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+	  df -h $ocs_usb_part
+          echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+          echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+          exit 1
+	fi
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "Clonezilla live USB drive not found!" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+        exit 1
+      fi
+      ;;
+    *)
+      ocsroot_mnt_cmd_local="LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt $target_part $ocsroot"
+      ;;
+  esac
   if [ "$echo_ocs_repository" != "no" ]; then
     echo "Mounting local device by:"
     echo "$ocsroot_mnt_cmd_local"
