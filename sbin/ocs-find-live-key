@@ -1,5 +1,9 @@
 #!/bin/bash
-# Program to find Clonezilla live USB drive
+# Program to find Clonezilla live USB drive not matter it's mounted or not.
+# We define the Clonezilla live USB drive has:
+# (1) vFAT file system and
+# (2) contains the file "Clonezilla-Live-Version"
+
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
 . /etc/drbl/drbl-ocs.conf
@@ -15,14 +19,29 @@ USB_parts_vfat="$(LC_ALL=C lsblk -Arnp -o NAME,RM,FSTYPE 2>/dev/null |
 live_mntpnt="$(mktemp -d /tmp/ocslive_tmp.XXXXXX)"
 ocs_live_part=""
 for ivfat in $USB_parts_vfat; do
-  mount -o ro $ivfat $live_mntpnt
-  if [ -n "$(grep -E "clonezilla-live-.*" $live_mntpnt/Clonezilla-Live-Version 2>/dev/null)" ]; then
-    # Found Clonezilla live USB device
-    ocs_live_part="$ivfat"
-    umount $live_mntpnt
-    break
+  # Check if the device is mounted or not
+  existing_mnt_pnt="$(LC_ALL=C findmnt -n -o TARGET -S $ivfat)"
+  if [ -z "$existing_mnt_pnt" ]; then
+    # The device is not mounted. Mount it and check if the file Clonezilla-Live-Version exists.
+    mount -o ro $ivfat $live_mntpnt >/dev/null 2>&1
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+      if [ -n "$(grep -E "clonezilla-live-.*" $live_mntpnt/Clonezilla-Live-Version 2>/dev/null)" ]; then
+        # Found Clonezilla live USB device
+        ocs_live_part="$ivfat"
+        umount $live_mntpnt
+        break
+      fi
+      umount $live_mntpnt
+    fi
+  else
+    # The device is already mounted as $existing_mnt_pnt
+    if [ -n "$(grep -E "clonezilla-live-.*" $existing_mnt_pnt/Clonezilla-Live-Version 2>/dev/null)" ]; then
+      # Found Clonezilla live USB device
+      ocs_live_part="$ivfat"
+      break
+    fi
   fi
-  umount $live_mntpnt
 done
 [ -d "$live_mntpnt" -a -n "$(echo $live_mntpnt | grep "ocslive_tmp")" ] && rm -rf $live_mntpnt
 echo $ocs_live_part
