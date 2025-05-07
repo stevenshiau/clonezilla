@@ -2,12 +2,15 @@
 # License: GPL 
 # Author: Steven Shiau <steven _at_ clonezilla org>
 # Description: Program to start ezio in client machine.
-# (1) ezio (for daemon and always on)
+# (1) ezio >= 2.0.16 (for daemon and always on)
 # (2) Add torrent in leecher, e.g.,
 #     ezio_add_torrent.py sda1.torrent /dev/sda1; ezio_add_torrent.py sda2.torrent /dev/sda2 … 
 # (3) ezio_ui.py (for stop ezio automatically)
 # Ref: https://hackmd.io/1i7cRjd8Rc2ywzXtxCc1LQ
-		
+
+# Default values
+# The interval to keep uploading and waiting for other peer (sec).
+bt_wait_secs_def="60"
 #
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
@@ -21,9 +24,12 @@ USAGE() {
     echo "$ocs - To start ezio in the Clonezilla client machine"
     echo "Usage:"
     echo "To run $ocs:"
-    echo "$ocs TORRENT_FILE DEVICE"
+    echo "$ocs [OPTION] TORRENT_FILE DEVICE"
     echo "TORRENT_FILE is the torrent file"
     echo "DEVICE is the source raw device name, e.g., sda1, sda2, or /dev/sda1, /dev/sda2..."
+    echo
+    echo "Options:"
+    echo "-w, --wait SECS        The interval to keep uploading and waiting for other peer (sec). Default value is \"$bt_wait_secs_def\""
     echo
     echo "Ex:"
     echo "To start the leecher in client machine for /dev/sda1 with sda1.torrent, /dev/sda2 with sda2.torrent, use"
@@ -40,6 +46,15 @@ ocs=`basename $ocs_file`
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    -w|--wait)
+         shift; 
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+           bt_wait_secs="$1"
+           shift;
+         fi
+         [ -z "$bt_wait_secs" ] && USAGE && exit 1
+         ;;
     -*)  echo "${0}: ${1}: invalid option in program $ocs_file." >&2
          USAGE >& 2
          exit 2 ;;
@@ -47,6 +62,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+#
+[ -z "$bt_wait_secs" ] && bt_wait_secs=$bt_wait_secs_def
 #
 ask_and_load_lang_set
 
@@ -101,10 +118,12 @@ cols="$(LC_ALL=C tput cols)"
 lines="$(LC_ALL=C tput lines)"
 if [ "$cols" -lt 80 -o "$lines" -lt 24 ]; then
   echo "Terminal is $cols x $lines. Use Ezio simple output mode..."
-  ezio_cli.py
+  ezio_cli.py -w $bt_wait_secs
 else
+  clear
   echo "Terminal is $cols x $lines. Use Ezio TUI mode..."
-  ezio_ui.py
+  ezio_ui.py -w $bt_wait_secs
+  clear
 fi
 
 wait # wait for all processes to finish before exit
