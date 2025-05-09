@@ -189,6 +189,9 @@ do_swap_kernel_and_module(){
   cp_mod_cmd="rsync -a $rsync_vopt ../../$wd_tmp/$lib_mod_path_ex/ squashfs-root/$lib_mod_path_sq/"
   echo "Running: $cp_mod_cmd"
   eval $cp_mod_cmd
+  cp_fw_cmd="rsync -a $rsync_vopt ../../$wd_tmp/$lib_mod_path_ex/../firmware squashfs-root/$lib_mod_path_sq/"
+  echo "Running: $cp_fw_cmd"
+  eval $cp_fw_cmd
 
   # Add required linux kernel modules for M1/M2 Mac
   if [ "$mode" = "asahi" ]; then
@@ -276,7 +279,7 @@ ocs_zip_f="$1"
 shift
 lnx_img_deb="$1"
 shift
-lnx_mod_deb="$*"
+lnx_mod_fw_deb="$*"
 
 check_if_root
 ask_and_load_lang_set
@@ -331,7 +334,7 @@ fi
 
 # Check the packages and put in temp dir.
 echo $msg_delimiter_star_line
-for ideb in $lnx_img_deb $lnx_mod_deb; do
+for ideb in $lnx_img_deb $lnx_mod_fw_deb; do
   if [ -e "$ideb" ]; then
     echo "Existing $ideb found. Use it."
     ln -s -t $wd_tmp ../$ideb
@@ -353,6 +356,7 @@ done
 # Debian kernel+modules: linux-image-5.4.0-4-armmp-lpae_5.4.19-1_armhf.deb
 # M1/M2 Mac modules: linux-image-6.5.0-asahi-00780-g62806c2c6f29_6.5.0-00780-g62806c2c6f29-1_arm64.deb
 # (https://thomas.glanzmann.de/asahi/)
+# Bianbu firmware: bianbu-esos_0.0.7_riscv64.deb (https://archive.spacemit.com/bianbu/pool/main/b/bianbu-esos/)
 if [ -n "$(echo $lnx_img_deb | grep -E "raspberrypi-kernel")" ]; then
   mode="raspbian"
 elif [ -n "$(echo $lnx_img_deb | grep -E "asahi-")" ]; then
@@ -362,9 +366,9 @@ else
 fi
 
 echo $msg_delimiter_star_line
-# II. Process the kernel and modules debs.
+# II. Process the kernel, modules and firmware debs.
 # A. Extract them.
-for ideb in $lnx_img_deb $lnx_mod_deb; do
+for ideb in $lnx_img_deb $lnx_mod_fw_deb; do
   echo "Extracting modules package $ideb..."
   if [ -e "$wd_tmp/$ideb" ]; then
     dpkg -x $wd_tmp/$ideb $wd_tmp/
