@@ -156,6 +156,7 @@ exit_this_program() {
 } # end of exit_this_program
 #
 do_swap_kernel_and_module(){
+  local cp_fw_cmd
   echo $msg_delimiter_star_line
   cd $ocs_zip_tmpd/live/
   echo "Unsquashfs filesystem.squashfs..."
@@ -189,9 +190,24 @@ do_swap_kernel_and_module(){
   cp_mod_cmd="rsync -a $rsync_vopt ../../$wd_tmp/$lib_mod_path_ex/ squashfs-root/$lib_mod_path_sq/"
   echo "Running: $cp_mod_cmd"
   eval $cp_mod_cmd
-  cp_fw_cmd="rsync -a $rsync_vopt ../../$wd_tmp/$lib_mod_path_ex/../firmware squashfs-root/$lib_mod_path_sq/../"
-  echo "Running: $cp_fw_cmd"
-  eval $cp_fw_cmd
+
+  # Firmware
+  echo "Updating firmware in dir squashfs-root..."
+  if [ -d "../../$wd_tmp/lib/firmware" ]; then
+    cp_fw_cmd="rsync -a $rsync_vopt ../../$wd_tmp/lib/firmware squashfs-root/lib/"
+  elif [ -d "../../$wd_tmp/usr/lib/firmware" ]; then
+    cp_fw_cmd="rsync -a $rsync_vopt ../../$wd_tmp/usr/lib/firmware squashfs-root/usr/lib/"
+  fi
+  if [ -n "$cp_fw_cmd" ]; then
+    echo "Running: $cp_fw_cmd"
+    eval $cp_fw_cmd
+    if [ -d "../../$wd_tmp/usr/share/initramfs-tools/hooks/" ]; then
+      cp_initramfs_tools_hook_cmd="rsync -a $rsync_vopt ../../$wd_tmp/usr/share/initramfs-tools/hooks/* \
+              squashfs-root/etc/initramfs-tools/hooks/; chmod +x squashfs-root/etc/initramfs-tools/hooks/*"
+      echo "Running: $cp_initramfs_tools_hook_cmd"
+      eval $cp_initramfs_tools_hook_cmd
+    fi
+  fi
 
   # Add required linux kernel modules for M1/M2 Mac
   if [ "$mode" = "asahi" ]; then
@@ -237,8 +253,8 @@ MOD_END
     if [ -e "$wd/$dest_zip_f" ]; then
       mv $mv_vopt $wd/$dest_zip_f $wd/${dest_zip_f}.orig
     fi
-    echo "The kernel versions before and after are:" > live/kerel-vers.txt
-    echo "$lnx_ver_old -> $lnx_ver." >> live/kerel-vers.txt
+    echo "The kernel versions before and after are:" > live/kernel-vers.txt
+    echo "$lnx_ver_old -> $lnx_ver." >> live/kernel-vers.txt
     echo "Packaging new Clonezilla live zip file..."
     zip -o -r $wd/$dest_zip_f ./
   fi
