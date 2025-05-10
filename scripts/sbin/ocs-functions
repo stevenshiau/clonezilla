@@ -4424,7 +4424,7 @@ get_disk_serial_no() {
         *) want_="ID_SERIAL";;
   esac
   if type udevadm &>/dev/null; then
-    serialno="$(LC_ALL=C udevadm info -q env -n /dev/${dsk_} | grep "${want_}=" | sed -e "s/${want_}=//g" | tr " " "_")"
+    serialno="$(LC_ALL=C udevadm info -q env -n /dev/${dsk_} | grep "${want_}=" | sed -e "s/${want_}=//g" | tr -s " " "_")"
   fi
   if [ -z "$serialno" ]; then
     # lrwxrwxrwx 1 root root   9 2009-01-23 20:18 ata-ST3160815AS-6RX1880B -> ../../sda
@@ -4483,9 +4483,9 @@ get_disk_or_part_hardware_info() {
     # hda1 -> hda
     dsk_="$(get_diskname $p)"
     if [ "$(cat /proc/ide/${dsk_}/media 2>/dev/null)" = "disk" ] ; then
-      DEV_MODEL_EXT="$(tr ' ' _ </proc/ide/${dsk_}/model)"
+      DEV_MODEL_EXT="$(tr -s " " "_" </proc/ide/${dsk_}/model)"
     else
-      x="$(cat /sys/block/$(to_sysblock_name $(get_diskname ${dsk_}))/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr ' ' _ 2>/dev/null)"
+      x="$(cat /sys/block/$(to_sysblock_name $(get_diskname ${dsk_}))/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr -s " " "_" 2>/dev/null)"
       # the result is like "WDC WD1600JS-60M"
       # Note! The above method only works in kernel 2.6. For kernel 2.4, it not supported, and it's shown as "No_description" later.
       x=${x#*\"}
@@ -15805,7 +15805,7 @@ get_block_dev_from_SERIALNO(){
     get_disk_serial_no -s /dev/$id # we get "serialno" (short one)
     the_serialno="$(echo $serialno | tr [:upper:] [:lower:])"
     if [ "$the_serialno" = \
-	 "$(echo $r_serialno | sed -r -e "s/^SERIALNO=//i" | tr [:upper:] [:lower:] | tr " " "_")" ]
+	 "$(echo $r_serialno | sed -r -e "s/^SERIALNO=//i" | tr [:upper:] [:lower:] | tr -s " " "_")" ]
          # r_serialno might contain white space, but we replace space with "_" in get_disk_serial_no
     then
       blk_dev="$id"
@@ -16618,7 +16618,7 @@ get_disk_id_path() {
     id_path_tag="$(LC_ALL=C udevadm info -q env -n /dev/${dsk_} | grep -E "^ID_PATH_TAG=" |\
 	           sed -r -e "s/^ID_PATH_TAG=//g" |\
 		   grep -Eo "pci-.*-(ata|nvme|scsi|virtio|mmc)-[[:digit:]]+" |\
-		   tr " " "_")"
+		   tr -s " " "_")"
   fi
   if [ -z "$id_path_tag" ]; then
     # lrwxrwxrwx 1 root root  9 Mar  6 18:14 pci-0000:00:1f.2-ata-3 -> ../../sda
