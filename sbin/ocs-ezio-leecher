@@ -8,10 +8,6 @@
 # (3) ezio_ui.py (for stop ezio automatically)
 # Ref: https://hackmd.io/1i7cRjd8Rc2ywzXtxCc1LQ
 
-# Default values
-# The interval to keep uploading and waiting for other peer (sec).
-bt_wait_secs_def="60"
-#
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
 . /etc/drbl/drbl-ocs.conf
@@ -29,7 +25,9 @@ USAGE() {
     echo "DEVICE is the source raw device name, e.g., sda1, sda2, or /dev/sda1, /dev/sda2..."
     echo
     echo "Options:"
-    echo "-w, --wait SECS        The interval to keep uploading and waiting for other peer (sec). Default value is \"$bt_wait_secs_def\""
+    echo "-c, --max_connect NUM    Max total connections number. Default is $ezio_seed_max_connect_def"
+    echo "-u, --max_upload NUM     Max upload connections number. Default is $ezio_seed_max_upload_def"
+    echo "-w, --wait SECS        The interval to keep uploading and waiting for other peer (sec). Default value is \"$ezio_upload_timeout_def\""
     echo
     echo "Ex:"
     echo "To start the leecher in client machine for /dev/sda1 with sda1.torrent, /dev/sda2 with sda2.torrent, use"
@@ -46,14 +44,32 @@ ocs=`basename $ocs_file`
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    -c|--max_connect)
+         shift; 
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+           ezio_seed_max_connect="$1"
+           shift;
+         fi
+         [ -z "$ezio_seed_max_connect" ] && USAGE && exit 1
+         ;;
+    -u|--max_upload)
+         shift; 
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+           ezio_seed_max_upload="$1"
+           shift;
+         fi
+         [ -z "$ezio_seed_max_upload" ] && USAGE && exit 1
+         ;;
     -w|--wait)
          shift; 
          if [ -z "$(echo $1 |grep ^-.)" ]; then
            # skip the -xx option, in case 
-           bt_wait_secs="$1"
+           ezio_upload_timeout="$1"
            shift;
          fi
-         [ -z "$bt_wait_secs" ] && USAGE && exit 1
+         [ -z "$ezio_upload_timeout" ] && USAGE && exit 1
          ;;
     -*)  echo "${0}: ${1}: invalid option in program $ocs_file." >&2
          USAGE >& 2
@@ -63,9 +79,11 @@ while [ $# -gt 0 ]; do
 done
 
 #
-[ -z "$bt_wait_secs" ] && bt_wait_secs=$bt_wait_secs_def
-#
 ask_and_load_lang_set
+#
+[ -z "$ezio_seed_max_connect" ] && ezio_seed_max_connect=$ezio_seed_max_connect_def
+[ -z "$ezio_seed_max_upload" ] && ezio_seed_max_upload=$ezio_seed_max_upload_def
+[ -z "$ezio_upload_timeout" ] && ezio_upload_timeout=$ezio_upload_timeout_def
 
 # Create log dir
 mkdir -p $ocs_log_dir
@@ -108,7 +126,7 @@ while [ $# -gt 0 ]; do
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     exit 1
   fi
-  ezio_add_torrent_cmd="ezio_add_torrent.py $bt_f $rawdev"
+  ezio_add_torrent_cmd="ezio_add_torrent.py -c $ezio_seed_max_connect -u $ezio_seed_max_upload $bt_f $rawdev"
   echo "Running: $ezio_add_torrent_cmd"
   eval $ezio_add_torrent_cmd
   sleep 0.5
@@ -118,11 +136,15 @@ cols="$(LC_ALL=C tput cols)"
 lines="$(LC_ALL=C tput lines)"
 if [ "$cols" -lt 80 -o "$lines" -lt 24 ]; then
   echo "Terminal is $cols x $lines. Use Ezio simple output mode..."
-  ezio_cli.py -w $bt_wait_secs
+  ezio_cli_cmd="ezio_cli.py -w $ezio_upload_timeout"
+  echo "Running: $ezio_cli_cmd"
+  eval $ezio_cli_cmd
 else
   clear
   echo "Terminal is $cols x $lines. Use Ezio TUI mode..."
-  ezio_ui.py -w $bt_wait_secs
+  ezio_ui_cmd="ezio_ui.py -w $ezio_upload_timeout"
+  echo "Running: $ezio_ui_cmd"
+  eval $ezio_ui_cmd
   clear
 fi
 

@@ -44,8 +44,10 @@ USAGE() {
     echo "DEVICE is the source raw device name, e.g., sda1, sda2, or /dev/sda1, /dev/sda2..."
     echo
     echo "Options:"
-    echo "-m, --mode img|raw-dev   Run seeding in image or raw-dev format."
+    echo "-c, --max_connect NUM    Max total connections number. Default is $ezio_seed_max_connect_def"
     echo "-g, --log-dir DIR        Use DIR as the log dir. Default value is \"$btlog_dir\""
+    echo "-m, --mode img|raw-dev   Run seeding in image or raw-dev format."
+    echo "-u, --max_upload NUM     Max upload connections number. Default is $ezio_seed_max_upload_def"
     echo
     echo "Ex:"
     echo "To start the seeder in source machine for /dev/sda1 with sda1.torrent, /dev/sda2 with sda2.torrent, use"
@@ -83,6 +85,24 @@ while [ $# -gt 0 ]; do
          fi
          [ -z "$btlog_dir" ] && USAGE && exit 1
          ;;
+    -c|--max_connect)
+         shift; 
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+           ezio_seed_max_connect="$1"
+           shift;
+         fi
+         [ -z "$ezio_seed_max_connect" ] && USAGE && exit 1
+         ;;
+    -u|--max_upload)
+         shift; 
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case 
+           ezio_seed_max_upload="$1"
+           shift;
+         fi
+         [ -z "$ezio_seed_max_upload" ] && USAGE && exit 1
+         ;;
     -*)  echo "${0}: ${1}: invalid option in program $ocs_file." >&2
          USAGE >& 2
          exit 2 ;;
@@ -90,18 +110,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-#
-ask_and_load_lang_set
-
-# Create log dir
-mkdir -p $ocs_log_dir
-
-#
-ezio_pid_log="$btlog_dir/ezio-seeder.pid"
-
 # Process the rest parameters.
 torrent_imgpath_pairs=$*
 torrent_param=$#
+
+#
+ask_and_load_lang_set
+
+# Some variables if not assigned, use default values.
+[ -z "$ezio_seed_max_connect" ] && ezio_seed_max_connect=$ezio_seed_max_connect_def
+[ -z "$ezio_seed_max_upload" ] && ezio_seed_max_upload=$ezio_seed_max_upload_def
+
+# Create log dir
+mkdir -p $ocs_log_dir
+ezio_pid_log="$btlog_dir/ezio-seeder.pid"
+
+#
 if [ $((torrent_param%2)) -ne 0 ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "Wrong number of inputted parameters in program $ocs_file."
@@ -156,7 +180,7 @@ while [ $# -gt 0 ]; do
         fi
         ;;
   esac
-  ezio_add_torrent_cmd="ezio_add_torrent.py -S $bt_f $imgp_or_rawdev"
+  ezio_add_torrent_cmd="ezio_add_torrent.py -S -c $ezio_seed_max_connect -u $ezio_seed_max_upload $bt_f $imgp_or_rawdev"
   echo "Running: $ezio_add_torrent_cmd"
   eval $ezio_add_torrent_cmd
 done
