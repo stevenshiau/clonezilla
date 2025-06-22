@@ -1112,7 +1112,7 @@ disk_full_test() {
   tgt_dir="$1"
   prompt_msg="$2"
   [ -z "$tgt_dir" ] && return 1
-  diskfull_test="$(mktemp $tgt_dir/diskfull-test.XXXXXX 2>/dev/null)"
+  diskfull_test="$(mktemp "$tgt_dir/diskfull-test.XXXXXX" 2>/dev/null)"
   if [ -z "$diskfull_test" ]; then
     # Even mktemp fails...
     ok_c="no"
@@ -1263,10 +1263,10 @@ save_part_by_ntfsclone() {
           # $tgt_dir/${tgt_file}.ntfs-img. is prefix, the last "." is necessary
           # make the output file is like hda1.ntfs-img.aa, hda1.ntfs-img.ab.
           # We do not add -d to make it like hda1.ntfs-img.00, hda1.ntfs-img.01, since it will confuse people that it looks like created by partimage (hda1.ntfs-img.000, hda1.ntfs-img.001)
-          split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/${tgt_file}.ntfs-img.
+          split -a $split_suf_len -b ${VOL_LIMIT}MB - "$tgt_dir/${tgt_file}.ntfs-img."
           ;;
        *)
-          cat - > $tgt_dir/${tgt_file}.ntfs-img
+          cat - > "$tgt_dir/${tgt_file}.ntfs-img"
           ;;
      esac
     )
@@ -1414,11 +1414,11 @@ save_part_by_partclone() {
       dd)
          # Special case, dd, no compression + no splitting.
          # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}"
+         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output \"$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}\""
          ;;
        *)
          # Special case, not dd, no compression + no splitting
-         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $partclone_img_info_tmp -c -s $source_dev --output $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}"
+         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $partclone_img_info_tmp -c -s $source_dev --output \"$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}\""
          ;;
     esac
   else
@@ -1434,10 +1434,10 @@ save_part_by_partclone() {
     case "$VOL_LIMIT" in
       [1-9]*)
          # $tgt_dir/${tgt_file}.${fs_pre}-img. is prefix, the last "." is necessary make the output file is like hda1.${fs_pre}-img.aa, hda1.${fs_pre}-img.ab. We do not add -d to make it like hda1.${fs_pre}-img.00, hda1.${fs_pre}-img.01, since it will confuse people that it looks like created by partimage (hda1.${fs_pre}-img.000, hda1.${fs_pre}-img.001)
-         cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}. 2> $img_out_err"
+         cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - \"$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}.\" 2> $img_out_err"
          ;;
       *)
-         cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf} 2> $img_out_err"
+         cmd_partclone="${cmd_partclone} > \"$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}\" 2> $img_out_err"
          ;;
     esac
   fi
@@ -1460,10 +1460,10 @@ save_part_by_partclone() {
     # no preparation time, it's accurate enough.
     echo ">>> Time elapsed: $time_elapsed secs (~ $time_elapsed_in_min mins)" | tee --append ${OCS_LOGFILE}
     # For better security
-    set_acess_mode_for_img "$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}*" 
+    set_acess_mode_for_img "$tgt_dir"/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}*
   else
-    if ls $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}* &>/dev/null; then
-      rm -f $tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}*
+    if ls "$tgt_dir"/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}* &>/dev/null; then
+      rm -f "$tgt_dir"/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}*
     fi
   fi
   # prepare statistic report
@@ -1514,10 +1514,10 @@ save_part_by_partimage() {
        # "$tgt_dir/${tgt_file}." is prefix, the last "." is necessary
        # make the output file is like hda1.aa, hda1.ab.
        # We do not add -d to make it like hda1.00, hda1.01, since it will confuse people that it looks like created by partimage (hda1.000, hda1.001)
-       cmd_partimage="${cmd_partimage} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/${tgt_file}."
+       cmd_partimage="${cmd_partimage} | split -a $split_suf_len -b ${VOL_LIMIT}MB - "$tgt_dir"/${tgt_file}."
        ;;
     *)
-       cmd_partimage="${cmd_partimage} > $tgt_dir/${tgt_file}"
+       cmd_partimage="${cmd_partimage} > "$tgt_dir"/${tgt_file}"
        ;;
   esac
   echo "Run partimage: $cmd_partimage" | tee --append ${OCS_LOGFILE}
@@ -1614,10 +1614,10 @@ save_part_by_dd() {
             # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary
             # make the output file is like hda1.dd-img.aa, hda1.dd-img.ab.
             # We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.dd-img.001)
-            split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).dd-img.
+            split -a $split_suf_len -b ${VOL_LIMIT}MB - "$tgt_dir"/$(to_filename ${tgt_file}).dd-img.
             ;;
          *)
-            cat - > $tgt_dir/$(to_filename ${tgt_file}).dd-img
+            cat - > "$tgt_dir"/$(to_filename ${tgt_file}).dd-img
             ;;
        esac
       )
@@ -1634,7 +1634,7 @@ save_part_by_dd() {
     end_time="$(date +%s%N)"
     kill -9 $dd_report_sig_pid &>/dev/null
     # save the size so that when we restore the image, partition size can be shown in the status report. This is better than to get partition info from *-pt.sf (which is shown in sectors, not absolute value) or uncompress *.dd-img then get the partition info in the loop device file (not efficient).
-    echo "$part_size" > $tgt_dir/$(to_filename ${tgt_file})-size
+    echo "$part_size" > "$tgt_dir"/$(to_filename ${tgt_file})-size
     # UGLY! Since we use dd, then pipe to compression program, then IO redirect to file, the error control is weak. dd wil not exit even if the disk is full. Therefore we check here.
     echo "Checking the disk space... " && disk_full_test $image_name_ "The saved image file $tgt_dir/$(to_filename ${tgt_file}).dd-img is incomplete. You have to increase the disk space, then start Clonzilla save mode again."
     get_dd_image_info $dd_img_info_tmp $start_time $end_time
@@ -1664,10 +1664,10 @@ save_part_by_dd() {
     case "$VOL_LIMIT" in
       [1-9]*)
          # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary make the output file is like hda1.dd-img.aa, hda1.dd-img.ab. We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.$dd-img.001)
-         cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - $tgt_dir/$(to_filename ${tgt_file}).dd-img. 2> $img_out_err"
+         cmd_partclone="${cmd_partclone} | split -a $split_suf_len -b ${VOL_LIMIT}MB - \"$tgt_dir/$(to_filename ${tgt_file}).dd-img.\" 2> $img_out_err"
          ;;
       *)
-         cmd_partclone="${cmd_partclone} > $tgt_dir/$(to_filename ${tgt_file}).dd-img 2> $img_out_err"
+         cmd_partclone="${cmd_partclone} > \"$tgt_dir/$(to_filename ${tgt_file}).dd-img\" 2> $img_out_err"
          ;;
     esac
     echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
@@ -1695,8 +1695,8 @@ save_part_by_dd() {
     # For better security
     set_acess_mode_for_img "$tgt_dir/$(to_filename ${tgt_file}).dd-img*" 
   else
-    if ls $tgt_dir/$(to_filename ${tgt_file}).dd-img* &>/dev/null; then
-      rm -f $tgt_dir/$(to_filename ${tgt_file}).dd-img*
+    if ls "$tgt_dir"/$(to_filename ${tgt_file}).dd-img* &>/dev/null; then
+      rm -f "$tgt_dir"/$(to_filename ${tgt_file}).dd-img*
     fi
   fi
 
@@ -1704,23 +1704,23 @@ save_part_by_dd() {
   # (1) Check if it's VMware vmkcore partition
   # (2) Check if it's BSD swap partition
   hdtmp="$(get_diskname $tgt_file)"
-  part_id="$(get_part_id_from_sf_format $tgt_dir/$(to_filename ${hdtmp})-pt.sf ${tgt_file})"
+  part_id="$(get_part_id_from_sf_format "$tgt_dir"/$(to_filename ${hdtmp})-pt.sf ${tgt_file})"
   # Find if it's a BSD swap partition
   bsd_swap_partition="$(get_bsd_swap_partition /dev/$hdtmp)"
   if [ -n "$(LC_ALL=C echo "$part_id" | grep -Ewi "fc")" ]; then
-    echo 'partition=VMware_vmkcore_partition' > $tgt_dir/$(to_filename ${tgt_file}).dd-img.info
+    echo 'partition=VMware_vmkcore_partition' > "$tgt_dir"/$(to_filename ${tgt_file}).dd-img.info
   elif [ -n "$(LC_ALL=C echo "$part_id" | grep -Ewi "(a5|a6|a9)")" ]; then
     # Partition ID a5 (FreeBSD), a6 (OpenBSD), a9 (NetBSD) are slices
-    echo 'partition=BSD_slice' > $tgt_dir/$(to_filename ${tgt_file}).dd-img.info
+    echo 'partition=BSD_slice' > "$tgt_dir"/$(to_filename ${tgt_file}).dd-img.info
   elif [ -n "$(LC_ALL=C echo "$bsd_swap_partition" | grep -Ewo "/dev/$tgt_file")" ]; then
-    echo 'partition=BSD_swap_partition' > $tgt_dir/$(to_filename ${tgt_file}).dd-img.info
+    echo 'partition=BSD_swap_partition' > "$tgt_dir"/$(to_filename ${tgt_file}).dd-img.info
   fi
 
   # prepare statistic report
   conv_return_code_to_human_read $rc
   report_msg="$report_msg $source_dev, $clone_status, $space_used, $time_elapsed_in_min mins;"
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-  echo "Finished saving $source_dev as $tgt_dir/$(to_filename ${tgt_file}).dd-img" | tee --append ${OCS_LOGFILE}
+  echo "Finished saving $source_dev as "$tgt_dir"/$(to_filename ${tgt_file}).dd-img" | tee --append ${OCS_LOGFILE}
   return $rc
 } # end of save_part_by_dd
 #
@@ -1735,7 +1735,7 @@ image_save() {
   # $tgt_dir is dir path like "/home/partimag/sarge-base/"
   # $tgt_file here is the file name like "hda1"
   # if the report_msg is empty, put the initial one: image_name_
-  image_name_="$(dirname $tgt_dir)"
+  image_name_="$(dirname "$tgt_dir")"
   [ -z "$report_msg" ] && report_msg="Saved $image_name_,"
   # time_elapsed, time_elapsed_in_min and speed are global variables
   
@@ -1775,7 +1775,7 @@ image_save() {
   else
     part_fs_shown="$part_fs"
   fi
-  echo "$source_dev $part_fs $part_size" >> $tgt_dir/dev-fs.list
+  echo "$source_dev $part_fs $part_size" >> "$tgt_dir/dev-fs.list"
 
   # do_fs_save is a global variable
   if [ "$do_fs_save" = "yes" ]; then
@@ -1790,21 +1790,21 @@ image_save() {
     elif [ "$USE_NTFSCLONE" = "yes" -a "$part_fs" = "ntfs" ]; then
       # case (1): ntfsclone is preferred
       if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
-	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info
+	output_swap_partition_uuid_label $source_dev "$tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info"
       else
         save_part_by_ntfsclone
       fi
     elif [ "$USE_PARTCLONE" = "yes" ] && `is_partclone_support_fs $part_fs`; then
       # case (2): partclone is preferred
       if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
-	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info
+	output_swap_partition_uuid_label $source_dev "$tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info"
       else
         save_part_by_partclone $part_fs
       fi
     elif `is_partimage_support_fs $part_fs`; then
       # case (3): partimage supported filesystem, we can use partimage to save it.
       if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
-	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info
+	output_swap_partition_uuid_label $source_dev "$tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info"
       else
         save_part_by_partimage
       fi
@@ -1812,7 +1812,7 @@ image_save() {
       # case (4): not supported filesystem, the last choice is to use dd to dump, unless it's swap.
       # save_part_by_dd
       if [ -n "$(echo $part_fs | grep -Eiw "swap")" ]; then
-	output_swap_partition_uuid_label $source_dev $tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info
+	output_swap_partition_uuid_label $source_dev "$tgt_dir/swappt-$(to_ocs_dev_img_name $source_dev).info"
       else
         save_part_by_partclone dd
       fi
@@ -3008,10 +3008,10 @@ output_HD_CHS() {
    cylinders="$(LC_ALL=C sfdisk $opt_gm /dev/$DEV 2>/dev/null | grep -oEi "[[:digit:]]+ cylinders" | awk -F" " '{print $1}')"
    heads="$(LC_ALL=C sfdisk $opt_gm /dev/$DEV 2>/dev/null | grep -oEi "[[:digit:]]+ heads" | awk -F" " '{print $1}')"
    sectors="$(LC_ALL=C sfdisk $opt_gm /dev/$DEV 2>/dev/null |grep -oEi "[[:digit:]]+ sectors" | awk -F" " '{print $1}')"
-   [ -f "$target_d/$(to_filename ${DEV})-chs.sf" ] && rm -f $target_d/$(to_filename ${DEV})-chs.sf
+   [ -f "$target_d/$(to_filename ${DEV})-chs.sf" ] && rm -f "$target_d/$(to_filename ${DEV})-chs.sf"
    for i in cylinders heads sectors; do
      eval num=\$$i
-     echo "$i=$num" >> $target_d/$(to_filename ${DEV})-chs.sf
+     echo "$i=$num" >> "$target_d/$(to_filename ${DEV})-chs.sf"
    done
 } # end of output_HD_CHS
 #
@@ -3030,7 +3030,7 @@ load_HD_geometry_opt_from_image() {
   [ -z "$target_d" ] && return 1
   [ -z "$DEV" ] && return 1
   if [ -f "$target_d/$(to_filename ${DEV})-chs.sf" ]; then
-    . $target_d/$(to_filename ${DEV})-chs.sf
+    . "$target_d/$(to_filename ${DEV})-chs.sf"
     [ -z "$cylinders" -o -z "$heads" -o -z "$sectors" ] && no_CHS_data_warning
     sfdisk_opt="$sfdisk_opt -C $cylinders -H $heads -S $sectors"
   else 
@@ -3230,9 +3230,9 @@ check_blocks_per_group_of_ext2_3(){
   blocks_per_group="$(dumpe2fs $part_ 2>/dev/null | grep -i "^Blocks per group:" | awk -F":" '{print $2}' | sed -e "s/^[[:space:]]*//g")"
   if [ "$blocks_per_group" != "32768" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "The 'Blocks per group' of ext2/ext3 in this partition $part_ is \"$blocks_per_group\", NOT 32768." | tee $tgt_dir/THIS_IMAGE_DIR_IS_BROKEN.txt
-    echo "$msg_partimage_not_support_block_per_group_non_32768" | tee -a $tgt_dir/THIS_IMAGE_DIR_IS_BROKEN.txt
-    echo "$msg_for_more_info_check: http://sourceforge.net/forum/forum.php?thread_id=1833628&forum_id=663168" | tee -a $tgt_dir/THIS_IMAGE_DIR_IS_BROKEN.txt
+    echo "The 'Blocks per group' of ext2/ext3 in this partition $part_ is \"$blocks_per_group\", NOT 32768." | tee "$tgt_dir/THIS_IMAGE_DIR_IS_BROKEN.txt"
+    echo "$msg_partimage_not_support_block_per_group_non_32768" | tee -a "$tgt_dir/THIS_IMAGE_DIR_IS_BROKEN.txt"
+    echo "$msg_for_more_info_check: http://sourceforge.net/forum/forum.php?thread_id=1833628&forum_id=663168" | tee -a "$tgt_dir/THIS_IMAGE_DIR_IS_BROKEN.txt"
     echo "$msg_Warning! $msg_this_image_dir_is_not_complete: $img_name"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!"
@@ -3310,7 +3310,7 @@ create_mbr_partition_table() {
   local opt_wm sfdisk_cmd_mbr
   # From use_HD_CHS_from_EDD_pref we will decide if use_HD_CHS_from_EDD is yes or no. The rule is if we find the target disk does _NOT_ contain grub boot loader, set use_HD_CHS_from_EDD as yes, others, set it as no. This is because we will re-run grub-install by deafult.
   if [ "$use_HD_CHS_from_EDD_pref" = "yes" ]; then
-    if [ -z "$(LC_ALL=C strings $tgt_dir/$(to_filename ${tgt_hd_name})-mbr | grep -i "grub")" ]
+    if [ -z "$(LC_ALL=C strings "$tgt_dir/$(to_filename ${tgt_hd_name})-mbr" | grep -i "grub")" ]
     then
       # It's not grub boot loader, set use_HD_CHS_from_EDD as yes
       echo "Non-grub boot loader found on $tgt_dir/$(to_filename ${tgt_hd_name})-mbr..." | tee --append $OCS_LOGFILE
@@ -3336,7 +3336,7 @@ create_mbr_partition_table() {
   elif [ "$load_HD_CHS_from_img" = "yes" ]; then
     if [ "$sfdisk_cyl_opt_flag" = "yes" ]; then
       # Append the CHS to variable "$sfdisk_opt" if CHS can be find in the image dir.
-      load_HD_geometry_opt_from_image $tgt_dir $tgt_hd_name
+      load_HD_geometry_opt_from_image "$tgt_dir" $tgt_hd_name
     else
       echo "Sfdisk >= 2.26 does not support C/H/S option. Skip using C/H/S option." | tee --append $OCS_LOGFILE
     fi
@@ -3360,7 +3360,7 @@ create_mbr_partition_table() {
   # However, some people also call executable code area (first 446 bytes in MBR) as MBR.
   case "$create_part_by_sfdisk" in
     n|N|[nN][oO])
-      dd if=$tgt_dir/$(to_filename $tgt_hd_name)-mbr of=$tgt_hd_file skip=446 seek=446 bs=1 count=66 2>&1 | tee --append $OCS_LOGFILE 
+      dd if="$tgt_dir/$(to_filename $tgt_hd_name)-mbr" of=$tgt_hd_file skip=446 seek=446 bs=1 count=66 2>&1 | tee --append $OCS_LOGFILE 
       RETVAL="${PIPESTATUS[0]}"
       if [ "$RETVAL" -eq 0 ]; then
         echo -n "Making kernel re-read the partition table of $tgt_hd_file... " | tee --append $OCS_LOGFILE
@@ -3396,7 +3396,7 @@ create_mbr_partition_table() {
             ocs_expand_mbr_pt_opt="-icds"
             PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT -C"
           fi
-	  sfdisk_cmd_mbr="EXTRA_SFDISK_OPT=\"$EXTRA_SFDISK_OPT $opt_wm\" ocs-expand-mbr-pt $ocs_expand_mbr_pt_opt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1"
+	  sfdisk_cmd_mbr="EXTRA_SFDISK_OPT=\"$EXTRA_SFDISK_OPT $opt_wm\" ocs-expand-mbr-pt $ocs_expand_mbr_pt_opt --batch \"$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf\" $tgt_hd_file 2>&1"
 	  echo "Running: $sfdisk_cmd_mbr" | tee -a $OCS_LOGFILE
 	  eval $sfdisk_cmd_mbr | tee -a $OCS_LOGFILE
           echo "This was done by $sfdisk_cmd_mbr" | tee -a $OCS_LOGFILE
@@ -3412,7 +3412,7 @@ create_mbr_partition_table() {
           # If target_disk size is larger than 2 TiB (~2.2 TB = 2,199,023,255,040 bytes), exit. It's over the MBR's limitation.
           init_mbr_part_table_if_not_existing $tgt_hd_file
           check_mbr_disk_size_gt_2TiB $tgt_hd_file warning 
-          sfdisk_cmd_mbr="LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf 2>&1 | tee -a $OCS_LOGFILE"
+          sfdisk_cmd_mbr="LC_ALL=C sfdisk $sfdisk_opt $tgt_hd_file < \"$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf\" 2>&1 | tee -a $OCS_LOGFILE"
           echo "Running: $sfdisk_cmd_mbr" | tee -a $OCS_LOGFILE
 	  eval $sfdisk_cmd_mbr | tee -a $OCS_LOGFILE
           RETVAL="${PIPESTATUS[0]}"
@@ -3428,15 +3428,15 @@ create_mbr_partition_table() {
             [ "$save_restore_error_log" = "yes" ] && copy_error_log
             my_ocs_exit 1
           fi
-          if [ -f $tgt_dir/$(to_filename ${tgt_hd_name})-multipath ]; then
-            for i in $(cat $tgt_dir/$(to_filename ${tgt_hd_name})-multipath); do
+          if [ -f "$tgt_dir/$(to_filename ${tgt_hd_name})-multipath" ]; then
+            for i in $(cat "$tgt_dir/$(to_filename ${tgt_hd_name})-multipath"); do
               echo -n "Making kernel re-read the partition table of /dev/$i... " | tee --append $OCS_LOGFILE
               inform_kernel_partition_table_changed mbr /dev/$i | tee --append ${OCS_LOGFILE}
               echo "done." | tee --append $OCS_LOGFILE
             done
           fi
           # Add another checking mechanism by parted, since sfdisk with -f won't return correct code.
-          check_created_partition_table $tgt_hd_file $tgt_dir
+          check_created_partition_table $tgt_hd_file "$tgt_dir"
           ;;
       esac
       ;;
@@ -3482,7 +3482,7 @@ create_gpt_partition_table() {
          ocs_expand_gpt_pt_opt="-icds"
          PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT -C"
        fi
-       sfdisk_cmd_gpt="EXTRA_SFDISK_OPT=\"$EXTRA_SFDISK_OPT $opt_wm\" ocs-expand-gpt-pt $ocs_expand_gpt_pt_opt --batch $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf $tgt_hd_file 2>&1"
+       sfdisk_cmd_gpt="EXTRA_SFDISK_OPT=\"$EXTRA_SFDISK_OPT $opt_wm\" ocs-expand-gpt-pt $ocs_expand_gpt_pt_opt --batch \"$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf\" $tgt_hd_file 2>&1"
        echo "Running: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
        eval $sfdisk_cmd_gpt | tee -a $OCS_LOGFILE
        RETVAL="${PIPESTATUS[0]}"
@@ -3538,7 +3538,7 @@ create_gpt_partition_table() {
         # Force to use dd to create GPT partition table
         do_gpt_dd="yes"
       elif [ -n "$(LC_ALL=C grep -Ew "^label: gpt" "$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf")" ]; then
-	sfdisk_cmd_gpt="LC_ALL=C grep -Ev '^last-lba:' $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf | sfdisk $opt_wm $sfdisk_opt $tgt_hd_file 2>&1"
+	sfdisk_cmd_gpt="LC_ALL=C grep -Ev '^last-lba:' \"$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf\" | sfdisk $opt_wm $sfdisk_opt $tgt_hd_file 2>&1"
         echo "Running: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
 	eval $sfdisk_cmd_gpt | tee -a $OCS_LOGFILE
         RETVAL="${PIPESTATUS[0]}"
@@ -3560,7 +3560,7 @@ create_gpt_partition_table() {
         fi
       elif [ -e "$tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk" ]; then
         gdisk_tmp="$(mktemp /tmp/gdisk_tmp.XXXXXX)"
-	sfdisk_cmd_gpt="LC_ALL=C sgdisk -l $tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk $tgt_hd_file 2>&1 | tee $gdisk_tmp"
+	sfdisk_cmd_gpt="LC_ALL=C sgdisk -l \"$tgt_dir/$(to_filename ${tgt_hd_name})-gpt.gdisk\" $tgt_hd_file 2>&1 | tee $gdisk_tmp"
         echo "Running: $sfdisk_cmd_gpt" | tee -a ${OCS_LOGFILE}
 	eval $sfdisk_cmd_gpt | tee -a ${OCS_LOGFILE}
         sgdisk_rc="${PIPESTATUS[0]}"
@@ -3603,7 +3603,7 @@ create_gpt_partition_table() {
      echo "Restoring the primary GPT to $tgt_hd_file..." | tee -a $OCS_LOGFILE
      # ///NOTE/// We can not use ocs-create-gpt (parted) to clone GPT, since the original GPT contains unique GUID! Ref:  http://developer.apple.com/technotes/tn2006/tn2166.html#SECCOPYINGCONCERNS for more details.
      # ocs-create-gpt $tgt_dir/${tgt_hd_name}-pt.parted
-     sfdisk_cmd_gpt="LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-1st of=$tgt_hd_file 2>&1"
+     sfdisk_cmd_gpt="LC_ALL=C dd if=\"$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-1st\" of=$tgt_hd_file 2>&1"
      echo "Running: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
      eval $sfdisk_cmd_gpt | tee -a $OCS_LOGFILE
      retv="${PIPESTATUS[0]}"
@@ -3627,7 +3627,7 @@ create_gpt_partition_table() {
      # --------------------
      echo "Restoring the secondary GPT to $tgt_hd_file..."
      to_seek="$((${src_disk_size_sec}-33+1))"
-     sfdisk_cmd_gpt="LC_ALL=C dd if=$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-2nd of=$tgt_hd_file seek=${to_seek} bs=512 count=33 2>&1"
+     sfdisk_cmd_gpt="LC_ALL=C dd if=\"$tgt_dir/$(to_filename ${tgt_hd_name})-gpt-2nd\" of=$tgt_hd_file seek=${to_seek} bs=512 count=33 2>&1"
      echo "Running: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
      eval $sfdisk_cmd_gpt | tee -a $OCS_LOGFILE
    fi
@@ -3900,7 +3900,7 @@ prepare_ecryptfs_mount_point_if_necessary() {
   # Function to prepare ecryptefs mount point
   case "$ocs_sr_type" in
    *save*) if [ "$encrypt_ocs_img" = "yes" ]; then 
-	     mkdir -p $ocsroot/$target_dir
+	     mkdir -p "$ocsroot/$target_dir"
 	     task_ecryptfs_mount_point "$ocs_sr_type"
 	     rc_="$?"
            fi
@@ -3909,7 +3909,7 @@ prepare_ecryptfs_mount_point_if_necessary() {
 	   # For the rest, we all need the existing image
 	   encrypt_ocs_img="no"
 	   # Check if the image is encrypted or not.
-	   if is_ecryptfs_img $ocsroot/$target_dir; then
+	   if is_ecryptfs_img "$ocsroot/$target_dir"; then
              encrypt_ocs_img="yes"
 	     task_ecryptfs_mount_point "$ocs_sr_type"
 	     rc_="$?"
@@ -4155,7 +4155,7 @@ task_postprocessing() {
   # Try to put Clonezilla related log files to Clonezilla live USB drive
   if [ "$put_log_usb" = "yes" ]; then
     echo "Running: ocs-put-log-usb $target_dir" | tee --append $OCS_LOGFILE
-    ocs-put-log-usb $target_dir | tee --append $OCS_LOGFILE
+    ocs-put-log-usb "$target_dir" | tee --append $OCS_LOGFILE
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
@@ -4309,7 +4309,7 @@ rm_target_image_if_exist() {
 	   -d "$ocsroot_orig/$target_dir_orig" ]; then
         # We have to clean all the files from the ecryptfs source dir, otherwise
 	# if there is same file existing, the ecryptfs won't be able to create it.
-        rm -f $ocsroot_orig/$target_dir_orig/*
+        rm -f $ocsroot_orig/"$target_dir_orig"/*
       fi
     else
       [ -f "$tgt_image" ] && rm -f $tgt_image
@@ -5599,19 +5599,19 @@ get_partclone_image_info() {
 } # end of get_partclone_image_info
 #
 unicast_restore_by_partimage() {
-  if [ -f "$target_d/$img_file.000" ]; then
-    get_image_cat_zip_cmd $target_d/$img_file.000
+  if [ -f "$target_d"/$img_file.000 ]; then
+    get_image_cat_zip_cmd "$target_d"/$img_file.000
     # The files are split by partimage, like hda1.000, hda1.001, so we have to add "."
     img_file_prefix="$img_file.*"
     split_by="partimage"
-  elif [ -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" ]; then
-    # get_image_cat_zip_cmd $target_d/$img_file.aa
-    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file`
+  elif [ -n "$(ls "$target_d"/$img_file.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd "$target_d"/$img_file.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk "$target_d" $img_file`
     # The files are split by split, like hda1.aa, hda1.ab, so we have to add "."
     img_file_prefix="$img_file.*"
     split_by="split"
   else
-    get_image_cat_zip_cmd $target_d/$img_file
+    get_image_cat_zip_cmd "$target_d"/$img_file
     # The file is NOT split, so the file name is just like "hda1" only, no "."
     img_file_prefix="$img_file"
     # although it's not split, we still sort it as split_by="partimage", since it the same model with partimage
@@ -5625,14 +5625,14 @@ unicast_restore_by_partimage() {
       toskip=0
       # partimage will put header in 2nd and later volumes, so we have to uncompress it, then strip it before pipe them to partimage
 cat <<_EOT_ >> ${OCS_LOGFILE}
-      ( for img in $target_d/$img_file_prefix; do
+      ( for img in "$target_d"/$img_file_prefix; do
           $cat_prog \$img | dd bs=512 skip=$toskip 2> /dev/null
           toskip=1
         done
       ) \
       | partimage $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT -o -d restore $part stdin | tee --append ${OCS_LOGFILE}
 _EOT_
-      ( for img in $target_d/$img_file_prefix; do
+      ( for img in "$target_d"/$img_file_prefix; do
           $cat_prog $img | dd bs=512 skip=$toskip 2> /dev/null
           toskip=1
         done
@@ -5642,14 +5642,14 @@ _EOT_
     split)
       # ntfsclone+split will NOT put header in 2nd and later volumes, so just cat them
 cat <<_EOT_ >> ${OCS_LOGFILE}
-      ( for img in $target_d/$img_file_prefix; do
+      ( for img in "$target_d"/$img_file_prefix; do
           cat \$img
         done
       ) \
       | $unzip_stdin_cmd \
       | partimage $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT -o -d restore $part stdin | tee --append ${OCS_LOGFILE}
 _EOT_
-      ( for img in $target_d/$img_file_prefix; do
+      ( for img in "$target_d"/$img_file_prefix; do
           cat $img
         done
       ) \
@@ -5669,13 +5669,13 @@ _EOT_
 } # end of unicast_restore_by_partimage
 #
 unicast_restore_by_ntfsclone() {
-  if [ -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
-    # get_image_cat_zip_cmd $target_d/$img_file.ntfs-img.aa
-    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file.ntfs-img`
+  if [ -n "$(ls "$target_d"/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd "$target_d"/$img_file.ntfs-img.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk "$target_d" $img_file.ntfs-img`
     # The files are split, like hda1.00, hda1.01, so we have to add "."
     img_file_prefix="$img_file.ntfs-img.*"
   else
-    get_image_cat_zip_cmd $target_d/$img_file.ntfs-img
+    get_image_cat_zip_cmd "$target_d"/$img_file.ntfs-img
     # The file is NOT split, so the file name is just like "hda1" only, no "."
     img_file_prefix="$img_file.ntfs-img"
   fi
@@ -5698,7 +5698,7 @@ unicast_restore_by_ntfsclone() {
 
   start_time="$(date +%s%N)"
   # ntfsclone does not put any header, so just cat them
-  ( for img in $target_d/$img_file_prefix; do
+  ( for img in "$target_d"/$img_file_prefix; do
       cat $img
     done
   ) | \
@@ -5720,7 +5720,7 @@ unicast_restore_by_partclone() {
   local unzip_cmd_error cmd_partclone_rest split_flag link_flag restore_flag run_cmd_
   local -a retcodes='()'
   # First, we find the filesystem 
-  file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
+  file_="$(unalias ls &>/dev/null; ls "$target_d"/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
   if [ -n "${file_}" ]; then
     file_basename="$(basename ${file_})"
     if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
@@ -5766,13 +5766,13 @@ unicast_restore_by_partclone() {
     # The split suffix length for old format is only 2, so we do not have to consider >=3 (*.aaa or more).
     if [ -f "$target_d/$img_file.${fs_}-img.aa" ]; then
       # Old format with image split
-      get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img.aa
+      get_image_cat_zip_cmd "$target_d"/$img_file.${fs_}-img.aa
       # The files are split, like hda1.00, hda1.01, so we have to add "."
       img_file_prefix="$img_file.${fs_}-img.*"
       split_flag="yes"
     else
       # Old format with image not split
-      get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img
+      get_image_cat_zip_cmd "$target_d"/$img_file.${fs_}-img
       # The file is NOT split, so the file name is just like "hda1" only, no "."
       img_file_prefix="$img_file.${fs_}-img"
       split_flag="no"
@@ -5821,14 +5821,14 @@ unicast_restore_by_partclone() {
   cat)
     # Could be link + split image. Use for loop to cat the source image then unzip it.
     cat <<_EOT_ | tee -a ${OCS_LOGFILE}
-( for img in $target_d/$img_file_prefix; do
+( for img in "$target_d"/$img_file_prefix; do
     cat \$img
   done
 ) \
 | $unzip_stdin_cmd 2> $unzip_cmd_error \
 | LC_ALL=C $cmd_partclone_rest
 _EOT_
-    ( for img in $target_d/$img_file_prefix; do
+    ( for img in "$target_d"/$img_file_prefix; do
         cat $img
       done
     ) \
@@ -5847,14 +5847,14 @@ _EOT_
       cat)
         # No compression, so the image file can be read directly.
         # Replace stdin "-s -" as the source file.
-        cmd_partclone_rest="$(echo $cmd_partclone_rest | sed -r -e "s|-s -|-s $target_d/$img_file_prefix|")"
+        cmd_partclone_rest="$(echo $cmd_partclone_rest | sed -r -e "s|-s -|-s \"$target_d\"/$img_file_prefix|")"
         echo "LC_ALL=C $cmd_partclone_rest" | tee -a ${OCS_LOGFILE}
         eval $cmd_partclone_rest
 	rc=$?
         ;;
       *)
         # Compressed image. Use unzip command to output stdout
-        run_cmd_="$unzip_stdin_cmd $target_d/$img_file_prefix 2> $unzip_cmd_error | LC_ALL=C $cmd_partclone_rest"
+        run_cmd_="$unzip_stdin_cmd \"$target_d\"/$img_file_prefix 2> $unzip_cmd_error | LC_ALL=C $cmd_partclone_rest"
         echo "$run_cmd_" | tee -a ${OCS_LOGFILE}
         eval "$run_cmd_; retcodes=(\${PIPESTATUS[@]})"
         if [ "${retcodes[0]}" -eq 0 -a "${retcodes[1]}" -eq 0 ]; then
@@ -5868,8 +5868,8 @@ _EOT_
   esac
 
   cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
-  ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
-  cp "${partclone_img_info_tmp}" $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
+  ocs_log_rotate "$ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log"
+  cp "${partclone_img_info_tmp}" "$ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log"
   if [ -s "$unzip_cmd_error" ]; then
     cat "$unzip_cmd_error" | tee --append ${OCS_LOGFILE}
   fi
@@ -5894,13 +5894,13 @@ unicast_restore_by_dd() {
   local dd_retcode_file dd_retcode
   local unzip_cmd_error
   local -a retcodes='()'
-  if [ -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
-    # get_image_cat_zip_cmd $target_d/$img_file.dd-img.aa
-    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file.dd-img`
+  if [ -n "$(ls "$target_d"/$img_file.dd-img.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd "$target_d"/$img_file.dd-img.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk "$target_d" $img_file.dd-img`
     # The files are split, like hda1.00, hda1.01, so we have to add "."
     img_file_prefix="$img_file.dd-img.*"
   else
-    get_image_cat_zip_cmd $target_d/$img_file.dd-img
+    get_image_cat_zip_cmd "$target_d"/$img_file.dd-img
     # The file is NOT split, so the file name is just like "hda1" only, no "."
     img_file_prefix="$img_file.dd-img"
   fi
@@ -5927,7 +5927,7 @@ unicast_restore_by_dd() {
     dd_img_info_tmp="$(mktemp /tmp/dd_info.XXXXXX)"
     # since dd does not report status with any option, we have to send SIGUSR1 to tell dd to report every some secs...
     # dd report interval (secs) is loaded from drbl-ocs.conf
-    [ -e "$target_d/${img_file}-size" ] && part_size="$(cat $target_d/${img_file}-size)"
+    [ -e "$target_d/${img_file}-size" ] && part_size="$(cat "$target_d"/${img_file}-size)"
     trigger_dd_status_report $part $part_size &
     dd_report_sig_pid=$!
     echo $msg_delimiter_star_line
@@ -5939,7 +5939,7 @@ unicast_restore_by_dd() {
     echo 1 > $unzip_retcode_file
     echo 1 > $dd_retcode_file
     (
-      ( for img in $target_d/$img_file_prefix; do
+      ( for img in "$target_d"/$img_file_prefix; do
           cat $img
         done
       ) \
@@ -5982,7 +5982,7 @@ unicast_restore_by_dd() {
     # partclone_hfsp does not put any header, so just cat them
     # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
     cat <<_EOT_ | tee -a ${OCS_LOGFILE}
-( for img in $target_d/$img_file_prefix; do
+( for img in "$target_d"/$img_file_prefix; do
     # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
     [ -n "$(echo "\$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
     cat \$img
@@ -5991,7 +5991,7 @@ unicast_restore_by_dd() {
 | $unzip_stdin_cmd 2> $unzip_cmd_error \
 | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT --buffer_size ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
 _EOT_
-    ( for img in $target_d/$img_file_prefix; do
+    ( for img in "$target_d"/$img_file_prefix; do
         # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
         [ -n "$(echo "$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
         cat $img
@@ -6008,8 +6008,8 @@ _EOT_
     fi
     
     cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
-    ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
-    cp "${partclone_img_info_tmp}" $ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log
+    ocs_log_rotate "$ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log"
+    cp "${partclone_img_info_tmp}" "$ocs_log_dir/partclone-$(to_filename ${part#/dev/*}).log"
     if [ -s "$unzip_cmd_error" ]; then
       cat "$unzip_cmd_error" | tee --append ${OCS_LOGFILE}
     fi
@@ -6032,12 +6032,12 @@ _EOT_
 multicast_restore_by_partimage() {
   # get $unzip_stdin_cmd from image file
   if [ -f "$target_d/$img_file.000" ]; then
-    get_image_cat_zip_cmd $target_d/$img_file.000
-  elif [ -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" ]; then
-    # get_image_cat_zip_cmd $target_d/$img_file.aa
-    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file`
+    get_image_cat_zip_cmd "$target_d"/$img_file.000
+  elif [ -n "$(ls "$target_d"/$img_file.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd "$target_d"/$img_file.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk "$target_d" $img_file`
   else
-    get_image_cat_zip_cmd $target_d/$img_file
+    get_image_cat_zip_cmd "$target_d"/$img_file
   fi
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
 
@@ -6061,11 +6061,11 @@ _EOT_
 #
 multicast_restore_by_ntfsclone() {
   # get $unzip_stdin_cmd from image file
-  if [ -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
-    # get_image_cat_zip_cmd $target_d/$img_file.ntfs-img.aa
-    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file.ntfs-img`
+  if [ -n "$(ls "$target_d"/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd "$target_d"/$img_file.ntfs-img.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk "$target_d" $img_file.ntfs-img`
   else
-    get_image_cat_zip_cmd $target_d/$img_file.ntfs-img
+    get_image_cat_zip_cmd "$target_d"/$img_file.ntfs-img
   fi
   # assign ntfsclone tmp file.
   case "$ntfsclone_progress" in
@@ -6108,7 +6108,7 @@ multicast_restore_by_partclone() {
   if [ -z "$fs_" ]; then
     # First, we find the filesystem 
     # Image files are like: sda2.hfsp-img.aa  sda2.hfsp-img.ab  sda2.hfsp-img.ac
-    file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
+    file_="$(unalias ls &>/dev/null; ls "$target_d"/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
     file_basename="$(basename ${file_})"
     if [ -n "${file_}" ]; then
       if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
@@ -6193,11 +6193,11 @@ _EOT_
 multicast_restore_by_dd() {
   local partclone_img_info_tmp
   # get $unzip_stdin_cmd from image file
-  if [ -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
-    # get_image_cat_zip_cmd $target_d/$img_file.dd-img.aa
-    get_image_cat_zip_cmd `get_split_img_1st_chunk $target_d $img_file.dd-img`
+  if [ -n "$(ls "$target_d"/$img_file.dd-img.aa* 2>/dev/null)" ]; then
+    # get_image_cat_zip_cmd "$target_d"/$img_file.dd-img.aa
+    get_image_cat_zip_cmd `get_split_img_1st_chunk "$target_d" $img_file.dd-img`
   else
-    get_image_cat_zip_cmd $target_d/$img_file.dd-img
+    get_image_cat_zip_cmd "$target_d"/$img_file.dd-img
   fi
 
   echo $msg_delimiter_star_line
@@ -6224,7 +6224,7 @@ multicast_restore_by_dd() {
     dd_img_info_tmp="$(mktemp /tmp/dd_info.XXXXXX)"
     # since dd does not report status with any option, we have to send SIGUSR1 to tell dd to report every some secs...
     # dd report interval (secs) is loaded from drbl-ocs.conf
-    [ -e "$target_d/${img_file}-size" ] && part_size="$(cat $target_d/${img_file}-size)"
+    [ -e "$target_d/${img_file}-size" ] && part_size="$(cat "$target_d"/${img_file}-size)"
     trigger_dd_status_report $part $part_size &
     dd_report_sig_pid=$!
     start_time="$(date +%s%N)"
@@ -6278,32 +6278,32 @@ do_unicast_stdin_restore() {
   local part="$(format_dev_name_with_leading_dev $3)"  # part is like /dev/sda1, /dev/centos/root, /dev/mapper/ocs_ZYX
   local start_time end_time image_name_ split_by dd_report_sig_pid part_size hdtmp pt_type pt_swap fn
   # if the report_msg is empty, put the initial one: image_name_
-  image_name_="$(basename $target_d)"
+  image_name_="$(basename "$target_d")"
   [ -z "$report_msg" ] && report_msg="Unicast restored $image_name_,"
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   check_if_dev_busy $part
 
-  pt_swap="$(grep -Eo "^$part[[:space:]]+swap[[:space:]]+" $target_d/dev-fs.list 2>/dev/null)"
+  pt_swap="$(grep -Eo "^$part[[:space:]]+swap[[:space:]]+" "$target_d"/dev-fs.list 2>/dev/null)"
 
   echo $msg_delimiter_star_line
   # time_elapsed, time_elapsed_in_min and speed are global variables
   # get the cat program: cat, zcat or bzcat
   if [ -f "$target_d/$img_file.000" -o \
-       -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" -o \
+       -n "$(ls "$target_d"/$img_file.aa* 2>/dev/null)" -o \
        -f "$target_d/$img_file" ]; then
     # The saved image is from partimage
     clean_filesystem_header_in_dev $part
     unicast_restore_by_partimage
   elif [ -f "$target_d/$img_file.ntfs-img" -o \
-	 -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
+	 -n "$(ls "$target_d"/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
     # The saved image is from ntfsclone
     clean_filesystem_header_in_dev $part
     unicast_restore_by_ntfsclone
-  elif is_partclone_image $target_d $img_file; then
+  elif is_partclone_image "$target_d" $img_file; then
     # The saved image is from partclone
     clean_filesystem_header_in_dev $part
     unicast_restore_by_partclone
-  elif is_dd_image $target_d $img_file; then
+  elif is_dd_image "$target_d" $img_file; then
     # The saved image is from dd
     clean_filesystem_header_in_dev $part
     unicast_restore_by_dd
@@ -6336,7 +6336,7 @@ do_unicast_stdin_restore() {
   pt_type="$(get_partition_table_type_from_disk $hdtmp)"
   inform_kernel_partition_table_changed $pt_type $hdtmp | tee --append ${OCS_LOGFILE}
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-  #copy_log $target_d $img_file
+  #copy_log "$target_d" $img_file
   return $rc
 } # end of do_unicast_stdin_restore
 #
@@ -6349,27 +6349,27 @@ do_multicast_udpcast_restore() {
   local part="$3"
   local start_time end_time time_limit time image_name_ dd_report_sig_pid part_size hdtmp pt_type ptfs
   # if the report_msg is empty, put the initial one: image_name_
-  image_name_="$(basename $target_d)"
+  image_name_="$(basename "$target_d")"
   [ -z "$report_msg" ] && report_msg="Multicast restored $image_name_,"
   udpcast_rec_cmd="udp-receiver $udp_receiver_extra_opt_default --nokbd --mcast-all-addr $MULTICAST_ALL_ADDR --portbase $port $TIME_TO_LIVE_OPT" 
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   echo "Starting to restore image ${target_d##*/} to $part..."
   if [ -f "$target_d/$img_file.000" -o \
-       -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" -o \
+       -n "$(ls "$target_d"/$img_file.aa* 2>/dev/null)" -o \
        -f "$target_d/$img_file" ]; then
     # The saved image is from partimage
     clean_filesystem_header_in_dev $part
     multicast_restore_by_partimage
   elif [ -f "$target_d/$img_file.ntfs-img" -o \
-	 -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
+	 -n "$(ls "$target_d"/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
     # The saved image is from ntfsclone
     clean_filesystem_header_in_dev $part
     multicast_restore_by_ntfsclone
-  elif is_partclone_image $target_d $img_file; then
+  elif is_partclone_image "$target_d" $img_file; then
     # The saved image is from partclone
     clean_filesystem_header_in_dev $part
     multicast_restore_by_partclone
-  elif is_dd_image $target_d $img_file; then
+  elif is_dd_image "$target_d" $img_file; then
     # The saved image is from dd
     clean_filesystem_header_in_dev $part
     multicast_restore_by_dd
@@ -6377,7 +6377,7 @@ do_multicast_udpcast_restore() {
     # Multicast mode as the file 00-pseudo-img-note.txt exists.
     # Apparently there is no image, so directly read from server.
     clean_filesystem_header_in_dev $part
-    ptfs="$(grep -Ew "^$part" $target_d/dev-fs.list | awk -F" " '{print $2}')"
+    ptfs="$(grep -Ew "^$part" "$target_d"/dev-fs.list | awk -F" " '{print $2}')"
     if ! `is_partclone_support_fs $ptfs`; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "The file system \"$ptfs\" on /dev/$part is not supported by Partclone. Use Partclone dd mode for raw device deployment." | tee --append $OCS_LOGFILE
@@ -6421,18 +6421,17 @@ do_multicast_udpcast_restore() {
 multicast_feed_img_for_partimage() {
   # get the cat program: cat/zcat/bzcat and zip_stdin_cmd (gzip -c/bzip2 -c/cat)
   if [ -f "$imagedir/$target_d/$img_file.000" ]; then
-    get_image_cat_zip_cmd $imagedir/$target_d/$img_file.000
+    get_image_cat_zip_cmd "$imagedir/$target_d/$img_file.000"
     # The files are split by partimage, like hda1.000, hda1.001, so we have to add "."
     img_file_prefix="$img_file.*"
     split_by="partimage"
-  elif [ -n "$(ls $imagedir/$target_d/$img_file.aa* 2>/dev/null)" ]; then
-    # get_image_cat_zip_cmd $imagedir/$target_d/$img_file.aa
-    get_image_cat_zip_cmd `get_split_img_1st_chunk $imagedir/$target_d $img_file`
+  elif [ -n "$(ls "$imagedir/$target_d"/$img_file.aa* 2>/dev/null)" ]; then
+    get_image_cat_zip_cmd `get_split_img_1st_chunk "$imagedir/$target_d" $img_file`
     # The files are split by split, like hda1.aa, hda1.ab, so we have to add "."
     img_file_prefix="$img_file.*"
     split_by="split"
   else
-    get_image_cat_zip_cmd $imagedir/$target_d/$img_file
+    get_image_cat_zip_cmd "$imagedir/$target_d"/$img_file
     # The file is NOT split, so the file name is just like "hda1" only, no "."
     img_file_prefix="$img_file"
     # although it's not split, we still sort it as split_by="partimage", since it the same model with partimage
@@ -6449,7 +6448,7 @@ multicast_feed_img_for_partimage() {
         # the uncompress one, which need a lot of bandwidth.
         # Therefore we uncompress it, strip the header in 2nd/3rd... volume, then compress it again before send it
         n=0
-        ( for img in $imagedir/$target_d/$img_file_prefix; do
+        ( for img in "$imagedir/$target_d"/$img_file_prefix; do
             n=$((n + 1))
             if [ $n -eq 1 ]; then
              # By separating this, do not compress and uncompress the 1st image.
@@ -6464,7 +6463,7 @@ multicast_feed_img_for_partimage() {
         ;;
       split)
         # partimage+split will NOT put header in 2nd and later volumes, so just cat them
-        ( for img in $imagedir/$target_d/$img_file_prefix; do
+        ( for img in "$imagedir/$target_d"/$img_file_prefix; do
             cat $img
           done
         )
@@ -6476,7 +6475,7 @@ multicast_feed_img_for_partimage() {
 #
 multicast_feed_img_for_ntfsclone() {
   # here we do not have to run get_image_cat_zip_cmd since ntfsclone image does not contain its own special header, so we do not have to uncompress and strip that.
-  if [ -n "$(ls $imagedir/$target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
+  if [ -n "$(ls "$imagedir/$target_d"/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
     # The files are split, like sda1.ntfs-img.aa, sda1.ntfs-img.ab, so we have to add "."
     img_file_prefix="$img_file.ntfs-img.*"
   else
@@ -6485,7 +6484,7 @@ multicast_feed_img_for_ntfsclone() {
   fi
   # we use the original format (do not uncompress) to save the bandwidth
   # ntfsclone does not put any header, so just cat them
-  ( for img in $imagedir/$target_d/$img_file_prefix; do
+  ( for img in "$imagedir/$target_d"/$img_file_prefix; do
       cat $img
     done
   ) | \
@@ -6497,7 +6496,7 @@ multicast_feed_img_for_partclone() {
   # Variable "$img_file" is like "sda1"
   # First, we find the filesystem 
   # Image files are like: sda1.hfsp-img.aa  sda1.hfsp-img.ab  sda1.hfsp-img.ac
-  file_="$(unalias ls &>/dev/null; ls $imagedir/$target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
+  file_="$(unalias ls &>/dev/null; ls "$imagedir/$target_d"/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
   file_basename="$(basename ${file_})"
   if [ -n "${file_}" ]; then
     if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
@@ -6542,7 +6541,7 @@ multicast_feed_img_for_partclone() {
   fi
   # we use the original format (do not uncompress) to save the bandwidth
   # partclone does not put any header, so just cat them
-  ( for img in $imagedir/$target_d/$img_file_prefix; do
+  ( for img in "$imagedir/$target_d"/$img_file_prefix; do
       cat $img
     done
   ) | \
@@ -6551,7 +6550,7 @@ multicast_feed_img_for_partclone() {
 #
 multicast_feed_img_for_dd() {
   # here we do not have to run get_image_cat_zip_cmd since dd image does not contain its own special header, so we do not have to uncompress and strip that.
-  if [ -n "$(ls $imagedir/$target_d/$img_file.dd-img.aa* 2>/dev/null)" ]; then
+  if [ -n "$(ls "$imagedir/$target_d"/$img_file.dd-img.aa* 2>/dev/null)" ]; then
     # The files are split, like sda1.dd-img.aa, sda1.dd-img.ab, so we have to add "."
     img_file_prefix="$img_file.dd-img.*"
   else
@@ -6560,7 +6559,7 @@ multicast_feed_img_for_dd() {
   fi
   # we use the original format (do not uncompress) to save the bandwidth
   # dd does not put any header, so just cat them
-  ( for img in $imagedir/$target_d/$img_file_prefix; do
+  ( for img in "$imagedir/$target_d"/$img_file_prefix; do
       # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
       [ -n "$(echo "$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
       cat $img
@@ -6627,18 +6626,18 @@ udp_send_part_img_or_dev() {
   else
     # From image
     if [ -f "$imagedir/$target_d/$img_file.000" -o \
-         -n "$(ls $imagedir/$target_d/$img_file.aa* 2>/dev/null)" -o \
+         -n "$(ls $imagedir/"$target_d"/$img_file.aa* 2>/dev/null)" -o \
          -f "$imagedir/$target_d/$img_file" ]; then
       # The saved image is from partimage
       multicast_feed_img_for_partimage
     elif [ -f "$imagedir/$target_d/$img_file.ntfs-img" -o \
-           -n "$(ls $imagedir/$target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
+           -n "$(ls $imagedir/"$target_d"/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
       # The saved image is from ntfsclone
       multicast_feed_img_for_ntfsclone
-    elif is_partclone_image $imagedir/$target_d $img_file; then
+    elif is_partclone_image $imagedir/"$target_d" $img_file; then
       # The saved image is from partclone
       multicast_feed_img_for_partclone
-    elif is_dd_image $imagedir/$target_d $img_file; then
+    elif is_dd_image $imagedir/"$target_d" $img_file; then
       # The saved image is from dd
       multicast_feed_img_for_dd
     fi
@@ -6715,7 +6714,7 @@ feed_multicast_restoreparts() {
       part_is_lvm="yes"
       continue
     fi
-    udp_send_part_img_or_dev $from_rawdev_opt $tgt_dir $partition $partition
+    udp_send_part_img_or_dev $from_rawdev_opt "$tgt_dir" $partition $partition
   done
   # We have to do restore LVM (PV/VG/LV) together, not follow every partition
   if [ "$part_is_lvm" = "yes" ]; then
@@ -6794,7 +6793,7 @@ feed_bittorrent_restoreparts() {
     # sda1 -> sda
     hd_tmp="$(get_diskname $partition)"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
-    if [ -n "$(grep -Ew "$partition" $imagedir/$tgt_dir/lvm_vg_dev.list 2>/dev/null)" ]; then
+    if [ -n "$(grep -Ew "$partition" "$imagedir/$tgt_dir/lvm_vg_dev.list" 2>/dev/null)" ]; then
       # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
       part_is_lvm="yes"
       continue
@@ -6823,7 +6822,7 @@ feed_bittorrent_restoreparts() {
     if [ -n "$cast_srv_ip" ]; then
       torrent_srv_ip_opt="-p $cast_srv_ip"
     fi
-    bts_cmd="ocs-btsrv $torrent_srv_ip_opt $track_max_client_opt $from_rawdev_opt start $tgt_dir $pt_no_lvm $lv_list_bt"
+    bts_cmd="ocs-btsrv $torrent_srv_ip_opt $track_max_client_opt $from_rawdev_opt start \"$tgt_dir\" $pt_no_lvm $lv_list_bt"
     # Squeeze multiple spaces as one only
     bts_cmd="$(echo $bts_cmd | sed -r -e "s|[[:space:]]+| |g")"
     echo "Running: $bts_cmd"
@@ -6880,7 +6879,7 @@ collect_bittorrent_restore_dev() {
   echo $msg_delimiter_star_line
   # target_d is like: /home/partimag/xenial-x86-20161010
   # While the bt files will be: /home/partimag/btzone/xenial-x86-20161010
-  btimg_name="$(basename $target_d)"
+  btimg_name="$(basename "$target_d")"
   if [ ! -e "$ocsroot_btzone/$btimg_name/${part_img_dir}.torrent" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "$ocsroot_btzone/$btimg_name/${part_img_dir}.torrent NOT found!"
@@ -7016,7 +7015,7 @@ save_logv() {
   PV_PARSE_CONF="$target_dir_fullpath/lvm_vg_dev.list"
   LOGV_PARSE_CONF="$target_dir_fullpath/lvm_logv.list"
   # if the report_msg is empty, put the initial one: image_name_
-  image_name_="$(basename $target_dir_fullpath)"
+  image_name_="$(basename "$target_dir_fullpath")"
   [ -z "$report_msg" ] && report_msg="Saved $image_name_,"
   rm -f $PV_PARSE_CONF $LOGV_PARSE_CONF
   ocs-lvm2-start
@@ -7061,7 +7060,7 @@ save_logv() {
     echo "Unable to save LVM image." | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
-    #copy_log $target_dir_fullpath "lvm"
+    #copy_log "$target_dir_fullpath" "lvm"
     return 1
   fi
   if [ -n "$(grep -E "/NOT_FOUND" $PV_PARSE_CONF 2>/dev/null)" ]; then
@@ -7070,7 +7069,7 @@ save_logv() {
     echo "Unable to save LVM image." | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
-    #copy_log $target_dir_fullpath "lvm"
+    #copy_log "$target_dir_fullpath" "lvm"
     return 1
   fi
   
@@ -7104,7 +7103,7 @@ save_logv() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "///WARNING/// No volume group in $dev." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      # copy_log $target_dir_fullpath "lvm"
+      # copy_log "$target_dir_fullpath" "lvm"
       continue
      fi
      # only keep LOGV is in the chosen vg
@@ -7121,7 +7120,7 @@ save_logv() {
   echo "Saving the VG config... " | tee --append $OCS_LOGFILE
   while read vg dev uuid; do
     [ "$vg" = "/NOT_FOUND" ] && continue
-    # Here we avoid to run vgcfgbackup with output on the $target_dir_fullpath, since due to some reason, if $target_dir_fullpath is on NFS, when vgcfgbackup output the file on NFS, the lockd might fail to lock it (vgcfgbackup will use the output file path to creating temp file and try to lock it)...
+    # Here we avoid to run vgcfgbackup with output on the $target_dir_fullpath, since due to some reason, if "$target_dir_fullpath" is on NFS, when vgcfgbackup output the file on NFS, the lockd might fail to lock it (vgcfgbackup will use the output file path to creating temp file and try to lock it)...
     rm -f $vgcfg_tmp
     LC_ALL=C vgcfgbackup -f $vgcfg_tmp $vg 2>&1 3<&- 4<&- | tee --append $OCS_LOGFILE
     rc=${PIPESTATUS[0]}
@@ -7130,7 +7129,7 @@ save_logv() {
       # copy_error_log
       exit 1
     else
-      cp -a $vgcfg_tmp $target_dir_fullpath/lvm_$vg.conf
+      cp -a $vgcfg_tmp "$target_dir_fullpath/lvm_$vg.conf"
     fi
   done < $PV_PARSE_CONF
   [ -e "$vgcfg_tmp" ] && rm -f $vgcfg_tmp
@@ -7154,11 +7153,11 @@ save_logv() {
     echo "Unable to save LVM image." | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-    #copy_log $target_dir_fullpath "lvm"
+    #copy_log "$target_dir_fullpath" "lvm"
     return 1
   fi
 
-  # To avoid the stdin/stdout in ntfsclone/partimage/partclone (image_save $lv $target_dir_fullpath $fn) conflict with "while read", here we use different file descriptor (3)
+  # To avoid the stdin/stdout in ntfsclone/partimage/partclone (image_save $lv "$target_dir_fullpath" $fn) conflict with "while read", here we use different file descriptor (3)
   exec 3< $LOGV_PARSE_CONF
   while read -u 3 lv fs; do
    [ ! -e "$lv" ] && continue
@@ -7167,12 +7166,12 @@ save_logv() {
    # skip swap or extended partition
    case "$fs" in 
      *[Ss][Ww][Aa][Pp]*)
-       output_swap_partition_uuid_label $lv $target_dir_fullpath/swappt-$(to_filename ${fn}).info
+       output_swap_partition_uuid_label $lv "$target_dir_fullpath/swappt-$(to_filename ${fn}).info"
        continue ;;
      *extended*) 
        continue ;;
    esac
-   image_save $lv $target_dir_fullpath $fn
+   image_save $lv "$target_dir_fullpath" $fn
    rc_save_logv="$(($rc_save_logv + $?))"
    echo $msg_delimiter_star_line
   done
@@ -7228,7 +7227,7 @@ restore_logv() {
     echo "Unable to create PV." | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
-    # copy_log $target_dir_fullpath "lvm"
+    # copy_log "$target_dir_fullpath" "lvm"
     return 1
   fi
   #
@@ -7236,14 +7235,14 @@ restore_logv() {
   # create PV first
   echo "Creating the PV... " | tee --append $OCS_LOGFILE
   while read vg dev uuid; do
-    if [ "$vg" = "/NOT_FOUND" -o ! -e $target_dir_fullpath/lvm_$vg.conf ]; then
+    if [ "$vg" = "/NOT_FOUND" -o ! -e "$target_dir_fullpath/lvm_$vg.conf" ]; then
       if is_whole_disk $dev; then
         # Make sure there is no any partition on the disk. Otherwise even -ff is used, pvcreate will still quit it.
         clean_mbr_gpt_part_table $dev
       fi
       pvcreate -ff --yes --uuid $uuid --zero y $dev 3<&- 4<&-
     else
-      cp -f $target_dir_fullpath/lvm_$vg.conf $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
+      cp -f "$target_dir_fullpath/lvm_$vg.conf" $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
       if is_whole_disk $dev; then
         # Make sure there is no any partition on the disk. Otherwise even -ff is used, pvcreate will still quit it.
         clean_mbr_gpt_part_table $dev
@@ -7260,7 +7259,7 @@ restore_logv() {
     echo "Unable to create VG." | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
-    # copy_log $target_dir_fullpath "lvm"
+    # copy_log "$target_dir_fullpath" "lvm"
     return 1
   fi
 
@@ -7281,23 +7280,23 @@ restore_logv() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "///WARNING/// $dev didn't have the volume group." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      # copy_log $target_dir_fullpath "lvm"
+      # copy_log "$target_dir_fullpath" "lvm"
       continue
     fi
-    if [ ! -e $target_dir_fullpath/lvm_$vg.conf ]; then
+    if [ ! -e "$target_dir_fullpath/lvm_$vg.conf" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "///WARNING/// "lvm_$vg.conf" not found." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
-      # copy_log $target_dir_fullpath "lvm"
+      # copy_log "$target_dir_fullpath" "lvm"
       continue
     fi
-    cp -f $target_dir_fullpath/lvm_$vg.conf $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
+    cp -f "$target_dir_fullpath/lvm_$vg.conf" $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
     # vgcfgrestore -f $target_dir_fullpath/lvm_$vg.conf $vg 2>/dev/null
     # Add "--force" to force metadata restore even with thin pool LVs.
-    vgcfgrestore --force -f $lvm_tmp/lvm_$vg.conf $vg 2>&1 3<&- 4<&- | tee --append $OCS_LOGFILE
+    vgcfgrestore --force -f "$lvm_tmp/lvm_$vg.conf" $vg 2>&1 3<&- 4<&- | tee --append $OCS_LOGFILE
     rc=${PIPESTATUS[0]}
-    rm -f $lvm_tmp/lvm_$vg.conf
+    rm -f "$lvm_tmp/lvm_$vg.conf"
     [ $rc -ne 0 ] && break
   done < $PV_PARSE_CONF
   [ -d "$lvm_tmp" -a -n "$lvm_tmp" ] && rmdir $lvm_tmp 
@@ -7316,12 +7315,12 @@ restore_logv() {
     echo "Unable to create LV." | tee --append $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
-    #copy_log $target_dir_fullpath "lvm"
+    #copy_log "$target_dir_fullpath" "lvm"
     return 1
   fi
 
   # Log the target_logv so that later we can used. target_logv is global variable
-  # To avoid the stdin/stdout in ntfsclone/partimage/partclone ( do_unicast_stdin_restore $target_dir_fullpath $fn $lv; do_multicast_udpcast_restore $target_dir_fullpath $fn $lv) conflict with "while read", here we use different file descriptor  (3)
+  # To avoid the stdin/stdout in ntfsclone/partimage/partclone ( do_unicast_stdin_restore "$target_dir_fullpath" $fn $lv; do_multicast_udpcast_restore "$target_dir_fullpath" $fn $lv) conflict with "while read", here we use different file descriptor  (3)
   exec 3< $LOGV_PARSE_CONF
   while read -u 3 lv fs; do
     [ ! -e $lv ] && continue
@@ -7375,15 +7374,15 @@ restore_logv() {
     rc=""
     case "$mode" in
       "unicast")
-        do_unicast_stdin_restore $target_dir_fullpath $fn $lv
+        do_unicast_stdin_restore "$target_dir_fullpath" $fn $lv
         rc="$?"
         ;;
       "multicast")
-        do_multicast_udpcast_restore $target_dir_fullpath $fn $lv
+        do_multicast_udpcast_restore "$target_dir_fullpath" $fn $lv
         rc="$?"
         ;;
       "bittorrent")
-        collect_bittorrent_restore_dev $target_dir_fullpath $fn $lv
+        collect_bittorrent_restore_dev "$target_dir_fullpath" $fn $lv
         rc="$?"
         ;;
       "d2d")
@@ -7407,7 +7406,7 @@ restore_logv() {
           # E.g., LV: root, home, var, etc in /dev/nvme0n1p3, but we only do once:
 	  # do_d2d_local_restore /tmp/d2d-pseudo-tmp-cnvted nvme0n1p3 sda3
           # Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/f6a7e860c9
-          do_d2d_local_restore $target_dir_fullpath $lsrc_dev $lv_corr_pt
+          do_d2d_local_restore "$target_dir_fullpath" $lsrc_dev $lv_corr_pt
           rc="$?"
 	  # It's done once, so keep the process history in lv_corr_pt_his.
 	  lv_corr_pt_his="$target_dir_fullpath $lsrc_dev $lv_corr_pt"
@@ -7421,7 +7420,7 @@ restore_logv() {
         netcat_nuttcp_check
         set_onthefly_net_filter_program
         # We use NC_PORT to receive data from onthefly server
-        do_d2d_network_restore $target_dir_fullpath $lv
+        do_d2d_network_restore "$target_dir_fullpath" $lv
         rc="$?"
         ;;
     esac
@@ -7445,12 +7444,12 @@ create_bittorrent_slices() {
   local pt_no_lvm
   # do_regen_BT_img is a global variable. It's the flag about regenerating the BT files and will pass to create_LVM_bt_image_files_from_partclone_img
 
-  if [ ! -d $ocsroot_btzone/$tgt_dir ]; then
-    mkdir -p $ocsroot_btzone/$tgt_dir/
+  if [ ! -d "$ocsroot_btzone/$tgt_dir" ]; then
+    mkdir -p "$ocsroot_btzone/$tgt_dir/"
     # Put the tag file into corresponding dir
     # //NOTE// Copy will only happens when the dir is newly created. Otherwise it will overwrite the existing one.
-    if [ -e $imagedir/$tgt_dir/Info-img-id.txt ]; then
-      cp -a $imagedir/$tgt_dir/Info-img-id.txt $ocsroot_btzone/$tgt_dir/
+    if [ -e "$imagedir/$tgt_dir/Info-img-id.txt" ]; then
+      cp -a "$imagedir/$tgt_dir/Info-img-id.txt" "$ocsroot_btzone/$tgt_dir/"
     fi
   fi
 
@@ -7461,7 +7460,7 @@ create_bittorrent_slices() {
     hd_tmp="$(get_diskname $partition)"
     part_is_lvm="no"
     # If we partition is listed in lvm_vg_dev.list, process LVM later. //NOTE// LVM might use Id=83 instead of 8e, so we can not parse it based on Id.
-    if [ -n "$(grep -Ew "$partition" $imagedir/$tgt_dir/lvm_vg_dev.list 2>/dev/null)" ]; then
+    if [ -n "$(grep -Ew "$partition" "$imagedir/$tgt_dir/lvm_vg_dev.list" 2>/dev/null)" ]; then
       # We have to do restore LVM (PV/VG/LV) together, not follow every partition. Do not process LVM partition here, we will process LVM partition and its LV together, later
       part_is_lvm="yes"
       continue
@@ -7476,11 +7475,11 @@ create_bittorrent_slices() {
     else
       # Corresponding dir exists, but ID many not match
       if [ -e "$imagedir/$tgt_dir/Info-img-id.txt" ]; then
-        . $imagedir/$tgt_dir/Info-img-id.txt
+        . "$imagedir/$tgt_dir/Info-img-id.txt"
         src_img_id="$IMG_ID"
       fi
       if [ -e "$ocsroot_btzone/$tgt_dir/Info-img-id.txt" ]; then
-        . $ocsroot_btzone/$tgt_dir/Info-img-id.txt
+        . "$ocsroot_btzone/$tgt_dir/Info-img-id.txt"
         tgt_img_id="$IMG_ID"
       fi
       if [ "$src_img_id" != "$tgt_img_id" ]; then
@@ -7563,7 +7562,7 @@ feed_LVM_multicast() {
    esac
    if [ "$from_rawdev" != "yes" ]; then
      # From the image file, check if the file exists.
-     if [ -z "$(unalias ls 2>/dev/null; ls $imagedir/$target_dir/${fn}* 2>/dev/null)" ]; then
+     if [ -z "$(unalias ls 2>/dev/null; ls $imagedir/"$target_dir"/${fn}* 2>/dev/null)" ]; then
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
        echo "$imagedir/$target_dir/${fn}* was not found! The restored OS might be uncompleted!"
        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -7572,7 +7571,7 @@ feed_LVM_multicast() {
        continue
      fi
    fi
-   udp_send_part_img_or_dev $from_rawdev_opt $target_dir $fn $lv
+   udp_send_part_img_or_dev $from_rawdev_opt "$target_dir" $fn $lv
   done
   exec 3<&-
 } # end of feed_LVM_multicast
@@ -8098,10 +8097,10 @@ start_ocs_service() {
       # Thanks to Orgad Shaneh to provide this 1st-disk patch.
       # Ref: https://sourceforge.net/tracker/?func=detail&atid=671650&aid=2817447&group_id=115473
       if [ "$target_hd" = "1st-disk" ]; then
-        target_hd="$(< $imagedir/$target_dir/disk)"
+        target_hd="$(< $imagedir/"$target_dir"/disk)"
       fi
       for ihd in $target_hd; do
-        for partition in `get_parts_list_from_img $imagedir/$target_dir`; do
+        for partition in `get_parts_list_from_img "$imagedir/$target_dir"`; do
           if [ -n "$(echo "$partition" | grep -iE "$ihd")" ]; then
             # Ex. hda2 is for hda, so when hda is chosen, we will include hda2 as target partition.
             target_parts="$target_parts $partition"
@@ -8151,10 +8150,10 @@ start_ocs_service() {
       # Thanks to Orgad Shaneh to provide this 1st-disk patch.
       # Ref: https://sourceforge.net/tracker/?func=detail&atid=671650&aid=2817447&group_id=115473
       if [ "$target_hd" = "1st-disk" ]; then
-        target_hd="$(< $imagedir/$target_dir/disk)"
+        target_hd="$(< $imagedir/"$target_dir"/disk)"
       fi
       for ihd in $target_hd; do
-        for partition in `get_parts_list_from_img $imagedir/$target_dir`; do
+        for partition in `get_parts_list_from_img $imagedir/"$target_dir"`; do
           if [ -n "$(echo "$partition" | grep -iE "$ihd")" ]; then
             # Ex. hda2 is for hda, so when hda is chosen, we will include hda2 as target partition.
             target_parts="$target_parts $partition"
@@ -8652,7 +8651,7 @@ rm_tmp_cnvt_img() {
   [ -z "$img_cnvt_count" ] && return 10
   if [ "$img_cnvt_count" -ge "1" ]; then
     if [ -d "$ocsroot/${target_dir}" -a \
-         -n "$(echo $target_dir | grep -i "tmp-cnvted")" ]; then
+         -n "$(echo "$target_dir" | grep -i "tmp-cnvted")" ]; then
       rm -rf "$ocsroot/${target_dir}" 
     fi
   fi
@@ -8968,7 +8967,7 @@ task_savedisk() {
     eval gen_${imtd}="no"
   done
 
-  task_saveparts $target_dir "$target_parts"
+  task_saveparts "$target_dir" "$target_parts"
   rc_task_savedisk="$(($rc_task_savedisk + $?))"
   
   # Restore checksum flag
@@ -8981,7 +8980,7 @@ task_savedisk() {
   echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   for isp in $target_swap_parts; do
     echo "Saving swap partition $isp info in $ocsroot/$target_dir/swappt-$(to_filename ${isp}).info if it exists..." | tee --append $OCS_LOGFILE
-    output_swap_partition_uuid_label /dev/$isp $ocsroot/$target_dir/swappt-$(to_filename ${isp}).info
+    output_swap_partition_uuid_label /dev/$isp "$ocsroot/$target_dir/swappt-$(to_filename ${isp}).info"
   done
 
   # Save extended boot record (EBR) from extended partition.
@@ -8990,15 +8989,15 @@ task_savedisk() {
   echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   for iep in $target_extended_parts; do
     echo "Saving extended partition $iep info in $ocsroot/$target_dir/$(to_filename ${iep})-ebr if it exists..." | tee --append $OCS_LOGFILE
-    dd if=/dev/$iep of=$ocsroot/$target_dir/$(to_filename ${iep})-ebr bs=512 count=1 2>&1 | tee --append ${OCS_LOGFILE}
+    dd if=/dev/$iep of="$ocsroot/$target_dir/$(to_filename ${iep})-ebr" bs=512 count=1 2>&1 | tee --append ${OCS_LOGFILE}
   done
 
   # The target_dir is local variable, so we put leading $ocsroot to save the disk
   # disk is an important tag to mark that image is for entire disk, and its content consists of the save disk device name (hda, hdb...)
-  echo "$target_hd" > $ocsroot/$target_dir/disk
+  echo "$target_hd" > "$ocsroot/$target_dir/disk"
   rc=$?
   if [ "$rc" -gt 0 ]; then
-    show_warning_about_write_failed $ocsroot/$target_dir
+    show_warning_about_write_failed "$ocsroot/$target_dir"
   fi
   rc_task_savedisk="$(($rc_task_savedisk + $?))"
 
@@ -9045,7 +9044,7 @@ save_part_table_mbr_dm_info(){
   if type lsblk &>/dev/null; then
     if grep -qE "dm-[[:digit:]]+" /proc/partitions; then
       echo "Dumping the device mapper table in $target_dir_fullpath/dmraid.table..." | tee --append $OCS_LOGFILE
-      echo "# dmraid: dm" > $target_dir_fullpath/dmraid.table
+      echo "# dmraid: dm" > "$target_dir_fullpath/dmraid.table"
       # First find all the devices with type "dmraid"
       dmraid_dev="$(LC_ALL=C lsblk -n -o type,kname | awk -F" " '/^dmraid/ {print $2}' | sort | uniq)"
       for i in $dmraid_dev; do
@@ -9054,16 +9053,16 @@ save_part_table_mbr_dm_info(){
         dm_p="$(echo $dm_p)"    # make them in a line
         if [ -n "$dm_p" ]; then
           # dmraid $i contains at least one or more dm. $i is a "disk", and $dm_p must be partitions.
-          echo "$i: $dm_p" >> $target_dir_fullpath/dmraid.table
+          echo "$i: $dm_p" >> "$target_dir_fullpath/dmraid.table"
         fi
       done
     fi
 
     echo "Saving block devices info in $target_dir_fullpath/blkdev.list..." | tee --append $OCS_LOGFILE
-    output_blkdev_info $target_dir_fullpath/blkdev.list
+    output_blkdev_info "$target_dir_fullpath/blkdev.list"
 
     echo "Saving block devices attributes in $target_dir_fullpath/blkid.list..." | tee --append $OCS_LOGFILE
-    output_blkid_info $target_dir_fullpath/blkid.list
+    output_blkid_info "$target_dir_fullpath/blkid.list"
   fi
 
   # Save partition table
@@ -9077,19 +9076,19 @@ save_part_table_mbr_dm_info(){
     echo -n "Reading the partition table for /dev/$ihd..." | tee --append $OCS_LOGFILE
     # No matter it's MBR or GPT, we use sfdisk to dump partition table since if dual boot (Mac OS, Linux) on Mac book, this partition table is required for Linux normally.
     # For sfdisk >=2.26, both GPT and MBR format are supported.
-    LC_ALL=C sfdisk -d /dev/$ihd > $target_dir_fullpath/$(to_filename ${ihd})-pt.sf 2>/dev/null
+    LC_ALL=C sfdisk -d /dev/$ihd > "$target_dir_fullpath/$(to_filename ${ihd})-pt.sf" 2>/dev/null
     RETVAL="$?"
     echo "RETVAL=$RETVAL" | tee --append $OCS_LOGFILE
-    clean_cylinder_boundary_warning $target_dir_fullpath/$(to_filename ${ihd})-pt.sf
-    output_HD_CHS $ihd $target_dir_fullpath
+    clean_cylinder_boundary_warning "$target_dir_fullpath/$(to_filename ${ihd})-pt.sf"
+    output_HD_CHS $ihd "$target_dir_fullpath"
     # Output the info from parted, it contains more info.
-    LC_ALL=C parted -s /dev/$ihd unit s print > $target_dir_fullpath/$(to_filename ${ihd})-pt.parted
+    LC_ALL=C parted -s /dev/$ihd unit s print > "$target_dir_fullpath/$(to_filename ${ihd})-pt.parted"
     # Output another one which is easier for human to read
-    LC_ALL=C parted -s /dev/$ihd unit compact print > $target_dir_fullpath/$(to_filename ${ihd})-pt.parted.compact
+    LC_ALL=C parted -s /dev/$ihd unit compact print > "$target_dir_fullpath/$(to_filename ${ihd})-pt.parted.compact"
     # From the output file of parted, we can decide if the partition is gpt or mbr
     # //NOTE// Here we can not use function "get_partition_table_type_from_img"
     # because the image is not created completely yet.
-    if `is_gpt_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
+    if `is_gpt_partitition_table_file "$target_dir_fullpath/$(to_filename ${ihd})-pt.parted"`; then
       if [ "$RETVAL" -ne 0 ]; then
         # sfdisk failed to save the partition table
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -9102,7 +9101,7 @@ save_part_table_mbr_dm_info(){
       # Legacy MBR (LBA 0), Partition table header (LBA 1), Partition entries (LBA 2-33)
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       echo "Saving the primary GPT of $ihd as $target_dir_fullpath/$(to_filename ${ihd})-gpt-1st by dd..." | tee --append ${OCS_LOGFILE}
-      LC_ALL=C dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-gpt-1st bs=512 count=34 2>&1 | tee --append ${OCS_LOGFILE}
+      LC_ALL=C dd if=/dev/$ihd of="$target_dir_fullpath/$(to_filename ${ihd})-gpt-1st" bs=512 count=34 2>&1 | tee --append ${OCS_LOGFILE}
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       # There is a redundant GPT (secondary GPT) in the last block: LBA -34, -33... -1. Ref: http://developer.apple.com/technotes/tn2006/tn2166.html#SECLASTBLOCK
       # We need to get the total size of disk so that we can skip and dump the last block:
@@ -9120,19 +9119,19 @@ save_part_table_mbr_dm_info(){
       echo "Saving the secondary GPT of $ihd as $target_dir_fullpath/$(to_filename ${ihd})-gpt-2nd by dd..." | tee --append ${OCS_LOGFILE}
       disk_size_sec="$(LC_ALL=C grep -E "^Disk /dev/" $target_dir_fullpath/$(to_filename ${ihd})-pt.parted | awk -F":" '{print $2}' | sed -e "s/s$//g")"
       to_skip="$((${disk_size_sec}-33+1))"
-      LC_ALL=C dd if=/dev/$ihd of=$target_dir_fullpath/$(to_filename ${ihd})-gpt-2nd skip=${to_skip} bs=512 count=33 2>&1 | tee --append ${OCS_LOGFILE}
+      LC_ALL=C dd if=/dev/$ihd of="$target_dir_fullpath/$(to_filename ${ihd})-gpt-2nd" skip=${to_skip} bs=512 count=33 2>&1 | tee --append ${OCS_LOGFILE}
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       if type sgdisk &>/dev/null; then
 	echo "Saving the GPT of $ihd as $target_dir_fullpath/$(to_filename ${ihd})-gpt.gdisk by gdisk..." | tee --append ${OCS_LOGFILE}
-	LC_ALL=C sgdisk -b $target_dir_fullpath/$(to_filename ${ihd})-gpt.gdisk /dev/$ihd | tee --append ${OCS_LOGFILE}
+	LC_ALL=C sgdisk -b "$target_dir_fullpath/$(to_filename ${ihd})-gpt.gdisk" /dev/$ihd | tee --append ${OCS_LOGFILE}
 
         # Dump the GPT table in plain text
-	LC_ALL=C sgdisk -p /dev/$ihd > $target_dir_fullpath/$(to_filename ${ihd})-gpt.sgdisk | tee --append ${OCS_LOGFILE}
+	LC_ALL=C sgdisk -p /dev/$ihd > "$target_dir_fullpath/$(to_filename ${ihd})-gpt.sgdisk" | tee --append ${OCS_LOGFILE}
         echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       fi
       # Save Veracrypt volume header if required.
-      ocs-save-veracrypt-vh /dev/$ihd $target_dir_fullpath
-    elif `is_mbr_partitition_table_file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; then
+      ocs-save-veracrypt-vh /dev/$ihd "$target_dir_fullpath"
+    elif `is_mbr_partitition_table_file "$target_dir_fullpath/$(to_filename ${ihd})-pt.parted"`; then
       if [ "$RETVAL" -ne 0 ]; then
         # sfdisk failed to save the partition table
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -9144,11 +9143,11 @@ save_part_table_mbr_dm_info(){
       # MBR disk, we can save the hidden data between MBR and 1st partition. Maybe the data is useless, maybe it's useful. Since some of the recovery programs put data on that.
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       if [ "$clone_hidden_data" = "yes" ]; then
-	save_hidden_data_after_MBR $ihd $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr
+	save_hidden_data_after_MBR $ihd "$target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr"
       fi
       # Find if the 1st partition (e.g. /dev/sda1) is minix device (Id=81).
       # We do not care about multipath device (e.g. cciss, i.e. /dev/cciss/c0d0p1), since we believe no one will install Minix on multipath device.
-      if [ -n "$(grep -Ew "^/dev/$(to_filename ${ihd})1" $target_dir_fullpath/$(to_filename ${ihd})-pt.sf 2>/dev/null | grep -Ewi "(Id=81|type=81)")" ]; then
+      if [ -n "$(grep -Ew "^/dev/$(to_filename ${ihd})1" "$target_dir_fullpath/$(to_filename ${ihd})-pt.sf" 2>/dev/null | grep -Ewi "(Id=81|type=81)")" ]; then
         # It's minix slice, we only have to dump the sub-partition table, i.e. 32 sectors.
 	# The slices, sub-partitions list is like:
 	# partx -b -P -o nr,type,scheme,start,end /dev/sda
@@ -9162,7 +9161,7 @@ save_part_table_mbr_dm_info(){
 	  minix_subpt_size="$((minix_subpt_end - minix_subpt_start))"
         fi
 	if [ "$minix_subpt_size" -gt 0 ]; then
-	  cmd_save_minix_sub_parts_table="dd if=/dev/$(to_filename ${ihd})1 of=$target_dir_fullpath/$(to_filename ${ihd})1-sub-pt.dd bs=512 count=$minix_subpt_size"
+	  cmd_save_minix_sub_parts_table="dd if=/dev/$(to_filename ${ihd})1 of="$target_dir_fullpath/$(to_filename ${ihd})1-sub-pt.dd" bs=512 count=$minix_subpt_size"
 	  echo "Saving the Minix sub-partition table on /dev/$(to_filename ${ihd})1 by:" | tee --append ${OCS_LOGFILE}
 	  echo $cmd_save_minix_sub_parts_table | tee --append ${OCS_LOGFILE}
           LC_ALL=C eval "(${cmd_save_minix_sub_parts_table} && exit \${PIPESTATUS[0]})"
@@ -9307,7 +9306,7 @@ task_saveparts() {
   fi
 
   # If the existing target image exists, remove it.
-  rm_target_image_if_exist $target_dir_fullpath
+  rm_target_image_if_exist "$target_dir_fullpath"
 
   # Turn on HD DMA
   for ihd in $target_hd; do
@@ -9317,16 +9316,16 @@ task_saveparts() {
   turn_off_swap_and_LVM2 $target_parts $target_swap_parts
 
   # Create the image directory
-  mkdir -p $target_dir_fullpath
+  mkdir -p "$target_dir_fullpath"
 
   # Save multipath infomation file
   if ls ${MULTIPATH_INFODIR}/*-multipath >/dev/null 2>&1; then
-    cp -f ${MULTIPATH_INFODIR}/*-multipath $target_dir_fullpath
+    cp -f ${MULTIPATH_INFODIR}/*-multipath "$target_dir_fullpath"
   fi
 
   # Add the column explanation in dev-fs.list. Later we will append line by line in task_saveparts.
-  echo "# <Device name>   <File system>   <Size>" > $target_dir_fullpath/dev-fs.list
-  echo "# File system is got from ocs-get-dev-info. It might be different from that of blkid or parted." >> $target_dir_fullpath/dev-fs.list
+  echo "# <Device name>   <File system>   <Size>" > "$target_dir_fullpath/dev-fs.list"
+  echo "# File system is got from ocs-get-dev-info. It might be different from that of blkid or parted." >> "$target_dir_fullpath/dev-fs.list"
 
   echo $msg_delimiter_star_line
   do_LVM_save="no"
@@ -9391,16 +9390,16 @@ task_saveparts() {
     echo "$msg_found_luks_dev: $clted_luks_devs"
     echo "$msg_prompt_for_open_luks_dev"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "# <Block device> <UUID> <Device mapped name>" > $target_dir_fullpath/luks-dev.list
+    echo "# <Block device> <UUID> <Device mapped name>" > "$target_dir_fullpath/luks-dev.list"
 
-    rm -f $target_dir_fullpath/luks-crypttab-from-OS.info
+    rm -f "$target_dir_fullpath/luks-crypttab-from-OS.info"
     # Since LUKS device found, we need to create the luks-crypttab-from-OS.info in image dir from initramfs.
-    extract_crypttab_from_initramfs $target_dir_fullpath $clted_normal_devs
+    extract_crypttab_from_initramfs "$target_dir_fullpath" $clted_normal_devs
 
     for id in $clted_luks_devs; do
       lks_dev_map=""
       if [ -e "$target_dir_fullpath/luks-crypttab-from-OS.info" ]; then
-	lks_dev_map="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$id from-local-dev $target_dir_fullpath)"
+	lks_dev_map="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$id from-local-dev "$target_dir_fullpath")"
         if [ -z "$lks_dev_map" ]; then
           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
           echo "$msg_luks_mapped_name_not_found_in_this_file: /dev/$id, $target_dir_fullpath/luks-crypttab-from-OS.info."
@@ -9426,9 +9425,9 @@ task_saveparts() {
         eval $lks_open_cmd
         rc=$?
         if [ "$rc" -eq 0 ]; then
-          save_luks_dev_header $target_dir_fullpath /dev/$id 
+          save_luks_dev_header "$target_dir_fullpath" /dev/$id
           lkuuid="$(LC_ALL=C ocs-get-dev-info /dev/$id uuid)"
-          echo "/dev/$id $lkuuid $lks_dev_map_basenm" >> $target_dir_fullpath/luks-dev.list
+          echo "/dev/$id $lkuuid $lks_dev_map_basenm" >> "$target_dir_fullpath/luks-dev.list"
           clted_luks_devs_map_sv="$clted_luks_devs_map_sv $lks_dev_map_basenm"
           ask_luks_passphrase="no"
 	else
@@ -9466,19 +9465,19 @@ task_saveparts() {
     done
     # Skip using save_crypttab_from_os. Normally the crypttab can not be found before LUKS is opened in the OS partition.
     # It should be found in the initramfs. So we use extract_crypttab_from_initramfs.
-    # save_crypttab_from_os $target_dir_fullpath $clted_luks_devs_map_sv
+    # save_crypttab_from_os "$target_dir_fullpath" $clted_luks_devs_map_sv
   fi
 
   for partition in $clted_normal_devs; do
     # not LVM or LUKS, normal partition
-    image_save /dev/$partition $target_dir_fullpath $partition
+    image_save /dev/$partition "$target_dir_fullpath" $partition
     rc_savepts="$(($rc_savepts + $?))"
     # Tag the partition info. This is special for NTFS boot reserved partiition
     rc_boot_reserve=""
     check_if_windows_boot_reserve_part /dev/$partition
     rc_boot_reserve="$?"
     if [ "$rc_boot_reserve" -eq 0 ]; then
-      echo "PARTITION_TYPE=Win_boot_reserved" > $target_dir_fullpath/$partition.info
+      echo "PARTITION_TYPE=Win_boot_reserved" > "$target_dir_fullpath/$partition.info"
     fi
   done
 
@@ -9522,13 +9521,13 @@ task_saveparts() {
   # Save EFI NVRAM info. What we need is actually the label
   # Only if dir /sys/firmware/efi/efivars exists, the data exist in EFI NVRAM 
   if [ -d "/sys/firmware/efi/efivars" ]; then
-    LC_ALL=C efibootmgr -v 2>/dev/null > $target_dir_fullpath/efi-nvram.dat
+    LC_ALL=C efibootmgr -v 2>/dev/null > "$target_dir_fullpath/efi-nvram.dat"
   fi
 
-  echo "$target_parts" > $target_dir_fullpath/parts
+  echo "$target_parts" > "$target_dir_fullpath/parts"
   rc=$?
   if [ "$rc" -gt 0 ]; then
-    show_warning_about_write_failed $target_dir_fullpath
+    show_warning_about_write_failed "$target_dir_fullpath"
   fi
 
   # TODO: show error message if failing; check image?
@@ -9557,7 +9556,7 @@ task_restoredisk() {
   check_input_target_image "$ocsroot/$target_dir"
 
   #
-  dsksname_from_img="$(get_disk_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g")"
+  dsksname_from_img="$(get_disk_list_from_img "$ocsroot/$target_dir" | sed -e "s/ *$//g")"
   src_dsk_no="$(echo $dsksname_from_img | wc -w)"
 
   case "$target_hd" in
@@ -9604,7 +9603,7 @@ task_restoredisk() {
   # Note! $target_dir is not absolute path, because when task_saveparts do the real job later, it will add $ocsroot, so we have to put $ocsroot here.
   # //NOTE// file parts already contained all the available partitions name.
   for ihd in $target_hd; do
-    for partition in `get_parts_list_from_img $ocsroot/$target_dir`; do
+    for partition in `get_parts_list_from_img "$ocsroot/$target_dir"`; do
       if [ -n "$(echo "$partition" | grep -iE "$ihd")" ]; then
         # Ex. hda2 is for hda, so when hda is chosen, we will include hda2 as target partition.
         target_parts="$target_parts $partition"
@@ -9772,7 +9771,7 @@ task_restoreparts() {
   fi
 
   #
-  source_parts_no="$(get_parts_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+  source_parts_no="$(get_parts_list_from_img "$ocsroot/$target_dir" | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
 
   #
   if [ "$target_parts" = "ask_user" ]; then
@@ -9819,8 +9818,8 @@ task_restoreparts() {
   if [ "$create_temp_img_flag" = "done" ]; then
     if [ -e "$ocsroot/$target_dir/device_name_converted.info" ]; then
       # File device_name_converted.info exists, it means the image was converted.
-      . $ocsroot/$target_dir/device_name_converted.info # Obtain new_dev & orig_dev
-      for jpart in `get_parts_list_from_img $ocsroot/$target_dir`; do
+      . "$ocsroot/$target_dir/device_name_converted.info" # Obtain new_dev & orig_dev
+      for jpart in `get_parts_list_from_img "$ocsroot/$target_dir"`; do
         shd_tmp="$(get_diskname `echo $jpart | replace_disk_name_stdin $new_dev $orig_dev`)"
         if [ -z "$source_hd" ]; then
           source_hd="$shd_tmp"
@@ -9838,7 +9837,7 @@ task_restoreparts() {
       my_ocs_exit 1
     fi
   else
-    for jpart in `get_parts_list_from_img $ocsroot/$target_dir`; do
+    for jpart in `get_parts_list_from_img "$ocsroot/$target_dir"`; do
       shd_tmp="$(get_diskname $jpart)"
       if [ -z "$source_hd" ]; then
         source_hd="$shd_tmp"
@@ -9864,7 +9863,7 @@ task_restoreparts() {
     # Obtain new ocsroot (/tmp) and target_dir="${target_dir}-tmp-cnvted"
   fi
 
-  # Use $target_dir_fullpath as the absolute path, i.e. put leading $ocsroot, since from now on we need the full path dir to access them.
+  # Use "$target_dir_fullpath" as the absolute path, i.e. put leading $ocsroot, since from now on we need the full path dir to access them.
   target_dir_fullpath="$ocsroot/$target_dir"
   check_input_target_image "$target_dir_fullpath"
 
@@ -9914,7 +9913,7 @@ task_restoreparts() {
     for ihd in $target_hd; do
       # LUKS
       inactive_busy_luks_dev /dev/$ihd
-      create_partition /dev/$ihd $target_dir_fullpath
+      create_partition /dev/$ihd "$target_dir_fullpath"
     done
   else
     # Although disk partition is not created, still some options we have to process for partition only, e.g. "-C" to partclone
@@ -9931,16 +9930,16 @@ task_restoreparts() {
       if `is_mbr_partitition_table_disk /dev/$ihd`; then
         echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
 	if [ -e "$target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr" ]; then
-          restore_hidden_data_after_MBR $ihd $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr
+          restore_hidden_data_after_MBR $ihd "$target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr"
         else
 	  echo "File $target_dir_fullpath/$(to_filename ${ihd})-hidden-data-after-mbr not found!" | tee --append $OCS_LOGFILE
           echo "Skip restoring hidden data after MBR for disk $ihd." | tee --append $OCS_LOGFILE
         fi
         echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
 	# For minix sub-partition table
-	if [ -n "$(grep -Ew "^/dev/$(to_filename ${ihd})1" $target_dir_fullpath/$(to_filename ${ihd})-pt.sf 2>/dev/null | grep -Ewi "(Id=81|type=81)")" ]; then
+	if [ -n "$(grep -Ew "^/dev/$(to_filename ${ihd})1" "$target_dir_fullpath/$(to_filename ${ihd})-pt.sf" 2>/dev/null | grep -Ewi "(Id=81|type=81)")" ]; then
 	  if [ -e "$target_dir_fullpath/$(to_filename ${ihd})1-sub-pt.dd" ]; then
-	    cmd_restore_minix_sub_parts_table="dd if=$target_dir_fullpath/$(to_filename ${ihd})1-sub-pt.dd of=/dev/$(to_filename ${ihd})1"
+	    cmd_restore_minix_sub_parts_table="dd if="$target_dir_fullpath/$(to_filename ${ihd})1-sub-pt.dd" of=/dev/$(to_filename ${ihd})1"
 	    echo "Restoring the Minix sub-partition table to /dev/$(to_filename ${ihd})1 by:" | tee --append ${OCS_LOGFILE}
 	    echo $cmd_restore_minix_sub_parts_table | tee --append ${OCS_LOGFILE}
             LC_ALL=C eval "(${cmd_restore_minix_sub_parts_table} && exit \${PIPESTATUS[0]})"
@@ -9964,12 +9963,12 @@ task_restoreparts() {
     if [ -e "$target_dir_fullpath/${partition}-luksHeader.bin" ]; then
       echo "$msg_found_luks_dev: /dev/$partition"
       inactive_busy_luks_dev /dev/$partition
-      restore_luks_dev_header $target_dir_fullpath /dev/$partition
+      restore_luks_dev_header "$target_dir_fullpath" /dev/$partition
       sync;sync;sync
       # Open the LUKS devs
       # Get mapped device name from luks-crypttab-from-OS.info first. If not found, use luks-dev.list.
       if [ -e "$target_dir_fullpath/luks-crypttab-from-OS.info" ]; then
-	lks_mapper="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$partition from-img $target_dir_fullpath)"
+	lks_mapper="$(LC_ALL=C get_luks_mapped_dev_name_from_os /dev/$partition from-img "$target_dir_fullpath")"
         if [ -z "$lks_mapper" ]; then
           [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
           echo "$msg_luks_mapped_name_not_found_in_this_file: $target_dir_fullpath/luks-crypttab-from-OS.info."
@@ -9981,7 +9980,7 @@ task_restoreparts() {
       fi
       # Mapped device name for LUKS was not found from luks-crypttab-from-OS.info. Use the backup one from luks-dev.list.
       if [ -z "$lks_mapper" ]; then
-        lks_mapper="$(LC_ALL=C grep -Ew /dev/$partition $target_dir_fullpath/luks-dev.list | awk -F " " '{print $3}' | xargs basename)"
+        lks_mapper="$(LC_ALL=C grep -Ew /dev/$partition "$target_dir_fullpath/luks-dev.list" | awk -F " " '{print $3}' | xargs basename)"
       fi
 
       if [ -n "$lks_mapper" ]; then
@@ -10064,7 +10063,7 @@ task_restoreparts() {
     fi
     # LUKS
     if [ -e "$target_dir_fullpath/luks-dev.list" ]; then
-      if [ -n "$(grep -Ew /dev/$partition $target_dir_fullpath/luks-dev.list)" ]; then
+      if [ -n "$(grep -Ew /dev/$partition "$target_dir_fullpath/luks-dev.list")" ]; then
         do_LUKS_restore="yes"
         # This continue is to skip the rest of this partition do loop
         continue
@@ -10077,15 +10076,15 @@ task_restoreparts() {
     check_specify_part_exists $partition
     case "$net_mode" in 
      "unicast")
-        do_unicast_stdin_restore $target_dir_fullpath $partition /dev/$partition
+        do_unicast_stdin_restore "$target_dir_fullpath" $partition /dev/$partition
         rc="$?"
         ;;
      "multicast")
-        do_multicast_udpcast_restore $target_dir_fullpath $partition /dev/$partition
+        do_multicast_udpcast_restore "$target_dir_fullpath" $partition /dev/$partition
         rc="$?"
         ;;
      "bittorrent")
-        collect_bittorrent_restore_dev $target_dir_fullpath $partition /dev/$partition
+        collect_bittorrent_restore_dev "$target_dir_fullpath" $partition /dev/$partition
         rc="$?"
         ;;
      "d2d")
@@ -10100,7 +10099,7 @@ task_restoreparts() {
 	  # source_part is a global variable from ocs-sr.
 	  lsrc_dev="$source_part" ;;
         esac
-        do_d2d_local_restore $target_dir_fullpath $lsrc_dev /dev/$partition
+        do_d2d_local_restore "$target_dir_fullpath" $lsrc_dev /dev/$partition
         rc="$?"
         ;;
      "netcat_nuttcp")
@@ -10108,7 +10107,7 @@ task_restoreparts() {
         netcat_nuttcp_check
         set_onthefly_net_filter_program
 	# We use NC_PORT to receive data from onthefly server
-        do_d2d_network_restore $target_dir_fullpath /dev/$partition
+        do_d2d_network_restore "$target_dir_fullpath" /dev/$partition
         rc="$?"
         ;;
     esac
@@ -10136,7 +10135,7 @@ task_restoreparts() {
       case "$ptype" in
        mbr)
 	  echo "Finding swap partition(s) in MBR table $target_dir_fullpath/$(to_filename ${ihd})-pt.sf..." | tee --append $OCS_LOGFILE
-	  for partition in `get_swap_partition_sf_format $target_dir_fullpath/$(to_filename ${ihd})-pt.sf`; do
+	  for partition in `get_swap_partition_sf_format "$target_dir_fullpath/$(to_filename ${ihd})-pt.sf"`; do
           echo "Creating swap partition /dev/$partition..." | tee --append $OCS_LOGFILE
           check_specify_part_exists $partition
           echo "Found the swap partition /dev/$partition info in the image dir, create it by:" | tee --append $OCS_LOGFILE
@@ -10157,7 +10156,7 @@ task_restoreparts() {
         ;;
        gpt)
 	echo "Finding swap partition(s) in GPT table $target_dir_fullpath/$(to_filename ${ihd})-pt.parted..." | tee --append $OCS_LOGFILE
-	for partition in `get_swap_partition_parted_format $target_dir_fullpath/$(to_filename ${ihd})-pt.parted`; do
+	for partition in `get_swap_partition_parted_format "$target_dir_fullpath/$(to_filename ${ihd})-pt.parted"`; do
           echo "Creating swap partition /dev/$partition..." | tee --append $OCS_LOGFILE
           check_specify_part_exists $partition
           echo "Found the swap partition /dev/$partition info in the image dir, create it by:" | tee --append $OCS_LOGFILE
@@ -10210,7 +10209,7 @@ task_restoreparts() {
             echo "Found the EBR data for /dev/$partition in the image dir, restore it by:" | tee --append $OCS_LOGFILE
             # Reinstall executable code area (first 446 bytes in EBR)
             echo "Running: ocs-restore-ebr --ocsroot $ocsroot $target_dir $partition" | tee --append ${OCS_LOGFILE}
-            ocs-restore-ebr --ocsroot $ocsroot $target_dir $partition | tee --append ${OCS_LOGFILE}
+            ocs-restore-ebr --ocsroot $ocsroot "$target_dir" $partition | tee --append ${OCS_LOGFILE}
 	    # Save the extended part so that later ocs-install-grub can use.
 	    processed_extended_parts="$processed_extended_parts $partition"
             echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
@@ -10266,7 +10265,7 @@ task_restoreparts() {
     report_msg=
     echo "The device(s) to be deployed by BT mechanism: $all_bt_part_lv" | tee --append ${OCS_LOGFILE}
     start_time="$(date +%s%N)"
-    bt_cmd_="ocs-btsrv --for-leecher -r $ocsroot_btzone start $target_dir $all_bt_part_lv"
+    bt_cmd_="ocs-btsrv --for-leecher -r $ocsroot_btzone start \"$target_dir\" $all_bt_part_lv"
     echo "Running: $bt_cmd_" | tee --append ${OCS_LOGFILE}
     eval $bt_cmd_
     rc=$?
@@ -10293,7 +10292,7 @@ task_restoreparts() {
     fi
     for ihd in $target_hd; do
       echo "Running: ocs-restore-mbr --ocsroot $ocsroot $prebuild_opt $target_dir $ihd" | tee --append ${OCS_LOGFILE}
-      ocs-restore-mbr --ocsroot $ocsroot $prebuild_opt $target_dir $ihd | tee --append ${OCS_LOGFILE}
+      ocs-restore-mbr --ocsroot $ocsroot $prebuild_opt "$target_dir" $ihd | tee --append ${OCS_LOGFILE}
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     done
   fi
@@ -10436,7 +10435,7 @@ task_restoreparts() {
       if `is_gpt_partitition_table_disk /dev/$ihd` && \
         ! `is_gpt_disk_with_bios_boot_part_in_legacy_bios /dev/$ihd`; then
         efi_info_tmp="$(mktemp /tmp/efi_info.XXXXXX)"
-	update_efi_nvram_boot_entry_cmd="update-efi-nvram-boot-entry -r $target_dir_fullpath/efi-nvram.dat -f $efi_info_tmp /dev/$ihd"
+	update_efi_nvram_boot_entry_cmd="update-efi-nvram-boot-entry -r \"$target_dir_fullpath/efi-nvram.dat\" -f $efi_info_tmp /dev/$ihd"
 	echo "Running: $update_efi_nvram_boot_entry_cmd" | tee --append $OCS_LOGFILE
 	eval $update_efi_nvram_boot_entry_cmd
         # Get the new efi_os_label, efi_system_part_no and efi_sys_part_boot_file which ocs-socket will use later to notify the server.
@@ -12104,7 +12103,7 @@ run_ntfsreloc_part() {
         # Ref: https://sourceforge.net/forum/message.php?msg_id=6181406
         if [ "$load_HD_CHS_from_img" = "yes" ]; then
 	  # Since user forces to load CHS, we read CHS from image file 
-          . $ocsroot/$target_dir/$(to_filename ${ntfs_boot_hd#/dev/*})-chs.sf
+          . "$ocsroot/$target_dir/$(to_filename ${ntfs_boot_hd#/dev/*})-chs.sf"
           rawhead="$heads"
           rawsector="$sectors"
           echo "Head and sector number of ${ntfs_boot_hd} from image info $ocsroot/$target_dir/$(to_filename ${ntfs_boot_hd#/dev/*})-chs.sf: $rawhead, $rawsector."
@@ -12475,20 +12474,20 @@ is_partition() {
   # When there is file system on a bare block device (/dev/sda, /dev/md0, not /dev/sda1, /dev/nvme0n1p1...)
   # -> It's a partition.
   if [ -n "$(echo "$ocs_sr_type" | grep -Ei "restore")" ]; then
-    if [ -n "$(grep -Ew "^/dev/$dev_" $ocsroot/$target_dir/dev-fs.list | awk -F" " '{print $2}')" ]; then
+    if [ -n "$(grep -Ew "^/dev/$dev_" "$ocsroot/$target_dir/dev-fs.list" | awk -F" " '{print $2}')" ]; then
       # When a file system on a bare block device, treat it as a partition.
       rc=0
     elif [ -n "$(echo $dev_ | grep -E "md[0-9]+$")" ]; then
-      src_dk="$(cat $ocsroot/$target_dir/disk 2>/dev/null)"
+      src_dk="$(cat "$ocsroot/$target_dir/disk" 2>/dev/null)"
       # TODO: what if there are 2 or more source disks?
       if [ "$src_dk" != "${dev_}" ]; then
         # Since the testing dev_ is not the same as source disk, we can not check blkdev.list. Just show it as a disk.
         rc=1
       else
         # Especially for /dev/md, e.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition (rc=1).
-        if grep -Eq "^${dev_}p[1-9]+" $ocsroot/$target_dir/blkdev.list; then
+        if grep -Eq "^${dev_}p[1-9]+" "$ocsroot/$target_dir/blkdev.list"; then
           rc=1
-        elif grep -Ewq "/dev/${dev_}" $ocsroot/$target_dir/lvm_vg_dev.list; then
+        elif grep -Ewq "/dev/${dev_}" "$ocsroot/$target_dir/lvm_vg_dev.list"; then
           # Maybe there is only LVM exists on this device, no partition at all. If so, it's not a partition.
           rc=1
         else
@@ -12813,7 +12812,7 @@ copy_log() {
 copy_error_log() {
   if [ ! -e "$target_dir_fullpath/Info-lshw.txt" ]; then
     # Dump hardware info
-    dump_hardware_software_info $target_dir_fullpath
+    dump_hardware_software_info "$target_dir_fullpath"
   fi
   copy_log "$target_dir_fullpath" "error"
 } # end of copy_error_log
@@ -13740,20 +13739,20 @@ get_ecryptfs_info() {
   img_time=""
   disks_size_all=""
   if [ -e $ocsroot/$target_dir/disk ]; then
-    disk_list="$(get_disk_list_from_img $ocsroot/$target_dir)"
+    disk_list="$(get_disk_list_from_img "$ocsroot/$target_dir")"
   fi
   
   if [ -e $ocsroot/$target_dir/parts ]; then
-    parts_list="$(get_parts_list_from_img $ocsroot/$target_dir)"
+    parts_list="$(get_parts_list_from_img "$ocsroot/$target_dir")"
   fi
   
-  img_time="$(get_img_created_time $ocsroot/$target_dir)"
+  img_time="$(get_img_created_time "$ocsroot/$target_dir")"
   
   disks_size_all=""
   for ihd in $disk_list; do 
     disk_size_=""
     if [ -e "$ocsroot/$target_dir/$(to_filename ${ihd})-pt.parted.compact" ]; then
-      disk_size_="$(LC_ALL=C grep -E "^Disk /dev/" $ocsroot/$target_dir/$(to_filename ${ihd})-pt.parted.compact | awk -F":" '{print $2}' | sed -r -e "s/[[:space:]]//g")"
+      disk_size_="$(LC_ALL=C grep -E "^Disk /dev/" "$ocsroot/$target_dir/$(to_filename ${ihd})-pt.parted.compact" | awk -F":" '{print $2}' | sed -r -e "s/[[:space:]]//g")"
     fi
     [ -n "$disk_size_" ] && disks_size_all="$(LC_ALL=C echo "${disks_size_all}_${disk_size_}" | tr ' ' _)"
   done
@@ -13764,11 +13763,11 @@ put_ecryptefs_tag_file_in_img(){
   # Inputs are ocsroot_orig, target_dir_orig, disk_list, parts_list, img_time, disks_size_all
   # Put a tag file in the original image dir
   if [ -n "$ocsroot_orig" -a -n "$target_dir_orig" ]; then
-    echo "# This image was saved with ecryptfs" > $ocsroot_orig/$target_dir_orig/ecryptfs.info
-    echo "disk_of_img=\"$disk_list\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
-    echo "parts_of_img=\"$parts_list\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
-    echo "time_of_img=\"$img_time\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
-    echo "disks_size_all_of_img=\"$disks_size_all\"" >> $ocsroot_orig/$target_dir_orig/ecryptfs.info
+    echo "# This image was saved with ecryptfs" > "$ocsroot_orig/$target_dir_orig/ecryptfs.info"
+    echo "disk_of_img=\"$disk_list\"" >> "$ocsroot_orig/$target_dir_orig/ecryptfs.info"
+    echo "parts_of_img=\"$parts_list\"" >> "$ocsroot_orig/$target_dir_orig/ecryptfs.info"
+    echo "time_of_img=\"$img_time\"" >> "$ocsroot_orig/$target_dir_orig/ecryptfs.info"
+    echo "disks_size_all_of_img=\"$disks_size_all\"" >> "$ocsroot_orig/$target_dir_orig/ecryptfs.info"
   fi
 } # end of put_ecryptefs_tag_file_in_img
 #
@@ -14370,7 +14369,7 @@ gen_chksum_for_files_in_dev() {
     echo "Creating checksums for totally $reg_file_lines files in /dev/$sum_part..."
     cat $part_reg_f_list | xargs -d '\n' $chksum_cmd_for_files_in_dev \
     | pv -peltf -s $reg_file_lines | $gz_stdin_cmd \
-    > $tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz \
+    > "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz" \
     | tee --append ${OCS_LOGFILE}
     rc_chk="${PIPESTATUS[0]}"
 
@@ -14404,7 +14403,7 @@ inspect_chksum_for_files_in_dev() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     return 2
   fi
-  get_chksum_info_from_img $tgt_dir $sum_part  # output: chksum_cmd, chksum_file
+  get_chksum_info_from_img "$tgt_dir" $sum_part  # output: chksum_cmd, chksum_file
   if [ -z "${chksum_cmd}" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "No any checksum file for files in /dev/$sum_part was found in image dir $tgt_dir." | tee --append ${OCS_LOGFILE}
@@ -14432,8 +14431,8 @@ inspect_chksum_for_files_in_dev() {
       echo "$msg_this_might_take_some_time" | tee --append ${OCS_LOGFILE}
       # unit for chksum_file_lines is line number.
       chksum_file_lines="$(LC_ALL=C zcat $chksum_file | wc -l)"
-      mkdir -p $ocs_log_dir/$(basename $tgt_dir)
-      chk_rlt_log="$ocs_log_dir/$(basename $tgt_dir)/$(to_filename ${sum_part})-${chksum_cmd}-results.log"
+      mkdir -p "$ocs_log_dir/$(basename "$tgt_dir")"
+      chk_rlt_log="$ocs_log_dir/$(basename "$tgt_dir")/$(to_filename ${sum_part})-${chksum_cmd}-results.log"
       echo "Inspecting $chksum_cmd checksum for totally $chksum_file_lines files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
       echo "# Only the files failed to be checked by \"$chksum_cmd\" will be listed in this file." > $chk_rlt_log
       LC_ALL=C zcat $chksum_file | $chksum_cmd -c | pv -N "/dev/$sum_part" -peltf -s $chksum_file_lines \
@@ -14699,7 +14698,7 @@ get_dir_filesystem(){
   #                   nfs     7395808   3855328   3158752  55% /home
   #df_list="$(LC_ALL=C df -T $target_dir | tail -n +2)"
   #echo $df_list | awk -F" " '{print $2}'
-  LC_ALL=C findmnt -Un -o FSTYPE -T $target_dir
+  LC_ALL=C findmnt -Un -o FSTYPE -T "$target_dir"
 } # end of get_dir_filesystem
 #
 overwrite_postaction_if_assigned() {
@@ -14750,11 +14749,11 @@ create_bt_image_files_from_partclone_img() {
     return 3
   fi
   img_file="$(to_filename $idev)"
-  if is_partclone_image $ocsroot/$tgt_dir $img_file; then
+  if is_partclone_image "$ocsroot/$tgt_dir" $img_file; then
     # ===========================================
     target_d="$ocsroot/$tgt_dir"
     # First, we find the filesystem 
-    file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
+    file_="$(unalias ls &>/dev/null; ls "$target_d"/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
     if [ -n "${file_}" ]; then
       file_basename="$(basename ${file_})"
       if [ -n "$(echo $file_basename | grep -Eo -- "-ptcl-img")" ]; then
@@ -14793,12 +14792,12 @@ create_bt_image_files_from_partclone_img() {
       # The split suffix length for old format is only 2, so we do not have to consider >=3 (*.aaa or more).
       if [ -f "$target_d/$img_file.${fs_}-img.aa" ]; then
         # Old format with image split
-        get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img.aa
+        get_image_cat_zip_cmd "$target_d"/$img_file.${fs_}-img.aa
         # The files are split, like hda1.00, hda1.01, so we have to add "."
         img_file_prefix="$img_file.${fs_}-img.*"
       else
         # Old format with image not split
-        get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img
+        get_image_cat_zip_cmd "$target_d"/$img_file.${fs_}-img
         # The file is NOT split, so the file name is just like "hda1" only, no "."
         img_file_prefix="$img_file.${fs_}-img"
       fi
@@ -14816,13 +14815,13 @@ create_bt_image_files_from_partclone_img() {
     if [ "$partclone_make_slice_opt" = "extract" ]; then
       # Method 1: Extract the slices from image directly for BT
       if [ "$fs_" != "dd" ]; then
-        cmd_partclone_extract="partclone.${fs_} -d -r $PARTCLONE_RESTORE_OPT -s - -T --buffer_size ${bt_buffer_size} -o $ocsroot_btzone/$tgt_dir/$img_file"
+        cmd_partclone_extract="partclone.${fs_} -d -r $PARTCLONE_RESTORE_OPT -s - -T --buffer_size ${bt_buffer_size} -o \"$ocsroot_btzone/$tgt_dir/$img_file\""
       else
         # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when extracting 
-        cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT -s - --btfiles --buffer_size ${bt_buffer_size} -o $ocsroot_btzone/$tgt_dir/$img_file"
+        cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT -s - --btfiles --buffer_size ${bt_buffer_size} -o \"$ocsroot_btzone/$tgt_dir/$img_file\""
       fi
       echo "Preparing image slice files for BT use: $ocsroot_btzone/$tgt_dir/${img_file}/" | tee --append ${OCS_LOGFILE}
-      ( for img in $target_d/$img_file_prefix; do
+      ( for img in "$target_d"/$img_file_prefix; do
           cat $img
         done
       ) \
@@ -14834,32 +14833,32 @@ create_bt_image_files_from_partclone_img() {
       # (e.g., /home/partimag/btzone/xenial-x64-20190422/sda1/torrent.info)
       # Since it's not in any other client's raw device, we move it to different
       # path so that it won't be included in torrent file (e.g., sda1.torrent)
-      mv -f $ocsroot_btzone/$tgt_dir/$img_file/torrent.info $ocsroot_btzone/$tgt_dir/${img_file}.torrent.info
+      mv -f "$ocsroot_btzone/$tgt_dir/$img_file/torrent.info" "$ocsroot_btzone/$tgt_dir/${img_file}.torrent.info"
     elif [ "$partclone_make_slice_opt" = "fusecopy" ]; then
       ## Method 2: Use Partclone >= 0.3.5 to mount uncompressed image as BT slices.
       # Somehow it's still slow. Therefore this method copy files from fuse dir to disk
       # so that it's faster when restoring. However, it still takes time to copy...
       echo "Preparing uncompressed image for BT use: $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img" | tee --append ${OCS_LOGFILE}
-      mkdir -p $ocsroot_btzone/$tgt_dir/${img_file} $ocsroot_btzone/$tgt_dir/${img_file}-mnt
-      cd $ocsroot_btzone/$tgt_dir/$img_file
+      mkdir -p "$ocsroot_btzone/$tgt_dir/${img_file}" "$ocsroot_btzone/$tgt_dir/${img_file}-mnt"
+      cd "$ocsroot_btzone/$tgt_dir/$img_file"
 
-      img_size_sum="$(LC_ALL=C du -sb $target_d/${img_file_prefix}* | awk '{print $1}')"
-      ( for img in $target_d/$img_file_prefix; do
+      img_size_sum="$(LC_ALL=C du -sb "$target_d"/${img_file_prefix}* | awk '{print $1}')"
+      ( for img in "$target_d"/$img_file_prefix; do
           cat $img
         done
       ) \
       | pv -petf -s $img_size_sum \
       | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
-      > $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img
+      > "$ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img"
       retcodes=(${PIPESTATUS[@]})
-      partclone.imgfuse $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img $ocsroot_btzone/$tgt_dir/${img_file}-mnt
+      partclone.imgfuse "$ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img" "$ocsroot_btzone/$tgt_dir/${img_file}-mnt"
       echo "Copying files in Partclone fuse dir to dir: $ocsroot_btzone/$tgt_dir/${img_file}"
       # //NOTE// If it's not rsync, we have to remove the whole directory then extract them.
       # Stale files should not be kept.
-      rsync -a --delete --info=progress2 $ocsroot_btzone/$tgt_dir/${img_file}-mnt/ $ocsroot_btzone/$tgt_dir/${img_file}/
-      umount $ocsroot_btzone/$tgt_dir/${img_file}-mnt
-      rmdir $ocsroot_btzone/$tgt_dir/${img_file}-mnt
-      rm -f $ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img
+      rsync -a --delete --info=progress2 "$ocsroot_btzone/$tgt_dir/${img_file}-mnt/" "$ocsroot_btzone/$tgt_dir/${img_file}/"
+      umount "$ocsroot_btzone/$tgt_dir/${img_file}-mnt"
+      rmdir "$ocsroot_btzone/$tgt_dir/${img_file}-mnt"
+      rm -f "$ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img"
     elif [ "$partclone_make_slice_opt" = "fusemount" ]; then
       ## Method 3: Use archivemount + partclone.imgfuse to mount the compressed image.
       # This is very slow. Need to be improved.
@@ -14876,16 +14875,16 @@ create_bt_image_files_from_partclone_img() {
     else
       rc=1
     fi
-  elif is_dd_image $ocsroot/$tgt_dir $img_file; then
+  elif is_dd_image "$ocsroot/$tgt_dir" $img_file; then
     # The saved image is from dd
     # ====================================
-    if [ -n "$(ls $ocsroot/$tgt_dir/${img_file}.dd-img.aa* 2>/dev/null)" ]; then
+    if [ -n "$(ls "$ocsroot/$tgt_dir/${img_file}.dd-img.aa"* 2>/dev/null)" ]; then
       # get_image_cat_zip_cmd $ocsroot/$tgt_dir/${img_file}.dd-img.aa
-      get_image_cat_zip_cmd `get_split_img_1st_chunk $ocsroot/$tgt_dir ${img_file}.dd-img`
+      get_image_cat_zip_cmd `get_split_img_1st_chunk "$ocsroot/$tgt_dir ${img_file}.dd-img"`
       # The files are split, like hda1.00, hda1.01, so we have to add "."
       img_file_prefix="${img_file}.dd-img.*"
     else
-      get_image_cat_zip_cmd $ocsroot/$tgt_dir/${img_file}.dd-img
+      get_image_cat_zip_cmd "$ocsroot/$tgt_dir/${img_file}.dd-img"
       # The file is NOT split, so the file name is just like "hda1" only, no "."
       img_file_prefix="${img_file}.dd-img"
     fi
@@ -14898,7 +14897,7 @@ create_bt_image_files_from_partclone_img() {
     start_time="$(date +%s%N)"
     # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
     cat <<_EOT_ >> ${OCS_LOGFILE}
-    ( for img in $ocsroot/$tgt_dir/$img_file_prefix; do
+    ( for img in $ocsroot/"$tgt_dir"/$img_file_prefix; do
         # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
         [ -n "$(echo "\$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
         cat \$img
@@ -14906,9 +14905,9 @@ create_bt_image_files_from_partclone_img() {
     ) \
     | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
     | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -d --btfiles \
-      --buffer_size ${bt_buffer_size} -s - -o $ocsroot_btzone/$tgt_dir/$img_file
+      --buffer_size ${bt_buffer_size} -s - -o "$ocsroot_btzone/$tgt_dir/$img_file"
 _EOT_
-    ( for img in $ocsroot/$tgt_dir/$img_file_prefix; do
+    ( for img in $ocsroot/"$tgt_dir"/$img_file_prefix; do
         # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
         [ -n "$(echo "$img" | grep -E "(dd-img.info$|\.info.gz$)")" ] && continue
         cat $img
@@ -14916,7 +14915,7 @@ _EOT_
     ) \
     | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
     | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -d --btfiles \
-      --buffer_size ${bt_buffer_size} -s - -o $ocsroot_btzone/$tgt_dir/$img_file
+      --buffer_size ${bt_buffer_size} -s - -o "$ocsroot_btzone/$tgt_dir/$img_file"
     retcodes=(${PIPESTATUS[@]})
     
     if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
@@ -16002,7 +16001,7 @@ parse_target_dir_with_reserved_name_saving_mode() {
       fi
     done
     # strip the leading "-"
-    target_dir="$(echo $target_dir | sed -r -e "s/^-//g")"
+    target_dir="$(echo "$target_dir" | sed -r -e "s/^-//g")"
   else
     target_dir="$ocs_sr_img_name"
   fi
@@ -16230,9 +16229,9 @@ save_luks_dev_fs(){
     # If it's swap, save UUID and label only.
     LUKS_F="$(LC_ALL=C ocs-get-dev-info "/dev/mapper/$id" type filesystem 2>/dev/null)"
     if [ -n "$(echo $LUKS_F | grep -Eiw "swap")" ] && [ "$FORCE_TO_USE_DD" = "no" ]; then
-      output_swap_partition_uuid_label /dev/mapper/$id $target_dir_fullpath/swappt-$(to_ocs_dev_img_name /dev/mapper/$id).info
+      output_swap_partition_uuid_label /dev/mapper/$id "$target_dir_fullpath/swappt-$(to_ocs_dev_img_name /dev/mapper/$id).info"
     else
-      image_save /dev/mapper/$id $target_dir_fullpath $id
+      image_save /dev/mapper/$id "$target_dir_fullpath" $id
     fi
     rc_savepts="$(($rc_savepts + $?))"
   done
@@ -16258,7 +16257,7 @@ restore_luks_dev_fs(){
       clted_luks_devs_pv_rt="$clted_luks_devs_pv_rt mapper/$id"
       continue
     fi
-    do_unicast_stdin_restore $target_dir_fullpath "$id" "mapper/$id"
+    do_unicast_stdin_restore "$target_dir_fullpath" "$id" "mapper/$id"
     rc_restorepts="$(($rc_restorepts + $?))"
   done
 
@@ -16386,43 +16385,43 @@ get_luks_mapped_dev_name_from_os() {
         case $sdev_ in
           UUID=*)      field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_part_ uuid)"
 	               if [ -n "$field_2nd" ]; then
-                         mapped_dev="$(LC_ALL=C grep -Ew UUID=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+                         mapped_dev="$(LC_ALL=C grep -Ew UUID=$field_2nd "$img_full_path/luks-crypttab-from-OS.info" \
 				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
 		       fi
 		       ;;
           LABEL=*)     field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_part_ label)"
 	               if [ -n "$field_2nd" ]; then
-                         mapped_dev="$(LC_ALL=C grep -Ew LABEL=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+                         mapped_dev="$(LC_ALL=C grep -Ew LABEL=$field_2nd "$img_full_path/luks-crypttab-from-OS.info" \
 				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
 		       fi
 		       ;;
           PARTUUID=*)  field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_part_ PARTUUID)"
 	               if [ -n "$field_2nd" ]; then
-                         mapped_dev="$(LC_ALL=C grep -Ew PARTUUID=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+                         mapped_dev="$(LC_ALL=C grep -Ew PARTUUID=$field_2nd "$img_full_path/luks-crypttab-from-OS.info" \
 				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
 		       fi
 		       ;;
           PARTLABEL=*) field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_part_ PARTLABEL)"
 	               if [ -n "$field_2nd" ]; then
-                         mapped_dev="$(LC_ALL=C grep -Ew PARTLABEL=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+                         mapped_dev="$(LC_ALL=C grep -Ew PARTLABEL=$field_2nd "$img_full_path/luks-crypttab-from-OS.info" \
 				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
 		       fi
 		       ;;
 	  /dev/disk/by-uuid/*)
                        field_2nd="$(LC_ALL=C ocs-get-dev-info $luks_part_ uuid)"
 	               if [ -n "$field_2nd" ]; then
-                         mapped_dev="$(LC_ALL=C grep -Ew /dev/disk/by-uuid/$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+                         mapped_dev="$(LC_ALL=C grep -Ew /dev/disk/by-uuid/$field_2nd "$img_full_path/luks-crypttab-from-OS.info" \
 				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
 		       fi
 		       ;;
           /dev/*)
-                       mapped_dev="$(LC_ALL=C grep -Ew $luks_part_ $img_full_path/luks-crypttab-from-OS.info \
+                       mapped_dev="$(LC_ALL=C grep -Ew $luks_part_ "$img_full_path/luks-crypttab-from-OS.info" \
 			             2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')" ;;
         esac
 	if [ -n "$mapped_dev" ]; then
 	  break
 	fi
-      done < $img_full_path/luks-crypttab-from-OS.info
+      done < "$img_full_path/luks-crypttab-from-OS.info"
       ;;
     from-img)
       # From the blkid.list in the image dir
@@ -16439,50 +16438,50 @@ get_luks_mapped_dev_name_from_os() {
 	field_2nd=""
 	mapped_dev=""
         case $sdev_ in
-          UUID=*)      field_2nd="$(grep -Ew $luks_part_ $img_full_path/blkid.list | \
+          UUID=*)      field_2nd="$(grep -Ew $luks_part_ "$img_full_path/blkid.list" | \
 		       grep -Eo "[[:space:]]+UUID=[^[:space:]]+" | \
 		       sed -r -e "s|[[:space:]]*UUID=||" -e "s/\"//g")"
 	               if [ -n "$field_2nd" ]; then
-                         mapped_dev="$(LC_ALL=C grep -Ew UUID=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+                         mapped_dev="$(LC_ALL=C grep -Ew UUID=$field_2nd "$img_full_path/luks-crypttab-from-OS.info" \
 				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
 		       fi
 		       ;;
-          LABEL=*)     field_2nd="$(grep -Ew $luks_part_ $img_full_path/blkid.list | \
+          LABEL=*)     field_2nd="$(grep -Ew $luks_part_ "$img_full_path/blkid.list" | \
 		       grep -Eo "[[:space:]]+LABEL=[^[:space:]]+" | \
 		       sed -r -e "s|[[:space:]]*LABEL=||" -e "s/\"//g")"
 	               if [ -n "$field_2nd" ]; then
-                         mapped_dev="$(LC_ALL=C grep -Ew LABEL=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+                         mapped_dev="$(LC_ALL=C grep -Ew LABEL=$field_2nd "$img_full_path/luks-crypttab-from-OS.info" \
 				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
 		       fi
 		       ;;
-          PARTUUID=*)  field_2nd="$(grep -Ew $luks_part_ $img_full_path/blkid.list | \
+          PARTUUID=*)  field_2nd="$(grep -Ew $luks_part_ "$img_full_path/blkid.list" | \
 		       grep -Eo "[[:space:]]+PARTUUID=[^[:space:]]+" | \
 		       sed -r -e "s|[[:space:]]*PARTUUID=||" -e "s/\"//g")"
 	               if [ -n "$field_2nd" ]; then
-                         mapped_dev="$(LC_ALL=C grep -Ew PARTUUID=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+                         mapped_dev="$(LC_ALL=C grep -Ew PARTUUID=$field_2nd "$img_full_path/luks-crypttab-from-OS.info" \
 				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
 		       fi
 		       ;;
-          PARTLABEL=*) field_2nd="$(grep -Ew $luks_part_ $img_full_path/blkid.list | \
+          PARTLABEL=*) field_2nd="$(grep -Ew $luks_part_ "$img_full_path/blkid.list" | \
 		       grep -Eo "[[:space:]]+PARTLABEL=[^[:space:]]+" | \
 		       sed -r -e "s|[[:space:]]*PARTLABEL=||" -e "s/\"//g")"
 	               if [ -n "$field_2nd" ]; then
-                         mapped_dev="$(LC_ALL=C grep -Ew PARTLABEL=$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+                         mapped_dev="$(LC_ALL=C grep -Ew PARTLABEL=$field_2nd "$img_full_path/luks-crypttab-from-OS.info" \
 				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
 		       fi
 		       ;;
 	  /dev/disk/by-uuid/*)
-                       field_2nd="$(grep -Ew $luks_part_ $img_full_path/blkid.list | \
+                       field_2nd="$(grep -Ew $luks_part_ "$img_full_path/blkid.list" | \
 		       grep -Eo "[[:space:]]+UUID=[^[:space:]]+" | \
 		       sed -r -e "s|[[:space:]]*UUID=||" -e "s/\"//g")"
 	               if [ -n "$field_2nd" ]; then
-                         mapped_dev="$(LC_ALL=C grep -Ew /dev/disk/by-uuid/$field_2nd $img_full_path/luks-crypttab-from-OS.info \
+                         mapped_dev="$(LC_ALL=C grep -Ew /dev/disk/by-uuid/$field_2nd "$img_full_path/luks-crypttab-from-OS.info" \
 				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
 		       fi
 		       ;;
           /dev/*)
 	               if [ -n "$field_2nd" ]; then
-                         mapped_dev="$(LC_ALL=C grep -Ew $luks_part_ $img_full_path/luks-crypttab-from-OS.info \
+                         mapped_dev="$(LC_ALL=C grep -Ew $luks_part_ "$img_full_path/luks-crypttab-from-OS.info" \
 				       2>/dev/null | sort -Vr | uniq | head -n 1 | awk -F" " '{print $1}')"
 		       fi
 		       ;;
@@ -16490,7 +16489,7 @@ get_luks_mapped_dev_name_from_os() {
 	if [ -n "$mapped_dev" ]; then
 	  break
 	fi
-      done < $img_full_path/luks-crypttab-from-OS.info
+      done < "$img_full_path/luks-crypttab-from-OS.info"
       ;;
   esac
 

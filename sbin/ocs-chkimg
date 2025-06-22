@@ -49,12 +49,12 @@ img_check_by_partclone() {
   local -a retcodes='()'
   # First, we find the filesystem 
   # $target_d, $img_file are globle variables
-  file_="$(unalias ls &>/dev/null; ls $target_d/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
-  file_basename="$(basename ${file_})"
+  file_="$(unalias ls &>/dev/null; ls "$target_d"/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
+  file_basename="$(basename "${file_}")"
   if [ -n "${file_}" ]; then
     if [ -e "$target_d/$img_file.dd-img" -o \
-	 -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" -o \
-	 -n "$(ls $target_d/$img_file.dd-ptcl-img.* 2>/dev/null)" ]; then
+	 -n "$(ls "$target_d"/$img_file.dd-img.aa* 2>/dev/null)" -o \
+	 -n "$(ls "$target_d"/$img_file.dd-ptcl-img.* 2>/dev/null)" ]; then
       if [ "$dd_checking_method" = "no-check" ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "Image was saved by dd or partclone.dd. No need or no way to check the file system integrity: $img_file" | tee --append ${OCS_LOGFILE}
@@ -89,13 +89,13 @@ img_check_by_partclone() {
     # New format
     if [ -n "$(echo "$file_basename" | grep -Eo -- "-ptcl-img.*.aa")" ]; then
       # New format with image split, e.g. sda1.ext4-ptcl-img.gz.aa
-      get_image_cat_zip_cmd ${file_basename}
+      get_image_cat_zip_cmd "${file_basename}"
       # e.g. sda1.ext4-ptcl-img.gz.aa -> sda1.ext4-ptcl-img.gz.*
-      img_file_prefix="$(echo ${file_basename} | sed -r -e "s/\.aa*$//").*"
+      img_file_prefix="$(echo "${file_basename}" | sed -r -e "s/\.aa*$//").*"
       split_flag="yes"
     else
       # New format with image not split, e.g. sda1.ext4-ptcl-img.gz
-      get_image_cat_zip_cmd ${file_basename}
+      get_image_cat_zip_cmd "${file_basename}"
       # The file is NOT split, so the file name is just like "sda1.ext4-ptcl-img.gz" only, no "."
       img_file_prefix="${file_basename}"
       split_flag="no"
@@ -105,13 +105,13 @@ img_check_by_partclone() {
     # The split suffix length for old format is only 2, so we do not have to consider >=3 (*.aaa or more).
     if [ -f "$target_d/$img_file.${fs_}-img.aa" ]; then
       # Old format with image split
-      get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img.aa
+      get_image_cat_zip_cmd "$target_d/$img_file.${fs_}-img.aa"
       # The files are split, like hda1.00, hda1.01, so we have to add "."
       img_file_prefix="$img_file.${fs_}-img.*"
       split_flag="yes"
     else
       # Old format with image not split
-      get_image_cat_zip_cmd $target_d/$img_file.${fs_}-img
+      get_image_cat_zip_cmd "$target_d/$img_file.${fs_}-img"
       # The file is NOT split, so the file name is just like "hda1" only, no "."
       img_file_prefix="$img_file.${fs_}-img"
       split_flag="no"
@@ -134,12 +134,12 @@ img_check_by_partclone() {
   cat)
     # Could be link + split image. Use for loop to cat the source image then unzip it.
     cat <<_EOT_ | tee -a $ocs_log_dir/ocs-chk-img.log
-( for img in $target_d/$img_file_prefix; do
+( for img in "$target_d"/$img_file_prefix; do
     cat \$img
   done
 ) | $unzip_stdin_cmd | LC_ALL=C $cmd_partclone_check
 _EOT_
-    ( for img in $target_d/$img_file_prefix; do
+    ( for img in "$target_d"/$img_file_prefix; do
         cat $img
       done
     ) | $unzip_stdin_cmd | LC_ALL=C $cmd_partclone_check
@@ -156,14 +156,14 @@ _EOT_
       cat)
         # No compression, so the image file can be read directly.
         # Replace stdin "-s -" as the source file.
-        cmd_partclone_check="$(echo $cmd_partclone_check | sed -r -e "s|-s -|-s $target_d/$img_file_prefix|")"
+        cmd_partclone_check="$(echo $cmd_partclone_check | sed -r -e "s|-s -|-s \"$target_d\"/$img_file_prefix|")"
         echo "LC_ALL=C $cmd_partclone_check" | tee -a $ocs_log_dir/ocs-chk-img.log
         eval LC_ALL=C $cmd_partclone_check
 	rc=$?
         ;;
       *)
         # Compressed image. Use unzip command to output stdout
-        run_cmd_="$unzip_stdin_cmd $target_d/$img_file_prefix | LC_ALL=C $cmd_partclone_check"
+        run_cmd_="$unzip_stdin_cmd \"$target_d\"/$img_file_prefix | LC_ALL=C $cmd_partclone_check"
         echo "$run_cmd_" | tee -a $ocs_log_dir/ocs-chk-img.log
         eval "$run_cmd_; retcodes=(\${PIPESTATUS[@]})"
         if [ "${retcodes[0]}" -eq 0 -a "${retcodes[1]}" -eq 0 ]; then
@@ -184,10 +184,10 @@ do_partition_or_lv_img_check() {
   local part="$(format_dev_name_with_leading_dev $3)"  # part is like /dev/sda1, /dev/mapper/ocs_luks_UbO
   local pt_swap rc img_file partition
 
-  pt_swap="$(grep -Eo "^$part[[:space:]]+swap[[:space:]]+" $target_d/dev-fs.list 2>/dev/null)"
+  pt_swap="$(grep -Eo "^$part[[:space:]]+swap[[:space:]]+" "$target_d/dev-fs.list" 2>/dev/null)"
 
   if [ -f "$target_d/$img_file.000" -o \
-       -n "$(ls $target_d/$img_file.aa* 2>/dev/null)" -o \
+       -n "$(ls "$target_d"/$img_file.aa* 2>/dev/null)" -o \
        -f "$target_d/$img_file" ]; then
     # The saved image is from partimage
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -200,7 +200,7 @@ do_partition_or_lv_img_check() {
       read
     fi
   elif [ -f "$target_d/$img_file.ntfs-img" -o \
-	 -n "$(ls $target_d/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
+	 -n "$(ls "$target_d"/$img_file.ntfs-img.aa* 2>/dev/null)" ]; then
     # The saved image is from ntfsclone
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "This partition image was saved by ntfsclone." | tee --append ${OCS_LOGFILE}
@@ -211,7 +211,7 @@ do_partition_or_lv_img_check() {
       echo -n "$msg_press_enter_to_continue..."
       read
     fi
-  elif is_partclone_image $target_d $img_file; then
+  elif is_partclone_image "$target_d" "$img_file"; then
     # The saved image is from partclone
     img_check_by_partclone
     rc=$?
@@ -227,8 +227,8 @@ do_partition_or_lv_img_check() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
     fi
   elif [ -e "$target_d/$img_file.dd-img" -o \
-	 -n "$(ls $target_d/$img_file.dd-img.aa* 2>/dev/null)" -o \
-	 -n "$(ls $target_d/$img_file.dd-ptcl-img.* 2>/dev/null)" ]; then
+	 -n "$(ls "$target_d"/$img_file.dd-img.aa* 2>/dev/null)" -o \
+	 -n "$(ls "$target_d"/$img_file.dd-ptcl-img.* 2>/dev/null)" ]; then
     if [ "$dd_checking_method" = "no-check" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "Image was saved by dd or partclone.dd. No need or no way to check the file system integrity: $img_file" | tee --append ${OCS_LOGFILE}
@@ -240,7 +240,7 @@ do_partition_or_lv_img_check() {
       # The saved image is from dd
       if [ -e "$target_d/$img_file.dd-img.info" ]; then
         # Get the paritition info, we will get "$partition"
-        . $target_d/$img_file.dd-img.info
+        . "$target_d/$img_file.dd-img.info"
       fi
       if [ "$partition" = "VMware_vmkcore_partition" ]; then
         echo "VMware vmkcore partition found. No ndeed to check the file system." | tee --append ${OCS_LOGFILE}
@@ -266,7 +266,7 @@ do_partition_or_lv_img_check() {
   else
     # The last possibility is the swap info file.
     if [ -n "$pt_swap" ]; then
-        task_check_swap_info_file $target_d $part
+        task_check_swap_info_file "$target_d" $part
         rc=$?
         if [ "$rc" -eq 0 ]; then
           return 0
@@ -354,7 +354,7 @@ task_logv_check() {
    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
    echo "Checking the device LV $fn in the image \"$(basename $target_dir_fullpath)\"..."
    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-   do_partition_or_lv_img_check $target_dir_fullpath $fn $lv
+   do_partition_or_lv_img_check "$target_dir_fullpath" "$fn" "$lv"
    rc=$?
    rctlv="$(($rctlv + $rc))"
   done < $LOGV_PARSE_CONF
@@ -395,7 +395,7 @@ task_luks_img_check() {
       clted_luks_devs_pv_rt="$clted_luks_devs_pv_rt mapper/$id"
       continue
     fi
-    do_partition_or_lv_img_check $target_dir_fullpath "$id" "mapper/$id"
+    do_partition_or_lv_img_check "$target_dir_fullpath" "$id" "mapper/$id"
     rc=$?
     rcp="$(($rcp + $rc))"
   done
@@ -427,7 +427,7 @@ task_checkimage() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 
   ecryptfs_rc="1"
-  if is_ecryptfs_img $ocsroot/$target_dir; then
+  if is_ecryptfs_img "$ocsroot/$target_dir"; then
     # If it's encrypted image, we have to decrypt it.
     ocs_sr_type="restore"
     # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
@@ -441,21 +441,21 @@ task_checkimage() {
   fi
 
   #
-  source_parts_no="$(get_parts_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+  source_parts_no="$(get_parts_list_from_img "$ocsroot/$target_dir" | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
 
   #
   if [ "$target_parts" = "ask_user" ]; then
     ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
     trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-    get_existing_partitions_from_img $ANS_TMP $ocsroot/$target_dir no check
+    get_existing_partitions_from_img $ANS_TMP "$ocsroot/$target_dir" no check
     # we have to remove " (comes with checklist in dialog) 
     # so that for loop will work (Specially for FC3/4...)
     target_parts="$(cat $ANS_TMP | tr -d \")"
     [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
     # target name exists, but file "parts" is empty ?
-    check_target_parts $ocsroot/$target_dir/parts "$target_parts"
+    check_target_parts "$ocsroot/$target_dir/parts" "$target_parts"
   elif [ -z "$target_parts" ]; then
-    target_parts="$(get_parts_list_from_img $ocsroot/$target_dir)"
+    target_parts="$(get_parts_list_from_img "$ocsroot/$target_dir")"
   else
     echo "$msg_the_requested_partition_to_be_checked: $target_parts"
   fi
@@ -476,13 +476,13 @@ task_checkimage() {
   if [ -e "$ocsroot/$target_dir/disk" ]; then
     image_type="disk"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_a_disk_image_saved_from_hd: $(get_disk_list_from_img $ocsroot/$target_dir)"
+    echo "$msg_a_disk_image_saved_from_hd: $(get_disk_list_from_img "$ocsroot/$target_dir")"
     echo "$msg_the_part_image_to_be_cheked: $target_parts"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   elif [ -e "$ocsroot/$target_dir/parts" ]; then
     image_type="partition"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "$msg_a_part_image_saved_from_partitions: $(get_parts_list_from_img $ocsroot/$target_dir)"
+    echo "$msg_a_part_image_saved_from_partitions: $(get_parts_list_from_img "$ocsroot/$target_dir")"
     echo "$msg_the_part_image_to_be_cheked: $target_parts"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   else
@@ -559,7 +559,7 @@ task_checkimage() {
       case "$p_type" in
        mbr|gpt)
         echo "Finding swap partition(s) in file $target_dir_fullpath/$(to_filename ${ihd})-pt.sf..."
-        for partition in `get_swap_partition_sf_format $target_dir_fullpath/$(to_filename ${ihd})-pt.sf`; do
+        for partition in `get_swap_partition_sf_format "$target_dir_fullpath/$(to_filename ${ihd})-pt.sf"`; do
           echo "Checking swap partition $partition..."
 	  # read LABEL, UUID info for $partition if swappt-$(to_filename $partition).info exists
           uuid_opt=""
@@ -661,7 +661,7 @@ task_checkimage() {
         do_LUKS_check="yes"
         if [ -e "$target_dir_fullpath/luks-crypttab-from-OS.info" ]; then
           echo "$msg_luks_crypttab_file_found: $target_dir_fullpath/luks-crypttab-from-OS.info" | tee --append ${OCS_LOGFILE}
-          lks_mapper="$(LC_ALL=C get_luks_mapped_dev_name_from_os from-img /dev/$partition $target_dir_fullpath)"
+          lks_mapper="$(LC_ALL=C get_luks_mapped_dev_name_from_os from-img /dev/$partition "$target_dir_fullpath")"
           if [ -z "$lks_mapper" ]; then
             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
             echo "$msg_luks_mapped_name_not_found_in_this_file: $target_dir_fullpath/luks-crypttab-from-OS.info."
@@ -674,7 +674,7 @@ task_checkimage() {
           echo "$msg_luks_crypttab_file_not_found: $target_dir_fullpath/luks-crypttab-from-OS.info. Use $target_dir_fullpath/luks-dev.list" | tee --append ${OCS_LOGFILE}
 	fi
         if [ -z "$lks_mapper" ]; then 
-          lks_mapper="$(LC_ALL=C grep -Ew /dev/$partition $target_dir_fullpath/luks-dev.list | awk -F " " '{print $3}' | xargs basename)"
+          lks_mapper="$(LC_ALL=C grep -Ew /dev/$partition "$target_dir_fullpath/luks-dev.list" | awk -F " " '{print $3}' | xargs basename)"
         fi
         clted_luks_devs_map_rt="$clted_luks_devs_map_rt $lks_mapper"
         # This continue is to skip the rest of this partition do loop
@@ -684,7 +684,7 @@ task_checkimage() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Checking the partition $partition in the image \"$target_dir\"..."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    do_partition_or_lv_img_check $target_dir_fullpath $partition /dev/$partition
+    do_partition_or_lv_img_check "$target_dir_fullpath" $partition /dev/$partition
     rc=$?
     rct="$(($rct + $rc))"
   done
