@@ -70,12 +70,12 @@ gen_checksums_for_img_if_assigned() {
   imtd_shown="$(echo $imtd_shown | sed -r -e "s/^ //g")" # Remove the leading space
   echo -n "Generating checksums ($imtd_shown) for image $target_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
   for i in $img_dir/*; do
-    ifname_="$(basename $i)"
+    ifname_="$(basename "$i")"
     count=1
     gen_cmd=""
     for imtd in $checksum_method_for_img; do
       eval check_mtd_flag="\$gen_$imtd"
-      out_f="$img_dir/$(echo $imtd | tr "[a-z]" "[A-Z]")S" # e.g., b2sum -> B2SUMS
+      out_f="\"$img_dir\"/$(echo $imtd | tr "[a-z]" "[A-Z]")S" # e.g., b2sum -> B2SUMS
       if [ "$check_mtd_flag" = "yes" ]; then
         # The command is like:
         # cat "$i" | tee >(md5sum >> $img_dir/MD5SUMS; sed -r -e "s| -$| $ifname_|" $img_dir/MD5SUMS) |\
@@ -96,7 +96,7 @@ gen_checksums_for_img_if_assigned() {
         echo
         echo -n "Generating checksums $checksum_method_for_img for file $i in image $img_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
       fi
-      eval cat "$i" $gen_cmd
+      eval "cat \"$i\" \"$gen_cmd\""
     fi
   done
   echo " done!"
@@ -4081,7 +4081,7 @@ task_postprocessing() {
   case "$mode" in
     "saveparts"|"savedisk")
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-      gen_checksums_for_img_if_assigned $img_dir
+      gen_checksums_for_img_if_assigned "$img_dir"
 
       if [ "$gen_chksum_for_files_in_dev" = "yes" ]; then
         echo "Generate the checksums of files in the partition/LV..."
@@ -4089,28 +4089,28 @@ task_postprocessing() {
         ocs-lvm2-start
 	echo "Device file system lists:"
         echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-        cat $img_dir/dev-fs.list
+        cat "$img_dir/dev-fs.list"
         echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
         while read dev_ x_fs y; do
           [ "$dev_" = "#" ] && continue
           [ "$x_fs" = "swap" -o "$x_fs" = "MS_Reserved_Partition" ] && continue
           gen_chksum_for_files_in_dev "$dev_" "$img_dir"
-        done < $img_dir/dev-fs.list
+        done < "$img_dir/dev-fs.list"
         echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       fi
 
       # Output a file name to tag the image and put the log for saving the image. It's easier for us to identify in the future.
-      echo "This image was saved by Clonezilla at $(LC_ALL=C date +%F' '%T' '%Z)." > $img_dir/clonezilla-img
-      append_clonezilla_live_ver_des_if_available $img_dir/clonezilla-img
-      echo "The log during saving:" >> $img_dir/clonezilla-img
-      echo "----------------------------------------------------------" >> $img_dir/clonezilla-img
-      cat ${OCS_LOGFILE} >> $img_dir/clonezilla-img
-      echo "### End of log ###" >> $img_dir/clonezilla-img
-      echo "### Image created time: $(date +%Y-%m%d-%H%M)" >> $img_dir/clonezilla-img
-      # Generate a checksum for identifying the image later. This is based on the file $img_dir/clonezilla-img.
+      echo "This image was saved by Clonezilla at $(LC_ALL=C date +%F' '%T' '%Z)." > "$img_dir/clonezilla-img"
+      append_clonezilla_live_ver_des_if_available "$img_dir/clonezilla-img"
+      echo "The log during saving:" >> "$img_dir/clonezilla-img"
+      echo "----------------------------------------------------------" >> "$img_dir/clonezilla-img"
+      cat ${OCS_LOGFILE} >> "$img_dir/clonezilla-img"
+      echo "### End of log ###" >> "$img_dir/clonezilla-img"
+      echo "### Image created time: $(date +%Y-%m%d-%H%M)" >> "$img_dir/clonezilla-img"
+      # Generate a checksum for identifying the image later. This is based on the file "$img_dir/clonezilla-img".
       echo "Generating a tag file for this image..."
-      echo "# This checksum is only for identifying the image. Created by the command: sha512sum clonezilla-img" > $img_dir/Info-img-id.txt
-      echo "IMG_ID=$(LC_ALL=C sha512sum $img_dir/clonezilla-img | awk -F" " '{print $1}')" >> $img_dir/Info-img-id.txt
+      echo "# This checksum is only for identifying the image. Created by the command: sha512sum clonezilla-img" > "$img_dir/Info-img-id.txt"
+      echo "IMG_ID=$(LC_ALL=C sha512sum "$img_dir/clonezilla-img" | awk -F" " '{print $1}')" >> "$img_dir/Info-img-id.txt"
 
       # Check the saved image before unmounting the encrypted image
       if [ "$chk_img_restoreable_mod_save" = "yes" ]; then
@@ -15842,10 +15842,10 @@ dump_software_raid_info_if_exists() {
   #       bitmap: 0/1 pages [0KB], 65536KB chunk
   md_devs="$(LC_ALL=C grep -Ewi active /proc/mdstat | awk -F":" '{print $1}')"
   if [ -n "$md_devs" ]; then
-    cat /proc/mdstat > $img_dir/mdstat.txt
-    mdadm --detail --scan  > $img_dir/mdadm.conf
+    cat /proc/mdstat > "$img_dir/mdstat.txt"
+    mdadm --detail --scan  > "$img_dir/mdadm.conf"
     for im in $md_devs; do
-      mdadm --query --detail --export /dev/$im > $img_dir/${im}.txt
+      mdadm --query --detail --export /dev/$im > "$img_dir/${im}.txt"
     done
   fi
 } # end of dump_software_raid_info_if_exists
