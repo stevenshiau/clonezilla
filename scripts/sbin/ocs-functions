@@ -78,9 +78,9 @@ gen_checksums_for_img_if_assigned() {
       out_f="\"$img_dir\"/$(echo $imtd | tr "[a-z]" "[A-Z]")S" # e.g., b2sum -> B2SUMS
       if [ "$check_mtd_flag" = "yes" ]; then
         # The command is like:
-        # cat "$i" | tee >(md5sum >> $img_dir/MD5SUMS; sed -r -e "s| -$| $ifname_|" $img_dir/MD5SUMS) |\
-        #           tee >(sha1sum >> $img_dir/SHA1SUMS; sed -r -e "s| -$| $ifname_|" $img_dir/SHA1SUMS) |\
-        #           b2sum >> $img_dir/B2SUMS; sed -r -e "s| -$| $ifname_|" $img_dir/B2SUMS;
+        # cat "$i" | tee >(md5sum >> "$img_dir"/MD5SUMS; sed -r -e "s| -$| $ifname_|" "$img_dir"/MD5SUMS) |\
+        #           tee >(sha1sum >> "$img_dir"/SHA1SUMS; sed -r -e "s| -$| $ifname_|" "$img_dir"/SHA1SUMS) |\
+        #           b2sum >> "$img_dir"/B2SUMS; sed -r -e "s| -$| $ifname_|" "$img_dir"/B2SUMS;
         if [ "$count" -eq "$total_cksum" ]; then
         # last one
           gen_cmd="$gen_cmd | $imtd | sed -r -e \"s| -$| $ifname_|\" >> $out_f; echo -n ."
@@ -96,7 +96,7 @@ gen_checksums_for_img_if_assigned() {
         echo
         echo -n "Generating checksums $checksum_method_for_img for file $i in image $img_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
       fi
-      eval "cat \"$i\" \"$gen_cmd\""
+      eval "cat \"$i\" $gen_cmd"
     fi
   done
   echo " done!"
@@ -11050,6 +11050,8 @@ USAGE_common_restore(){
     echo " --max-time-to-wait TIME   When not enough clients have connected (but at least one), start anyways when TIME seconds since first client connection have pased. This option is used with --clients-to-wait"
     echo " -cm, --check-md5sum   Check the MD5 checksum for the image. To use this option, you must enable -gm|--gen-md5sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
     echo " -cs, --check-sha1sum  Check the SHA1 checksum for the image. To use this option, you must enable -gs|--gen-sha1sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
+    echo " -cb2, -cb, --check-b2sum  Check the BLAKE2 checksum for the image. To use this option, you must enable -cb2|-cb|--gen-b2sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
+    echo " -cb3, --check-b3sum  Check the BLAKE3 checksum for the image. To use this option, you must enable -cb3|--gen-b3sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
     echo " -cmf, --chk-chksum-for-files-in-dev   Check the checksum for the files in the device. To use this option, you must enable -gmf|--gen-chksum-for-files-in-dev when the image is saved. Note! (1) The file system must be supported by Linux kernel so that it can be mounted as read-only to check the files. (2) It might take a lot of time to check if there are many files in the source device."
     echo " -srel, --save-restore-error-log  Save the error log file in the image dir. By default the log file won't be saved when error occurs."
 } # end of USAGE_common_restore
@@ -11077,6 +11079,8 @@ USAGE_common_save(){
     echo " -fsck-y, -fsck-src-part-y, --fsck-src-part-y  Run fsck automatically on the source file system before saving it. This option will always attempt to fix any detected filesystem corruption automatically. //NOTE// Use this option in caution."
     echo " -gm, --gen-md5sum   Generate the MD5 checksum for the image. Later you can use -cm|--check-md5sum option to check the image when restoring the image. Note! It might take a lot of time to generate if the image size is large."
     echo " -gs, --gen-sha1sum  Generate the SHA1 checksum for the image. Later you can use -cs|--check-sha1sum option to check the image when restoring the image. Note! It might take a lot of time to generate if the image size is large."
+    echo " -gb2, -gb, --gen-b2sum  Generate the BLAKE2 checksum for the image. Later you can use -cb2|-cb|--check-b2sum option to check the image when restoring the image. Note! It might take a lot of time to generate if the image size is large."
+    echo " -gb3, --gen-b3sum  Generate the BLAKE3 checksum for the image. Later you can use -cb3|--check-b3sum option to check the image when restoring the image. Note! It might take a lot of time to generate if the image size is large."
     echo " -gmf, --gen-chksum-for-files-in-dev   Generate the checksum for files in the source device. Later you can use -cmf|--chk-chksum-for-files-in-dev to check the files in the destination device after they are restored. Note! It might take a lot of time to inspect the checksum if there are many files in the destination device."
     echo " -i, --image-size SIZE  Set the size in MB to split the partition image file into multiple volumes files. For the FAT32 image repository, the SIZE should not be larger than 4096."
     echo " -j2, --clone-hidden-data  Use dd to clone the image of the data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool."
