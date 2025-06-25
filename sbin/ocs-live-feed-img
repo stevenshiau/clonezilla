@@ -1118,7 +1118,7 @@ task_start_feed_img_for_cast() {
        "disk")
           ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
           trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-  	  get_existing_disks_from_img $ANS_TMP $imagedir/$target_dir
+  	  get_existing_disks_from_img $ANS_TMP "$imagedir/$target_dir"
           # we have to remove " (comes with checklist in dialog) so that for loop
           # will work (Specially for FC3/4...)
           target_hd="$(cat $ANS_TMP | tr -d \")"
@@ -1128,7 +1128,7 @@ task_start_feed_img_for_cast() {
        "parts")
           ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
           trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-  	  get_existing_partitions_from_img $ANS_TMP $imagedir/$target_dir no restore
+  	  get_existing_partitions_from_img $ANS_TMP "$imagedir/$target_dir" no restore
           # we have to remove " (comes with checklist in dialog) so that for loop
           # will work (Specially for FC3/4...)
           target_parts="$(cat $ANS_TMP | tr -d \")"
@@ -1376,11 +1376,11 @@ task_start_feed_img_for_cast() {
       else
         target_dir="${bt_raw_dev_psuedo_img_prefix}-$(LC_ALL=C date +%Y%m%d-%H%M%S)"
         if [ -d "$ocsroot/${target_dir}" ]; then
-          mv $imagedir/${target_dir} $imagedir/${target_dir}-saved
+          mv "$imagedir/${target_dir}" "$imagedir/${target_dir}-saved"
         fi
         case "$cast_dev_type" in
         "disk-2-mdisks")
-           pseudo_img_cmd="ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true savedisk ${target_dir} $target_hd"
+           pseudo_img_cmd="ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true savedisk \"${target_dir}\" $target_hd"
 	   echo "Running: $pseudo_img_cmd"
 	   eval $pseudo_img_cmd
            # Need to list all the partitions.
@@ -1393,7 +1393,7 @@ task_start_feed_img_for_cast() {
            done
            ;;
         "part-2-mparts")
-           pseudo_img_cmd="ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true saveparts ${target_dir} $target_parts"
+           pseudo_img_cmd="ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -p true saveparts \"${target_dir}\" $target_parts"
 	   echo "Running: $pseudo_img_cmd"
 	   eval $pseudo_img_cmd
            ;;
@@ -1407,8 +1407,8 @@ task_start_feed_img_for_cast() {
           echo "Assigned image $mdst_img was found. No need to re-generate torrent metainfo file."
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         else
-          mkdir -p $imagedir/btzone/${target_dir}
-          bt_metainfo_cmd="ocs-gen-bt-metainfo -d $imagedir/btzone/${target_dir}/ -i $imagedir/${target_dir} $target_parts"
+          mkdir -p "$imagedir/btzone/${target_dir}"
+          bt_metainfo_cmd="ocs-gen-bt-metainfo -d \"$imagedir/btzone/${target_dir}/\" -i \"$imagedir/${target_dir}\" $target_parts"
           echo "Running: $bt_metainfo_cmd"
           eval $bt_metainfo_cmd
           echo "Torrent info dir for \"BT from device\" mode use only. This dir can be safely removed if the corresponding pseudo image dir \"$imagedir/$one_time_image_for_bt\" is removed." > "$imagedir/btzone/$one_time_image_for_bt/00-pseudo-img-note.txt"
@@ -1510,15 +1510,15 @@ task_start_feed_img_for_cast() {
     echo "Preparing files for clients to download in /var/www/html/: ocs-client-run.conf, img-wo-fs.tar.xz" | tee -a ${OCS_LOGFILE}
     echo "Packing the tarball containing no file system images: img-wo-fs.tar.xz..." | tee -a ${OCS_LOGFILE}
     img_no_fs_tmp="$(mktemp -d /tmp/img_no_fs.XXXXXX)"
-    rsync -a --exclude=*-ptcl-img.* --exclude=*.ntfs-img.* --exclude=*.dd-img.* $imagedir/$target_dir/* $img_no_fs_tmp | tee -a ${OCS_LOGFILE}
+    rsync -a --exclude=*-ptcl-img.* --exclude=*.ntfs-img.* --exclude=*.dd-img.* "$imagedir/$target_dir/"* $img_no_fs_tmp | tee -a ${OCS_LOGFILE}
     if [ -d "$imagedir/btzone/$target_dir" ]; then
-      mkdir -p $img_no_fs_tmp/btzone/$target_dir
-      rsync -a $imagedir/btzone/$target_dir/*.torrent $img_no_fs_tmp/btzone/$target_dir | tee -a ${OCS_LOGFILE}
+      mkdir -p "$img_no_fs_tmp/btzone/$target_dir"
+      rsync -a "$imagedir/btzone/$target_dir/"*.torrent "$img_no_fs_tmp/btzone/$target_dir" | tee -a ${OCS_LOGFILE}
     fi
     # TODO: partimage file name, or drop it?
-    for ifile in $imagedir/$target_dir/*-ptcl-img.* \
-               $imagedir/$target_dir/*.ntfs-img.* \
-               $imagedir/$target_dir/*.dd-img.*; do
+    for ifile in $imagedir/"$target_dir"/*-ptcl-img.* \
+               $imagedir/"$target_dir"/*.ntfs-img.* \
+               $imagedir/"$target_dir"/*.dd-img.*; do
       [ ! -e "$ifile" ] && continue  
       fn="$(basename $ifile)"
       touch $img_no_fs_tmp/$fn
@@ -1632,7 +1632,7 @@ CLIENT_END
     run_again_fname="/tmp/ocs-live-feed-img-`date +%F-%H-%M`"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
     echo PS. $msg_run_drbl_ocs_again_cmd | tee -a ${OCS_LOGFILE}
-    echo $ocs $OCS_OPT_PRE $mode $ocs_img_name_or_src_dev $ocs_restore_dev | tee $run_again_fname
+    echo $ocs $OCS_OPT_PRE $mode \"$ocs_img_name_or_src_dev\" $ocs_restore_dev | tee $run_again_fname
     [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
     echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL

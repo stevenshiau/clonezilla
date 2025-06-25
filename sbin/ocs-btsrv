@@ -94,26 +94,26 @@ create_metainfo_file(){
   echo $msg_delimiter_star_line
   # Set the variable cmd_make_metainfo
   if [ "$metainfo_creator" = "ctorrent" ]; then
-    cmd_make_metainfo="ctorrent -t -p -c For_Clonezilla -l ${p_length_ctorrent} -u http://${btsrv_ip}:$port_b/announce -s $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
+    cmd_make_metainfo="ctorrent -t -p -c For_Clonezilla -l ${p_length_ctorrent} -u http://${btsrv_ip}:$port_b/announce -s \"$ocsroot_btzone/${idir}.torrent\" \"$ocsroot_btzone/$idir\""
   elif [ "$metainfo_creator" = "transmission-create" ]; then
-    cmd_make_metainfo="transmission-create -s ${p_length_transmission} -p -c For_Clonezilla -t http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
+    cmd_make_metainfo="transmission-create -s ${p_length_transmission} -p -c For_Clonezilla -t http://${btsrv_ip}:$port_b/announce -o \"$ocsroot_btzone/${idir}.torrent\" \"$ocsroot_btzone/$idir\""
   elif [ "$metainfo_creator" = "gen-torrent-from-ptcl" -o \
          "$metainfo_creator" = "partclone_create_torrent.py" ]; then
     # E.g., gen-torrent-from-ptcl -p sda1 -t http://192.168.1.1:6969/announce -c Clonezilla -i /home/partimag/btzone/xenial-20180722.torrent.info -o /home/partimag/btzone/xenial-20180722/sda1.torrent
-    cmd_make_metainfo="$ptcl_2_torrent_prog -p "$(to_filename $ipt)" -t http://${btsrv_ip}:${port_b}/announce -c Clonezilla -i $ocsroot_btzone/${idir}.torrent.info -o $ocsroot_btzone/${idir}.torrent"
+    cmd_make_metainfo="$ptcl_2_torrent_prog -p "$(to_filename $ipt)" -t http://${btsrv_ip}:${port_b}/announce -c Clonezilla -i \"$ocsroot_btzone/${idir}.torrent.info\" -o \"$ocsroot_btzone/${idir}.torrent\""
   else
     cpu_no="$(LC_ALL=C grep -Ew "^processor[[:space:]]+" /proc/cpuinfo | wc -l)"
-    cmd_make_metainfo="mktorrent -p -c For_Clonezilla -t ${cpu_no} -l ${p_length_mktorrent} -a http://${btsrv_ip}:$port_b/announce -o $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$idir"
+    cmd_make_metainfo="mktorrent -p -c For_Clonezilla -t ${cpu_no} -l ${p_length_mktorrent} -a http://${btsrv_ip}:$port_b/announce -o \"$ocsroot_btzone/${idir}.torrent\" \"$ocsroot_btzone/$idir\""
   fi
-  if [ ! -e $ocsroot_btzone/${idir}.torrent ]; then
+  if [ ! -e "$ocsroot_btzone/${idir}.torrent" ]; then
     echo "Generate metainfo file $ocsroot_btzone/${idir}.torrent by:"
     echo "$cmd_make_metainfo"
     eval $cmd_make_metainfo
   else
     # Maybe server IP address is changed. If so, regenerate it.
     # E.g. ...:announce35:http://192.168.22.250:6969/announce7:...
-    existing_ip="$(LC_ALL=C strings $ocsroot_btzone/${idir}.torrent | grep -Eo ":announce[[:digit:]]+:http://[[:digit:]\.:]+.*announce[[:digit:]]+:" | awk -F":" '{print $4}' | sed -r -e "s|\/\/||g")"
-    existing_port="$(LC_ALL=C strings $ocsroot_btzone/${idir}.torrent | grep -Eo ":announce[[:digit:]]+:http://[[:digit:]\.:]+.*announce[[:digit:]]+:" | awk -F":" '{print $5}' | awk -F"/" '{print $1}')"
+    existing_ip="$(LC_ALL=C strings "$ocsroot_btzone/${idir}.torrent" | grep -Eo ":announce[[:digit:]]+:http://[[:digit:]\.:]+.*announce[[:digit:]]+:" | awk -F":" '{print $4}' | sed -r -e "s|\/\/||g")"
+    existing_port="$(LC_ALL=C strings "$ocsroot_btzone/${idir}.torrent" | grep -Eo ":announce[[:digit:]]+:http://[[:digit:]\.:]+.*announce[[:digit:]]+:" | awk -F":" '{print $5}' | awk -F"/" '{print $1}')"
     if [ "${existing_ip}" != "${btsrv_ip}" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       #echo "Regenerating metainfo due to existing tracker \"${existing_ip}\" in $ocsroot_btzone/${idir}.torrent is different from detected one:\"${btsrv_ip}\"..."
@@ -128,14 +128,14 @@ create_metainfo_file(){
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "Updating metainfo due to existing tracker \"${existing_ip}\" in $ocsroot_btzone/${idir}.torrent is different from detected one:\"${btsrv_ip}\"..."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      cmd_update_metainfo="transmission-edit -r http://${existing_ip}:${existing_port}/announce http://${btsrv_ip}:$port_b/announce $ocsroot_btzone/${idir}.torrent"
+      cmd_update_metainfo="transmission-edit -r http://${existing_ip}:${existing_port}/announce http://${btsrv_ip}:$port_b/announce \"$ocsroot_btzone/${idir}.torrent\""
       echo "$cmd_update_metainfo"
       eval $cmd_update_metainfo
     fi
   fi
   
   # Check if the torrent info file is created or not
-  if [ ! -e $ocsroot_btzone/${idir}.torrent ]; then
+  if [ ! -e "$ocsroot_btzone/${idir}.torrent" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "Failed to generate metainfo file $ocsroot_btzone/${idir}.torrent"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -159,7 +159,7 @@ start_tarcker() {
   rm -f $d_file $log_file $tracker_pid_log
   # cmd_start_tracker="ocs-bttrack --port $port_b --dfile $d_file $btclient_no_opt --logfile $log_file --nat_check 0 --scrape_allowed full --allowed_dir $(dirname $(readlink -f $ocsroot_btzone/${idir}.torrent)) &"
   # cmd_start_tracker="ocs-bttrack --port $port_b --dfile $d_file $btclient_no_opt --logfile $log_file --nat_check 0 --scrape_allowed full &"
-  cmd_start_tracker="opentracker -p $port_b -d  $(dirname $(readlink -f $ocsroot_btzone/${idir}.torrent)) -w /etc/opentracker/whitelist.txt > $log_file 2>&1 &"
+  cmd_start_tracker="opentracker -p $port_b -d \"$(dirname $(readlink -f "$ocsroot_btzone/${idir}.torrent"))\" -w /etc/opentracker/whitelist.txt > \"$log_file\" 2>&1 &"
   # Squeeze multiple spaces to one only
   cmd_start_tracker="$(echo "$cmd_start_tracker" | sed -r -e "s|[[:space:]]+| |g")"
   echo "Start tracker by:"
@@ -173,7 +173,7 @@ start_tarcker() {
 start_bitorrent_client_program_in_seeder() {
   ct_pid_log="$btlog_dir/${idir_name}-torrent.pid" # Used for non-ezio bt client
   if [ "$bt_client" = "lftp" ]; then
-    cmd_start_seeding="lftp -c torrent -O $(dirname $ocsroot_btzone/${idir}) $ocsroot_btzone/${idir}.torrent"
+    cmd_start_seeding="lftp -c torrent -O $(dirname "$ocsroot_btzone/${idir}") "$ocsroot_btzone/${idir}.torrent""
   elif [ "$bt_client" = "ezio" ]; then
     # Make the pid file for ezio like: sda1~sda2~sda3-torrent.pid
     ct_pid_log_prefix="${ct_pid_log_prefix}~$(to_filename $ipt)"
@@ -181,19 +181,19 @@ start_bitorrent_client_program_in_seeder() {
     img)
       # Collect multiple torrent files. Make it like:
       # "sda1.torrent /some/sda1_image_path sda1.torrent /some/sda1_image_path..."
-      ezio_start_seeding_param="$ezio_start_seeding_param $ocsroot_btzone/${idir}.torrent $ocsroot_btzone/$(dirname ${idir})"
+      ezio_start_seeding_param="$ezio_start_seeding_param \"$ocsroot_btzone/${idir}.torrent\" \"$ocsroot_btzone/$(dirname ${idir})\""
       ;;
     raw-dev)
       # Collect multiple torrent files. Make it like:
       # "sda1.torrent /dev/sda1 sda2.torrent /dev/sda2"
-      ezio_start_seeding_param="$ezio_start_seeding_param $ocsroot_btzone/${idir}.torrent /dev/$ipt"
+      ezio_start_seeding_param="$ezio_start_seeding_param \"$ocsroot_btzone/${idir}.torrent\" /dev/$ipt"
       ;;
     esac
   elif [ "$bt_client" = "btdownloadheadless" ]; then
-    cmd_start_seeding="btdownloadheadless --saveas $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent &"
+    cmd_start_seeding="btdownloadheadless --saveas \"$ocsroot_btzone/${idir}\" \"$ocsroot_btzone/${idir}.torrent\" &"
   elif [ "$bt_client" = "aria2c" ]; then
     # //NOTE// The working dir is the parent dir.
-    cmd_start_seeding="aria2c -D --seed-ratio=0.0 --enable-dht6=false --enable-dht=false --bt-seed-unverified $aria2c_extra_opt -d $ocsroot_btzone/$(dirname ${idir}) $ocsroot_btzone/${idir}.torrent"
+    cmd_start_seeding="aria2c -D --seed-ratio=0.0 --enable-dht6=false --enable-dht=false --bt-seed-unverified $aria2c_extra_opt -d \"$ocsroot_btzone/$(dirname ${idir})\" \"$ocsroot_btzone/${idir}.torrent\""
   else
     # Check the option -M of ctorrent, if it only allows 20-1000, modify it as "-M 20" from "-M 4", for example.
     # DRBL patched ctorrent allows -M to be 4-1000, otherwise it must be within 20-1000.
@@ -211,7 +211,7 @@ start_bitorrent_client_program_in_seeder() {
         fi
       fi
     fi
-    cmd_start_seeding="ctorrent -f -d $ctorrent_extra_opt -s $ocsroot_btzone/${idir} $ocsroot_btzone/${idir}.torrent"
+    cmd_start_seeding="ctorrent -f -d $ctorrent_extra_opt -s \"$ocsroot_btzone/${idir}\" \"$ocsroot_btzone/${idir}.torrent\""
   fi
   if [ -n "$cmd_start_seeding" ]; then
     # For non-ezio cases
@@ -228,7 +228,7 @@ start_bitorrent_client_program_in_leecher() {
   # No matter bt_slices_from_dev is "img" or "raw-dev", in the leecher the command for ezio is the same
   # Collect multiple torrent files. Make it like:
   # sda1.torrent /dev/sda1 sda2.torrent /dev/sda2
-  ezio_start_seeding_param="$ezio_start_seeding_param $ocsroot_btzone/${idir}.torrent /dev/$ipt"
+  ezio_start_seeding_param="$ezio_start_seeding_param \"$ocsroot_btzone/${idir}.torrent\" /dev/$ipt"
 } # end of start_bitorrent_client_program_in_leecher
 #
 start_bt_srv() {
