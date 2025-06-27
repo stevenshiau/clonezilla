@@ -888,12 +888,14 @@ run_ocs_sr_again_prompt() {
   # OCS_OPTS is a global variable
   img="$1"
   dev="$2"
+  local ocs_cmd
   if [ "$ocs_sr_mode" = "interactive" ]; then
     run_again_fname="/tmp/ocs-$img-`date +%F-%H-%M`"
+    ocs_cmd="$0 $OCS_OPTS $ocs_sr_type \"$img\" $dev" 
     [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
     echo PS. $msg_run_drbl_ocs_again_cmd | tee --append ${OCS_LOGFILE}
-    echo $0 $OCS_OPTS $ocs_sr_type \"$img\" $dev >> ${OCS_LOGFILE}
-    echo $0 $OCS_OPTS $ocs_sr_type \"$img\" $dev | tee $run_again_fname
+    echo $ocs_cmd >> ${OCS_LOGFILE}
+    echo $ocs_cmd | tee $run_again_fname
     echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
@@ -933,12 +935,12 @@ create_clonezilla_live_recovery_iso_zip() {
      "restoredisk")
            dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'hda' $msg_or 'sda' $msg_or 'hda hdb' $msg_or 'sda sdb') \n$msg_linux_disk_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
 	   # savedisk_preset is borrowed from drbl-ocs.conf
-	   dev_preset="$(get_disk_list_from_img $ocsroot/$target_dir)"
+	   dev_preset="$(get_disk_list_from_img "$ocsroot/$target_dir")"
            ;;
      "restoreparts")
            dev_prompt_and_example="$msg_input_device_name_for_recovery_iso_zip ($msg_ex: 'hda1 hda2' $msg_or 'sda1 sda2') \n$msg_linux_parts_MS_mapping\n$msg_prompt_to_use_ask_user_for_later_choose"
 	   # saveparts_preset is borrowed from drbl-ocs.conf
-	   dev_preset="$(get_parts_list_from_img $ocsroot/$target_dir)"
+	   dev_preset="$(get_parts_list_from_img "$ocsroot/$target_dir")"
            ;;
     esac
     ASK_DEV_NAME=1
@@ -1015,52 +1017,56 @@ create_clonezilla_live_recovery_iso_zip() {
     # Run ocs-iso/ocs-live-dev
     # Ex:ocs-iso -g en -t -k NONE -e "-b -c restoredisk sarge-r5 hda" sarge-r5
     #    ocs-live-dev -c -g en -t -k NONE -e "-b -c restoredisk sarge-r5 hda" sarge-r5
+    ocs_iso_cmd="ocs-iso -g $rec_lang -t -k $rec_keymap_file \
+	         -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" \"$target_dir\""
+    ocs_zip_cmd="ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file \
+	         -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" \"$target_dir\""
     (cd $ocsroot
     case "$rec_file_type" in
        iso)
           run_again_fname="/tmp/ocs-iso-zip-`date +%F-%H-%M`"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
           echo PS. $msg_run_drbl_ocs_again_cmd | tee --append ${OCS_LOGFILE}
-          echo ocs-iso -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir >> ${OCS_LOGFILE}
-          echo ocs-iso -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee $run_again_fname
+          echo $ocs_iso_cmd >> ${OCS_LOGFILE}
+          echo $ocs_iso_cmd | tee $run_again_fname
 	  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
           echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
 	  echo "$msg_the_output_file_is_in_dir: $ocsroot"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
           echo -n "$msg_press_enter_to_continue"
           read 
-          ocs-iso -g $rec_lang -t -k $rec_keymap_file -e "$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name" $target_dir 
+	  eval $ocs_iso_cmd
           ;;
        zip)
           run_again_fname="/tmp/ocs-iso-zip-`date +%F-%H-%M`"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
           echo PS. $msg_run_drbl_ocs_again_cmd | tee --append ${OCS_LOGFILE}
-          echo ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir >> ${OCS_LOGFILE} 
-          echo ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee $run_again_fname
+          echo $ocs_zip_cmd >> ${OCS_LOGFILE} 
+          echo $ocs_zip_cmd | tee $run_again_fname
 	  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
           echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
 	  echo "$msg_the_output_file_is_in_dir: $ocsroot"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
           echo -n "$msg_press_enter_to_continue"
           read 
-          ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e "$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name" $target_dir 
+	  eval $ocs_zip_cmd
           ;;
        both)
           run_again_fname="/tmp/ocs-iso-zip-`date +%F-%H-%M`"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
           echo PS. $msg_run_drbl_ocs_again_cmd | tee --append ${OCS_LOGFILE}
-          echo ocs-iso -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir >> ${OCS_LOGFILE}
-          echo ocs-iso -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee $run_again_fname
-          echo ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir >> ${OCS_LOGFILE}
-          echo ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e \"$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name\" $target_dir | tee -a $run_again_fname
+          echo $ocs_iso_cmd >> ${OCS_LOGFILE}
+          echo $ocs_iso_cmd | tee $run_again_fname
+          echo $ocs_zip_cmd >> ${OCS_LOGFILE} 
+          echo $ocs_zip_cmd | tee -a $run_again_fname
 	  [ -e "$run_again_fname" ] && chmod 755 $run_again_fname
           echo "$msg_ocs_sr_again_command_saved_filename: $run_again_fname"
 	  echo "$msg_the_output_file_is_in_dir: $ocsroot"
           [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
           echo -n "$msg_press_enter_to_continue"
           read 
-          ocs-iso -g $rec_lang -t -k $rec_keymap_file -e "$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name" $target_dir 
-          ocs-live-dev -c -g $rec_lang -t -k $rec_keymap_file -e "$OCS_OPTS $rec_dev_action $target_dir $rec_dev_name" $target_dir 
+	  eval $ocs_iso_cmd
+	  eval $ocs_zip_cmd
           ;;
     esac
     )
@@ -1222,15 +1228,15 @@ do_savedisk_job(){
   fi
 
   # Dump software RAID info
-  dump_software_raid_info_if_exists $ocsroot/$target_dir
+  dump_software_raid_info_if_exists "$ocsroot/$target_dir"
 
   # Dump hardware info
-  dump_hardware_software_info $ocsroot/$target_dir
+  dump_hardware_software_info "$ocsroot/$target_dir"
 
   if [ "$ocs_sr_mode" = "interactive" ]; then
-    echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_hd" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
+    echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_hd" > "$ocsroot/$target_dir/Info-saved-by-cmd.txt"
   else
-    echo $0 $orig_ocs_opt > $ocsroot/$target_dir/Info-saved-by-cmd.txt
+    echo $0 $orig_ocs_opt > "$ocsroot/$target_dir/Info-saved-by-cmd.txt"
   fi
 
   task_postprocessing "$ocs_sr_type" "$target_dir"
@@ -1250,10 +1256,10 @@ do_restoredisk_job(){
   fi
 
   check_input_target_image "$ocsroot/$target_dir"
-  source_hd_no="$(get_disk_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+  source_hd_no="$(get_disk_list_from_img "$ocsroot/$target_dir" | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
 
   # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
-  if grep -Eq '^md[0-9]+' $ocsroot/$target_dir/blkdev.list; then
+  if grep -Eq '^md[0-9]+' "$ocsroot/$target_dir/blkdev.list"; then
     list_local_dev_mode="both_type_dev"
     use_dev_list_cache="no"
   fi
@@ -1301,7 +1307,7 @@ do_restoredisk_job(){
     # (1) Find the sizes of source disks
     # (2) Map them
     # TODO:
-    source_hd_no="$(get_disk_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g")"
+    source_hd_no="$(get_disk_list_from_img "$ocsroot/$target_dir" | sed -e "s/ *$//g")"
   elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "SERIALNO=")" ]; then
     # Input might be multiple devices like: 
     # SERIALNO="36000c292124c4d6554f924089bd9b83a" sdb
@@ -1488,15 +1494,15 @@ do_saveparts_job() {
   fi
 
   # Dump software RAID info
-  dump_software_raid_info_if_exists $ocsroot/$target_dir
+  dump_software_raid_info_if_exists "$ocsroot/$target_dir"
 
   # Dump hardware info
-  dump_hardware_software_info $ocsroot/$target_dir
+  dump_hardware_software_info "$ocsroot/$target_dir"
 
   if [ "$ocs_sr_mode" = "interactive" ]; then
-    echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_parts" > $ocsroot/$target_dir/Info-saved-by-cmd.txt
+    echo $0 $OCS_OPTS $ocs_sr_type "$target_dir" "$target_parts" > "$ocsroot/$target_dir/Info-saved-by-cmd.txt"
   else
-    echo $0 $orig_ocs_opt > $ocsroot/$target_dir/Info-saved-by-cmd.txt
+    echo $0 $orig_ocs_opt > "$ocsroot/$target_dir/Info-saved-by-cmd.txt"
   fi
 
   task_postprocessing "$ocs_sr_type" "$target_dir"
@@ -1515,13 +1521,13 @@ do_restoreparts_job(){
   fi
   check_input_target_image "$ocsroot/$target_dir"
   # This is actually the max avaiable partitions number from image
-  source_parts_no="$(get_parts_list_from_img $ocsroot/$target_dir | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
+  source_parts_no="$(get_parts_list_from_img "$ocsroot/$target_dir" | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
   
   if [ "$ocs_sr_dev" = "ask_user" ]; then
     if [ -z "$source_part" ]; then
       ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
       trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
-      get_existing_partitions_from_img $ANS_TMP $ocsroot/$target_dir no select_from_img
+      get_existing_partitions_from_img $ANS_TMP "$ocsroot/$target_dir" no select_from_img
       # we have to remove " (comes with checklist in dialog) 
       # so that for loop will work (Specially for FC3/4...)
       source_part="$(cat $ANS_TMP | tr -d \")"
@@ -1529,13 +1535,13 @@ do_restoreparts_job(){
     fi
 
     # Since /dev/md* is difficult to decide as disk or partition, just list both types, and disable devices list cache mechanism.
-    if grep -Eq '^md[0-9]+' $ocsroot/$target_dir/blkdev.list; then
+    if grep -Eq '^md[0-9]+' "$ocsroot/$target_dir/blkdev.list"; then
       list_local_dev_mode="both_type_dev"
       use_dev_list_cache="no"
     fi
 
     # target name exists, but file "parts" is empty ?
-    check_target_parts $ocsroot/$target_dir/parts "$source_part"
+    check_target_parts "$ocsroot/$target_dir/parts" "$source_part"
     # User might choose the partitions when it's ask_user, so here we have to calculate the number again.
     source_parts_no="$(LC_ALL=C echo $source_part | wc -w)"
     if [ "$source_parts_no" -eq 1 ]; then
