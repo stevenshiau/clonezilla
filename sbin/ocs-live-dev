@@ -450,6 +450,32 @@ if [ -z "$template_mode" ]; then
   fi 
 fi 
 
+if [ "$template_mode" = "from-booting-live-media" ]; then
+  DEBIAN_ISO_TMP="$LIVE_MEDIA"
+else
+  DEBIAN_ISO_TMP="$(mktemp -d /tmp/ocs-iso.XXXXXX)"
+  mount -o loop,ro $DEBIAN_ISO $DEBIAN_ISO_TMP
+fi
+
+# Check if EFI boot could be supported.
+# Check bootx64.efi, bootia32.efi, bootaa64.efi, bootarm.efi or bootriscv64.efi.
+if [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootx64.efi" -o \
+     -e "$DEBIAN_ISO_TMP/EFI/boot/bootia32.efi" ]; then
+   cpu_arch_type="amd64"
+elif [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootaa64.efi"  ]; then
+   cpu_arch_type="arm64"
+elif [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootarm.efi"  ]; then
+   cpu_arch_type="armhf"
+elif [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootriscv64.efi"  ]; then
+   cpu_arch_type="riscv64"
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "/EFI/boot/bootx64.efi, /EFI/boot/bootia32.efi, /EFI/boot/bootaa64.efi, /EFI/boot/bootarm.efi or /EFI/boot/bootriscv64.efi was not found in template Clonezilla live!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "$msg_program_stop"
+  exit 1
+fi
+
 if [ "$template_mode" = "from-downloaded-live-media" ]; then
   if [ ! -f "$DEBIAN_ISO" ]; then
     echo "Searching for the latest Clonezilla live iso..."
@@ -502,8 +528,8 @@ if [ "$insert_mode" = "prog_and_img" ]; then
   fi
 
   echo "Creating clonezilla live with image(s) $ocs_image from $image_path..."
-  # use the 1st image name as iso filename
-  zip_label_tag="$(echo $ocs_image | awk -F" " '{print $1}')"
+  # Use the 1st image name + CPU arch tag as the zip file name
+  zip_label_tag="$(echo $ocs_image | awk -F" " '{print $1}')"-"${cpu_arch_type}"
   if [ "$use_existing_img_on_dev" = "no" ]; then
     # Image will be copied or linked from $ocsroot.
     for im in $ocs_image; do
@@ -520,8 +546,8 @@ if [ "$insert_mode" = "prog_and_img" ]; then
     done
   fi
 else
-  echo "Creating clonezilla Live without any clonezilla image embedded..."
-  # if version_no is not set, use date (Ex. 20070409)
+  echo "Creating Clonezilla Live without any clonezilla image embedded..."
+  # If version_no is not set, use date (Ex. 20070409)
   [ -z "$version_no" ] && version_no="$(date +%Y%m%d)"
   zip_label_tag="${version_no}"
 fi
@@ -529,32 +555,6 @@ boot_menu_opt="--version-no $zip_label_tag"
 
 #
 WD="$(pwd)"
-if [ "$template_mode" = "from-booting-live-media" ]; then
-  DEBIAN_ISO_TMP="$LIVE_MEDIA"
-else
-  DEBIAN_ISO_TMP="$(mktemp -d /tmp/ocs-iso.XXXXXX)"
-  mount -o loop,ro $DEBIAN_ISO $DEBIAN_ISO_TMP
-fi
-
-# Check if EFI boot could be supported.
-# Check bootx64.efi, bootia32.efi, bootaa64.efi, bootarm.efi or bootriscv64.efi.
-if [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootx64.efi" -o \
-     -e "$DEBIAN_ISO_TMP/EFI/boot/bootia32.efi" ]; then
-   cpu_arch_type="x86"
-elif [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootaa64.efi"  ]; then
-   cpu_arch_type="arm64"
-elif [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootarm.efi"  ]; then
-   cpu_arch_type="armhf"
-elif [ -e "$DEBIAN_ISO_TMP/EFI/boot/bootriscv64.efi"  ]; then
-   cpu_arch_type="riscv64"
-else
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "/EFI/boot/bootx64.efi, /EFI/boot/bootia32.efi, /EFI/boot/bootaa64.efi, /EFI/boot/bootarm.efi or /EFI/boot/bootriscv64.efi was not found in template Clonezilla live!"
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "$msg_program_stop"
-  exit 1
-fi
-
 if [ "$target_mode" = "release_file" ]; then
   # assume boot loader as syslinux for release_file mode.
   boot_loader="syslinux"
@@ -613,7 +613,7 @@ fi
 template_iso_size=0
 if [ "$template_mode" = "from-booting-live-media" ]; then
   # From boot media (clonezilla live), DEBIAN_ISO_TMP is LIVE_MEDIA
-  # The dirs/files in Clonezilla live (x86):
+  # The dirs/files in Clonezilla live (amd64):
   # For arm64/armhf/riscv64, only: EFI live
   # -r--r--r--  Clonezilla-Live-Version
   # -r--r--r--  GPL
@@ -632,7 +632,7 @@ if [ "$template_mode" = "from-booting-live-media" ]; then
 else
   # template_mode is "from-downloaded-live-media"
   # From iso file (debian-live-for-ocs.iso)
-  # The dirs/files in Debian live for OCS (x86):
+  # The dirs/files in Debian live for OCS (amd64):
   # dr-xr-xr-x 1 root root 2.0K Nov 22 12:08 boot/
   # dr-xr-xr-x 1 root root 2.0K Nov 22 12:10 efi/
   # dr-xr-xr-x 1 root root 2.0K Nov 22 12:10 EFI/
@@ -703,7 +703,7 @@ echo "done!"
 
 cp -af $DRBL_SCRIPT_PATH/doc/GPL $USB_TMP/
 
-if [ "$cpu_arch_type" = "x86" ]; then
+if [ "$cpu_arch_type" = "amd64" ]; then
   # replace the original syslinux and related files.
   mkdir -p $USB_TMP/syslinux/
   # For syslinux
@@ -1008,13 +1008,13 @@ ocs_live_extra_param="$(LC_ALL=C echo "$ocs_live_extra_param" | sed -r -e "s/[[:
 if [ -n "$ocs_image" ]; then
   # Image is included
   # For syslinux
-  if [ "$cpu_arch_type" = "x86" ]; then
+  if [ "$cpu_arch_type" = "amd64" ]; then
     # Dir syslinux only for x86 CPU arch
     ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
     # For isolinux
     ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --title "clonezilla live with img $ocs_image" --toram-mode live -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
   fi
-  # Dir /EFI/boot/ is for x86, arm64, armhf or riscv64 CPU arch
+  # Dir /EFI/boot/ is for amd64, arm64, armhf or riscv64 CPU arch
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
     if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" -o \
@@ -1028,13 +1028,13 @@ if [ -n "$ocs_image" ]; then
 else
   # No image is included
   # For syslinux
-  if [ "$cpu_arch_type" = "x86" ]; then
+  if [ "$cpu_arch_type" = "amd64" ]; then
     # Dir syslinux only for x86 CPU arch
     ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_dev locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
     # For isolinux
     ocs-live-boot-menu -j -vb $splash_switch $quiet_switch $ocs_live_boot_menu_timeout_option $ocs_live_boot_menu_option -l $lang_answer -f $VGA_MODE_DEF -b $bg_mode -k $kernel_on_dev -i $initrd_on_dev -m $ocs_logo_img_png $boot_menu_opt --boot-param "$boot_param $live_extra_boot_param $supp_boot_param_ocs_live_iso locales=$ocs_lang keyboard-layouts=$ocs_live_keymap ocs_live_run=\"$ocs_live_run\" ocs_live_extra_param=\"$ocs_live_extra_param\" ocs_live_batch=\"$ocs_live_batch\"" --toram-mode live -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
   fi
-  # Dir /EFI/boot/ is for x86, arm64, armhf or riscv64 CPU arch
+  # Dir /EFI/boot/ is for amd64, arm64, armhf or riscv64 CPU arch
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
     if [ -e "$USB_TMP/EFI/boot/bootia32.efi" -o -e "$USB_TMP/EFI/boot/bootx64.efi" -o \
@@ -1047,7 +1047,7 @@ else
   fi
 fi
 
-if [ "$cpu_arch_type" = "x86" ]; then
+if [ "$cpu_arch_type" = "amd64" ]; then
   echo "Preparing syslinux, syslinux.exe, makeboot.sh, and makeboot.bat in dir utils... "
   # If it's in Clonezilla live environment, we have those files
   if [ -e "$LIVE_MEDIA/utils/linux/x64/syslinux" -a \
