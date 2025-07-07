@@ -16,6 +16,7 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 KERNEL_ARGS_DEF='boot=live nopersistent noeject dhcp fromiso=/conf/live.iso live-media=ram ocs_live_run=ocs-live-general live-getty'
 KERNEL='vmlinuz'
 INITRD='initrd.img'
+COMPRESS_DEF="xz -T0 -v --check=crc32"
 
 # functions
 USAGE() {
@@ -25,6 +26,7 @@ USAGE() {
     echo "$ocs [OPTION] ISO_FILE"
     echo "Options:"
     echo "-o, --onie-kernel-cmdline  PARAM    Specify additional options that the ONIE system should use when kexec'ing the final image"
+    echo "-z, --compress  PROGRAM    Specify the compressing program to compress the initrd. Default is ${COMPRESS_DEF}"
     echo "-v, --verbose   Turn on verbose message."
     echo "Ex:"
     echo "To convert the Clonezilla live \"clonezilla-live-2.5.6-1-amd64.iso\" to ONIE self extract boot file, run"
@@ -50,6 +52,15 @@ while [ $# -gt 0 ]; do
            fi
            [ -z "$ONIE_KERNEL_CMDLINE" ] && USAGE && exit 1
            ;;
+   -z|--compress)
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             COMPRESS="$1"
+             shift;
+           fi
+           [ -z "$COMPRESS" ] && USAGE && exit 1
+           ;;
    -v|--verbose)
 	   verbose="on"; shift;;
    -*)     echo "${0}: ${1}: invalid option" >&2
@@ -64,7 +75,7 @@ check_if_root
 ask_and_load_lang_set
 
 #
-IMAGE="$1"
+IMAGE="$1" # The Clonezilla live iso file
 if [ -z "$IMAGE" ]; then
    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
    echo "Clonezilla live iso file was not assigned!"
@@ -191,7 +202,7 @@ OUT=${ONIE_TMPD}/output
 mkdir -p $OUT
 
 WORKDIR="${ONIE_TMPD}/work"
-EXTRACTDIR="$WORKDIR/extract"
+ISOMTPNT="$WORKDIR/isomtpnt" # ISO file mount point
 INSTALLDIR="$WORKDIR/installer"
 
 output_fbase="$(basename ${IMAGE})-onie.bin"
@@ -207,15 +218,15 @@ fi
 
 [ "$verbose" = "on" ] && echo "Creating $output_file:"
 
-# prepare workspace
-[ -d $EXTRACTDIR ] && chmod +w -R $EXTRACTDIR
-mkdir -p $EXTRACTDIR
+# Prepare workspace
+[ -d $ISOMTPNT ] && chmod +w -R $ISOMTPNT
+mkdir -p $ISOMTPNT
 mkdir -p $INSTALLDIR
 
 # Get the contents of iso file
-mount -o loop $IMAGE ${EXTRACTDIR}
+mount -o loop $IMAGE ${ISOMTPNT}
 rc=$?
-trap "[ -d "${EXTRACTDIR}" ] && umount ${EXTRACTDIR} &>/dev/null" HUP INT QUIT TERM EXIT
+trap "[ -d "${ISOMTPNT}" ] && umount ${ISOMTPNT} &>/dev/null" HUP INT QUIT TERM EXIT
 if [ "$rc" -gt 0 ]; then
    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
    echo "Failed to mount $IMAGE!"
@@ -224,53 +235,91 @@ if [ "$rc" -gt 0 ]; then
    exit 1
 fi
 
-echo "Uncompresing $EXTRACTDIR/live/initrd.img... "
-## pack ISO into initrd
-# create initrd working dir
+echo "Uncompresing $ISOMTPNT/live/initrd.img... "
+# Pack ISO into initrd
+# Create initrd working dir
 INITDIR=${WORKDIR}/initrd-extract
 mkdir -p ${INITDIR}
 cd ${INITDIR}
-# extract current initrd
-case $(file --brief --mime --dereference $EXTRACTDIR/live/initrd.img | \
-		sed "s/application\/\(.*\);.*/\1/") in
-	gzip)
-		UNCOMPRESS="zcat"
-		COMPRESS="gzip"
-		;;
-	x-xz)
-		UNCOMPRESS="xzcat -T0 -v"
-		COMPRESS="xz -T0 -v --check=crc32"
-		;;
-	x-bzip2)
-		UNCOMPRESS="bzcat"
-		COMPRESS="bzip2"
-		;;
-	x-lzma)
-		UNCOMPRESS="lzcat --suffix \"\""
-		COMPRESS="lzma"
-		;;
-	octet-stream)
-		UNCOMPRESS="cat"
-		COMPRESS="cat"
-		;;
-	*)
-		echo "ERROR: Unable to detect initrd compression format."
-		exit 1
-		;;
-esac
-
-$UNCOMPRESS $EXTRACTDIR/live/initrd.img | cpio -d -i -m
+SEGMENTS=0
+if unmkinitramfs $ISOMTPNT/live/initrd.img ${INITDIR} >/dev/null 2>&1; then
+  echo "Extracted initd.img successfully in ${INITDIR}."
+  [ -z "$COMPRESS" ] && COMPRESS="${COMPRESS_DEF}"
+  # Check if multiple segements (early/main from unmkinitramfs）
+  SEGMENTS=1
+  if [ -d "${INITDIR}/early" ]; then
+      echo "Found multiple segements (early/main from unmkinitramfs"
+      SEGMENTS=$((SEGMENTS + 1))
+  fi
+else
+  echo "Failed to extract initd.img successfully in ${INITDIR}. Use traditional method..."
+  # Extract current initrd
+  case $(file --brief --mime --dereference $ISOMTPNT/live/initrd.img | \
+  		sed "s/application\/\(.*\);.*/\1/") in
+  	gzip)
+  		UNCOMPRESS="zcat"
+  		COMPRESS="gzip"
+  		;;
+  	zstd)
+  		UNCOMPRESS="zstdcat"
+  		COMPRESS="zstdmt"
+  		;;
+  	x-xz)
+  		UNCOMPRESS="xzcat -T0 -v"
+  		COMPRESS="xz -T0 -v --check=crc32"
+  		;;
+  	x-bzip2)
+  		UNCOMPRESS="bzcat"
+  		COMPRESS="bzip2"
+  		;;
+  	x-lzma)
+  		UNCOMPRESS="lzcat --suffix \"\""
+  		COMPRESS="lzma"
+  		;;
+  	octet-stream)
+  		UNCOMPRESS="cat"
+  		COMPRESS="cat"
+  		;;
+  	*)
+  		echo "ERROR: Unable to detect initrd compression format."
+  		exit 1
+  		;;
+  esac
+  $UNCOMPRESS $ISOMTPNT/live/initrd.img | cpio -d -i -m
+fi
 echo "Copying inputed iso into initrd... "
-# copy inputed iso into initrd
-rsync -aL --info=progress2 "${CURDIR}/${IMAGE}" ./conf/live.iso
+# Copy inputed iso into initrd
+if [ "$SEGMENTS" -eq 0 ]; then
+  # Single segment does not have extra dir "main"
+  rsync -aL --info=progress2 "${CURDIR}/${IMAGE}" ${INITDIR}/conf/live.iso
+else
+  # Multiple segments will have extra dir "main"
+  rsync -aL --info=progress2 "${CURDIR}/${IMAGE}" ${INITDIR}/main/conf/live.iso
+fi
 
 echo "Repacking inputed iso into initrd... "
-# repack
-find . | cpio -o -H newc | $COMPRESS > ${WORKDIR}/initrd.img
+# Repack
+rm -f ${WORKDIR}/initrd.img
+if [ "$SEGMENTS" -eq 0 ]; then
+  find . | cpio -o -H newc | $COMPRESS > ${WORKDIR}/initrd.img
+else
+  # Process early & main separately.
+  (
+    cd ${INITDIR}/early
+    find . | cpio -o -H newc > ${WORKDIR}/initrd.img
+  )
+  for seg_d in ${INITDIR}/* ; do
+    if [ -d "$seg_d" ]; then
+      [ "$(basename $seg_d)" = "early" ] && continue
+      cd "$seg_d"
+      find . | cpio -o -H newc -R root:root | $COMPRESS >> ${WORKDIR}/initrd.img
+    fi
+  done
+fi
 # cd back into root dir
 cd ${ONIE_TMPD}
 
-IN_KERNEL=$EXTRACTDIR/live/$KERNEL
+IN_KERNEL=$ISOMTPNT/live/$KERNEL
 [ -r $IN_KERNEL ] || {
     echo "ERROR: Unable to find kernel in ISO: $IN_KERNEL"
     exit 1
@@ -375,7 +424,7 @@ else
 fi
 
 # Clean
-umount ${EXTRACTDIR}
+umount ${ISOMTPNT}
 if [ -d "$ONIE_TMPD" -a -n "$(echo $ONIE_TMPD | grep -E "onie-tmp")" ]; then
   echo -n "Cleaning the temp working dir... "
   rm -rf $ONIE_TMPD
