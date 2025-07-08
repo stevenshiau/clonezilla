@@ -9338,6 +9338,20 @@ task_saveparts() {
       if check_LVM_partition /dev/$partition; then
         # LVM
         # We have to do save LVM (PV/VG/LV) together, not follow every partition
+	# First check if it's a LVM thin provisioning device.
+        check_if_containing_thin_lv /dev/$partition
+	rc=$?
+	if [ $rc -gt 0 ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "Found LVM thin provisioning in device /dev/$partition."
+          echo "Clonezilla does not support LVM thin provisioning."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo $msg_delimiter_star_line
+	  LC_ALL=C lvs -o lv_name,lv_attr,segtype,vg_name,devices
+          echo $msg_delimiter_star_line
+          echo "$msg_program_stop!"
+          my_ocs_exit 1
+        fi
         do_LVM_save="yes"
         continue
       fi
@@ -16680,3 +16694,22 @@ get_partclone_direct_io_opt() {
     esac
   fi
 } # end of get_partclone_direct_io_opt
+#
+check_if_containing_thin_lv() {
+  local ck_dev=${1#/dev/*} # Input is like /dev/sda, so dev_ becomes sda
+  local vg_name_ rc
+  if [ -z "$ck_dev" ]; then
+    return 3
+  fi
+  vg_name_="$(LC_ALL=C pvs --noheadings -o vg_name $ck_dev 2>/dev/null | xargs)"
+  if [ -n "$vg_name_" ]; then
+    if [ -n "$(LC_ALL=C lvs -o segtype $vg_name_ | grep -Eo '(thin|thin-pool)')" ]; then
+      # Found LVM thin provisioning
+      rc=0
+    fi
+  else
+      # Not an LVM physical volume
+      rc=1
+  fi
+  return $rc
+} # end of check_if_containing_thin_lv
