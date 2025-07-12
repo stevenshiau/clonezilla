@@ -1,0 +1,13 @@
+#!/bin/sh
+if [ -z "$(grep -Ew ocs_1_cpu_udev /proc/cmdline)" ]; then
+  # Skip if ocs_1_cpu_udev does not exist.
+  exit 6
+fi
+echo "Enabling SMP-like behavior after udev was started... "
+for cpu in `ls -dv /sys/devices/system/cpu/cpu[1-9]*`; do
+    if [ -e "$cpu/online" ]; then
+        echo -n "$(basename $cpu), "
+	(echo 1 > "$cpu/online" 2>/dev/null || echo "Failed to enable $cpu")&
+    fi
+done
+echo "done!"
