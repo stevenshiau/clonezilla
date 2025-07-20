@@ -13,6 +13,22 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
+# Settings
+force_run="no"
+batch_mode="no"
+
+USAGE() {
+  echo "$ocs - To sync time"
+  echo "Usage:"
+  echo "To run $ocs:"
+  echo "$ocs [OPTION]"
+  echo "Options:"
+  echo "-b, --batch-mode     Run in batch mode"
+  echo "-f, --force          Run anyway even it was ran before"
+  echo "-i, --sync-via-net   Time sync via internet"
+  echo "-m, --sync-via-bios  Sync from BIOS's time. This will only work in interactive (non-batch) mode"
+  echo
+} # end of USAGE
 # Function to determine timezone based on IP-based geolocation
 get_timezone() {
   # Use ip-api.com to get location data
@@ -24,53 +40,129 @@ get_timezone() {
     # Fallback to system default or UTC if API fails
     echo "UTC"
   fi
-}
+} # end of get_timezone
+#
+sync_via_internet() {
+  echo "Checking internet connection..."
+  if check_internet; then
+    echo "Internet connection detected."
+    # Get timezone
+    timezone=$(get_timezone)
+    echo "Detected timezone: $timezone"
+  
+    # Configure timezone
+    tz_set_cmd="timedatectl set-timezone \"$timezone\""
+    echo "Setting timezone to $timezone..."
+    echo "Running: $tz_set_cmd"
+    eval $tz_set_cmd
+    if [ $? -eq 0 ]; then
+      echo "Timezone set successfully."
+    else
+      echo "Failed to set timezone. Continuing with time sync..."
+    fi
+  
+    # Sync time using ntpdate-debian
+    echo "Synchronizing time. Running: ntpdate-debian..."
+    ntpdate-debian
+    if [ $? -eq 0 ]; then
+      touch /run/live/$ocs
+      echo "Time synchronized successfully."
+      return 0
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Failed to synchronize time via internet."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      return 1
+    fi
+    else
+      echo "Internet connection was not detected."
+      return 1
+  fi
+} # End of sync_via_internet
+
+sync_via_bios() {
+  if [ "$batch_mode" = "yes" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Sync time via BIOS must be in non-batch mode because we have to ask you the time zome."
+    echo "No way to run in batch mode."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 2
+  fi
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_no_net_so_set_timezone_manually"
+  echo "$msg_next_choose_timezon"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n "$msg_are_u_sure_u_want_to_continue (Y/n) " | tee --append ${OCS_LOGFILE}
+  read continue_confirm_ans
+  case "$continue_confirm_ans" in
+    n|N|[nN][oO])
+       echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+       # Saving mode, always copy error log to image dir.
+       copy_error_log
+       return 1
+       ;;
+    *)
+       echo "$msg_ok_let_do_it" | tee --append ${OCS_LOGFILE}
+       dpkg-reconfigure tzdata
+       if [ $? -eq 0 ]; then
+         touch /run/live/$ocs
+       fi
+       return 0
+       ;;
+  esac
+} # end of sync_via_bios
 
 ####################
 ### Main program ###
 ####################
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -b|--batch) batch_mode="yes"; shift;;
+   -f|--force)  force_run="yes"; shift;;
+   -i|--sync-via-net)  force_run="yes"; mode="net"; shift;;
+   -m|--sync-via-bios) force_run="yes"; mode="bios"; shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
 check_if_root
 ask_and_load_lang_set
 
-echo "Checking internet connection..."
-if check_internet; then
-  echo "Internet connection detected."
-
-  # Get timezone
-  timezone=$(get_timezone)
-  echo "Detected timezone: $timezone"
-
-  # Configure timezone
-  tz_set_cmd="timedatectl set-timezone \"$timezone\""
-  echo "Setting timezone to $timezone..."
-  echo "Running: $tz_set_cmd"
-  eval $tz_set_cmd
-  if [ $? -eq 0 ]; then
-    echo "Timezone set successfully."
-  else
-    echo "Failed to set timezone. Continuing with time sync..."
+if [ "$force_run" = "no" ]; then
+  if [ -e "/run/live/$ocs" ]; then
+    echo "$ocs already ran previously."
+    exit 3
   fi
+fi
 
-  # Sync time using ntpdate-debian
-  echo "Synchronizing time. Running: ntpdate-debian..."
-  ntpdate-debian
-  if [ $? -eq 0 ]; then
-    echo "Time synchronized successfully."
-    echo "Current time:"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    date +%F" "%X" "%Z
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+rc=1
+case $mode in 
+  net)  sync_via_internet; rc=$? ;;
+  bios) sync_via_bios; rc=$? ;;
+  *)    sync_via_internet
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+          sync_via_bios
+          rc=$?
+        fi
+        ;;
+esac
+
+if [ "$rc" -eq 0 ]; then
+  # Ensure hardware clock is updated
+  hwclock --systohc
+  echo "System time and timezone configured."
+  echo "Current time:"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  date +%F" "%X" "%Z
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  if [ "$batch_mode" = "no" ]; then
     echo -n "$msg_press_enter_to_continue..."
     read
-  else
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Failed to synchronize time."
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    exit 1
   fi
-else
-  echo "No internet connection. Cannot sync time."
-  echo -n "$msg_press_enter_to_continue..."
-  read
-  exit 1
 fi
