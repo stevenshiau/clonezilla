@@ -1,5 +1,5 @@
 #!/bin/bash
-# License: GPL 
+# License: GPL
 # Author: Steven Shiau <steven _at_ clonezilla org>
 # Description: Program to show the kernel messages about removable disks
 # //NOTE// This program is used to work with screen.
@@ -26,12 +26,27 @@ echo -e "$msg_insert_storage_dev_now"
 [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 echo "Scanning devices... Available disk(s) on this machine:"
 # Show it like:
-# NAME    TYPE  SIZE MODEL                          FSTYPE SERIAL
-# nvme0n1 disk   64G VMware Virtual NVMe Disk              VMware NVME_0000
-# nvme0n2 disk 1000G VMware Virtual NVMe Disk              VMware NVME_0000
-# sda     disk   60G VMware Virtual SATA Hard Drive ext4   00000000000000000001
+# NAME    TYPE  SIZE MODEL          FSTYPE SERIAL ID_PATH_TAG
+# nvme0n1 disk   64G VMware Virtual NVMe Disk              VMware NVME_0000 pci-0000_0b_00_0-nvme-1
+# nvme0n2 disk 1000G VMware Virtual NVMe Disk              VMware NVME_0000 pci-0000_0b_00_0-nvme-2
+# sda     disk   60G VMware Virtual SATA Hard Drive ext4   00000000000000000001 pci-0000_02_04_0-ata-1_0
 echo "==================================="
-LC_ALL=C lsblk -d -o name,type,size,model,fstype,serial -e 1,7,11 -x name
+lsblk_output=$(LC_ALL=C lsblk -d -o name,type,size,model,fstype,serial -e 1,7,11 -x name -n)
+# Print header with ID_PATH_TAG added
+echo "NAME TYPE SIZE MODEL FSTYPE SERIAL ID_PATH_TAG"
+# Process each device from lsblk output
+echo "$lsblk_output" | while IFS= read -r line; do
+  # Extract the device name (first column)
+  name=$(echo "$line" | awk '{print $1}')
+  # Get the full device path (e.g., /dev/sda)
+  device="/dev/$name"
+  # Query udevadm for ID_PATH_TAG
+  id_path_tag=$(udevadm info --query=property --name="$device" | grep '^ID_PATH_TAG=' | cut -d'=' -f2)
+  # If ID_PATH_TAG is empty, set it to "N/A"
+  id_path_tag=${id_path_tag:-N/A}
+  # Append ID_PATH_TAG to the lsblk line
+  echo "$line $id_path_tag"
+done
 echo "==================================="
 echo -en '\033[1;33m'
 echo Updates periodically. Press Ctrl-C to exit this window.
