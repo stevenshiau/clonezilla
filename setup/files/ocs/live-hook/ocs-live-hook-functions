@@ -482,7 +482,7 @@ dirty_hacking_rm_files_for_ocs_live() {
   # /usr/share/fonts/X11/misc/unifont.pcf.gz is in package unifont in Etch, but it is in package xfonts-unifont in Lenny.
   # 10/20/2010 x11-common was not removed since startpar will try to start it, but it will failed and show error message. Therefore we keep it.
   # 08/09/2020 Keep ttf-unifont, unifont, xfonts-unifont, xfonts-utils to avoid unifont.pcf.gz being removed.
-  echo -n "Removing unnecessary X programs except unifont.pcf.gz which is required for jfbterm... Now try to clean if exists: "
+  echo -n "Removing unnecessary X programs except unifont.pcf.gz which is required for jfbterm/fbterm... Now try to clean if exists: "
   unnecessary_x_packages="libfontenc1 xfonts-encodings libcairo2 ttf-dejavu-core"
   for i in $unnecessary_x_packages; do
     echo -n "$i... " 
@@ -955,3 +955,27 @@ add_cpu_offline_online_in_initrd() {
   install -o root -g root -m 755 /live-hook-dir/udev/cpu_offline /etc/initramfs-tools/scripts/init-top/01_cpu_offline
   install -o root -g root -m 755 /live-hook-dir/udev/cpu_online /etc/initramfs-tools/scripts/init-premount/01_cpu_online
 } # end of add_cpu_offline_online_in_initrd
+#
+enable_bitmaps_fonts_for_fontconfig(){
+  cat <<-FNT_END >/etc/fonts/conf.avail/70-force-bitmaps.conf
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <match target="font">
+    <edit name="embeddedbitmap" mode="assign">
+      <bool>true</bool>
+    </edit>
+  </match>
+  <selectfont>
+    <acceptfont>
+      <pattern>
+        <patelt name="scalable"><bool>false</bool></patelt>
+      </pattern>
+    </acceptfont>
+  </selectfont>
+</fontconfig>
+FNT_END
+
+  ln -s /etc/fonts/conf.avail/70-force-bitmaps.conf /etc/fonts/conf.d/70-force-bitmaps.conf
+  fc-cache -fv
+} # end of enable_bitmaps_fonts_for_fontconfig
