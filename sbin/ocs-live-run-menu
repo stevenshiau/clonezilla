@@ -13,10 +13,9 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 [ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
 
 # Set initial value if not set
+# ocs_lang and ocs_live_keymap will be loaded later after ocs-lang-kbd-conf in run
 [ -z "$ocs_live_run" ] && ocs_live_run="ocs-live-general"
-[ -z "$ocs_live_keymap" ] && ocs_live_keymap="NONE"
 [ -z "$ocs_live_batch" ] && ocs_live_batch="no"
-[ -z "$ocs_lang" ] && ocs_lang="en_US.UTF-8"
 
 
 # Functions
@@ -56,6 +55,13 @@ if [ -z "$LIVE_MEDIA" -o ! -d "/$LIVE_MEDIA" ]; then
   echo "Program terminated!"
   exit 1
 fi
+
+# Configure language and keyboard
+ocs-lang-kbd-conf
+# Reload lang and keymap
+. /etc/ocs/ocs-live.conf
+[ -z "$ocs_live_keymap" ] && ocs_live_keymap="en"
+[ -z "$ocs_lang" ] && ocs_lang="en_US.UTF-8"
 
 #
 decide_use_fb_term_or_not
@@ -242,6 +248,17 @@ RUN_END
        set +e
        jfbterm -q -e $ocs_live_final_tmp
        EXIT=$?
+       ;;
+  "fbterm")
+       . /etc/default/console-setup
+       fontwidth="$(echo "$FONTSIZE" | cut -d'x' -f1)"
+       fontheight="$(echo "$FONTSIZE" | cut -d'x' -f2)"
+       if [ -n "$fontwidth" -a -n "$fontheight" ]; then 
+         font_opts="--font-width=$fontwidth --font-height=$fontheight"
+       fi
+       set +e
+       fbterm $font_opts -- $ocs_live_final_tmp
+       EXIT="$(cat ${ocs_live_run_tmp}.rc)"
        ;;
   esac
   [ -e "$ocs_live_final_tmp" ] && rm -f $ocs_live_final_tmp
