@@ -21,7 +21,9 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
 # Functions
 decide_use_fb_term_or_not(){
-  get_fb_term
+  if [ -z "$fb_term" ]; then
+    get_fb_term
+  fi
   [ "$fb_term" = "bterm" -a ! -e "$uni_font" ] && exit 1
   
   use_fb_term=""
@@ -160,12 +162,13 @@ RUN_END
        ;;
   "fbterm")
        . /etc/default/console-setup
-       fontwidth=$(echo "$FONTSIZE" | cut -d'x' -f1)
-       fontheight=$(echo "$FONTSIZE" | cut -d'x' -f2)
+       fontwidth="$(echo "$FONTSIZE" | cut -d'x' -f1)"
+       fontheight="$(echo "$FONTSIZE" | cut -d'x' -f2)"
+       if [ -n "$fontwidth" -a -n "$fontheight" ]; then 
+         font_opts="--font-width=$fontwidth --font-height=$fontheight"
+       fi
        set +e
-       # fbterm will overwrite the TERM as linux, so we have to set it when entering the shell.
-       fbterm --font-width=$fontwidth --font-height=$fontheight --\
-              /bin/bash -c "export TERM=fbterm; exec $ocs_live_run_tmp"
+       fbterm $font_opts -- $ocs_live_run_tmp
        EXIT="$(cat ${ocs_live_run_tmp}.rc)"
        ;;
   esac
