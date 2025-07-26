@@ -11407,15 +11407,18 @@ ab2dig() {
   echo $base
 }
 #
-ask_language_if_supported_with_bterm(){
+choose_language_in_fb_term() {
  # read the setting if exists
  [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
  if [ -z "$ocs_lang" ]; then
-   if [ "$TERM" = "bterm" -o "$TERM" = "jfbterm" -o "$TERM" = "fbterm" ] && ([ -e /dev/fb/0 ] || [ -e /dev/fb0 ]); then 
+   if [ -e /dev/fb/0 ] || [ -e /dev/fb0 ]; then 
      TMP="$(mktemp /tmp/lang.XXXXXX)"
-     drbl-langchooser $TMP
-     ocs_lang="$(cat $TMP)"
-     [ -f "$TMP" ] && rm -f $TMP
+     if [ ! -e /run/live/drbl-langchooser ]; then
+       drbl-langchooser $TMP
+       ocs_lang="$(cat $TMP)"
+       [ -f "$TMP" ] && rm -f $TMP
+       touch /run/live/drbl-langchooser
+     fi
    fi
  fi
 }
@@ -11629,7 +11632,7 @@ ocs-live-env-prepare(){
     [ ! -d "$ocsroot" ] && mkdir -p $ocsroot
   fi
   
-  ask_language_if_supported_with_bterm
+  choose_language_in_fb_term
   [ -z "$ocs_lang" ] && ocs_lang=en
   ask_and_load_lang_set $ocs_lang
   
