@@ -12,7 +12,58 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # Load keymap if it exists
 [ -e /etc/ocs/ocs-live.conf ] && . /etc/ocs/ocs-live.conf
 
+# Settings
+mode=""
+
 #
+USAGE() {
+    echo "$ocs - To configure the locales and keyboard layouts of live system"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION]"
+    echo
+    echo "Options:"
+    echo "-f, --force         Force to configure locales and keyboard layouts even they are done before"
+    echo "-t, --fb-term TERM  Set the framebuffer term as TERM"
+    echo
+} # end of USAGE
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -f|--force) mode="force"; shift;;
+   -t|--fb-term)
+           # overwrite the fb_term in ocs-live.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             fb_term="$1"
+             shift;
+           fi
+           [ -z "$fb_term" ] && USAGE && exit 1
+           ;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+if [ "$mode" = "force" ]; then
+  # Modify the configuration file, clean the previou tag files, and reset related variables.
+  perl -pi -e "s|^[[:space:]]*ocs_lang=.*|ocs_lang=|g" /etc/ocs/ocs-live.conf
+  perl -pi -e "s|^[[:space:]]*live_keyboard_layouts=.*|live_keyboard_layouts=|g" /etc/ocs/ocs-live.conf
+  rm -f /run/live/ocs-lang-kbd-conf /run/live/drbl-langchooser /run/live/drbl-kbdchooser
+  ocs_lang=
+  live_keyboard_layouts=
+fi
+
 if [ -z "$fb_term" ]; then
   get_fb_term
 fi
@@ -49,7 +100,7 @@ else
 fi
 
 # ocs_live_keymap and live_keyboard_layouts are loaded from ocs-live.conf
-if [ -z "$live_keyboard_layouts" ]; then
+if [ -z "$ocs_lang" -o -z "$live_keyboard_layouts" ]; then
   echo "Configuring language and keyboard..."
   # keymap not set in ocs-live.conf, use interactive dialog to set it.
   # Bterm/jfbterm/fbterm can only be used (it's better since Asian fonts can be shown) when:
