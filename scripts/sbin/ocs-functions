@@ -746,17 +746,21 @@ get_dev_model_shown() {
   else
     dev_model_shown="Machine: $machine_name\n"
   fi
+  blk_info_f=`mktemp /tmp/ocs-blkinfo.XXXXXX`
+  trap "[ -f "$blk_info_f" ] && rm -f $blk_info_f" HUP INT QUIT TERM EXIT
+  ocs-blk-dev-info $blk_info_f
   for i in $dev_list_; do
     DEV_MODEL=""
     # If only the disk or partition exists, we show the warning about the disk/partition will be overwritten.
     if [ -n "$(grep -Ew "$i" $partition_table)" ]; then
-      get_disk_or_part_hardware_info "$i" default
+      get_disk_or_part_hardware_info "$i" default $blk_info_f
       rc_g=$?
       [ "$rc_g" -eq 8 ] && continue
       dev_model_shown="$dev_model_shown$i ($DEV_MODEL)\n"
     fi
   done
   [ -f "$partition_table" ] && rm -f $partition_table
+  [ -f "$blk_info_f" ] && rm -f $blk_info_f
   # Remove the \n in the end
   dev_model_shown="$(echo $dev_model_shown | sed -e "s|\\\n$||g")"
 } # end of get_dev_model_shown
@@ -4445,20 +4449,20 @@ get_disk_or_part_hardware_info() {
   # DEV_MODEL is a global variable to output
   local p="$1"  # p is like hda, sda, or hda1, sda1
   local flag_skip_lvm="$2"  # yes/no/default, default is no
-  local dsize x dsk_ rc serialno part_fst
+  local hwinfo_json_f="$3"
+  local dsize x dsk_ rc serialno part_fs part_lb
   dsize="" # device size
 
   if ! is_supported_dev "$p"; then
     DEV_MODEL="NOT_SUPPORTED_DEV"
     return 1
   fi
+  
   if is_partition "$p"; then
     # Partition 
-    # Skip swap and extended partition
-    # We do not use the output of fdisk -l, it's type mabe like
-    # Extended, Ext'd, it's not easy to tell... We use file to get the
-    # partition type
-    part_type="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem 2>/dev/null)"
+    
+    # First check if swap/extended one. If so, skip it.
+    part_type="$(jq -r ".[] | select(.name == \"$p\") | .type, .fstype" $hwinfo_json_f)"
     rc=$?
     # The return "8" means return "continue" (8 characters). 
     # Here this function is extracted from a loop.
@@ -4466,124 +4470,78 @@ get_disk_or_part_hardware_info() {
     # Because >= bash 4.4 raises it as a warning, and then continue won't be run.
     [ "$rc" -gt 0 ] && return 8
     [ -n "$(echo $part_type | grep -Eiw "(extended|0x5|0xf)")" ] && return 8
+
     if [ "$flag_skip_lvm" = "yes" ]; then
       [ -n "$(echo "$part_type" | grep -Ei "LVM")" ] && return 8
     fi
-    dsize="$(LC_ALL=C ocs-get-dev-info /dev/$p size 2>/dev/null)"
-    [ -n "$dsize" ] && DEV_MODEL="${dsize}"
+
+    # Size
+    dsize="$(jq -r ".[] | select(.name == \"$p\") | .size" $hwinfo_json_f)"
+    # If empty, set it to "No_size"
+    dsize="${dsize:-No_size}"
+
     # File system
-    part_fst="$(LC_ALL=C ocs-get-dev-info /dev/$p filesystem 2>/dev/null)"
-    [ -n "$part_fst" ] && DEV_MODEL="${DEV_MODEL}|${part_fst}"
-    # Volume name
-    part_v="$(LC_ALL=C ocs-get-dev-info /dev/$p label | tr -s " " "_")"
-    [ -n "$part_v" ] && DEV_MODEL="${DEV_MODEL}|${part_v}"
-    # show more info (From which disk). The result is like:
-    # 20GB_ext3(In_VMware_Virtual_IDE_Hard_Drive)
-    # The disk is either hdx or sdx here.
-    # hda1 -> hda
-    dsk_="$(get_diskname $p)"
-    if [ "$(cat /proc/ide/${dsk_}/media 2>/dev/null)" = "disk" ] ; then
-      DEV_MODEL_EXT="$(tr -s " " "_" </proc/ide/${dsk_}/model)"
-    else
-      x="$(cat /sys/block/$(to_sysblock_name $(get_diskname ${dsk_}))/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr -s " " "_" 2>/dev/null)"
-      # the result is like "WDC WD1600JS-60M"
-      # Note! The above method only works in kernel 2.6. For kernel 2.4, it not supported, and it's shown as "No_description" later.
-      x=${x#*\"}
-      x=${x%\"*}
-      DEV_MODEL_EXT=${x}
-    fi
-    [ -n "$DEV_MODEL_EXT" ] && DEV_MODEL="${DEV_MODEL}(In_${DEV_MODEL_EXT})"
+    part_fs="$(jq -r ".[] | select(.name == \"$p\") | .fstype" $hwinfo_json_f)"
+    # If empty, set it to "No_file_system"
+    part_fs="${part_fs:-No_file_system}"
 
-    # Put ID path
-    get_disk_id_path $dsk_  # get id_path_tag
-    [ -n "$id_path_tag" ] && DEV_MODEL="${DEV_MODEL}|${id_path_tag}"
+    # Show from which disk. The result is like:
+    # 20GB|ext3|In_VMware_Virtual_IDE_Hard_Drive|
+    dsk_="$(get_diskname $p)" # sda1 -> sda
+    dmodel="$(jq -r ".[] | select(.name == \"$dsk_\") | .model" $hwinfo_json_f)"
+    dmodel="${dmodel:-No_disk_model}"
 
-    # Put serial #
-    if is_ide_disk "$dsk_"; then
-      serialno="$(cat /sys/block/$(to_sysblock_name $(get_diskname $dsk_))/device/serial 2>/dev/null | sed -e "s/ //g")"
-    else
-      #serialno="$(LC_ALL=C cat $lshw_disk_info | grep -A3 -Ewi "logical name: /dev/$dsk_" | grep -i "serial: " | awk -F":" '{print $2}' | sed -e "s/ //g")"
-      get_disk_serial_no -s $dsk_
-    fi
-    if [ -n "$serialno" ]; then
-      serialno="|${serialno}"
-    else
-      serialno="|No_disk_serial_no"
-    fi
-    if [ -L /dev/$p ]; then
-      DEV_MODEL="${DEV_MODEL}|$(readlink -f /dev/$p)"
-    else
-      DEV_MODEL="${DEV_MODEL}${serialno}"
-    fi
+    # Volume label
+    part_lb="$(jq -r ".[] | select(.name == \"$p\") | .label" $hwinfo_json_f)"
+    # If empty, set it to "No_label"
+    part_lb="${part_lb:-No_label}"
+
+    # ID path tag from disk
+    id_path_tag="$(jq -r ".[] | select(.name == \"$dsk_\") | .id_path_tag" $hwinfo_json_f)"
+    # If empty, set it to "No_ID_path"
+    id_path_tag="${id_path_tag:-No_ID_path}"
+
+    # Serial no from disk
+    serialno="$(jq -r ".[] | select(.name == \"$dsk_\") | .serial" $hwinfo_json_f)"
+    # If empty, set it to "No_serial_no"
+    serialno="${serialno:-No_serial_no}"
+
+    # Put them together
+    DEV_MODEL="${dsize}|${part_fs}|In_${dmodel}|${part_lb}|${id_path_tag}|${serialno}|"
+
   else
     # Disk
-    if is_ide_disk "$p"; then
-      if [ "$(cat /proc/ide/$(get_diskname $p)/media)" = "disk" ] ; then
-        # parted output Ex. Disk /dev/sda: 160GB // This is only for newer parted. For old parted (1.6.3 in redhat 9, nothing will be shown)
-        dsize="$(LC_ALL=C parted -s /dev/$p print 2>/dev/null | grep -E "^[[:space:]]*Disk[[:space:]]+/dev/$p:" | awk -F":" '{print $2}' | sed -e "s/ //g")"
-        if [ -z "$dsize" ]; then
-         # Try the other way since parted will fail if the disk is not partitioned.
-	 dsize="$(LC_ALL=C echo "scale=1; $(cat /sys/block/$(to_sysblock_name $(get_diskname $p))/size 2>/dev/null)*512/1000.0^3" | bc -l 2>/dev/null)GB"
-        fi
-        if [ -n "$dsize" ]; then
-           dsize="${dsize}_"
-        else
-           dsize="Unknown_size_"
-        fi
-        # put serial #
-  	serialno="$(cat /sys/block/$(to_sysblock_name $(get_diskname $p))/device/serial 2>/dev/null | sed -e "s/ //g")"
-        if [ -n "$serialno" ]; then
-          serialno="_${serialno}"
-        else
-          serialno="_No_disk_serial_no"
-        fi
-        # The result is like 8590MB_VMware_Virtual_IDE
-        DEV_MODEL="${dsize}$(tr ' ' _ </proc/ide/$(get_diskname $p)/model)${serialno}"
-      fi
-    else
-      x="$(cat /sys/block/$(to_sysblock_name $(get_diskname $p))/device/model 2>/dev/null | sed -r -e "s/[[:space:]]+/ /g" | tr ' ' _ 2>/dev/null)"
-      # the result is like "WDC WD1600JS-60M"
-      # Note! The above method only works in kernel 2.6. For kernel 2.4, it not supported, and it's shown as "No_description" later.
-      x=${x#*\"}
-      x=${x%\"*}
-      [ -z "$x" ] && x="Unknown_model"
-      # parted output Ex. Disk /dev/sda: 160GB // This is only for newer parted. For old parted (1.6.3 in redhat 9, nothing will be shown)
-      # If it's cciss device, since we already made a link in /dev/, so here it won't be a problem.
-      dsize="$(LC_ALL=C parted -s /dev/$p print 2>/dev/null | grep -E "^[[:space:]]*Disk[[:space:]]+/dev/" | awk -F":" '{print $2}' | sed -e "s/ //g")"
-      if [ -z "$dsize" ]; then
-       # Try the other way since parted will fail if the disk is not partitioned.
-       dsize="$(LC_ALL=C echo "scale=1; $(cat /sys/block/$(to_sysblock_name $(get_diskname $p))/size 2>/dev/null)*512/1000.0^3" | bc -l 2>/dev/null)GB"
-      fi
-      if [ -n "$dsize" ]; then
-         dsize="${dsize}|"
-      else
-         dsize="Unknown_size|"
-      fi
-      # File system. It might be disk block device with file system
-      part_fst="$(LC_ALL=C ocs-get-dev-info /dev/$p filesystem 2>/dev/null)"
-      # Append it
-      [ -n "$part_fst" ] && dsize="${dsize}${part_fst}|"
-      # Serial #
-      #serialno="$(LC_ALL=C cat $lshw_disk_info | grep -A3 -Ewi "logical name: /dev/$p" | grep -i "serial: " | awk -F":" '{print $2}' | sed -e "s/ //g")"
-      get_disk_serial_no -s $p
-      if [ -n "$serialno" ]; then
-         serialno="|${serialno}"
-      else
-         serialno="|No_disk_serial_no"
-      fi
-      # The result is like 8590MB_VMware_Virtual_IDE
 
-      # Put ID path
-      get_disk_id_path $p  # get id_path_tag
-      [ -n "$id_path_tag" ] && id_path_tag="|${id_path_tag}"
+    # Size
+    dsize="$(jq -r ".[] | select(.name == \"$p\") | .size" $hwinfo_json_f)"
+    # If empty, set it to "No_size"
+    dsize="${dsize:-No_size}"
 
-      if [ -L /dev/$p ]; then
-        DEV_MODEL="${dsize}${x}${id_path_tag}|$(readlink -f /dev/$p)"
-      else
-        DEV_MODEL="${dsize}${x}${id_path_tag}${serialno}"
-      fi
-    fi
+    # Model
+    dmodel="$(jq -r ".[] | select(.name == \"$p\") | .model" $hwinfo_json_f)"
+    # If empty, set it to "No_Model"
+    dmodel="${dmodel:-No_Model}"
+
+    # File system. It might be disk block device with file system.
+    # However, in this case this is normally listed as a partition in Clonezilla
+    part_fs="$(jq -r ".[] | select(.name == \"$p\") | .fstype" $hwinfo_json_f)"
+    # Append it
+    [ -n "$part_fs" ] && dsize="${dsize}|${part_fs}"
+
+    # Put ID path
+    id_path_tag="$(jq -r ".[] | select(.name == \"$p\") | .id_path_tag" $hwinfo_json_f)"
+    # If empty, set it to "No_ID_path|"
+    id_path_tag="${id_path_tag:-No_ID_path}"
+
+    # Serial no
+    serialno="$(jq -r ".[] | select(.name == \"$p\") | .serial" $hwinfo_json_f)"
+    # If empty, set it to "No_disk_serial_no"
+    serialno="${serialno:-No_disk_serial_no}"
+
+    # Put them together
+    DEV_MODEL="${dsize}|${dmodel}|${id_path_tag}|${serialno}|"
   fi
+
   # just in case if nothing found
   [ -z "$DEV_MODEL" ] && DEV_MODEL="No_description"
   return 0
@@ -4888,6 +4846,8 @@ get_input_dev_name() {
 
     TMP=`mktemp /tmp/ocs.XXXXXX`
     trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+    blk_info_f=`mktemp /tmp/ocs-blkinfo.XXXXXX`
+    trap "[ -f "$blk_info_f" ] && rm -f $blk_info_f" HUP INT QUIT TERM EXIT
     # check if any harddisk is found ?
     if [ $NUMDEV -le 0 ]; then
       case "$dev_type" in
@@ -4928,13 +4888,13 @@ get_input_dev_name() {
     fi
 
     :> $TMP # Clean the TMP file
+    ocs-blk-dev-info $blk_info_f
     # prepare the dialog menu info
     echo -n "Preparing the dialog menu info..."
     for p in $(reduce_multipath_dev $dev_list); do
        DEV_MODEL=""
        echo -n "."
-       #FILE="$(LC_ALL=C file -Ls "/dev/$p")"
-       FILE="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem 2>/dev/null)"
+       FILE="$(jq -r ".[] | select(.name == \"$p\") | .type, .fstype" $blk_info_f)"
        rc=$?
        if [ "$rc" = "0" ]; then
          [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue
@@ -4945,7 +4905,7 @@ get_input_dev_name() {
            [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
 	 fi
        fi
-       get_disk_or_part_hardware_info "$p" default
+       get_disk_or_part_hardware_info "$p" default $blk_info_f
        rc_g=$?
        [ "$rc_g" -eq 8 ] && continue
        [ -z "$DEV_MODEL" ] && DEV_MODEL="No_description"
@@ -4997,6 +4957,7 @@ get_input_dev_name() {
     done
 
     [ -f "$TMP" ] && rm -f $TMP 
+    [ -f "$blk_info_f" ] && rm -f $blk_info_f
 
     # return the value
     echo $target_dev > $ANS_TMP
