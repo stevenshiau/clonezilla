@@ -16723,3 +16723,34 @@ disable_stdin_non_blocking_mode() {
   # "read: read error: 0: Resource temporarily not available"
   perl -e 'use POSIX qw(fcntl_h); fcntl(STDIN, F_SETFL, fcntl(STDIN, F_GETFL, 0) & ~O_NONBLOCK)'
 } # end of disable_stdin_non_blocking_mode
+#
+get_mapped_kernel_blkname() {
+  # The contents of /dev/ocs_disks/dev-mapping.txt is like:
+  # The OCS block device mapping:
+  # --------------------------
+  # Clonezilla alias | Linux kernel name | ID_PATH
+  # ocs-nd01           nvme0n1             pci-0000:0b:00.0-nvme-1
+  # ocs-nd01p1         nvme0n1p1           pci-0000:0b:00.0-nvme-1-part1
+  # ocs-nd01p2         nvme0n1p2           pci-0000:0b:00.0-nvme-1-part2
+  # ocs-nd01p3         nvme0n1p3           pci-0000:0b:00.0-nvme-1-part3
+  # ocs-nd02           nvme0n2             pci-0000:0b:00.0-nvme-2
+  # ocs-nd02p1         nvme0n2p1           pci-0000:0b:00.0-nvme-2-part1
+  # ocs-nd03           nvme0n4             pci-0000:0b:00.0-nvme-8
+  # ocs-nd04           nvme0n3             pci-0000:0b:00.0-nvme-10
+  # ocs-nd05           nvme0n5             pci-0000:0b:00.0-nvme-11
+  # ocs-nd06           nvme0n6             pci-0000:0b:00.0-nvme-13
+  # ocs-sd01           sda                 pci-0000:02:04.0-ata-1.0
+  # ocs-sd01p1         sda1                pci-0000:02:04.0-ata-1.0-part1
+  # ocs-sd02           sdb                 pci-0000:02:04.0-ata-3.0
+  # ocs-sd03           sdc                 pci-0000:02:04.0-ata-4.0
+  # ocs-sd04           sdd                 pci-0000:02:04.0-ata-5.0
+  # ocs-sd05           sde                 pci-0000:02:03.0-usb-0:1:1.0-scsi-0:0:0:0
+  # ocs-sd05p1         sde1                pci-0000:02:03.0-usb-0:1:1.0-scsi-0:0:0:0-part1
+  local in_dev_=${1#/dev/*} # Input is like /dev/sda, so in_dev_ becomes sda
+  in_dev_=${in_dev_#ocs_disks/} # If it's /dev/ocs_disks/ ($ocs_dev_dir from drbl-ocs.conf), remove ocs_disks, too.
+  local out_dev_
+  [ ! -e $ocs_dev_dir/dev-mapping.txt ] && return 3
+  out_dev_="$(grep -Ew "^${in_dev_}" $ocs_dev_dir/dev-mapping.txt 2>/dev/null \
+	     | awk -F" " '{print $2}')"
+  echo $out_dev_
+} # end of get_mapped_kernel_blkname
