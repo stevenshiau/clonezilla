@@ -1131,15 +1131,17 @@ do_savedisk_job(){
     use_dev_list_cache="no"
   fi
 
-  if [ "$ocs_sr_dev" = "ask_user" ]; then
+  case "$ocs_sr_dev" in
+  "ask_user")
     # To get $target_hd
     get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
     target_hd="$(select_VG "$target_hd")"
-  elif [ "$ocs_sr_dev" = "all" -o \
-         "$ocs_sr_dev" = "unmounted_disk" ]; then
+    ;;
+   "all"|"unmounted_disk")
     get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
     target_hd="$dev_list"
-  elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "(PTUUID=|SERIALNO=)")" ]; then
+    ;;
+   PTUUID=|SERIALNO=)
     # Input might be multiple devices like: 
     # PTUUID="f722833a" PTUUID="271e1971" SERIALNO="36000c292124c4d6554f924089bd9b83a"
     # PTUUID="f722833a" sdb
@@ -1195,9 +1197,14 @@ do_savedisk_job(){
         fi
       fi
     done
-  else
-    target_hd="$ocs_sr_dev"
-  fi
+    ;;
+  ocs-?d*)
+    # Mapping the reserved ocs block device name to Linux kernel block device name
+    target_hd="$(get_mapped_kernel_blkname "$ocs_sr_dev")"
+    ;;
+  *) target_hd="$ocs_sr_dev" ;;
+  esac
+
   # check if the device exists
   ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
@@ -1264,7 +1271,8 @@ do_restoredisk_job(){
     use_dev_list_cache="no"
   fi
 
-  if [ "$ocs_sr_dev" = "ask_user" ]; then
+  case "$ocs_sr_dev" in
+  "ask_user")
     if [ "$source_hd_no" -eq 1 ]; then
       dia_sel_opt="menu"
     else
@@ -1272,8 +1280,8 @@ do_restoredisk_job(){
     fi
     # To get $target_hd
     get_target_hd_name_from_local_machine "$msg_choose_the_disks_to_restore \n$msg_linux_disk_naming $msg_press_space_to_mark_selection" $dia_sel_opt
-  elif [ "$ocs_sr_dev" = "all" -o \
-         "$ocs_sr_dev" = "unmounted_disk" ]; then
+    ;;
+  "all"|"unmounted_disk")
     get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
     target_hd="$dev_list"
     target_hd_no="$(LC_ALL=C echo $target_hd | wc -w)"
@@ -1288,7 +1296,8 @@ do_restoredisk_job(){
       echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
       exit 1
     fi
-  elif [ "$ocs_sr_dev" = "auto-matchsize" ]; then
+    ;;
+  "auto-matchsize") 
     get_not_busy_disks_or_parts harddisk "" ""  # we will get dev_list
     target_hd="$dev_list"
     target_hd_no="$(LC_ALL=C echo $target_hd | wc -w)"
@@ -1308,7 +1317,8 @@ do_restoredisk_job(){
     # (2) Map them
     # TODO:
     source_hd_no="$(get_disk_list_from_img "$ocsroot/$target_dir" | sed -e "s/ *$//g")"
-  elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "SERIALNO=")" ]; then
+    ;;
+  SERIALNO=*)
     # Input might be multiple devices like: 
     # SERIALNO="36000c292124c4d6554f924089bd9b83a" sdb
 
@@ -1346,9 +1356,13 @@ do_restoredisk_job(){
         fi
       fi
     done
-  else
-    target_hd="$ocs_sr_dev"
-  fi
+    ;;
+  ocs-?d*)
+    # Mapping the reserved ocs block device name to Linux kernel block device name
+    target_hd="$(get_mapped_kernel_blkname "$ocs_sr_dev")"
+    ;;
+  *) target_hd="$ocs_sr_dev" ;;
+  esac
   get_extra_param_when_type_is_ask_user_and_interactive_mode
   wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
 
@@ -1390,18 +1404,21 @@ do_saveparts_job() {
   if [ "$ocs_user_mode" = "expert" ] && [ -z "$list_local_dev_mode" ]; then
     ask_list_device_mode  # get $list_local_dev_mode
   fi
-  if [ "$ocs_sr_dev" = "ask_user" ]; then
+
+  case "$ocs_sr_dev" in
+  "ask_user")
     if [ "$list_local_dev_mode" = "both_type_dev" ]; then
       get_target_device_name_from_local_machine # get $tgt_devs
       target_parts="$tgt_devs"
     else
       get_target_parts_name_from_local_machine  # get $target_parts
     fi
-  elif [ "$ocs_sr_dev" = "all" -o \
-         "$ocs_sr_dev" = "unmounted_parts" ]; then
+    ;;
+  "all"|"unmounted_parts") 
     get_not_busy_disks_or_parts partition "" ""  # we will get dev_list
     target_parts="$dev_list"
-  elif [ -n "$(echo "$ocs_sr_dev" | grep -Ei "(UUID=|PARTUUID=)")" ]; then
+    ;;
+  UUID=*|PARTUUID=*)
     # Input might be multiple devices like: 
     # UUID="B5F8-50F8" UUID="46f141f2-8ea6-47e4-81f0-052cb95a5e79" PARTUUID="271e1971-01"
     # UUID="B5F8-50F8" sda5 PARTUUID="271e1971-01"
@@ -1458,10 +1475,14 @@ do_saveparts_job() {
         fi
       fi
     done
-  else
-    target_parts="$ocs_sr_dev"
-  fi
-  
+    ;;
+  ocs-?d*)
+    # Mapping the reserved ocs block device name to Linux kernel block device name
+    target_parts="$(get_mapped_kernel_blkname "$ocs_sr_dev")"
+    ;;
+  *)  target_parts="$ocs_sr_dev" ;;
+  esac
+
   # check if the device exists
   ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
@@ -1523,7 +1544,8 @@ do_restoreparts_job(){
   # This is actually the max avaiable partitions number from image
   source_parts_no="$(get_parts_list_from_img "$ocsroot/$target_dir" | sed -e "s/ *$//g" | wc -w | awk '{print $1}')"
   
-  if [ "$ocs_sr_dev" = "ask_user" ]; then
+  case "$ocs_sr_dev" in
+  "ask_user")
     if [ -z "$source_part" ]; then
       ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
       trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
@@ -1568,8 +1590,8 @@ do_restoreparts_job(){
         read 
       fi
     fi
-  elif [ "$ocs_sr_dev" = "all" -o \
-         "$ocs_sr_dev" = "unmounted_parts" ]; then
+    ;;
+  "all"|"unmounted_parts")
     get_not_busy_disks_or_parts partition "" ""  # we will get dev_list
     target_parts="$dev_list"
     target_parts_no="$(LC_ALL=C echo $target_parts | wc -w)"
@@ -1584,9 +1606,13 @@ do_restoreparts_job(){
       echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
       exit 1
     fi
-  else
-    target_parts="$ocs_sr_dev"
-  fi
+    ;;
+  ocs-?d*)
+    # Mapping the reserved ocs block device name to Linux kernel block device name
+    target_parts="$(get_mapped_kernel_blkname "$ocs_sr_dev")"
+    ;;
+  *)target_parts="$ocs_sr_dev" ;;
+  esac
   #
   get_extra_param_when_type_is_ask_user_and_interactive_mode
   wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again

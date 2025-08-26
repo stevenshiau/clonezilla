@@ -1324,14 +1324,27 @@ ocs-prep-cache
 turn_off_swap_and_LVM2
 
 # Convert assigned SERIALNO device to block device name
-if [ -n "$(echo "$src_dev" | grep -Ei "SERIALNO=")" ]; then
+case "$src_dev" in
+SERIALNO=)
   convert_serialno_to_blkdev $src_dev
   src_dev=$blk_dev
-fi
-if [ -n "$(echo "$tgt_dev" | grep -Ei "SERIALNO=")" ]; then
+  ;;
+ocs-?d*)
+  # Mapping the reserved ocs block device name to Linux kernel block device name
+  src_dev="$(get_mapped_kernel_blkname "$src_dev")"
+  ;;
+esac
+
+case "$tgt_dev" in 
+SERIALNO=)
   convert_serialno_to_blkdev $tgt_dev
   tgt_dev=$blk_dev
-fi
+  ;;
+ocs-?d*)
+  # Mapping the reserved ocs block device name to Linux kernel block device name
+  tgt_dev="$(get_mapped_kernel_blkname "$tgt_dev")"
+  ;;
+esac
 
 # Since /dev/md* is difficult to decide as disk or partition especially when cache mechanism is enabled.
 # Therefore disable devices list cache mechanism.
