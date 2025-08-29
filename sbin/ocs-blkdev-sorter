@@ -41,10 +41,11 @@ outpu_mapping_devics() {
 
   for dev in "${ocs_devices[@]}"; do
     # Read the target of the symbolic link
-    target=$(readlink -f "$dev")
+    target=$(readlink -e "$dev")
 
-    # Skip broken symlinks
-    if [ ! -e "$target" ]; then
+    # Check if the symlink is broken. If so, remove it and skip.
+    if [ -z "$target" ] || [ ! -e "$target" ]; then
+      rm -f "$dev"
       continue
     fi
 
@@ -93,7 +94,6 @@ outpu_mapping_devics() {
   done
 } # end of outpu_mapping_devics
 
-set -e
 mkdir -p "$ocs_dev_dir"
 rm -f "$ocs_dev_dir/ocs-*"
 > $ocs_dev_dir/nvme.tmp
