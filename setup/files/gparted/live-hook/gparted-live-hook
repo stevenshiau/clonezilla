@@ -8,27 +8,6 @@
 # load functions
 . /live-hook-dir/ocs-live-hook-functions 
 
-# Function borrowed from drbl-functions because we do not have drbl/clonezilla packages in GParted live env.
-is_systemd_init() {
-  # Function to test if system is really using systemd by checking if /sbin/init is link to /lib/systemd/systemd.
-  local real_init re_code
-  if [ -x "/bin/systemctl" -a -d "/lib/systemd/system/" ]; then
-    real_init="$(LC_ALL=C stat -c "%N" /sbin/init | awk -F"->" '{print $2}' | sed -r -e "s/^[[:space:]]*//g" -e "s/\`//g" -e "s/'//g")"
-    if [ -n "$real_init" ]; then
-      if [ "$(LC_ALL=C basename $real_init)" = "systemd" ]; then
-        re_code=0
-      else
-        re_code=1
-      fi
-    else
-      re_code=1
-    fi
-  else
-    re_code=1
-  fi
-  return $re_code
-} # end of is_systemd_init
-
 # Overwrite the locale_to_keep in /live-hook-dir/ocs-live-hook.conf. We just keep C and en_US only. Later we will restore the gparted locales file.
 locale_to_keep="C.UTF-8, en_US.UTF-8"
 
@@ -71,9 +50,6 @@ done
 # clean some locales
 set_localepurge
 localepurge
-
-# Exclude live mount point in /etc/init.d/umountfs to avoid error messages when rebooting or halting.
-exclude_umount_live_mnt_point_in_umountfs
 
 # Turn off some services
 for i in $service_2_be_off_for_gparted_live; do
@@ -134,42 +110,30 @@ mkdir -p /etc/gparted-live/
 cp -ar /live-hook-dir/gparted/gparted-live.d /etc/gparted-live/
 
 # Put main gparted live start service
-if is_systemd_init; then
-  # Systemd
-  # (1) Prepare the gparted live starting service
-  # (2) Prepare autologin for tty*
-  cp -af /live-hook-dir/systemd/start-gparted-live.service /lib/systemd/system/; chown root:root /lib/systemd/system/start-gparted-live.service
-  ( cd /etc/systemd/system/getty.target.wants/; ln -fs /lib/systemd/system/start-gparted-live.service .)
-  # Disable the booting status, otherwise the messages might be shown on the dialog menu (of keyboard/language for Clonezilla/GParted live) which is annoying.
-  perl -pi -e "s/^[#]ShowStatus=.*/ShowStatus=no/g" /etc/systemd/system.conf
-  for i in `seq 1 6`; do
-    # tty1-6
-    mkdir /etc/systemd/system/getty\@tty${i}.service.d/
-    cp -af /live-hook-dir/systemd/tty-autologin-override.conf /etc/systemd/system/getty\@tty${i}.service.d/override.conf
-    chown root:root /etc/systemd/system/getty\@tty${i}.service.d/override.conf
-  done
-  for i in `seq 0 3`; do
-    # ttyS0-3
-    mkdir /etc/systemd/system/serial-getty\@ttyS${i}.service.d/
-    cp -af /live-hook-dir/systemd/serial-console-autologin.conf /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
-    chown root:root /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
-  done
-  # Put the script "start-gparted-live" to start /etc/gparted/gparted.d/
-  cp -af /live-hook-dir/start-gparted-live /etc/gparted-live/
-elif [ -d "/etc/init" ] && dpkg -L upstart &>/dev/null; then
-  # Ubuntu's upstart. We use the compatibility mode of sysv-init in upstart
-  cp -af /live-hook-dir/start-gparted-live /etc/rc2.d/S99start-gparted-live
-elif type insserv &>/dev/null; then
-  # This has to be 2nd (i.e. in elif, since ubuntu also has insserv, but it is not enabled)
-  install -o root -g root -m 755 /live-hook-dir/start-gparted-live /etc/init.d/
-  insserv start-gparted-live
-else
-  cp -af /live-hook-dir/start-gparted-live /etc/rc2.d/S99start-gparted-live
-fi
+# (1) Prepare the gparted live starting service
+# (2) Prepare autologin for tty*
+cp -af /live-hook-dir/systemd/start-gparted-live.service /usr/lib/systemd/system/; chown root:root /usr/lib/systemd/system/start-gparted-live.service
+( cd /etc/systemd/system/getty.target.wants/; ln -fs /usr/lib/systemd/system/start-gparted-live.service .)
+# Disable the booting status, otherwise the messages might be shown on the dialog menu (of keyboard/language for Clonezilla/GParted live) which is annoying.
+perl -pi -e "s/^[#]ShowStatus=.*/ShowStatus=no/g" /etc/systemd/system.conf
+for i in `seq 1 6`; do
+  # tty1-6
+  mkdir /etc/systemd/system/getty\@tty${i}.service.d/
+  cp -af /live-hook-dir/systemd/tty-autologin-override.conf /etc/systemd/system/getty\@tty${i}.service.d/override.conf
+  chown root:root /etc/systemd/system/getty\@tty${i}.service.d/override.conf
+done
+for i in `seq 0 3`; do
+  # ttyS0-3
+  mkdir /etc/systemd/system/serial-getty\@ttyS${i}.service.d/
+  cp -af /live-hook-dir/systemd/serial-console-autologin.conf /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
+  chown root:root /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
+done
+# Put the script "start-gparted-live" to start /etc/gparted/gparted.d/
+cp -af /live-hook-dir/start-gparted-live /etc/gparted-live/
 
 # Put a link for vol_id so that GParted can use it to read linux-swap labels
-if [ -e /lib/udev/vol_id ]; then
-  (cd /sbin; ln -fs /lib/udev/vol_id vol_id)
+if [ -e /usr/lib/udev/vol_id ]; then
+  (cd /usr/sbin; ln -fs /usr/lib/udev/vol_id vol_id)
 fi
 
 # we need real /sbin/start-stop-daemon
@@ -192,38 +156,6 @@ if [ -n "$unnecessary_packages" ]; then
    fi
   done
 fi
-
-#
-kernel_ver="$(unalias ls 2>/dev/null; ls /lib/modules/)"
-# List for the file or dir to be removed:
-# /lib/modules/$kernel_ver/kernel/
-# //NOTE// /lib/modules/$kernel_ver/kernel/lib is important for Debian lenny, since isofs need that. DO NOT REMOVE IT! Thanks to Louie Chen.
-#kdir_2_be_rm="sound" 
-kdir_2_be_rm="" 
-# /lib/modules/$kernel_ver/kernel/drivers/
-#drv_2_be_rm="atm telephony isdn bluetooth infiniband isdn media leds kvm spi w1" 
-drv_2_be_rm=""
-# /lib/modules/$kernel_ver/kernel/fs/
-# Forget about removing the fs driver... we'd better to keep them.
-#fs_2_be_rm="9p afs dlm smbfs cifs coda autofs* minix gfs* nfs* quota* lockd romfs ncpfs ocfs* udf" 
-fs_2_be_rm=""
-# /usr/share/fonts/X11/misc/
-font_2_be_rm="*ja* *ko* *kan* *gb*"
-# /usr/share/
-share_dir_2_be_rm="info doc-base doc"
-# Remove them
-for i in $kdir_2_be_rm; do
-  rm -rf /lib/modules/$kernel_ver/kernel/$i
-done
-for i in $drv_2_be_rm; do
-  rm -rf /lib/modules/$kernel_ver/kernel/drivers/$i
-done
-for i in $fs_2_be_rm; do
-  rm -rf /lib/modules/$kernel_ver/kernel/fs/$i
-done
-for i in $font_2_be_rm; do
-  rm -f /usr/share/fonts/X11/misc/$i
-done
 
 #
 decide_if_use_xz_compression_for_initrd
