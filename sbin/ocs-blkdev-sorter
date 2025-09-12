@@ -18,6 +18,8 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 # It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
+check_if_root
+
 # Make sure only one instance is running.
 lock_dir="/var/run/ocs-blkdev-sorter.lock"
 # The following check is atomic, it's race-condition-free.
@@ -154,8 +156,9 @@ sort -V $ocs_dev_dir/nvme.tmp | while read -r line; do
   ocs_disk_name="$ocs_dev_dir/ocs-nd$(printf "$nvme_fmt" "$i")"
   ln -sf "/dev/disk/by-path/$id_path" "$ocs_disk_name"
   # Find and create symlinks for partitions using lsblk
-  lsblk -no KNAME "/dev/$devname" | tail -n +2 | while read -r part_kname; do
-    if [ -b "/dev/$part_kname" ]; then
+  lsblk -no KNAME,TYPE "/dev/$devname" | tail -n +2 | while read -r part_kname part_type; do
+    # Process only if it's a partition, skip LVM PVs, LVs, etc.
+    if [ "$part_type" == "part" ]; then
       if [[ "$part_kname" =~ ^nvme ]]; then
         # For NVMe, the partition number is after 'p'
         part_num=$(echo "$part_kname" | sed 's/^.*p//')
@@ -177,8 +180,9 @@ i=0
   ocs_disk_name="$ocs_dev_dir/ocs-sd$(printf "$scsi_fmt" "$i")"
   ln -sf "/dev/disk/by-path/$id_path" "$ocs_disk_name"
   # Find and create symlinks for partitions using lsblk
-  lsblk -no KNAME "/dev/$devname" | tail -n +2 | while read -r part_kname; do
-    if [ -b "/dev/$part_kname" ]; then
+  lsblk -no KNAME,TYPE "/dev/$devname" | tail -n +2 | while read -r part_kname part_type; do
+    # Process only if it's a partition, skip LVM PVs, LVs, etc.
+    if [ "$part_type" == "part" ]; then
       part_num=$(echo "$part_kname" | sed 's/^.*[a-zA-Z]//')
       ln -sf "/dev/$part_kname" "${ocs_disk_name}p${part_num}"
     fi
@@ -194,8 +198,9 @@ sort -V $ocs_dev_dir/mmc.tmp | while read -r line; do
   ocs_disk_name="$ocs_dev_dir/ocs-mc$(printf "$mmc_fmt" "$i")"
   ln -sf "/dev/disk/by-path/$id_path" "$ocs_disk_name"
   # Find and create symlinks for partitions using lsblk
-  lsblk -no KNAME "/dev/$devname" | tail -n +2 | while read -r part_kname; do
-    if [ -b "/dev/$part_kname" ]; then
+  lsblk -no KNAME,TYPE "/dev/$devname" | tail -n +2 | while read -r part_kname part_type; do
+    # Process only if it's a partition, skip LVM PVs, LVs, etc.
+    if [ "$part_type" == "part" ]; then
       part_num=$(echo "$part_kname" | sed 's/^.*[a-z]//')
       ln -sf "/dev/$part_kname" "${ocs_disk_name}p${part_num}"
     fi
