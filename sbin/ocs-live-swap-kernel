@@ -291,6 +291,7 @@ while [ $# -gt 0 ]; do
  esac
 done
 
+self_repack_command="$BASH_SOURCE$(printf " %q" "$@")"
 ocs_zip_f="$1"
 shift
 lnx_img_deb="$1"
@@ -372,14 +373,27 @@ done
 # Debian kernel+modules: linux-image-5.4.0-4-armmp-lpae_5.4.19-1_armhf.deb
 # M1/M2 Mac modules: linux-image-6.5.0-asahi-00780-g62806c2c6f29_6.5.0-00780-g62806c2c6f29-1_arm64.deb
 # (https://thomas.glanzmann.de/asahi/)
-# Bianbu firmware: bianbu-esos_0.0.7_riscv64.deb (https://archive.spacemit.com/bianbu/pool/main/b/bianbu-esos/)
+# 
+# RISC-V64: Required kernel + firmware(ESOS) + DTB   ** (High depency with SoC) **
+#   - DC-ROMA: [Repository ->  https://archive.spacemit.com/bianbu/]
+#     - linux-image-6.6.36_6.6.36-2.0.1.2_riscv64.deb + bianbu-esos_0.0.7_riscv64.deb + spacemit-flash-dtbs_1.1_riscv64.deb
+#     - linux-image-6.6.63_6.6.63-2.2.7.3+20250828010738_riscv64.deb + bianbu-esos_0.0.10_riscv64.deb + spacemit-flash-dtbs_1.2.2_riscv64.deb
+#   - SiFive HiFive P550: 
+#     - linux-image-6.6.21-9-premier_6.6.21-9.1_riscv64.deb + linux-modules-6.6.21-9-premier_6.6.21-9.1_riscv64.deb
+#
+
 if [ -n "$(echo $lnx_img_deb | grep -E "raspberrypi-kernel")" ]; then
   mode="raspbian"
 elif [ -n "$(echo $lnx_img_deb | grep -E "asahi-")" ]; then
   mode="asahi"
+elif [ -n "$(dpkg -I $lnx_img_deb | grep -E "^[[:space:]]*Architecture:[[:space:]]*riscv64" )" ]; then
+#elif [ -n "$(echo $lnx_img_deb | grep -E "riscv64")" ]; then
+  mode="riscv64"
 else
   mode="debian-ubuntu"
 fi
+
+echo "Detect mode as : '$mode' ..."
 
 echo $msg_delimiter_star_line
 # II. Process the kernel, modules and firmware debs.
@@ -387,7 +401,7 @@ echo $msg_delimiter_star_line
 for ideb in $lnx_img_deb $lnx_mod_fw_deb; do
   echo "Extracting modules package $ideb..."
   if [ -e "$wd_tmp/$(basename $ideb)" ]; then
-    dpkg -x $wd_tmp/$(basename $ideb) $wd_tmp/
+	  dpkg -x $wd_tmp/$(basename $ideb) $wd_tmp/
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "File $ideb not found."
@@ -413,7 +427,7 @@ fi
 # B. Find the kernel version
 echo $msg_delimiter_star_line
 case "$mode" in
-  "debian-ubuntu"|"asahi")
+  "debian-ubuntu"|"asahi"|"riscv64")
        vmlnz="$(ls -1 $wd_tmp/boot/vmlinuz* | head -n 1)"
        if [ -n "$vmlnz" ]; then
          cp $cp_vopt $vmlnz $ocs_zip_tmpd/live/vmlinuz
@@ -452,8 +466,39 @@ case "$mode" in
        ;;
 esac
 
+# C. Find DTB files for RISC-V64 arch
+echo $msg_delimiter_star_line
+case "$mode" in
+  "riscv64")
+    dtb_folder="$ocs_zip_tmpd/live/dtbs"
+    dtb_readme="${dtb_folder}/README.source"
+    if [ ! -d "$dtb_folder" ]; then 
+      echo "'$mode' mode -> Create DTB folder : ~${dtb_folder}/  ..." 
+      mkdir -p ${cp_vopt} "$dtb_folder"
+      touch ${cp_vopt} "$dtb_readme"
+    fi
+    for ideb in $lnx_img_deb $lnx_mod_fw_deb; do
+      echo "Search DTB files from package $ideb..."
+      for dtbfile in $(dpkg -c $ideb | awk '{print $6}' | grep -E "\.dtb$") ; do 
+        cp ${cp_vopt} ${wd_tmp}/$dtbfile ${dtb_folder}/
+        echo "$(basename $ideb) : $(basename $dtbfile)" >> $dtb_readme
+      done
+    done
+    ;;
+  "*")
+    echo "Skip to collect DTB files on '$mode' mode ..."
+    ;;
+esac
+#read -p "Pause here..."
+
+
 # E.g.: clonezilla-live-20200318-eoan-zip -> clonezilla-live-20200318-eoan-armhf-k5.3.0-1019-raspi2.zip
+# Add repack full command into tmp_dir/{live/}Clonezilla-Live-Version
 dest_zip_f="$(echo $ocs_zip_f | sed -r -e "s/\.zip$/-k${lnx_ver}.zip/g")"
+echo "Repack '$ocs_zip_f -> '$(basename $dest_zip_f)' via the follow command:" | tee -a $ocs_zip_tmpd/live/Clonezilla-Live-Version
+echo "$self_repack_command" | tee -a $ocs_zip_tmpd/live/Clonezilla-Live-Version
+cp $ocs_zip_tmpd/live/Clonezilla-Live-Version $ocs_zip_tmpd/Clonezilla-Live-Version
+
 do_swap_kernel_and_module
 clean_tmp_dir_if_assigned
 
