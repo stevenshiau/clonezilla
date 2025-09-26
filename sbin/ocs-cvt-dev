@@ -28,7 +28,7 @@ USAGE() {
     echo "Usage:"
     echo "$ocs [OPTION] IMAGE_NAME SOURCE_DEV_NAME TARGET_DEVICE_NAME"
     echo "NOTE! (1) The cloned OS should support the device driver, such as SCSI or SATA if you convert it to SCSI/SATA. (2) If it's GNU/Linux, maybe you have to modify the /etc/fstab in the cloned OS"
-    echo "DEVICE name can be with or without /dev/, e.g., /dev/sda or sda."
+    echo "DEVICE name can be with or without /dev/, e.g., /dev/sda or sda. Only disk can be used here. Not any partition."
     echo 
     echo "OPTION:"
     language_help_prompt_by_idx_no
@@ -115,6 +115,22 @@ echo "Clonezilla image dir: $ocsroot"
 if [ ! -d "$ocsroot/$image_name" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "$ocsroot/$image_name NOT found!"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+
+ocs_sr_type="" # For the function is_whole_disk
+if ! is_whole_disk "$src_dev" ; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$src_dev is not a disk. Only disk can be assigned."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo "Program terminated!"
+  exit 1
+fi
+if ! is_whole_disk "$tgt_dev"; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "$tgt_dev is not a disk. Only disk can be assigned."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "Program terminated!"
   exit 1
