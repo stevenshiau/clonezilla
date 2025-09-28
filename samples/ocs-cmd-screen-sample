@@ -1,0 +1,54 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to run the saved clonezilla command with or without screen/tmux"
+
+ocscmd_=INSERT_HERE # <<< EDIT THIS LINE
+
+#
+USAGE() {
+    echo "$ocs - To run the saved clonezilla command with or without screen/tmux"
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] " 
+    echo
+    echo "Options:"
+    echo "-s, --screen   Run the command inside a new screen session."
+    echo "-t, --tmux     Run the command inside a new tmux session."
+    echo "-h, --help     Display this help and exit."
+    echo
+    echo "If no option is provided, the command runs in the current terminal."
+    echo
+    echo "Example:"
+    echo "To run the saved command inside a screen session, run:"
+    echo "   $ocs -s"
+    echo
+} # end of USAGE
+
+
+####################
+### Main program ###
+####################
+
+ocs_file="$0"
+ocs=`basename $ocs_file`
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -s|--screen) mode="screen"; shift;;
+   -t|--tmux)   mode="tmux"; shift ;;
+   -h|--help)   USAGE; exit 0 ;;
+   -*) echo "${0}: ${1}: invalid option" >&2
+       USAGE >& 2
+       exit 2 ;;
+   *)  # Stop parsing at the first non-option argument
+       break ;;
+ esac
+done
+
+clear
+case $mode in
+  screen) screen bash -c "(TERM=dumb $ocscmd_; echo \$? > /tmp/screenlog.0) |& tee -a /tmp/screenlog.1" ;;
+  tmux  ) tmux -c "(TERM=dumb $ocscmd_; echo \$? > /tmp/tmux.0) |& tee -a /tmp/tmux.1" ;;
+  *)      $ocscmd_ ;;
+esac
