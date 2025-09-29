@@ -12391,41 +12391,48 @@ check_mbr_disk_size_gt_2TiB() {
     esac
   fi
 } # end of check_mbr_disk_size_gt_2TiB
+
 # ############################
 # Functions from Miracle Linux
 # ############################
-is_supported_dev() {
-  # //NOTE// If new RE* is added, remember to check the function check_if_disk_busy_before_create_partition and get_not_busy_disks_or_parts have to be modified, too.
-  # IDE and SCSI disk: /dev/hda, /dev/hdb, /dev/sda, /dev/sdb...
-  # KVM virtual disk: /dev/vda, /dev/vdb...
-  # Xen virtual disk: /dev/xvda, /dev/xvdb, /dev/xdvc...
-  # CCISS RAID disk: /dev/cciss/c0d0, /dev/cciss/c0d1...
-  # SD card: /dev/mmcblk0, /dev/mmcblk0p1, /dev/mmcblk0p2, /dev/mmcblk0p3...
-  # NBD device: /dev/nbd0, /dev/nbd0p1, /dev/nbd0p2...
-  # Loop device: /dev/loop0, /dev/loop0p1, /dev/loop0p2
-  # NVME device: /dev/nvme0n1p1, /dev/nvme0n1p2, /dev/nvme1n1p1, /dev/nvme1n1p2
-  # FakeRAID: with nodmraid boot parameter, it's shown as /dev/md126, /dev/md126p1, /dev/md126p2...
-  # USB device: /dev/usb...
-  # Mylex ExtremeRAID-2000 SCSI RAID controller: /dev/rd/c0d0, /dev/rd/c0d1...
-  # Compaq Smart Array controller: /dev/ida/c0d0, /dev/ida/c0d1...
-  local dev_=${1#/dev/*}
-  local RE1='x?[hsv]d[a-z]+[0-9]*'
-  local RE2='i2o/hd[a-z]+[0-9]*'
-  local RE3='cciss/c[0-9]d[0-9](p[0-9]+)?'
-  local RE4='mmcblk[0-9]+p*[0-9]*'
-  local RE5='md[0-9]+p*[0-9]*'
-  local RE6='rd/c[0-9]d[0-9](p[0-9]+)?'
-  local RE7='ida/c[0-9]d[0-9](p[0-9]+)?'
-  local RE8='nvme[0-9]+n[0-9]+p*[0-9]*'
-  local RE9='nbd[0-9]+p*[0-9]*'
-  local RE10='loop[0-9]+p*[0-9]*'
-  local rc=1
 
-  if [ -n "$dev_" ]; then
-    echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9|$RE10)$"
-    rc=$?
-  fi
-  return $rc
+is_supported_dev() {
+  #==============================================================================
+  # Checks if a given device path is a supported block device.
+  # Returns 0 (success) on match, 1 (failure) otherwise.
+  #==============================================================================
+  # NOTE: If adding new device patterns, also check dependent functions like
+  # check_if_disk_busy_before_create_partition() and get_not_busy_disks_or_parts().
+
+  # Supported device types include:
+  # - IDE/SCSI/VirtIO: /dev/sd*, /dev/hd*, /dev/vd*
+  # - Xen Virtual Disk:  /dev/xvd*
+  # - CCISS RAID:        /dev/cciss/c*d*
+  # - Mylex/Compaq RAID: /dev/rd/c*d*, /dev/ida/c*d*
+  # - SD/MMC Card:       /dev/mmcblk*
+  # - MTD Block Device:  /dev/mtdblock*
+  # - NVMe Disk:         /dev/nvme*n*
+  # - Software RAID:     /dev/md*
+  # - Loop Device:       /dev/loop*
+  # - Network Block Dev: /dev/nbd*
+  # - I2O Block Device:  /dev/i2o/hd*
+
+  # Strip the leading '/dev/' from the input path for matching.
+  local dev_path="${1#"/dev/"}"
+
+  # This consolidated regex combines all patterns for efficient matching.
+  local supported_pattern='^('
+  supported_pattern+='x?[hsv]d[a-z]+[0-9]*|'          # IDE, SCSI, Xen, KVM disks (sda, hda, vda, xvda1)
+  supported_pattern+='i2o/hd[a-z]+[0-9]*|'            # I2O hard disks (i2o/hda)
+  supported_pattern+='(cciss|rd|ida)/c[0-9]d[0-9](p[0-9]+)?|' # CCISS/Mylex/Compaq RAID (cciss/c0d0, rd/c0d0p1)
+  supported_pattern+='(mmcblk|md|nbd|loop)[0-9]+p*[0-9]*|'    # SD cards, FakeRAID, NBD, Loop (mmcblk0, md126p1)
+  supported_pattern+='mtdblock[0-9]+|'               # MTD devices (mtdblock0)
+  supported_pattern+='nvme[0-9]+n[0-9]+p*[0-9]*'       # NVME devices (nvme0n1, nvme0n1p2)
+  supported_pattern+=')'
+
+  # Use Bash's built-in regex matching for better performance.
+  # The function's return code is implicitly set by the result of this test.
+  [[ "$dev_path" =~ $supported_pattern ]]
 } # end of is_supported_dev
 #
 is_partition() {
