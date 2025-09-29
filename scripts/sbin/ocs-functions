@@ -12437,91 +12437,95 @@ is_supported_dev() {
 } # end of is_supported_dev
 #
 is_partition() {
-  # //NOTE// If new RE* is added, remember to check the function check_if_disk_busy_before_create_partition and get_not_busy_disks_or_parts have to be modified, too.
-  # IDE and SCSI disk partition: /dev/hda1, /dev/hdb1, /dev/sda1, /dev/sdb1...
-  # KVM virtual disk partition: /dev/vda1, /dev/vdb1...
-  # Xen virtual disk partition: /dev/xvda1, /dev/xvdb1, /dev/xdvc1...
-  # CCISS RAID disk partition: /dev/cciss/c0d0p1, /dev/cciss/c0d1p1...
-  # SD card: /dev/mmcblk0p1, /dev/mmcblk0p2, /dev/mmcblk0p3...
-  # NBD device: /dev/nbd0p1, /dev/nbd0p2...
-  # Loop device: /dev/loop0, /dev/loop0p1, /dev/loop0p2
-  # NVME device: /dev/nvme0n1p1, /dev/nvme0n1p2, /dev/nvme1n1p1, /dev/nvme1n1p2
-  # FakeRAID: with nodmraid boot parameter, /dev/md126p1, /dev/md126p2...
-  # 2020/12/18 Allow /dev/md126 can be a partition, too.
-  # Mylex ExtremeRAID-2000 SCSI RAID controller: /dev/rd/c0d0p1, /dev/rd/c0d1p1...
-  # Compaq Smart Array controller: /dev/ida/c0d0p1, /dev/ida/c0d1p2...
-  # rc=0: is a partition; rc=1: is _not_ a partition
-  local dev_=${1#/dev/*}
-  local RE1='x?[hsv]d[a-z]+[0-9]+'
-  local RE2='i2o/hd[a-z]+[0-9]+'
-  local RE3='cciss/c[0-9]d[0-9]p[0-9]+'
-  local RE4='mmcblk[0-9]+p+[0-9]+'
-  local RE5='md[0-9]+p?[0-9]*'
-  local RE6='rd/c[0-9]d[0-9]p[0-9]+'
-  local RE7='ida/c[0-9]d[0-9]p[0-9]+'
-  local RE8='nvme[0-9]+n[0-9]+p+[0-9]+'
-  local RE9='nbd[0-9]+p+[0-9]+'
-  local RE10='loop[0-9]+p+[0-9]+'
-  local rc=1
-  local fs_ src_dk
-
-  if [ -z "$dev_" ]; then
+  #==============================================================================
+  # Checks if a given device name represents a partition.
+  # In Clonezilla, a whole disk with a filesystem is treated as a partition.
+  #
+  # Device Examples:
+  #   - IDE/SCSI/VirtIO/Xen: /dev/sda1, /dev/vda1, /dev/xvda1
+  #   - NVMe/SD/NBD/Loop:    /dev/nvme0n1p1, /dev/mmcblk0p1, /dev/nbd0p1, /dev/loop0p1
+  #   - Hardware RAID:       /dev/cciss/c0d0p1, /dev/rd/c0d0p1
+  #   - Software RAID:       /dev/md126p1 (partition on RAID device)
+  #   - Special Case:        /dev/md126 (bare RAID device treated as a partition)
+  #
+  # Arguments:
+  #   $1 - The device path or name (e.g., /dev/sda1 or sda1).
+  #
+  # Returns:
+  #   0 - The device IS a partition.
+  #   1 - The device is NOT a partition (i.e., it's a whole disk).
+  #   2 - Invalid or empty input.
+  #==============================================================================
+  local dev_name="${1#/dev/}"
+  if [[ -z "$dev_name" ]]; then
     return 2
   fi
-  # The rule is: when saving, if there is file system on the bare block device,
-  # we treat it as a partition in Clonezilla.
-  # When there is file system on a bare block device (/dev/sda, /dev/md0, not /dev/sda1, /dev/nvme0n1p1...)
-  # -> It's a partition.
-  if [ -n "$(echo "$ocs_sr_type" | grep -Ei "restore")" ]; then
-    if [ -n "$(grep -Ew "^/dev/$dev_" "$ocsroot/$target_dir/dev-fs.list" | awk -F" " '{print $2}')" ]; then
-      # When a file system on a bare block device, treat it as a partition.
-      rc=0
-    elif [ -n "$(echo $dev_ | grep -E "md[0-9]+$")" ]; then
-      src_dk="$(cat "$ocsroot/$target_dir/disk" 2>/dev/null)"
-      # TODO: what if there are 2 or more source disks?
-      if [ "$src_dk" != "${dev_}" ]; then
-        # Since the testing dev_ is not the same as source disk, we can not check blkdev.list. Just show it as a disk.
-        rc=1
-      else
-        # Especially for /dev/md, e.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition (rc=1).
-        if grep -Eq "^${dev_}p[1-9]+" "$ocsroot/$target_dir/blkdev.list"; then
-          rc=1
-        elif grep -Ewq "/dev/${dev_}" "$ocsroot/$target_dir/lvm_vg_dev.list"; then
-          # Maybe there is only LVM exists on this device, no partition at all. If so, it's not a partition.
-          rc=1
-        else
-          # E.g., /dev/md126, not containing a file system, no /dev/md126p1, no LV on it. Then it can be a disk, or a partition.
-	  # We just treat it as a partition.
-          rc=0
-        fi
-      fi
-    else
-      echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9|$RE10)$"
-      rc=$?
+
+  # 1. Check against a consolidated regex for all standard partition naming schemes.
+  #    This is the fastest check and covers the majority of cases.
+  local part_regex='^('
+  # IDE/SCSI/VirtIO/Xen: sda1, xvda1
+  part_regex+='x?[hsv]d[a-z]+[0-9]+'
+  # I2O RAID: i2o/hda1
+  part_regex+='|i2o/hd[a-z]+[0-9]+'
+  # HW RAID: cciss/c0d0p1, rd/c0d0p1, ida/c0d0p1
+  part_regex+='|(cciss|rd|ida)/c[0-9]+d[0-9]+p[0-9]+'
+  # NVMe/MMC/NBD/Loop partitions: nvme0n1p1, mmcblk0p1
+  part_regex+='|(mmcblk[0-9]+|nvme[0-9]+n[0-9]+|nbd[0-9]+|loop[0-9]+)p[0-9]+'
+  # Software RAID partitions: md126p1
+  part_regex+='|md[0-9]+p[0-9]+'
+  part_regex+=')' # End of main group
+
+  if [[ "$dev_name" =~ $part_regex ]]; then
+    return 0 # It's a standard partition.
+  fi
+
+  # Determine if we are in "save" or "restore" t_mode based on a global variable.
+  local t_mode="save"
+  # Use parameter expansion `${var,,}` for a robust, case-insensitive check.
+  if [[ "${ocs_sr_type,,}" == *restore* ]]; then
+     t_mode="restore"
+  fi
+
+  # 2. Heuristic: A "whole" device with a filesystem is treated as a partition.
+  if [[ "$t_mode" == "restore" ]]; then
+    # In restore t_mode, check the metadata from the image.
+    if grep -qEw "^/dev/$dev_name[[:space:]]" "$ocsroot/$target_dir/dev-fs.list"; then
+      return 0
     fi
-  else
-    # For save* or cloning mode.
-    if is_block_device_with_fs $dev_; then
-      # File system on a bare block device when saving. Treat it as a partition.
-      rc=0
-    elif [ -n "$(echo $dev_ | grep -E "md[0-9]+$")" ]; then
-      # Especially for /dev/md, e.g., /dev/md126, but there is /dev/md126p1, then /dev/md126 is not a partition (rc=1).
-      if grep -Eq "${dev_}p[1-9]+" /proc/partitions; then
-        rc=1
-      elif [ -n "$(LC_ALL=C pvs -o+lv_name | grep -Ew "/dev/${dev_}")" ]; then
-        # Maybe there is only LVM exists on this device, no partition at all. If so, it's not a partition.
-        rc=1
-      else
-        # E.g., /dev/md126, not containing a file system, no /dev/md126p1, no LV on it. Then it can be a disk, or a partition.
-	# We just treat it as a partition.
-        rc=0
-      fi
-    else
-      echo $dev_ | grep -Eq "^($RE1|$RE2|$RE3|$RE4|$RE5|$RE6|$RE7|$RE8|$RE9|$RE10)$"
-      rc=$?
+  else # "save" t_mode
+    # In save t_mode, check the live system. 
+    if is_block_device_with_fs "$dev_name"; then
+      return 0
     fi
   fi
-  return $rc
+
+  # 3. Heuristic: Check if a bare 'md' device (e.g., md126) is a partition.
+  #    It is considered a partition ONLY IF it does not contain its own
+  #    partition table (e.g., md126p1) or LVM.
+  if [[ "$dev_name" =~ ^md[0-9]+$ ]]; then
+    if [[ "$t_mode" == "restore" ]]; then
+      # Check image metadata for sub-partitions or LVM usage.
+      if grep -Eq "^${dev_name}p[1-9]+" "$ocsroot/$target_dir/blkdev.list" || \
+         grep -Ewq "/dev/${dev_name}" "$ocsroot/$target_dir/lvm_vg_dev.list"; then
+        return 1 # It's a disk because it contains other things.
+      else
+        return 0 # It's a bare device used as a partition.
+      fi
+    else # "save" t_mode
+      # Check the system for sub-partitions or LVM usage.
+      # Maybe there is only LVM exists on this 'md' device, no partition at all. If so, it's not a partition.
+      if grep -qE " ${dev_name}p[1-9][0-9]*$" /proc/partitions || \
+         pvs --noheadings -o pv_name "/dev/${dev_name}" &>/dev/null; then
+        return 1 # It's a disk because it contains other things.
+      else
+        return 0 # It's a bare device used as a partition.
+      fi
+    fi
+  fi
+
+  # 4. If none of the above rules identified it as a partition, it's a whole disk.
+  return 1
 } # end of is_partition
 #
 is_ide_disk() {
@@ -12578,51 +12582,58 @@ get_part_number() {
 } # end of get_part_number
 #
 get_diskname() {
-  # The return name is without the heading "/dev/",
-  # i.e. only return sda, c0d0, for example.
-  # Disk name type: 
-  local dev_=${1#/dev/*}
-  # /dev/sda1 -> /dev/sda
-  # /dev/cciss/c0d0p1 -> /dev/cciss/c0d0
-  # /dev/rd/c0d0p1 -> /dev/rd/c0d0...
-  # /dev/mmcblk0p1 -> /dev/mmcblk0
-  # /dev/nbd0p1 -> /dev/nbd0
-  # /dev/nvme0n1p1 -> /dev/nvme0n1
-  # /dev/md126p1 -> /dev/md126
-  # /dev/loop0p1 -> /dev/loop0
-  # /dev/sr0 -> /dev/sr0 (no partition for this first SCSI CD-ROM device)
-  # However, for device mapper...
-  # /dev/dm-1, /dev/dm-2 -> /dev/dm-0 rules?
-  # /dev/dm-0 is not always the disk name, e.g. for LVM:
-  # sda                               8:0    0     8G  0 disk
-  # ├─sda1                            8:1    0   243M  0 part
-  # ├─sda2                            8:2    0     1K  0 part
-  # └─sda5                            8:5    0   7.8G  0 part
-  #   ├─lucid--server-root (dm-0)   254:0    0   7.4G  0 lvm
-  #     └─lucid--server-swap_1 (dm-1) 254:1    0   388M  0 lvm
-  # 2019/04/03, for LV name, keep the way it is, e.g.,
-  # /dev/host-vg/swap_1 -> /dev/host-vg/swap_1
-  # Ref: https://sourceforge.net/p/clonezilla/bugs/314/
-  # Thanks to Constantino Michailidis for the patch file.
+  #==============================================================================
+  # Takes a device path (e.g., /dev/sda1, /dev/nvme0n1p1) and returns the base
+  # disk name (e.g., sda, nvme0n1).
+  #
+  # The returned name does not include the leading "/dev/".
+  #
+  # Arguments:
+  #   $1 - The device path or name (e.g., /dev/sda1 or sda1).
+  #
+  # Output:
+  #   Prints the base disk name to stdout.
+  #
+  # Returns:
+  #   0 on success.
+  #   1 if the input is empty.
+  #==============================================================================
+  # Remove the leading "/dev/" prefix if it exists.
+  local dev_name="${1#/dev/}"
 
-  [ -z "$dev_" ] && return 1
-  case "$dev_" in
-    cciss*)  echo "$dev_" | sed -r -e 's/^(.*[0-9]{1,})p[0-9]{1,}$/\1/g' ;;
-    rd*)     echo "$dev_" | sed -r -e 's/^(.*[0-9]{1,})p[0-9]{1,}$/\1/g' ;;
-    ida*)    echo "$dev_" | sed -r -e 's/^(.*[0-9]{1,})p[0-9]{1,}$/\1/g' ;;
-    mmcblk*) echo "$dev_" | sed -r -e 's/^([^0-9]*k[0-9]+)p[0-9]*$/\1/g' ;;
-    nbd*)    echo "$dev_" | sed -r -e 's/^([^0-9]*d[0-9]+)p[0-9]*$/\1/g' ;;
-    nvme*)   echo "$dev_" | sed -r -e 's/^([^0-9]*e[0-9]+n[0-9]+)p[0-9]*$/\1/g' ;;
-    md*)     echo "$dev_" | sed -r -e 's/^([^0-9]*d[0-9]+)p[0-9]*$/\1/g' ;;
-    loop*)   echo "$dev_" | sed -r -e 's/^([^0-9]*p[0-9]+)p[0-9]*$/\1/g' ;;
-    sr*)     echo "$dev_" ;;
-    *)       if [[ "$dev_" =~ "/" ]]; then
-	       # e.g., LV name: /dev/host-vg/swap_1
-               echo "$dev_"
-             else
-               echo "$dev_" | sed -r -e 's/^([^0-9]*)[0-9]*$/\1/g'
-             fi
-             ;;
+  # Return with an error if the input was empty or just "/dev/".
+  if [[ -z "$dev_name" ]]; then
+    echo "Error: Input device name is empty." >&2
+    return 1
+  fi
+
+  case "$dev_name" in
+    # Handles most modern device naming schemes with 'p' partitions.
+    # e.g., nvme0n1p1 -> nvme0n1, mmcblk0p1 -> mmcblk0, cciss/c0d0p1 -> cciss/c0d0.
+    # The glob pattern (*p[0-9]*) is a fast pre-filter for the more expensive regex.
+    *p[0-9]*)
+      # This regex captures the base name, ensuring it ends with a digit before
+      # the 'p' partition suffix (e.g., nvme0n1, mmcblk0, c0d0).
+      if [[ "$dev_name" =~ ^(.*[0-9])p[0-9]*$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+      else
+        # If the regex doesn't match (unusual format), return the name as is.
+        echo "$dev_name"
+      fi
+      ;;
+
+    # Handles legacy devices like sda1 -> sda, hdb10 -> hdb, xvdc1 -> xvdc.
+    sd*|hd*|vd*|xvd*)
+      # Remove the longest trailing string of one or more digits.
+      echo "${dev_name%%[0-9]*}"
+      ;;
+
+    # Default case for all other devices.
+    # e.g., dm-0, md0, loop0, sr0, LVM names like vg/lv.
+    # These are treated as whole devices and returned unmodified.
+    *)
+      echo "$dev_name"
+      ;;
   esac
 } # end of get_diskname
 #
