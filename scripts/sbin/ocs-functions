@@ -721,15 +721,8 @@ restore_hidden_data_after_MBR() {
 gen_proc_partitions_map_file() {
   # partition_table is a global variable
   partition_table="$(mktemp /tmp/parttable-ocs.XXXXXX)"
-  if grep -Eq '(scsi/host|ide/host)' /proc/partitions 2>/dev/null; then
-     # It's devfs compiled into kernel, we will use the conv_devfspart_to_tradpart to convert the devfs style partitions into traditional partitions
-     conv_devfspart_to_tradpart $partition_table
-  else
-     # The devfs is not compiled into kernel, good!
-     # We'd better not use "cp -a /proc/partitions $partition_table", use cat to get the kernel param
-     sleep .1
-     cat /proc/partitions > $partition_table
-  fi
+  # Use cat instead of "cp" command since /proc/partitions is read-only. We need to modify it later.
+  cat /proc/partitions > $partition_table
 } # end of gen_proc_partitions_map_file
 #
 get_dev_model_shown() {
