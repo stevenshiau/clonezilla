@@ -12445,6 +12445,7 @@ is_partition() {
   #   - NVMe/SD/NBD/Loop:    /dev/nvme0n1p1, /dev/mmcblk0p1, /dev/nbd0p1, /dev/loop0p1
   #   - Hardware RAID:       /dev/cciss/c0d0p1, /dev/rd/c0d0p1
   #   - Software RAID:       /dev/md126p1 (partition on RAID device)
+  #   - MTD Block Device:    /dev/mtdblock0 (treated as a partition)
   #   - Special Case:        /dev/md126 (bare RAID device treated as a partition)
   #
   # Arguments:
@@ -12471,6 +12472,8 @@ is_partition() {
   part_regex+='|(cciss|rd|ida)/c[0-9]+d[0-9]+p[0-9]+'
   # NVMe/MMC/NBD/Loop partitions: nvme0n1p1, mmcblk0p1
   part_regex+='|(mmcblk[0-9]+|nvme[0-9]+n[0-9]+|nbd[0-9]+|loop[0-9]+)p[0-9]+'
+  # MTD block devices: mtdblock0, mtdblock1
+  part_regex+='|mtdblock[0-9]+'
   # Software RAID partitions: md126p1
   part_regex+='|md[0-9]+p[0-9]+'
   part_regex+=')' # End of main group
@@ -12493,7 +12496,7 @@ is_partition() {
       return 0
     fi
   else # "save" t_mode
-    # In save t_mode, check the live system. 
+    # In save t_mode, check the system.
     if is_block_device_with_fs "$dev_name"; then
       return 0
     fi
