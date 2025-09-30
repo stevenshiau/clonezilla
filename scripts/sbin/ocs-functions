@@ -12544,40 +12544,47 @@ is_ide_disk() {
 } # end of is_ide_disk
 #
 get_part_number() {
-  local dev_=${1#/dev/*}
+  # IDE and SCSI disk partition: /dev/sda15 -> 15
+  # KVM virtual disk partition: /dev/vda1 -> 1
+  # Xen virtual disk partition: /dev/xvda1 -> 1
+  # CCISS RAID disk partition: /dev/cciss/c0d0p1 -> p1 (yes, with p)
+  # Mylex ExtremeRAID-2000 SCSI RAID controller: /dev/rd/c0d0p1 -> p1 (yes, with p)
+  # Compaq Smart Array controller: /dev/ida/c0d0p1 -> p1 (yes, with p)
+  # SD card: /dev/mmcblk0p3 -> p3 (yes, with p)
+  # NBD device: /dev/nbd0p3 -> p3 (yes, with p)
+  # Loop device: /dev/loop0p3 -> p3 (yes, with p)
+  # NVME device: /dev/nvme0n1p1 -> p1 (yes, with p)
+  # FakeRAID: with nodmraid boot parameter, /dev/md126p1 -> p1 (yes, with p)
+  # Return immediately if no device path is provided.
+  if [[ -z "$1" ]]; then
+    echo ""
+    return 0
+  fi
+
+  # Strip the "/dev/" prefix from the input path.
+  local dev_=${1#/dev/}
   local num=""
 
-  if [ -n "$dev_" ]; then
-    # IDE and SCSI disk partition: /dev/sda15 -> 15
-    # KVM virtual disk partition: /dev/vda1 -> 1
-    # Xen virtual disk partition: /dev/xvda1 -> 1
-    # CCISS RAID disk partition: /dev/cciss/c0d0p1 -> p1 (yes, with p)
-    # Mylex ExtremeRAID-2000 SCSI RAID controller: /dev/rd/c0d0p1 -> p1 (yes, with p)
-    # Compaq Smart Array controller: /dev/ida/c0d0p1 -> p1 (yes, with p)
-    # SD card: /dev/mmcblk0p3 -> p3 (yes, with p)
-    # NBD device: /dev/nbd0p3 -> p3 (yes, with p)
-    # Loop device: /dev/loop0p3 -> p3 (yes, with p)
-    # NVME device: /dev/nvme0n1p1 -> p1 (yes, with p)
-    # FakeRAID: with nodmraid boot parameter, /dev/md126p1 -> p1 (yes, with p)
-    # Just in case. User might use /dev/cciss/c0d0 to get the part number.
-    # Here we will continue only if $dev_ is a partition
-    # Otherwise
-    # echo cciss/c0d0 | sed -r -e 's/^.*[0-9]{1,}(p[0-9]{1,})$/\1/g'
-    # will get "cciss/c0d0". However, it should be "".
-    # It's easier we use: sed -r -e 's|cciss/c[0-9]+d[0-9]+||g' for cciss/c0d0p3 cases
-    # 2022/2/2 /dev/mapper/ should be no partition number. Treat it as a disk. Hence just return nothing.
+  # Handle device types that should be treated as whole disks, meaning they have
+  # no partition number. E.g., /dev/mtdblockN
   case "$dev_" in
-    cciss*)   num="$(echo "$dev_" | sed -r -e 's|cciss/c[0-9]+d[0-9]+||g')" ;;
-    rd*)      num="$(echo "$dev_" | sed -r -e 's|rd/c[0-9]+d[0-9]+||g')" ;;
-    ida*)     num="$(echo "$dev_" | sed -r -e 's|ida/c[0-9]+d[0-9]+||g')" ;;
-    mmcblk*)  num="$(echo "$dev_" | sed -r -e 's|mmcblk[0-9]+||g')" ;;
-    nvme*)    num="$(echo "$dev_" | sed -r -e 's|nvme[0-9]+n[0-9]+||g')" ;;
-    md*)      num="$(echo "$dev_" | sed -r -e 's|md[0-9]+||g')" ;;
-    nbd*)     num="$(echo "$dev_" | sed -r -e 's|nbd[0-9]+||g')" ;;
-    loop*)    num="$(echo "$dev_" | sed -r -e 's|loop[0-9]+||g')" ;;
-    mapper*)  num="" ;;
-    *)        num="$(echo "$dev_" | sed -r -e 's/^[^0-9]*-?([0-9]*)$/\1/g')" ;;
+    mapper/*|mtdblock*)
+      echo ""
+      return 0
+      ;;
   esac
+
+  # First, try to match modern partition identifiers that start with 'p'
+  # (e.g., for nvme, mmcblk, cciss devices like nvme0n1p1, mmcblk0p2, cciss/c0d0p1).
+  # The 'sed -n' with the 'p' flag ensures we only get output if a match is found.
+  num=$(echo "$dev_" | sed -n -r 's/.*(p[0-9]+)$/\1/p')
+
+  # If no 'p'-style partition was found, try to match standard numeric partitions
+  # at the end of the device name (e.g., sda1, vda15).
+  if [[ -z "$num" ]]; then
+    # This regex isolates trailing digits. It correctly returns an empty string for
+    # whole disk names without a trailing number, like 'sda'.
+    num=$(echo "$dev_" | sed -n -r 's/^[^0-9]*([0-9]+)$/\1/p')
   fi
 
   echo "$num"
