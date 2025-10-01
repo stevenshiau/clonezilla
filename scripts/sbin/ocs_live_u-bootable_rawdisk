@@ -1,0 +1,326 @@
+#!/usr/bin/env bash
+#=====================================================================
+#  File:   ocs_live_u-bootable_rawdisk
+#  Author: Ceasar Sun
+#  Desc:   Merge OCS zip and U-boot enabled bootable raw image as a new U-boot enabled OCS live raw disk.
+#          The output could use dd comdand to create a U-boot enabled bootable micro SD for RISC-V64 machine.
+#          SE.g. :DC-ROMA L2A,... 
+#=====================================================================
+
+set -euo pipefail   # 嚴格模式：錯誤即退出、未設定變數即錯誤
+
+#---------------------------#
+#  變數與預設值            #
+#---------------------------#
+# 下載 U-boot enabled 模板 URL
+
+DEFAULT_BOOTABLE_RAW_TEMPLATE="http://free.nchc.org.tw/clonezilla-riscv/DC-ROMA-L2A/bootable-img.template/bootable.ocs-base.img"
+#DEFAULT_BOOTABLE_RAW_TEMPLATE="http://localhost:8080/clonezilla-riscv/DC-ROMA-L2A/bootable-img.template/bootable.ocs-base.img"
+
+# 暫存目錄（以 PID 為名避免衝突）
+# 取得腳本的絕對路徑 → 目錄 → 加上唯一的子目錄
+TMPDIR_ROOT="${PWD}/ocs_repack_$$"
+MOUNT_POINT="${TMPDIR_ROOT}/mnt"
+BOOTFS_PART_NAME="bootfs"  ## 搭配 bootable template image 中 U-Boot 搜尋分割區名稱
+
+
+# 之後會在程式執行過程中動態產生
+OCS_ZIP=""
+LOOP_DEVICE=""
+KPARTX_MAP=""
+DOWNLOADED_TEMPLATE=""   # 若自行下載，記錄檔案路徑，最後會一併清除
+FULL_SELF_CLI="$BASH_SOURCE$(printf " %q" "$@")"
+
+# 控制旗標 ---------------------------------------------------
+DEBUG_MODE=false
+VERBOSE_MODE=
+
+# ---------- 1. 必要的 root 檢查 ----------
+require_root() {
+    # $EUID 只在 bash 中可靠，若使用 sh 也會有 $UID
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        cat >&2 <<'EOF'
+=====================================================================
+Warning： Root or sudo privilege required ; e.g：
+  sudo $0 clonezilla-live-3.2.2-5-riscv64.zip
+=====================================================================
+EOF
+        exit 1
+    fi
+}
+
+
+#---------------------------#
+#  輔助函式                #
+#---------------------------#
+usage() {
+    cat <<EOF
+Usage: $0 <ocs zip file> [--bootable_raw <filename>]
+
+   <ocs zip file>       Required, OCS zip file
+   --bootable_template <filename>  Optional, OCS bootable template raw image。
+                              Script would use '${DEFAULT_BOOTABLE_RAW_TEMPLATE}' as default template
+   --debug                    Debug mode : to keep TMPDIR_ROOT
+   --verbose                  Verbose mode
+   -h|--help                  Show help
+
+Usage:
+ ~$ sudo $0 clonezilla-live-3.2.2-5-riscv64.zip	
+ ~$ sudo $0 my_repack_ocs.zip --bootable_template /path/to/boot.raw --debug
+EOF
+}
+
+die() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
+# 清理工作：解除掛載、移除 loop、kpartx、刪除暫存目錄與下載的檔案
+cleanup() {
+
+    STATUS=$?
+    if [[ $STATUS -eq 0 ]]; then
+      #echo "正常退出，跳過清理"
+      return 0 
+    fi
+
+    echo "=== Cleanup start ==="
+    # 1. 解除掛載
+    if mountpoint -q "${MOUNT_POINT}" 2>/dev/null; then
+        echo "Unmounting ${MOUNT_POINT} ..."
+        umount ${VERBOSE_MODE} -l "${MOUNT_POINT}" || echo "Warning: umount failed"
+    fi
+
+    # 2. 移除 kpartx 映射
+    if [[ -n "${KPARTX_MAP}" ]]; then
+        echo "Removing kpartx map ${KPARTX_MAP} ..."
+        kpartx ${VERBOSE_MODE} -d "${LOOP_DEVICE}" || echo "Warning: kpartx -d failed"
+        KPARTX_MAP=""
+    fi
+
+    # 3. 釋放 loop 裝置
+    if [[ -n "${LOOP_DEVICE}" ]]; then
+        echo "Detaching loop device ${LOOP_DEVICE} ..."
+        losetup ${VERBOSE_MODE} -d "${LOOP_DEVICE}" || echo "Warning: losetup -d failed"
+        LOOP_DEVICE=""
+    fi
+
+    # 4. 刪除暫存目錄
+    # 依 debug 與否決定是否保留暫存目錄
+    if $DEBUG_MODE; then
+        echo "Debug mode : to keep temp dir : ${TMPDIR_ROOT}"
+    else
+        if [[ -d "${TMPDIR_ROOT}" ]]; then
+            echo "Removing temporary directory ${TMPDIR_ROOT} ..."
+            rm ${VERBOSE_MODE} -rf "${TMPDIR_ROOT}"
+        fi
+    fi
+
+    # 5. 若有自行下載的模板檔，刪除
+    #if [[ -n "${DOWNLOADED_TEMPLATE}" && -f "${DOWNLOADED_TEMPLATE}" ]]; then
+    #    echo "Removing downloaded template ${DOWNLOADED_TEMPLATE} ..."
+    #    [ $DEBUG_MODE ] || rm ${VERBOSE_MODE} -f "${DOWNLOADED_TEMPLATE}"
+    #fi
+
+    echo "=== Cleanup finished ==="
+}
+
+trap cleanup EXIT INT TERM
+
+#---------------------------#
+#  參數解析                #
+#---------------------------#
+if [[ $# -eq 0 ]]; then
+    usage
+fi
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --bootable_template)
+            BOOTABLE_TEMPLATE_RAWDISK="${2:-}"
+            [[ -z "${BOOTABLE_TEMPLATE_RAWDISK}" ]] && die "Missing argument for --bootable_template"
+            shift 2
+            ;;
+        --debug)
+            DEBUG_MODE=true
+            shift
+            ;;
+        --verbose)
+            VERBOSE_MODE="-v"
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --*)  # 未知長選項
+            die "Unknown argument: $1"
+            ;;
+        *)   # 位置參數 (第一個非選項的即為 OCS zip)
+            if [[ -z "${OCS_ZIP}" ]]; then
+                OCS_ZIP="$1"
+            else
+                die "Unknown argument: $1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+require_root
+
+# 必填參數檢查
+[[ -z "${OCS_ZIP:-}" ]] && die "--ocs_zip is required !"
+
+#---------------------------#
+#  下載或檢查 bootable_raw #
+#---------------------------#
+if [[ -z "${BOOTABLE_TEMPLATE_RAWDISK:-}" ]]; then
+    echo "Without input of --bootable_template , to use default template : $DEFAULT_BOOTABLE_RAW_TEMPLATE ..."
+    # 建立暫存子目錄放置下載檔案
+    DOWNLOAD_DIR="${TMPDIR_ROOT}/download"
+    mkdir ${VERBOSE_MODE} -p "${DOWNLOAD_DIR}"
+    DOWNLOADED_TEMPLATE="${DOWNLOAD_DIR}/bootable_template.img"
+
+    # 優先使用 curl，若無則嘗試 wget
+    if command -v curl >/dev/null 2>&1; then
+        echo "Use 'curl' to download  ${DEFAULT_BOOTABLE_RAW_TEMPLATE}"
+        curl ${VERBOSE_MODE} -L -o "${DOWNLOADED_TEMPLATE}" "${DEFAULT_BOOTABLE_RAW_TEMPLATE}" \
+            || die "curl download failed"
+    elif command -v wget >/dev/null 2>&1; then
+        echo "Use 'wget' to download  ${DEFAULT_BOOTABLE_RAW_TEMPLATE}"
+        wget ${VERBOSE_MODE} -O "${DOWNLOADED_TEMPLATE}" "${DEFAULT_BOOTABLE_RAW_TEMPLATE}" \
+            || die "wget download failed"
+    else
+        die "No curl or wget installed, download file failed"
+    fi
+
+    # 確認下載成功且為可讀檔案
+    [[ -f "${DOWNLOADED_TEMPLATE}" && -r "${DOWNLOADED_TEMPLATE}" ]] \
+        || die "下載的模板檔案不存在或不可讀"
+
+    BOOTABLE_TEMPLATE_RAWDISK="${DOWNLOADED_TEMPLATE}"
+else
+    # 若使用者自行提供 - 只檢查檔案本身
+    :
+fi
+
+#---------------------------#
+#  前置檢查                #
+#---------------------------#
+for f in "${OCS_ZIP}" "${BOOTABLE_TEMPLATE_RAWDISK}"; do
+    [[ -f "${f}" ]] || die "檔案不存在: ${f}"
+    [[ -r "${f}" ]] || die "檔案不可讀: ${f}"
+done
+for cmd in kpartx losetup mount umount unzip basename dirname; do
+    command -v "${cmd}" >/dev/null 2>&1 || die "Command or package doesn't existed: ${cmd}"
+done
+
+#---------------------------#
+#  建立暫存目錄            #
+#---------------------------#
+mkdir ${VERBOSE_MODE} -p "${MOUNT_POINT}"
+echo "暫存目錄已建立：${MOUNT_POINT}"
+
+#---------------------------#
+#  2. 複製 raw 並掛載第5分割區 #
+#---------------------------#
+TMP_RAW="${TMPDIR_ROOT}/raw_image.img"
+echo "Copying bootable raw image to temporary file ..."
+cp -a ${VERBOSE_MODE} "${BOOTABLE_TEMPLATE_RAWDISK}" "${TMP_RAW}"
+
+echo "Setting up loop device ..."
+LOOP_DEVICE=$(losetup ${VERBOSE_MODE} -f --show "${TMP_RAW}")
+[[ -z "${LOOP_DEVICE}" ]] && die "Create loop device failed ..."
+
+echo "Creating partition mappings with kpartx ..."
+kpartx ${VERBOSE_MODE} -a -s "${LOOP_DEVICE}"
+sleep 1   # 等待映射出現
+
+# Search device mapper id which the partition "name" = "bootfs"
+KPARTX_MAP="/dev/mapper/$(lsblk -ln -o NAME,LABEL ${LOOP_DEVICE}  \
+    | awk -v bootfs_part_name="$BOOTFS_PART_NAME" '$2 == bootfs_part_name {print $1}' \
+    2>/dev/null || true)"
+#KPARTX_MAP=$(ls /dev/mapper/$(basename "${LOOP_DEVICE}")p5 2>/dev/null || true)
+#if [[ -z "${KPARTX_MAP}" ]]; then
+#    # 有時候會是 loopXp5, 再次嘗試通配
+#    KPARTX_MAP=$(ls /dev/mapper/${LOOP_DEVICE##*/}p5 2>/dev/null || true)
+#fi
+[[ -b "${KPARTX_MAP}" ]] && echo "Find available partition : '${KPARTX_MAP}' .." ||  die "Without partition "name" = bootfs (say : /dev/mapper/*p5）"
+
+echo "Mounting partition ${KPARTX_MAP} to ${MOUNT_POINT} ..."
+mount ${VERBOSE_MODE} "${KPARTX_MAP}" "${MOUNT_POINT}"
+
+#---------------------------#
+#  3. 解壓 OCS zip 並複製   #
+#---------------------------#
+echo "Extracting OCS zip ..."
+TMP_UNZIP="${TMPDIR_ROOT}/unzipped"
+mkdir ${VERBOSE_MODE} -p "${TMP_UNZIP}"
+unzip $( [[ $VERBOSE_MODE ]] || echo "-q" ) "${OCS_ZIP}" -d "${TMP_UNZIP}" || die "unzip failed"
+
+echo "Rsyncing extracted files to mounted partition ..."
+rsync -a ${VERBOSE_MODE} "${TMP_UNZIP}/." "${MOUNT_POINT}/" || die "rsync failed"
+#cp ${VERBOSE_MODE} -a "${TMP_UNZIP}/." "${MOUNT_POINT}/" || die "copy failed"
+
+#---------------------------#
+#  4. 寫入 repack-raw_info.txt #
+#---------------------------#
+INFO_FILE="${MOUNT_POINT}/repack-raw_info.txt"
+{
+    echo "=== Repack Info  ==="
+    echo "Date                  : $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "Original OCS Zip      : ${OCS_ZIP}"
+    echo "Bootable Raw Template : ${BOOTABLE_TEMPLATE_RAWDISK}"
+    echo "Loop Device           : ${LOOP_DEVICE}"
+    echo "Bootfs Mapper         : ${KPARTX_MAP}"
+    echo "Full Self Command     : ${FULL_SELF_CLI}"
+    echo "=== End of info ==="
+} > "${INFO_FILE}"
+
+echo "Write Repack Info into: ${INFO_FILE}"
+
+#---------------------------#
+#  5. 卸載並重新命名       #
+#---------------------------#
+echo "Syncing filesystem ..."
+sync
+
+echo "Unmounting partition ..."
+umount ${VERBOSE_MODE} "${MOUNT_POINT}" || die "umount 失敗"
+
+# 移除 kpartx 映射（clean‑up 會再執行，這裡提前避免後續衝突）
+kpartx ${VERBOSE_MODE} -d "${LOOP_DEVICE}" || echo "Warning: kpartx -d failed"
+
+# 釋放 loop 裝置（clean‑up 會再執行，這裡提前避免後續衝突）
+losetup ${VERBOSE_MODE} -d "${LOOP_DEVICE}" || echo "Warning: losetup -d failed"
+
+# 產生最終檔名
+OCS_BASENAME="$(basename "${OCS_ZIP}" .zip)"   # 去除 .zip
+FINAL_IMG="${OCS_BASENAME}_u-bootable.img"
+
+# 若目標檔案已存在，詢問是否覆寫
+if [[ -e "${FINAL_IMG}" ]]; then
+    read -p "Output file : ${FINAL_IMG} existed, overwrite (y/N)？" ans
+    [[ "${ans}" =~ ^[Yy]$ ]] || mv ${VERBOSE_MODE} "${FINAL_IMG}" "${FINAL_IMG}_$$"
+fi
+
+echo "Renaming temporary raw image to ${FINAL_IMG} ..."
+mv ${VERBOSE_MODE} "${TMP_RAW}" "${FINAL_IMG}"
+
+echo "=== Done ==="
+echo "Output : ${FINAL_IMG}"
+echo "Then, you can use the following command to create a bootable OCS disk with U-boot/SPI enabled :"
+echo " $ sudo dd if=${FINAL_IMG} of=/dev/mmcdevice bs=1024M conv=fsync"
+
+# 若是 debug 模式，在結束前再次顯示暫存目錄位置（cleanup 已說明）
+if $DEBUG_MODE; then
+    echo "Debug mode: Keep TMPDIR_ROOT = ${TMPDIR_ROOT}"
+else 
+    if [[ -d "${TMPDIR_ROOT}" ]]; then
+        echo "Removing temporary directory ${TMPDIR_ROOT} ..."
+        rm ${VERBOSE_MODE} -rf "${TMPDIR_ROOT}"
+    fi
+fi
+
+exit 0
