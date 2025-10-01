@@ -12411,6 +12411,7 @@ is_supported_dev() {
   # - Mylex/Compaq RAID: /dev/rd/c*d*, /dev/ida/c*d*
   # - SD/MMC Card:       /dev/mmcblk*
   # - MTD Block Device:  /dev/mtdblock*
+  # - eMMC Boot Device:  /dev/mmcblk*boot*
   # - NVMe Disk:         /dev/nvme*n*
   # - Software RAID:     /dev/md*
   # - Loop Device:       /dev/loop*
@@ -12425,7 +12426,9 @@ is_supported_dev() {
   supported_pattern+='x?[hsv]d[a-z]+[0-9]*|'          # IDE, SCSI, Xen, KVM disks (sda, hda, vda, xvda1)
   supported_pattern+='i2o/hd[a-z]+[0-9]*|'            # I2O hard disks (i2o/hda)
   supported_pattern+='(cciss|rd|ida)/c[0-9]d[0-9](p[0-9]+)?|' # CCISS/Mylex/Compaq RAID (cciss/c0d0, rd/c0d0p1)
-  supported_pattern+='(mmcblk|md|nbd|loop)[0-9]+p*[0-9]*|'    # SD cards, FakeRAID, NBD, Loop (mmcblk0, md126p1)
+  # MMC devices, including partitions (mmcblk0p1) and boot devices (mmcblk0boot0)
+  supported_pattern+='mmcblk[0-9]+(p[0-9]+|boot[0-9]+)?|'
+  supported_pattern+='(md|nbd|loop)[0-9]+p*[0-9]*|'    # FakeRAID, NBD, Loop (md126p1)
   supported_pattern+='mtdblock[0-9]+|'               # MTD devices (mtdblock0)
   supported_pattern+='nvme[0-9]+n[0-9]+p*[0-9]*'       # NVME devices (nvme0n1, nvme0n1p2)
   supported_pattern+=')'
@@ -12443,6 +12446,7 @@ is_partition() {
   # Device Examples:
   #   - IDE/SCSI/VirtIO/Xen: /dev/sda1, /dev/vda1, /dev/xvda1
   #   - NVMe/SD/NBD/Loop:    /dev/nvme0n1p1, /dev/mmcblk0p1, /dev/nbd0p1, /dev/loop0p1
+  #   - eMMC Boot Device:    /dev/mmcblk0boot0 (treated as a partition)
   #   - Hardware RAID:       /dev/cciss/c0d0p1, /dev/rd/c0d0p1
   #   - Software RAID:       /dev/md126p1 (partition on RAID device)
   #   - MTD Block Device:    /dev/mtdblock0 (treated as a partition)
@@ -12470,8 +12474,10 @@ is_partition() {
   part_regex+='|i2o/hd[a-z]+[0-9]+'
   # HW RAID: cciss/c0d0p1, rd/c0d0p1, ida/c0d0p1
   part_regex+='|(cciss|rd|ida)/c[0-9]+d[0-9]+p[0-9]+'
-  # NVMe/MMC/NBD/Loop partitions: nvme0n1p1, mmcblk0p1
-  part_regex+='|(mmcblk[0-9]+|nvme[0-9]+n[0-9]+|nbd[0-9]+|loop[0-9]+)p[0-9]+'
+  # MMC partitions (mmcblk0p1) and eMMC boot partitions (mmcblk0boot0)
+  part_regex+='|mmcblk[0-9]+(p|boot)[0-9]+'
+  # NVMe/NBD/Loop partitions: nvme0n1p1, nbd0p1
+  part_regex+='|(nvme[0-9]+n[0-9]+|nbd[0-9]+|loop[0-9]+)p[0-9]+'
   # MTD block devices: mtdblock0, mtdblock1
   part_regex+='|mtdblock[0-9]+'
   # Software RAID partitions: md126p1
@@ -12555,6 +12561,8 @@ get_part_number() {
   # Loop device: /dev/loop0p3 -> p3 (yes, with p)
   # NVME device: /dev/nvme0n1p1 -> p1 (yes, with p)
   # FakeRAID: with nodmraid boot parameter, /dev/md126p1 -> p1 (yes, with p)
+  # MTD Block Device: /dev/mtdblock* -> ""(nothing) since it's a partition in Clonezilla
+  # eMMC Boot Device: /dev/mmcblk*boot* -> ""(nothing) since it's a partition in Clonezilla
   # Return immediately if no device path is provided.
   if [[ -z "$1" ]]; then
     echo ""
@@ -12566,9 +12574,9 @@ get_part_number() {
   local num=""
 
   # Handle device types that should be treated as whole disks, meaning they have
-  # no partition number. E.g., /dev/mtdblockN
+  # no partition number. E.g., /dev/mtdblockN, /dev/mmcblk*boot*
   case "$dev_" in
-    mapper/*|mtdblock*)
+    mapper/*|mtdblock*|mmcblk*boot*)
       echo ""
       return 0
       ;;
