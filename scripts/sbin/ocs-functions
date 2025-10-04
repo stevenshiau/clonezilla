@@ -2354,50 +2354,46 @@ mount_root_partition_for_separate_boot_part() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
 } # end of mount_root_partition_for_separate_boot_part
-
-# check input_device
+#
 check_if_input_device_exist() {
-  ANS_TMP=$1
+  local output_file="$1"
   shift
-  local input_dev="$(format_dev_name_without_leading_dev $*)" # e.g., sda1, sda2
-  local partition_table
-  if [ -z "$input_dev" ]; then
+  local input_devices
+  input_devices="$(format_dev_name_without_leading_dev "$@")"
+
+  if [[ -z "$input_devices" ]]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "No input device!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     exit 1
   fi
-  gen_proc_partitions_map_file
 
-  ret_dev="$input_dev"
-  for idev in $input_dev; do
-    if [ -z "$(awk -F" " '{print $4}' $partition_table | \
-	    grep -Ew "$idev")" ] && \
-	    [ ! -b "/dev/$idev" ]; then
+  local -a valid_devices=()
+  # Use arrays to safely manage the list of devices.
+  for dev in $input_devices; do
+    if is_device_valid "$dev"; then
+      echo "Selected device [$dev] found!"
+      valid_devices+=("$dev")
+    else
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "The input device [$idev] does NOT exist in this machine!"
-      echo "We will not save this device [$idev]!"
+      echo "The input device [$dev] does NOT exist in this machine!"
+      echo "We will not save this device [$dev]!"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      # remove non-existing device.
-      ret_dev="$(echo $ret_dev | sed -e "s/\<$idev\>//g")"
       echo "Press enter to continue!"
       read
-    else
-      echo "Selected device [$idev] found!"
     fi
   done
-  [ -f "$partition_table" ] && rm -f $partition_table
-  if [ -n "$ret_dev" ]; then
-    echo $ret_dev > $ANS_TMP
-    # strip the unnecessary quotation mark "
-    LC_ALL=C perl -pi -e "s/\"//g" $ANS_TMP
-    echo "The selected devices: $ret_dev" | tee --append ${OCS_LOGFILE}
+
+  if [ ${#valid_devices[@]} -gt 0 ]; then
+    # Safely write the array of valid devices to the output file.
+    # The "${valid_devices[@]}" expansion correctly handles spaces.
+    echo "${valid_devices[@]}" > "$output_file"
+    echo "The selected devices: ${valid_devices[@]}" | tee --append "${OCS_LOGFILE}"
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "No inputted devices found!" | tee --append ${OCS_LOGFILE}
-    echo "$msg_program_stop!!!" | tee --append ${OCS_LOGFILE}
+    echo "No inputted devices found!" | tee --append "${OCS_LOGFILE}"
+    echo "$msg_program_stop!!!" | tee --append "${OCS_LOGFILE}"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    # Saving mode, always copy error log to image dir.
     copy_error_log
     exit 1
   fi
@@ -15142,48 +15138,102 @@ create_cpu_arch_tag_in_live () {
 } # end of create_cpu_arch_tag_in_live
 #
 strip_leading_dev() {
-  # Function to strip the /dev/ for multiple devices
-  # e.g., /dev/sda -> sda
-  local devs_="$*"
-  devs_="$(echo $devs_ | sed -r -e "s|/dev/||g")"
-  echo $devs_
+  # Strips the leading "/dev/" prefix from one or more device names.
+  #
+  # Arguments:
+  #   $@ - A list of device names (e.g., "/dev/sda" "sdb").
+  #
+  # Output:
+  #   Prints a space-separated string of stripped names (e.g., "sda sdb").
+  #
+  # Use an array to safely store the results.
+  local -a stripped_devs
+
+  # Loop through each argument provided to the function.
+  for dev in "$@"; do
+    # Use fast, built-in parameter expansion to strip the leading prefix.
+    stripped_devs+=("${dev#"/dev/"}")
+  done
+
+  # Echo all elements of the array as a single, space-separated string.
+  echo "${stripped_devs[@]}"
 } # end of strip_leading_dev
 #
 format_dev_name_with_leading_dev() {
-  # No matter the input is like /dev/sda or sda, format it as sda, then make it as /dev/sda
-  # This function works for multiple devices
-  # //NOTE// There are some reserved word for device name, we collect them in drbl-ocs.conf as ocs_reserved_dev_name.
-  # The returned value is like: /dev/sda /dev/sdb auto ask_user
-  local devs_="$*"
-  local ret_devs_
-  # ocs_reserved_dev_name is from drbl-ocs.conf.
-  devs_="$(strip_leading_dev $devs_)" # devs_ is like: sda now
-  # For reserved word, do not replace it: auto, ask_user, all
-  # While: autoname, autohostname, autoproductname are for image name, not for device.
-  # devs_="$(echo $devs_ | sed -r -e "s|^|/dev/|" -e "s| | /dev/|g")" # devs_ is like: "/dev/sda /dev/sdb" now
-  for id in $devs_; do
-    if [ -z "$(echo "$ocs_reserved_dev_name" | grep -Ew "$id")" ]; then
-      # Not reserved one, prepend /dev/
-      ret_devs_="$ret_devs_ /dev/$id"
+  # Takes a list of device names and keywords, and formats them by ensuring all
+  # non-reserved device names have a "/dev/" prefix.
+  #
+  # This function depends on a global, space-separated variable `ocs_reserved_dev_name`
+  # (e.g., ocs_reserved_dev_name="auto ask_user all").
+  #
+  # Arguments:
+  #   $@ - A list of device names or keywords (e.g., "/dev/sda" "sdb" "auto").
+  #
+  # Output:
+  #   Prints a formatted, space-separated string to stdout (e.g., "/dev/sda /dev/sdb auto").
+  #
+  # For very fast lookups, load the globally defined reserved words
+  # into a local associative array (hash map).
+  local -A reserved_map
+  for word in $ocs_reserved_dev_name; do
+    reserved_map["$word"]=1
+  done
+
+  local -a formatted_names
+  for item in "$@"; do
+    # Check if the item is a key in our reserved words map. This is O(1) and very fast.
+    if [[ -v reserved_map["$item"] ]]; then
+      # It's a reserved word (e.g., "auto"), so add it to our list as-is.
+      formatted_names+=("$item")
     else
-      # Reserved one, keep the way it is
-      ret_devs_="$ret_devs_ $id"
+      # It's a device name.
+      # First, normalize it by stripping any existing "/dev/" prefix.
+      local bare_name="${item#"/dev/"}"
+      # Then, add it to our list with the "/dev/" prefix guaranteed.
+      formatted_names+=("/dev/$bare_name")
     fi
   done
-  echo $ret_devs_
+
+  # Output the final, space-separated list of formatted names.
+  # Using an array ensures the output is clean and correct.
+  echo "${formatted_names[@]}"
 } # end of format_dev_name_with_leading_dev
 #
 format_dev_name_without_leading_dev() {
-  # No matter the input is like /dev/sda or sda, format it as sda, then make it as /dev/sda
-  # This function works for multiple devices
-  # //NOTE// There are some reserved word for device name, we collect them in drbl-ocs.conf as ocs_reserved_dev_name.
-  # The returned value is like: /dev/sda /dev/sdb auto ask_user
-  local devs_="$*"
-  local ret_devs_
-  # ocs_reserved_dev_name is from drbl-ocs.conf.
-  devs_="$(strip_leading_dev $devs_)" # devs_ is like: sda now
-  echo $devs_
+  # Formats one or more device names to ensure they do not have a "/dev/" prefix.
+  # This function works for multiple devices and also preserves non-device keywords.
+  #
+  # Arguments:
+  #   $@ - A list of device names or keywords (e.g., "/dev/sda" "sdb" "auto").
+  #
+  # Output:
+  #   Prints a formatted, space-separated string (e.g., "sda sdb auto").
+  #
+  # This function relies on strip_leading_dev to process the arguments.
+  strip_leading_dev "$@"
 } # end of format_dev_name_without_leading_dev
+#
+is_device_valid() {
+  # Checks if a given device name exists on the system.
+  #
+  # Arguments:
+  #   $1 - The device name to check (e.g., "sda1").
+  #
+  # Returns:
+  #   0 (true) if the device exists.
+  #   1 (false) if it does not.
+  local dev_name="$1"
+  # First, perform a fast check for a block special file (e.g., /dev/sda1).
+  if [[ -b "/dev/$dev_name" ]]; then
+    return 0
+  fi
+  # As a fallback, check if the device is listed in /proc/partitions.
+  # awk extracts the device name column; grep checks for an exact, whole-word match.
+  if awk 'NR > 1 {print $4}' /proc/partitions | grep -q -x -w "$dev_name"; then
+    return 0
+  fi
+  return 1
+} # end of is_device_valid
 #
 local_lvm_clone_warning() {
   if [ "$part_fs" = "lvm" ]; then
