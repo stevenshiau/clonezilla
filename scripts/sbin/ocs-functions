@@ -2106,29 +2106,20 @@ get_extended_partition_parted_format() {
 } # end of get_extended_partition_parted_format
 #
 conv_uuid_mount_to_tradpart() {
-  local mounted_table=$1
-  if [ -z "$mounted_table" -o ! -e "$mounted_table" ]; then
-    echo "No mounted table file exists! Program terminated!!!"
-    exit 1
-  fi
-  uuid_list="$(grep -E "^/dev/disk/by-uuid/" $mounted_table | awk -F" " '{print $1}')"
-  # Example:
-  # rootfs / rootfs rw 0 0
-  # none /sys sysfs rw,nosuid,nodev,noexec 0 0
-  # none /proc proc rw,nosuid,nodev,noexec 0 0
-  # udev /dev tmpfs rw 0 0
-  # /dev/disk/by-uuid/f3460329-25d4-467e-bb59-8f40ce78554a / reiserfs rw 0 0
-  # /dev/disk/by-uuid/f3460329-25d4-467e-bb59-8f40ce78554a /dev/.static/dev reiserfs rw 0 0
-  # /dev/disk/by-uuid/a65083db-aa77-48cd-ba75-df96c0b08013 /home reiserfs rw 0 0
-  
-  for i in $uuid_list; do
-    # Find the source partition by file
-    # Ex:
-    # file -hs /dev/disk/by-uuid/7fc9980a-88c6-4132-aa26-2aa05f288956
-    # /dev/disk/by-uuid/7fc9980a-88c6-4132-aa26-2aa05f288956: symbolic link to `../../sda2'
-    src_part="$(file -hs $i | sed -e "s/symbolic link to//g" -e "s/'//g" | awk -F":" '{print $2}')"
-    src_part="$(basename $src_part)"
-    LC_ALL=C perl -pi -e "s|^$i|$src_part|g" $mounted_table
+  # Reads a list of mount points from stdin, resolves any /dev/disk/by-uuid
+  # paths to their canonical device names, and prints the results to stdout.
+  while read -r mount_point; do
+    if [[ "$mount_point" == /dev/disk/by-uuid/* ]]; then
+      # Use readlink -f to efficiently resolve the symbolic link.
+      local real_path
+      real_path=$(readlink -f "$mount_point")
+      if [[ -n "$real_path" ]]; then
+        echo "${real_path#/dev/}" # Strip /dev/ and print
+      fi
+    else
+      # Not a UUID path, so just strip /dev/ and print.
+      echo "${mount_point#/dev/}"
+    fi
   done
 } # end of conv_uuid_mount_to_tradpart
 #
@@ -4536,133 +4527,89 @@ get_disk_or_part_hardware_info() {
 } # end of get_disk_or_part_hardware_info
 #
 get_not_busy_disks_or_parts() {
+  # Finds not-busy disks/partitions
   local dev_type="$1"
   local chosen_disk="$2"
   local dev_to_be_exclude="$3"
-  local partition_table=""
-  local mounted_table=""
-  local prt_list=""
-  local dsk_list=""
+  local all_disks all_partitions
+  local -a excluded_devices
   # dev_list is global in this function (but not true for others) to be returned
   # initialize dev_list
   dev_list=""
-  
-  gen_proc_partitions_map_file # output $partition_table
 
-  # Leave only selected disk
-  if [ -n "$chosen_disk" ]; then
-    # //NOTE// If we do not separate cciss device and others, we might choose sda1, sda2, sdap1, sdap2 for $chosen_disk is "sda". Apparently sdap1 is not the partition of sda.
-    # i.e. we can not use the following command for all cases:
-    # LC_ALL=C perl -i -ne "print if m!^.*[[:space:]]+${chosen_disk}p?[0-9]*[[:space:]].*\$!" $partition_table
-    # Ref: https://sourceforge.net/p/clonezilla/bugs/179/
+  # Read the partition info into a variable once.
+  local all_dev_info
+  all_dev_info=$(cat /proc/partitions)
+
+  # If a specific disk is chosen, filter the variable's content.
+  if [[ -n "$chosen_disk" ]]; then
+    local pattern
     case "${chosen_disk}" in
-    cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
-          LC_ALL=C perl -i -ne "print if m|^.*[[:space:]]+${chosen_disk}p?[0-9]*[[:space:]].*\$|" $partition_table
-          ;;
-    *)
-          LC_ALL=C perl -i -ne "print if m!^.*[[:space:]]+${chosen_disk}[0-9]*[[:space:]].*\$!" $partition_table
-          ;;
+      cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
+        pattern="^.*[[:space:]]+${chosen_disk}p?[0-9]*$" ;;
+      *)
+        pattern="^.*[[:space:]]+${chosen_disk}[0-9]*$" ;;
     esac
+    all_dev_info=$(echo "$all_dev_info" | LC_ALL=C grep -E "${pattern}")
   fi
 
   echo -n "Finding all disks and partitions.."
+  # Use Process Substitution <(...) to feed the variable to the functions as a file.
   case "$dev_type" in
-    harddisk)
-      dsk_list="$(get_disk_list $partition_table)" ;;
-    partition)
-      prt_list="$(get_part_list $partition_table)" ;;
+    harddisk)  all_disks="$(get_disk_list <(echo "$all_dev_info"))"   ;;
+    partition) all_partitions="$(get_part_list <(echo "$all_dev_info"))" ;;
     device)
-      dsk_list="$(get_disk_list $partition_table)"
-      prt_list="$(get_part_list $partition_table)" ;;
+      all_disks="$(get_disk_list <(echo "$all_dev_info"))"
+      all_partitions="$(get_part_list <(echo "$all_dev_info"))"
+      ;;
   esac
   echo
 
-  # For the rest, we do not separate dsk_list or prt_list, process both of them.
-  # If dev_type is only harddisk, then prt_list is empty, and its for loop
-  # won't run actually.
-  # Strip those busy/mounted partitions and disk.
+  # 1. BUILD A SINGLE, COMPREHENSIVE EXCLUSION LIST (This part remains the same)
   echo -n "Excluding busy $dev_type..."
-  # Convert by uuid to traditional list in /proc/mounts so it's easier for us to exclude.
-  # The format of /proc/mounts with uuid is like:
-  # rootfs / rootfs rw 0 0
-  # none /sys sysfs rw,nosuid,nodev,noexec 0 0
-  # none /proc proc rw,nosuid,nodev,noexec 0 0
-  # udev /dev tmpfs rw 0 0
-  # /dev/disk/by-uuid/f3460329-25d4-467e-bb59-8f40ce78554a / reiserfs rw 0 0
-  # ...
-  mounted_table="$(mktemp /tmp/mnt_table.XXXXXX)"
-  if grep -Eq 'by-uuid' /proc/mounts 2>/dev/null; then
-     # With uuid format in /proc/mounts, good!
-     cat /proc/mounts | grep -E "^/dev/" | awk -F" " '{print $1}' | sort | \
-     uniq  > $mounted_table
-     conv_uuid_mount_to_tradpart $mounted_table
-  else
-     # No uuid format in /proc/mounts, good!
-     cat /proc/mounts | grep -E "^/dev/" | awk -F" " '{print $1}' | sort | \
-     uniq | sed -r -e "s|^/dev/||" > $mounted_table
-  fi
-
-  # Two cases:
-  # (1) Remove busy partitions (hence those busy disks, like sda1 busy, so sda is busy, too)
-  # (2) Remove busy disks (disk as block device contains file system, e.g. /dev/sdc is formated with ext4)
-  # E.g., $mounted_table now has the following busy devices:
-  # loop0
-  # nvme0n1p1
-  # sr0
-  # mapper/centos-root
-  while read ipart; do
+  while read -r part; do
+    [[ -n "$part" ]] || continue
     echo -n "."
-    # sda1 -> sda
-    hdtmp="$(get_diskname $ipart)"
-    # Strip disk
-    dsk_list="$(echo $dsk_list | sed -r -e "s@(^|[[:space:]])+${hdtmp}([[:space:]]|$)+@ @")"
-    # Strip partition
-    prt_list="$(echo $prt_list | sed -r -e "s@(^|[[:space:]])+${ipart}([[:space:]]|$)+@ @")"
-  done < $mounted_table
-  echo ""
+    excluded_devices+=("$part")
+    excluded_devices+=("$(get_diskname "$part")")
+  done < <(grep '^/dev/' /proc/mounts | awk '{print $1}' | sort -u | conv_uuid_mount_to_tradpart)
+  echo
 
-  # Strip the linux_raid_member
   echo -n "Excluding linux raid member partition..."
-  for idisk in $dsk_list; do
+  for dev in $all_disks $all_partitions; do
     echo -n "."
-    if is_linux_raid_member $idisk; then
-      # Strip partition
-      dsk_list="$(echo $dsk_list | sed -r -e "s@(^|[[:space:]])+${idisk}([[:space:]]|$)+@ @")"
+    if is_linux_raid_member "/dev/$dev"; then
+      excluded_devices+=("$dev")
     fi
   done
 
-  for ipart in $prt_list; do
-    echo -n "."
-    if is_linux_raid_member $ipart; then
-      # Strip partition
-      prt_list="$(echo $prt_list | sed -r -e "s@(^|[[:space:]])+${ipart}([[:space:]]|$)+@ @")"
-    fi
+  for dev in $dev_to_be_exclude; do
+    excluded_devices+=("$dev")
   done
-  echo ""
+  echo
 
-  if [ -n "$dev_to_be_exclude" ]; then
-    echo -n "Excluding assigned device $dev_to_be_exclude..."
-    # Strip those excluding devs
-    for idisk in $dev_to_be_exclude; do
-      echo -n "."
-      dsk_list="$(echo $dsk_list | sed -r -e "s@(^|[[:space:]])+${idisk}([[:space:]]|$)+@ @")"
-    done
-    
-    for ipart in $dev_to_be_exclude; do
-      echo -n "."
-      prt_list="$(echo $prt_list | sed -r -e "s@(^|[[:space:]])+${ipart}([[:space:]]|$)+@ @")"
-    done
-    echo ""
+  # 2. FILTER THE MAIN LISTS ONCE
+  local final_disks=""
+  local final_partitions=""
+  local exclusions_list
+  exclusions_list=$(printf "%s\n" "${excluded_devices[@]}" | sort -u)
+
+  if [ -n "$all_disks" ]; then
+    final_disks=$(echo "$all_disks" | tr ' ' '\n' | grep -v -x -w -f <(echo "$exclusions_list") | tr '\n' ' ')
+  fi
+  if [ -n "$all_partitions" ]; then
+    final_partitions=$(echo "$all_partitions" | tr ' ' '\n' | grep -v -x -w -f <(echo "$exclusions_list") | tr '\n' ' ')
   fi
 
+  # 3. OUTPUT THE FINAL RESULT (This function now returns via stdout)
+  local final_list
   case "$dev_type" in
-    harddisk)  dev_list="$dsk_list" ;;
-    partition) dev_list="$prt_list" ;;
-    device)    dev_list="$dsk_list $prt_list" ;;
+    harddisk)  final_list="$final_disks" ;;
+    partition) final_list="$final_partitions" ;;
+    device)    final_list="$final_disks $final_partitions" ;;
   esac
-  dev_list="$(echo $dev_list)"   # convert to 1 line
-  [ -f "$mounted_table" ] && rm -f $mounted_table
-  [ -f "$partition_table" ] && rm -f $partition_table
+  # dev_list is a global variable to pass.
+  dev_list="$(echo $final_list)" # convert to 1 line
 } # end of get_not_busy_disks_or_parts
 #
 get_input_dev_name() {
@@ -15740,14 +15687,21 @@ get_block_dev_from_SERIALNO(){
 } # end of get_block_dev_from_SERIALNO
 #
 is_linux_raid_member() {
-  local dev_=${1#/dev/*}
-  local type_ rc
-  rc=1
-  type_="$(LC_ALL=C ocs-get-dev-info /dev/${dev_} type 2>/dev/null)"
-  if [ "$type_" = "linux_raid_member" ]; then
-    rc=0
+  # Checks if a given device is a Linux software RAID member.
+  # Returns: 0 if true, 1 if false.
+  local device="$1"
+  if [[ -z "$device" ]]; then
+    return 1
   fi
-  return $rc
+  # Directly query blkid for the device type.
+  local dev_type
+  dev_type=$(LC_ALL=C blkid -s TYPE -o value -- "$device" 2>/dev/null)
+
+  if [[ "$dev_type" == "linux_raid_member" ]]; then
+    return 0 # It is a RAID member
+  else
+    return 1 # It is not a RAID member
+  fi
 } # end of is_linux_raid_member
 #
 dump_software_raid_info_if_exists() {
