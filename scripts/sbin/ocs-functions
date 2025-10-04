@@ -4535,68 +4535,6 @@ get_disk_or_part_hardware_info() {
   return 0
 } # end of get_disk_or_part_hardware_info
 #
-check_if_use_disklist_cache() {
-  local part_table=$1
-  # use_disklist_cache is a global variable (output).
-  # use_dev_list_cache is a global variable in drbl-ocs.conf or ocs-live.conf.
-  use_disklist_cache=""
-  if [ "$use_dev_list_cache" = "no" ]; then
-    # It's assigned (in boot parameter, configuration file or due to /dev/md*) 
-    # not to create any devices list cache, so do not generate disks list cache.
-    use_disklist_cache="no"
-  fi
-  if [ -z "$use_disklist_cache" ]; then
-    if [ -e $dev_list_cache_dir/pttable_for_disk.txt ]; then
-      if [ -z "$(diff <(awk '{print $3,$4}' $dev_list_cache_dir/pttable_for_disk.txt) \
-                      <(awk '{print $3,$4}' $part_table))" ]; then
-        # The partition table has no difference. Use cache one.
-        use_disklist_cache="yes"
-      else
-        use_disklist_cache="no"
-      fi
-    else
-      # No pttable_for_disk.txt file, new status.
-      use_disklist_cache="no"
-    fi
-  fi
-  if [ "$use_disklist_cache" = "no" ]; then
-    # Clean the cache file and source partition table file in $dev_list_cache_dir so they won't be found
-    rm -f $dev_list_cache_dir/disk_list.cache
-    rm -f $dev_list_cache_dir/pttable_for_disk.txt
-  fi
-} # end of check_if_use_disklist_cache
-#
-check_if_use_partlist_cache() {
-  local part_table=$1
-  # use_partlist_cache is a global variable (output).
-  # use_dev_list_cache is a global variable in drbl-ocs.conf or ocs-live.conf.
-  use_partlist_cache=""
-  if [ "$use_dev_list_cache" = "no" ]; then
-    # It's assigned (in boot parameter, configuration file or due to /dev/md*) 
-    # not to create any devices list cache, so do not generate partitions list cache.
-    use_partlist_cache="no"
-  fi
-  if [ -z "$use_partlist_cache" ]; then
-    if [ -e $dev_list_cache_dir/pttable_for_part.txt ]; then
-      if [ -z "$(diff <(awk '{print $3,$4}' $dev_list_cache_dir/pttable_for_part.txt) \
-                      <(awk '{print $3,$4}' $part_table))" ]; then
-        # The partition table has no difference. Use cache one.
-        use_partlist_cache="yes"
-      else
-        use_partlist_cache="no"
-      fi
-    else
-      # No pttable_for_part.txt file, new status.
-      use_partlist_cache="no"
-    fi
-  fi
-  if [ "$use_partlist_cache" = "no" ]; then
-    # Clean the cache file and source partition table file in $dev_list_cache_dir so they won't be found
-    rm -f $dev_list_cache_dir/part_list.cache
-    rm -f $dev_list_cache_dir/pttable_for_part.txt
-  fi
-} # end of check_if_use_partlist_cache
-#
 get_not_busy_disks_or_parts() {
   local dev_type="$1"
   local chosen_disk="$2"
@@ -12729,37 +12667,22 @@ get_part_list() {
   devs_cand=$*
   # When devs_cand devs are assigned, maybe they are not in the part_table.
 
-  if [ -z "$use_partlist_cache" ]; then
-    # Not assigned, so we have to check.
-    check_if_use_partlist_cache $part_table # output $use_partlist_cache
+  devs="$(LC_ALL=C grep -E '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
+         | awk '{ print $4 }' | sort -V)"
+  # E.g.,
+  # devs='nvme0n1 nvme0n1p1 nvme0n2 sda sda1 sda2 sda5 sdb sdb1 sdb2 sdb3 sdb5 sdb6 sdc sdc1 sdc2 sr0'
+  # devs_cand='nvme0n1p1 nvme0n2 sda2 sdb1 sdc1'
+  # The final ones should be both in devs and devs_cand (intersection)
+  if [ -n "$devs_cand" ]; then
+    devs="$(LC_ALL=C comm -12 <(echo $devs | tr " " "\n"| sort) <(echo $devs_cand | tr " " "\n"| sort))"
   fi
-  if [ "$use_partlist_cache" = "yes" ]; then
-    prt_list="$(cat $dev_list_cache_dir/part_list.cache)"
-  else
-    devs="$(LC_ALL=C grep -E '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
-           | awk '{ print $4 }' | sort -V)"
-    # E.g.,
-    # devs='nvme0n1 nvme0n1p1 nvme0n2 sda sda1 sda2 sda5 sdb sdb1 sdb2 sdb3 sdb5 sdb6 sdc sdc1 sdc2 sr0'
-    # devs_cand='nvme0n1p1 nvme0n2 sda2 sdb1 sdc1'
-    # The final ones should be both in devs and devs_cand (intersection)
-    if [ -n "$devs_cand" ]; then
-      devs="$(LC_ALL=C comm -12 <(echo $devs | tr " " "\n"| sort) <(echo $devs_cand | tr " " "\n"| sort))"
+  for dev in $devs; do
+    dev="$(to_dev_name $dev)"
+    if is_supported_dev "$dev" && is_partition "$dev"; then
+      prt_list="$prt_list $dev"
     fi
-    for dev in $devs; do
-      dev="$(to_dev_name $dev)"
-      if is_supported_dev "$dev" && is_partition "$dev"; then
-        prt_list="$prt_list $dev"
-      fi
-    done
-    prt_list="$(echo $prt_list | tr ' ' '\n' | sort -V | tr '\n' ' ')"
-    if [ "$use_dev_list_cache" = "yes" ]; then
-      # Only when use_dev_list_cache is yes we have to create the info
-      mkdir -p $dev_list_cache_dir
-      echo "$prt_list" > $dev_list_cache_dir/part_list.cache
-      # Keep the source kernel part table so that later we can compare
-      cat $part_table > $dev_list_cache_dir/pttable_for_part.txt
-    fi
-  fi
+  done
+  prt_list="$(echo $prt_list | tr ' ' '\n' | sort -V | tr '\n' ' ')"
   echo $prt_list
 } # end of get_part_list
 #
@@ -12783,38 +12706,23 @@ get_disk_list() {
   shift
   devs_cand=$*
 
-  if [ -z "$use_disklist_cache" ]; then
-    # Not assigned, so we have to check.
-    check_if_use_disklist_cache $part_table # output $use_disklist_cache
+  devs="$(LC_ALL=C grep -E '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
+         | awk '{ print $4 }' | sort -V)"
+  # E.g.,
+  # devs='nvme0n1 nvme0n1p1 nvme0n2 sda sda1 sda2 sda5 sdb sdb1 sdb2 sdb3 sdb5 sdb6 sdc sdc1 sdc2 sr0'
+  # devs_cand='nvme0n1 nvme0n2 sda sdb sdc'
+  # The final ones should be both in devs and devs_cand (intersection)
+  if [ -n "$devs_cand" ]; then
+    devs="$(LC_ALL=C comm -12 <(echo $devs | tr " " "\n"| sort) <(echo $devs_cand | tr " " "\n"| sort))"
   fi
-  if [ "$use_disklist_cache" = "yes" ]; then
-    disk_list="$(cat $dev_list_cache_dir/disk_list.cache)"
-  else
-    devs="$(LC_ALL=C grep -E '[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+[0-9]+[[:blank:]]+.*' $part_table \
-           | awk '{ print $4 }' | sort -V)"
-    # E.g.,
-    # devs='nvme0n1 nvme0n1p1 nvme0n2 sda sda1 sda2 sda5 sdb sdb1 sdb2 sdb3 sdb5 sdb6 sdc sdc1 sdc2 sr0'
-    # devs_cand='nvme0n1 nvme0n2 sda sdb sdc'
-    # The final ones should be both in devs and devs_cand (intersection)
-    if [ -n "$devs_cand" ]; then
-      devs="$(LC_ALL=C comm -12 <(echo $devs | tr " " "\n"| sort) <(echo $devs_cand | tr " " "\n"| sort))"
+  for dev in $devs; do
+    dev="$(get_diskname $dev)"
+    if [ -z "$(echo "$disk_list" | grep -Ew "$dev")" ] && \
+         is_supported_dev "$dev" && ! is_partition "$dev"; then
+      disk_list="$disk_list $dev"
     fi
-    for dev in $devs; do
-      dev="$(get_diskname $dev)"
-      if [ -z "$(echo "$disk_list" | grep -Ew "$dev")" ] && \
-           is_supported_dev "$dev" && ! is_partition "$dev"; then
-        disk_list="$disk_list $dev"
-      fi
-    done
-    disk_list="$(echo $disk_list | tr ' ' '\n' | sort -V | tr '\n' ' ')"
-    if [ "$use_dev_list_cache" = "yes" ]; then
-      # Only when use_dev_list_cache is yes we have to create the info
-      mkdir -p $dev_list_cache_dir
-      echo "$disk_list" > $dev_list_cache_dir/disk_list.cache
-      # Keep the source kernel part table so that later we can compare
-      cat $part_table > $dev_list_cache_dir/pttable_for_disk.txt
-    fi
-  fi
+  done
+  disk_list="$(echo $disk_list | tr ' ' '\n' | sort -V | tr '\n' ' ')"
   echo $disk_list
 } # end of get_disk_list
 #
