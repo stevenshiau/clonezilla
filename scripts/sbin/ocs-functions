@@ -3781,7 +3781,7 @@ countdown_or_confirm_before_restore() {
   if [ -n "$TIME_to_wait" ] && [ "$ctdn" = "yes" ]; then
     n="$TIME_to_wait"
     echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
-    echo "$msg_the_following_step_is_to_restore_img_to_disk_part: \"$restore_img_name\" -> \"$new_dev_to_be_restore\"" | tee -a $OCS_LOGFILE
+    echo "$msg_the_following_step_is_to_restore_img_to_disk_part:\n\"$restore_img_name\" -> \"$new_dev_to_be_restore\"" | tee -a $OCS_LOGFILE
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     if [ "$ocs_sr_type" = "restoreparts" -a "$create_part" = "yes" ]; then
       echo "$msg_uppercase_Warning. $msg_option_k_is_not_chosen_part_table_will_be_recreated" | tee --append $OCS_LOGFILE
@@ -3805,7 +3805,7 @@ countdown_or_confirm_before_restore() {
     fi
     if [ "$ocs_prompt_mode" = "tui" ]; then
       # TUI mode
-      tui_prompt_txt="${init_des}${msg_the_following_step_is_to_restore_img_to_disk_part}: \"$restore_img_name\" -> \"$new_dev_to_be_restore\"\n$img_time_prompt\n"
+      tui_prompt_txt="${init_des}${msg_the_following_step_is_to_restore_img_to_disk_part}:\n\"$restore_img_name\" -> \"$new_dev_to_be_restore\"\n$img_time_prompt\n"
       if [ "$ocs_sr_type" = "restoreparts" -a "$create_part" = "yes" ]; then
         tui_prompt_txt="${tui_prompt_txt}$msg_uppercase_Warning. $msg_option_k_is_not_chosen_part_table_will_be_recreated\n"
       fi
@@ -3816,7 +3816,7 @@ countdown_or_confirm_before_restore() {
       confirm_continue_no_default_answer -d "$tui_prompt_txt"
     else
       # CMD mode, no TUI
-      echo -e "${init_des}${msg_the_following_step_is_to_restore_img_to_disk_part}: \"$restore_img_name\" -> \"$new_dev_to_be_restore\"\n$img_time_prompt" | tee --append $OCS_LOGFILE
+      echo -e "${init_des}${msg_the_following_step_is_to_restore_img_to_disk_part}:\n\"$restore_img_name\" -> \"$new_dev_to_be_restore\"\n$img_time_prompt" | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       if [ "$ocs_sr_type" = "restoreparts" -a "$create_part" = "yes" ]; then
         echo "$msg_uppercase_Warning. $msg_option_k_is_not_chosen_part_table_will_be_recreated" | tee --append $OCS_LOGFILE
@@ -9003,6 +9003,9 @@ task_saveparts() {
     get_target_parts_name_from_local_machine
   fi
 
+  echo "Searching MTD block (/dev/mtdblock*) and eMMC boot (/dev/mmcblk*boot*) devices..."
+  target_parts+=" $(check_mtd_emmcboot_dev)"
+
   # check if the device exists
   ANS_TMP=`mktemp /tmp/ocs_chkdev.XXXXXX`
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
@@ -9559,6 +9562,12 @@ task_restoreparts() {
     fi
     get_target_parts_name_from_local_machine "$msg_choose_the_parts_to_restore \n$msg_linux_parts_MS_mapping" $dia_sel_opt
   fi
+
+  # Sync the target_parts with special parts
+  # 1st: remove MTD block device and eMMC boot device from the existing $target_parts
+  # 2nd: add them back if it's shown in special_parts
+  target_parts="$(echo "$target_parts" | tr ' ' '\n' | grep -vE "mtdblock|mmcblk.*boot" | tr '\n' ' ' | xargs)"
+  target_parts+=" $(restore_mtd_emmcboot_dev_prepare)"
 
   # we use the port to identify it's unicast, bittorrent or multicast.
   if [ -z "$port" ]; then
@@ -10916,6 +10925,8 @@ USAGE_common_general() {
     echo " -em, --expert-mode       Run in expert mode. This is a short way for \"-um expert\"."
     echo " -um, --user-mode [beginner|expert]      Specify the mode to use. If not specified, default mode is for a beginner."
     echo " -edio, --enable-direct-io   Enable the direct IO mode of Partclone when reading from or writing to NVMe SSD."
+    echo " -rmtd, --restore-mtdblock   Restore MTD block device (/dev/mtdblock*)"
+    echo " -rmmcb, --restore-mmcblk    Restore eMMC boot device (/dev/mmcblk*boot*)"
     echo " -v, --verbose            Prints verbose information"
 } # end of USAGE_common_general
 #
@@ -16647,3 +16658,62 @@ output_run_again_script(){
   cp -f /usr/share/drbl/samples/ocs-cmd-screen-sample $run_again_f_
   perl -pi -e "s|^ocscmd_=.*$|ocscmd_=\'$OCSCMD_VAR\'|" $run_again_f_
 } # end of output_run_again_script
+#
+check_mtd_emmcboot_dev(){
+  # This functon checks for the existence of MTD block devices (/dev/mtdblock*)
+  # and eMMC boot partitions (/dev/mmcblk*boot*). If found, it collects them
+  # into a single, space-separated variable.
+  local -a found_devices
+  local special_devices
+  
+  # Enable nullglob. This makes glob patterns expand to an empty list
+  # if no files match, preventing errors.
+  shopt -s nullglob
+  
+  # Create an array by expanding both glob patterns at once.
+  found_devices=(/dev/mtdblock* /dev/mmcblk*boot*)
+  
+  # Disable nullglob to restore default shell behavior and avoid side effects.
+  shopt -u nullglob
+  
+  # Check if the array has any elements.
+  if [ ${#found_devices[@]} -gt 0 ]; then
+    # If devices were found, convert the array into a single space-separated string.
+    special_devices="$(format_dev_name_without_leading_dev ${found_devices[@]})"
+  else
+    # The array is empty, so no devices were found.
+    special_devices=""
+  fi
+  echo $special_devices | xargs
+} # end of check_mtd_emmcboot_dev
+#
+restore_mtd_emmcboot_dev_prepare(){
+  # This functon checks for the existence of MTD block devices (/dev/mtdblock*)
+  # and eMMC boot partitions (/dev/mmcblk*boot*) and its image.
+  # If found, do:
+  # (1) return the variable so that it will be added to target_parts
+  # (2) set write permission for eMMC boot partitions
+  # ocsroot & target_dir are gloable variables
+  local special_dev all_plist retrun_dev
+
+  special_dev="$(check_mtd_emmcboot_dev 2>/dev/null)"
+
+  all_plist="$(get_parts_list_from_img "$ocsroot/$target_dir")" 
+  for isd in $special_dev; do
+    # Check if its image exists in the image dir
+    if [ -n "$(echo "$all_plist" | grep -Ew $isd)" ]; then
+      # Found in the image dir
+      case "$isd" in
+        mtdblock*)
+	  [ "$restore_mtdblock" = "yes" ] && retrun_dev+=" $isd"
+	  ;;
+        mmcblk*boot*)
+	  [ "$restore_mmcblkboot" = "yes" ] && retrun_dev+=" $isd"
+          # If it's eMMC boot device, make it writable
+          echo 0 > /sys/block/$isd/force_ro
+       	  ;;
+      esac
+    fi
+  done
+  echo $retrun_dev | xargs
+} # end of restore_mtd_emmcboot_dev_prepare
