@@ -8464,18 +8464,10 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
     return 3
   fi
   # Some cases not supported:
-  # (1) Multicast clone.
-  # (2) Unicast clone with batch mode (Since maybe there will be more than 1 restoration, and they will create the same temp image, which will be in a mess.
-  # (3) source hardisk number is >= 2
+  # (1) Unicast clone with batch mode (Since maybe there will be more than 1 restoration, and they will create the same temp image, which will be in a mess.
+  # (2) source hardisk number is >= 2
   # for BT, the port is assigned as "bt" from ocs-sr
-  # for d2d, the port is assigned as "bt" from ocs-sr
-  if [ -n "$port" -a "$port" != "bt" -a "$port" != "ld2d" -a "$port" != "nd2d" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$msg_create_cvrt_img_for_different_not_supported_in_multicast_mode $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-    exit 1
-  fi
+  # for d2d, the port is assigned as "ld2d" or "nd2d" from ocs-sr
   if [ "$src_dsk_no" -ge 2 ]; then
     md_src_dsk_flag="no"
     for id in $dsksname_from_img; do
@@ -8493,17 +8485,6 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
     else
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "$msg_create_cvrt_img_for_more_than_2_disks_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      exit 1
-    fi
-  fi
-  is_spawned_by_drbl_ocs $ocs_ppid
-  rc=$?
-  if [ "$rc" -eq 0 ]; then
-    if [ "$ocs_sr_type" != "bt_restoredisk" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "$msg_create_cvrt_img_for_clonezilla_server_edition_client_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
       exit 1
@@ -9437,6 +9418,10 @@ task_multicast_restoredisk() {
     eval check_${imtd}="no"
   done
   # To do backward compatability, we still keep task_multicast_restoredisk function, but let task_restoredisk do the real job.
+  if [[ "$target_hd" =~ ^ocs-[smn]d[0-9]+.*$ ]]; then
+    # Mapping the reserved ocs block device name to Linux kernel block device name
+    target_hd="$(get_mapped_kernel_blkname "$target_hd")"
+  fi
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_multicast_restoredisk
 
@@ -9455,6 +9440,10 @@ task_bt_restoredisk() {
     # e.g., check_md5sum="no"
     eval check_${imtd}="no"
   done
+  if [[ "$target_hd" =~ ^ocs-[smn]d[0-9]+.*$ ]]; then
+    # Mapping the reserved ocs block device name to Linux kernel block device name
+    target_hd="$(get_mapped_kernel_blkname "$target_hd")"
+  fi
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_bt_restoredisk
 #
@@ -9474,6 +9463,10 @@ task_bt_restoreparts() {
     eval check_${imtd}="no"
   done
   # To do backward compatability, we still keep task_bt_restoreparts function, but let task_restoreparts do the real job.
+  if [[ "$target_parts" =~ ^ocs-[smn]d[0-9]+[p]*[0-9]*$ ]]; then
+    # Mapping the reserved ocs block device name to Linux kernel block device name
+    target_parts="$(get_mapped_kernel_blkname "$target_parts")"
+  fi
   task_restoreparts "$target_dir" "$target_parts" "$port"
 } # end of task_bt_restoreparts
 #
@@ -9487,6 +9480,10 @@ task_d2d_restoredisk() {
     # e.g., check_md5sum="no"
     eval check_${imtd}="no"
   done
+  if [[ "$target_hd" =~ ^ocs-[smn]d[0-9]+.*$ ]]; then
+    # Mapping the reserved ocs block device name to Linux kernel block device name
+    target_hd="$(get_mapped_kernel_blkname "$target_hd")"
+  fi
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_d2d_restoredisk
 #
@@ -9501,6 +9498,10 @@ task_d2d_restoreparts() {
     eval check_${imtd}="no"
   done
   # To do backward compatability, we still keep task_bt_restoreparts function, but let task_restoreparts do the real job.
+  if [[ "$target_parts" =~ ^ocs-[smn]d[0-9]+[p]*[0-9]*$ ]]; then
+    # Mapping the reserved ocs block device name to Linux kernel block device name
+    target_parts="$(get_mapped_kernel_blkname "$target_parts")"
+  fi
   task_restoreparts "$target_dir" "$target_parts" "$port"
 } # end of task_d2d_restoreparts 
 
@@ -10273,6 +10274,10 @@ task_multicast_restoreparts() {
     eval check_${imtd}="no"
   done
   # To do backward compatability, we still keep task_multicast_restoreparts function, but let task_restoreparts do the real job.
+  if [[ "$target_parts" =~ ^ocs-[smn]d[0-9]+[p]*[0-9]*$ ]]; then
+    # Mapping the reserved ocs block device name to Linux kernel block device name
+    target_parts="$(get_mapped_kernel_blkname "$target_parts")"
+  fi
   task_restoreparts "$target_dir" "$target_parts" "$port"
 }
 

@@ -1145,7 +1145,7 @@ task_start_feed_img_for_cast() {
          exit 1
          ;;
       esac
-    elif [ "$ocs_restore_dev" = "all" -o "$ocs_restore_dev" = "all-but-usb" ]; then
+    elif [[ "$ocs_restore_dev" =~ ^all$|^all-but-usb$ ]]; then
       # If "all" is used, only whole disk(s), not partitions.
       # //NOTE// Need to exclude Clonezilla live USB flash drive
       # Prepare 3 variables: cast_dev_action, target_hd|target_parts for later use with start_ocs_service:
@@ -1168,6 +1168,17 @@ task_start_feed_img_for_cast() {
         target_hd="$dev_list"
       fi
       ocs_restore_dev="$target_hd" # keep it for later use in run_again prompt
+    elif [[ "$ocs_restore_dev" =~ ^ocs-[smn]d[0-9]+[p]*[0-9]*$ ]]; then
+      # For ocs-*d* disk
+      # Mapping the reserved ocs block device name to Linux kernel block device name
+      case "$cast_dev_type" in
+        "disk-2-mdisks") cast_dev_action="restoredisk"
+                         target_hd="$(get_mapped_kernel_blkname "$ocs_restore_dev")"
+      	           ;;
+        "part-2-mparts") cast_dev_action="restoreparts"
+                         target_parts="$(get_mapped_kernel_blkname "$ocs_restore_dev")"
+      	           ;;
+      esac
     else
       # "ocs_restore_dev" is already assigned
       if [ -n "$dev_type" ]; then
