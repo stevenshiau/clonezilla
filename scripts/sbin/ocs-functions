@@ -9420,7 +9420,7 @@ task_multicast_restoredisk() {
   # To do backward compatability, we still keep task_multicast_restoredisk function, but let task_restoredisk do the real job.
   if [[ "$target_hd" =~ ^ocs-[smn]d[0-9]+.*$ ]]; then
     # Mapping the reserved ocs block device name to Linux kernel block device name
-    target_hd="$(get_mapped_kernel_blkname "$target_hd")"
+    target_hd="$(get_mapped_kernel_or_ocs_blkname "$target_hd")"
   fi
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_multicast_restoredisk
@@ -9442,7 +9442,7 @@ task_bt_restoredisk() {
   done
   if [[ "$target_hd" =~ ^ocs-[smn]d[0-9]+.*$ ]]; then
     # Mapping the reserved ocs block device name to Linux kernel block device name
-    target_hd="$(get_mapped_kernel_blkname "$target_hd")"
+    target_hd="$(get_mapped_kernel_or_ocs_blkname "$target_hd")"
   fi
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_bt_restoredisk
@@ -9465,7 +9465,7 @@ task_bt_restoreparts() {
   # To do backward compatability, we still keep task_bt_restoreparts function, but let task_restoreparts do the real job.
   if [[ "$target_parts" =~ ^ocs-[smn]d[0-9]+[p]*[0-9]*$ ]]; then
     # Mapping the reserved ocs block device name to Linux kernel block device name
-    target_parts="$(get_mapped_kernel_blkname "$target_parts")"
+    target_parts="$(get_mapped_kernel_or_ocs_blkname "$target_parts")"
   fi
   task_restoreparts "$target_dir" "$target_parts" "$port"
 } # end of task_bt_restoreparts
@@ -9482,7 +9482,7 @@ task_d2d_restoredisk() {
   done
   if [[ "$target_hd" =~ ^ocs-[smn]d[0-9]+.*$ ]]; then
     # Mapping the reserved ocs block device name to Linux kernel block device name
-    target_hd="$(get_mapped_kernel_blkname "$target_hd")"
+    target_hd="$(get_mapped_kernel_or_ocs_blkname "$target_hd")"
   fi
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_d2d_restoredisk
@@ -9500,7 +9500,7 @@ task_d2d_restoreparts() {
   # To do backward compatability, we still keep task_bt_restoreparts function, but let task_restoreparts do the real job.
   if [[ "$target_parts" =~ ^ocs-[smn]d[0-9]+[p]*[0-9]*$ ]]; then
     # Mapping the reserved ocs block device name to Linux kernel block device name
-    target_parts="$(get_mapped_kernel_blkname "$target_parts")"
+    target_parts="$(get_mapped_kernel_or_ocs_blkname "$target_parts")"
   fi
   task_restoreparts "$target_dir" "$target_parts" "$port"
 } # end of task_d2d_restoreparts 
@@ -10276,7 +10276,7 @@ task_multicast_restoreparts() {
   # To do backward compatability, we still keep task_multicast_restoreparts function, but let task_restoreparts do the real job.
   if [[ "$target_parts" =~ ^ocs-[smn]d[0-9]+[p]*[0-9]*$ ]]; then
     # Mapping the reserved ocs block device name to Linux kernel block device name
-    target_parts="$(get_mapped_kernel_blkname "$target_parts")"
+    target_parts="$(get_mapped_kernel_or_ocs_blkname "$target_parts")"
   fi
   task_restoreparts "$target_dir" "$target_parts" "$port"
 }
@@ -16625,7 +16625,7 @@ disable_stdin_non_blocking_mode() {
   perl -e 'use POSIX qw(fcntl_h); fcntl(STDIN, F_SETFL, fcntl(STDIN, F_GETFL, 0) & ~O_NONBLOCK)'
 } # end of disable_stdin_non_blocking_mode
 #
-get_mapped_kernel_blkname() {
+get_mapped_kernel_or_ocs_blkname() {
   # The contents of /dev/ocs-disks/dev-mapping.txt is like:
   # The OCS block device mapping:
   # --------------------------
@@ -16647,14 +16647,25 @@ get_mapped_kernel_blkname() {
   # ocs-sd04           sdd                 pci-0000:02:04.0-ata-5.0
   # ocs-sd05           sde                 pci-0000:02:03.0-usb-0:1:1.0-scsi-0:0:0:0
   # ocs-sd05p1         sde1                pci-0000:02:03.0-usb-0:1:1.0-scsi-0:0:0:0-part1
-  local in_dev_=${1#/dev/*} # Input is like /dev/sda, so in_dev_ becomes sda
-  in_dev_=${in_dev_#ocs-disks/} # If it's /dev/ocs-disks/ ($ocs_dev_dir from drbl-ocs.conf), remove ocs-disks, too.
-  local out_dev_
+  local all_devs in_dev_ out_dev_ dv
+  all_devs="$*"
+  in_dev_=${all_devs//\/dev\//} # Input is like /dev/sda, so in_dev_ becomes sda
+  in_dev_=${in_dev_//ocs-disks\//} # If it's /dev/ocs-disks/ ($ocs_dev_dir from drbl-ocs.conf), remove ocs-disks, too.
   [ ! -e $ocs_dev_dir/dev-mapping.txt ] && return 3
-  out_dev_="$(grep -Ew "^${in_dev_}" $ocs_dev_dir/dev-mapping.txt 2>/dev/null \
-	     | awk -F" " '{print $2}')"
+  for dv in $in_dev_; do
+    if [[ "$dv" =~ ^ocs-[smn]d[0-9]+ ]]; then
+      # From Clonezilla alias name to kernel device name
+      out_dev_+=" $(grep -Ew "^${dv}" $ocs_dev_dir/dev-mapping.txt \
+                    2>/dev/null | awk -F" " '{print $2}')"
+    else
+      # From kernel device name to Clonezilla alias name
+      out_dev_+=" $(grep -Ew "[[:space:]]+${dv}[[:space:]]+" \
+	            $ocs_dev_dir/dev-mapping.txt 2>/dev/null \
+		    | awk -F" " '{print $1}')"
+    fi
+  done
   echo $out_dev_
-} # end of get_mapped_kernel_blkname
+} # end of get_mapped_kernel_or_ocs_blkname
 #
 output_run_again_script(){
   local ocscmd_=$1
