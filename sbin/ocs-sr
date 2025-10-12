@@ -114,6 +114,8 @@ put_log_usb=""
 # Flag to restore MTD block device and eMMC boot device. Default no.
 restore_mtdblock="no"
 restore_mmcblkboot="no"
+# Flag to use Clonezilla alias block device name
+use_ocs_alias_blkdev="no"
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -738,6 +740,9 @@ parse_ocs_sr_cmd_options_with_dash() {
     -rmmcb|--restore-mmcblk)
 	    restore_mmcblkboot="yes"
 	    shift; n_shift=$((n_shift+1));;
+    -uoab|--use-ocs-alias-blkdev)
+            use_ocs_alias_blkdev="yes"
+	    shift; n_shift=$((n_shift+1));;
     -*)     echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
             exit 2 ;;
@@ -1224,7 +1229,12 @@ do_savedisk_job(){
   get_extra_param_when_type_is_ask_user_and_interactive_mode
   wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
 
-  run_ocs_sr_again_prompt "$target_dir" "$target_hd"
+  if [ "$use_ocs_alias_blkdev" = "yes" ]; then
+    target_dev="$target_hd_ad"
+  else
+    target_dev="$target_hd"
+  fi
+  run_ocs_sr_again_prompt "$target_dir" "$target_dev"
 
   # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
   # The original ones will be kept as ocsroot_orig and target_dir_orig.
@@ -1370,7 +1380,12 @@ do_restoredisk_job(){
   get_extra_param_when_type_is_ask_user_and_interactive_mode
   wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
 
-  run_ocs_sr_again_prompt "$target_dir" "$target_hd"
+  if [ "$use_ocs_alias_blkdev" = "yes" ]; then
+    target_dev="$target_hd_ad"
+  else
+    target_dev="$target_hd"
+  fi
+  run_ocs_sr_again_prompt "$target_dir" "$target_dev"
 
   # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
   # The original ones will be kept as ocsroot_orig and target_dir_orig.
@@ -1492,7 +1507,12 @@ do_saveparts_job() {
   get_extra_param_when_type_is_ask_user_and_interactive_mode
   wrap_up_opt_after_interactive_selection  # Since extra param inputed again, wrap up again
 
-  run_ocs_sr_again_prompt "$target_dir" "$target_parts"
+  if [ "$use_ocs_alias_blkdev" = "yes" ]; then
+    target_dev="$target_parts_ad"
+  else
+    target_dev="$target_parts"
+  fi
+  run_ocs_sr_again_prompt "$target_dir" "$target_dev"
 
   # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
   # The original ones will be kept as ocsroot_orig and target_dir_orig.
@@ -1613,7 +1633,12 @@ do_restoreparts_job(){
       OCS_OPTS="$OCS_OPTS -f $source_part"
   fi
 
-  run_ocs_sr_again_prompt "$target_dir" "$target_parts"
+  if [ "$use_ocs_alias_blkdev" = "yes" ]; then
+    target_dev="$target_parts_ad"
+  else
+    target_dev="$target_parts"
+  fi
+  run_ocs_sr_again_prompt "$target_dir" "$target_dev"
 
   # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
   # The original ones will be kept as ocsroot_orig and target_dir_orig.

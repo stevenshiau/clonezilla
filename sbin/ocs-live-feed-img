@@ -84,6 +84,8 @@ USAGE() {
     echo " -cdt, --cast-dev-type MODE Assign source device type: disk-2-mdisks or part-2-mparts" 
     echo " -csdf, --cast-src-dev-fsck  TYPE   Assign the type for fsck the source device: sfsck, fsck, fsck-y. Do not put \"-\" before the TYPE. It will confuse $ocs. Use it like: \"-bsdf fsck-y\""
     echo " -icol, --ignore-check-ocs-live   Skip checking if the working environment is Clonezilla live or not."
+    echo " -edio, --enable-direct-io   Enable the direct IO mode of Partclone when reading from or writing to NVMe SSD."
+    echo " -uoab, --use-ocs-alias-blkdev  Use Clonezilla alias block device name (i.e., ocs-*d*)"
     echo
     echo "Ex:"
     echo "To start feeding the image \"my-image\" for restoring it in client's device sda, run"
@@ -538,6 +540,10 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
             enable_dio="yes"
             OCS_OPT="$OCS_OPT -edio"
             shift; n_shift=$((n_shift+1));;
+      -uoab|--use-ocs-alias-blkdev)
+            use_ocs_alias_blkdev="yes"
+            OCS_OPT="$OCS_OPT -uoab"
+	    shift; n_shift=$((n_shift+1));;
       -*)   echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
             exit 2 ;;
@@ -1073,7 +1079,11 @@ task_start_feed_img_for_cast() {
           if [ "$ocs_source_dev" = "ask_user" ]; then
             # To get $target_hd
             get_target_hd_name_from_local_machine "$msg_local_source_disk \n$msg_linux_disk_naming $msg_press_space_to_mark_selection"
-            ocs_source_dev="$target_hd"
+            if [ "$use_ocs_alias_blkdev" = "yes" ]; then
+              ocs_source_dev="$target_hd_ad"
+            else
+              ocs_source_dev="$target_hd"
+	    fi
           fi
           dev_type="disk"
           ;;
@@ -1081,7 +1091,11 @@ task_start_feed_img_for_cast() {
           if [ "$ocs_source_dev" = "ask_user" ]; then
             # To get $target_parts
             get_target_parts_name_from_local_machine "$msg_local_source_part \n$msg_linux_parts_MS_mapping" $dia_sel_opt
-            ocs_source_dev="$target_parts"
+            if [ "$use_ocs_alias_blkdev" = "yes" ]; then
+              ocs_source_dev="$target_parts_ad"
+            else
+              ocs_source_dev="$target_parts"
+	    fi
           fi
           dev_type="parts"
           ;;

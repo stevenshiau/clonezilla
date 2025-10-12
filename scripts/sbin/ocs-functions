@@ -4629,7 +4629,7 @@ get_input_dev_name() {
     local dev_chosen_def=""
     local NUMDEV=0
     local height
-    local prt_list hdtmp msg_not_mounted_dev_found TMP FILE dsk_ DEV_MODEL_EXT dsize ans_ rc_g
+    local prt_list hdtmp msg_not_mounted_dev_found TMP FILE dsk_ DEV_MODEL dsize ans_ rc_g
     local ASK_INPUT=1   # init value 1 means we have to ask
     # Flag to include disk as partition, which means /dev/sda, for example, could contain file system.
     # This will only use for mounting that as image repository.
@@ -4762,7 +4762,7 @@ get_input_dev_name() {
 
     :> $TMP # Clean the TMP file
     ocs-blk-dev-info $blk_info_f
-    # prepare the dialog menu info
+    # Prepare the dialog menu info
     echo -n "Preparing the dialog menu info..."
     for p in $(reduce_multipath_dev $dev_list); do
        DEV_MODEL=""
@@ -4796,8 +4796,15 @@ get_input_dev_name() {
            dev_chosen_def=""
            ;;
        esac
-       HARDDEVS="$HARDDEVS $p $DEV_MODEL $dev_chosen_def"
+       if [ "$use_ocs_alias_blkdev" = "yes" ]; then
+        # Switch to Clonezilla alias block device name
+        p="$(get_mapped_kernel_or_ocs_blkname "$p")[$p]"
+       fi
+       HARDDEVS+=" $p $DEV_MODEL $dev_chosen_def"
     done
+    # Use xargs first to trim the white space in the leading space.
+    HARDDEVS="$(echo "$HARDDEVS" | xargs | sed "s/ $dev_chosen_def / $dev_chosen_def\n/g" \
+	        | sed '/^$/d' | sort -V | tr '\n' ' ' | xargs)"
     echo " done!"
     :> $TMP # Clean the TMP file
     # If large number of devices, we must allow it to be scrolled down.
@@ -4832,10 +4839,14 @@ get_input_dev_name() {
     [ -f "$TMP" ] && rm -f $TMP 
     [ -f "$blk_info_f" ] && rm -f $blk_info_f
 
-    # return the value
-    echo $target_dev > $ANS_TMP
-    # strip the unnecessary quotation mark "
-    LC_ALL=C perl -pi -e "s/\"//g" $ANS_TMP
+    # (1) Strip the unnecessary quotation mark "
+    # (2) The device when using Clonezilla alias name can be like: ocs-nd01[nvme0n2]
+    # Return the kernel device name
+    echo $target_dev | sed -r -e "s/\"//g" -e "s/ocs-[smn]d[0-9]+[p]?[0-9]*\[//g" -e "s/\]//g" > $ANS_TMP
+    if [ "$use_ocs_alias_blkdev" = "yes" ]; then
+      # Return the Clonezilla alias device name
+      echo $target_dev | sed -r -e "s/\"//g" -e "s/\[.*\]//g" > ${ANS_TMP}.ocs-ad
+    fi
 } # end of get_input_dev_name
 #
 get_existing_disk_image() {
@@ -8249,15 +8260,21 @@ get_target_hd_name_from_local_machine() {
   local input_selection_opt="$2"
   local ANS_TMP
   local ASK_DEV_NAME=1
+  target_hd=
+  target_hd_ad=
   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
   [ -z "$input_selection_opt" ] && input_selection_opt="default"
   while [ "$ASK_DEV_NAME" -ne 0 ]; do
     get_input_dev_name $ANS_TMP harddisk $input_selection_opt default "$input_dev_prompt"
     target_hd="$(cat $ANS_TMP | tr -d \")"
+    if [ -e "${ANS_TMP}.ocs-ad" ]; then
+      target_hd_ad="$(cat ${ANS_TMP}.ocs-ad | tr -d \")"
+    fi
     [ -n "$target_hd" ] && ASK_DEV_NAME=0
   done
   [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
+  [ -e "${ANS_TMP}.ocs-ad" ] && rm -f ${ANS_TMP}.ocs-ad
   check_input_hd $target_hd
 } # end of get_target_hd_name_from_local_machine
 #
@@ -8267,6 +8284,8 @@ get_target_parts_name_from_local_machine() {
   local input_selection_opt="$2"
   local ANS_TMP
   local ASK_DEV_NAME=1
+  target_parts=
+  target_parts_ad=
   ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
   [ -z "$input_selection_opt" ] && input_selection_opt="default"
@@ -8275,9 +8294,13 @@ get_target_parts_name_from_local_machine() {
     # we have to remove " (comes with checklist in dialog) so that for loop
     # will work (Specially for FC3/4...)
     target_parts="$(cat $ANS_TMP | tr -d \")"
+    if [ -e "${ANS_TMP}.ocs-ad" ]; then
+      target_parts_ad="$(cat ${ANS_TMP}.ocs-ad | tr -d \")"
+    fi
     [ -n "$target_parts" ] && ASK_DEV_NAME=0
   done
   [ -e "$ANS_TMP" ] && rm -f $ANS_TMP
+  [ -e "${ANS_TMP}.ocs-ad" ] && rm -f ${ANS_TMP}.ocs-ad
   check_input_partition $target_parts
 } # end of get_target_parts_name_from_local_machine
 #
@@ -10932,6 +10955,7 @@ USAGE_common_general() {
     echo " -edio, --enable-direct-io   Enable the direct IO mode of Partclone when reading from or writing to NVMe SSD."
     echo " -rmtd, --restore-mtdblock   Restore MTD block device (/dev/mtdblock*)"
     echo " -rmmcb, --restore-mmcblk    Restore eMMC boot device (/dev/mmcblk*boot*)"
+    echo " -uoab, --use-ocs-alias-blkdev  Use Clonezilla alias block device name (i.e., ocs-*d*)"
     echo " -v, --verbose            Prints verbose information"
 } # end of USAGE_common_general
 #
