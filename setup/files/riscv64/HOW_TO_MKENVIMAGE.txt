@@ -1,0 +1,28 @@
+##
+## This document is a guide to building a U‑Boot environment binary file from scratch (Debian/Ubuntu)
+## 
+
+# Step 0:
+## Install 'u-boot-tools' package 
+$ sudo apt install u-boot-tools
+
+# Download current ocs-u-boot-env-default.txt 
+$ wget -O ocs-u-boot-env-default.txt  https://raw.githubusercontent.com/ceasar-sun/clonezilla.ceasar/refs/heads/master/setup/files/riscv64/ocs-u-boot-env-default.txt 
+
+# Step 1: 
+## To make env image from u-boot-env-default.txt
+## Output : my.u-boot-env-default.bin
+./tools/mkenvimage -s 0x4000 -o ./ocs-u-boot-env-default.bin ./ocs-u-boot-env-default.txt
+
+# Step 2:
+## To dd bin file to u-boot env partition (say : /dev/mmcblk0p2) 
+~$ sudo dd if=./ocs-u-boot-env-default.bin of=/dev/mmcblk0p2 conv=fsync ; sync
+
+## Or dd to bootable-img template file (with kpartx command , sya: /dev/mapper/loop3p2)
+~$ sudo kpartx -av bootable.ocs-image.img
+~$ sudo dd if=./ocs-u-boot-env-default of=/dev/mapper/loop3p2 conv=fsync ; sync
+~$ sudo kpartx -d /dev/loop3
+~$ sudo losetup -d /dev/loop3
+
+* Reference:
+    - https://hackmd.io/@chenkai-sun/HJvRBVJAge
