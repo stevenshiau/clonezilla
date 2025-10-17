@@ -1729,6 +1729,13 @@ image_save() {
   local part_fs part_fs_shown
   local compress_prog_prompt
   local dd_report_sig_pid part_size
+  local bitlocker_path
+
+  ############ THIS SHOULD BE A GLOBAL VARIABLE AND SHOULD NOT STAY HERE
+  BITLOCKER_DECRYPTED_PARTITIONS_PATH="/tmp/bitlocker_decrypted_partitions"
+  msg_using_bitlocker="This is a bitlocker encrypted partition that has been decrypted. We'll use the decrypted version!"
+  ##################################################
+
   # $tgt_dir is dir path like "/home/partimag/sarge-base/"
   # $tgt_file here is the file name like "hda1"
   # if the report_msg is empty, put the initial one: image_name_
@@ -1744,6 +1751,18 @@ image_save() {
   # get the filesystem and size
   part_fs="$(ocs-get-dev-info $source_dev filesystem 2>/dev/null)"
   part_size="$(ocs-get-dev-info $source_dev size 2>/dev/null)"
+
+  if [[ "$part_fs" = "BitLocker" ]]
+  then
+    bitlocker_path="${BITLOCKER_DECRYPTED_PARTITIONS_PATH}/${tgt_file}/dislocker-file"
+    if [[ -f $bitlocker_path ]]
+    then
+      echo $msg_using_bitlocker
+      echo "Bitlocked partition will be decrypted. Source device will change from $source_dev to $bitlocker_path" | tee --append ${OCS_LOGFILE}
+      source_dev="$bitlocker_path"
+      part_fs="ntfs" # ocs-get-dev-info does not support dislocker files and I don't have a way to test ReFS anyway  # $(ocs-get-dev-info $source_dev filesystem 2>/dev/null)" # ntfs :)
+    fi
+  fi
 
   if [ "$rm_win_swap_hib" = "yes" ]; then
     # page and hibernation files should only exist in fat or ntfs partition.
@@ -2381,6 +2400,13 @@ check_if_input_device_exist() {
     # The "${valid_devices[@]}" expansion correctly handles spaces.
     echo "${valid_devices[@]}" > "$output_file"
     echo "The selected devices: ${valid_devices[@]}" | tee --append "${OCS_LOGFILE}"
+
+
+    # here we check if there are BitLocker partitions. In case they exist, we ask the user if
+    # s/he wants to input the password.
+    # the advantage of doing this now is that all passwords are asked in a row
+    # so wheenver the backup really starts, it would pause in the middle asking to decrypt bitlocker
+    deal_with_bitlocker_partitions "${valid_devices[@]}"
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "No inputted devices found!" | tee --append "${OCS_LOGFILE}"
@@ -4848,8 +4874,119 @@ get_input_dev_name() {
       # Return the Clonezilla alias device name
       echo $target_dev | sed -r -e "s/\"//g" -e "s/\[.*\]//g" > ${ANS_TMP}.ocs-ad
     fi
+
 } # end of get_input_dev_name
 #
+
+deal_with_bitlocker_partitions() {
+    # this will check every partition
+    # and see if they are bitlocker encrypted
+    # if they are, then it will ask the user if s/he wants to put the password to decrypt it
+    local -a valid_devices=("$@")
+    local valid_device
+    local part_fs
+    for valid_device in ${valid_devices[@]}
+    do
+      part_fs="$(ocs-get-dev-info $valid_device filesystem 2>/dev/null)"
+      if [[ "$part_fs" = "BitLocker" ]]
+      then
+        ask_to_decrypt_bitlocker_partition $valid_device
+      fi
+    done
+}
+
+ask_to_decrypt_bitlocker_partition() {
+  # this will ask for the bitlocker password of partition $1 ( $device )
+  # and use dislocker to mount it on "${BITLOCKER_DECRYPTED_PARTITIONS_PATH}/$device"
+  # example: "/tmp/bitlocker_decrypted_partitions/sdb2"
+  # after the mount, a file called  "/tmp/bitlocker_decrypted_partitions/sdb2/dislocker-file" should exist.
+  # the existence of this file should inform the backup function to backup it instead of the encrypted device
+
+  local device
+  local fancy_dev_name
+  local bitlocker_password
+  local target_path
+  local should_decrypt
+  device=$1
+  fancy_dev_name="$device (Size: $(LANG=C ocs-get-dev-info $device size) Label: $(LANG=C ocs-get-dev-info $device label))"
+
+#####################################################################
+    #this are the a global settings
+    BITLOCKER_DECRYPTED_PARTITIONS_PATH="/tmp/bitlocker_decrypted_partitions"
+
+    msg_bitlocker_disclaimer_00="The followng partition is encrypted with BitLocker:"
+    msg_bitlocker_disclaimer_01="We have two options now:"
+    msg_bitlocker_disclaimer_02="- Backup it as is (encrypted, takes longer and compression will have no effect)"
+    msg_bitlocker_disclaimer_03="- Backup the decrypted data (requires encryption key/password, is quicker, compression will work as usual)"
+
+    msg_bitlocker_disclaimer_04="If you backup the decrypted data, whenever you restore it, you will need to use Windows to encrypt it again on the target machine."
+    msg_bitlocker_disclaimer_05="The encrypted partition in this machine will keep being encrypted regardless of which choice you pick."
+
+    msg_bitlocker_disclaimer_06="This should be used only with NTFS. Do not use with Resilient File System (ReFS). It should not work."
+    msg_bitlocker_disclaimer_07="This is unrelated to the clonezilla setting of encrypting the backup. If that option is enabled, your backup will be encrypted by clonezilla."
+
+    msg_bitlocker_disclaimer_08="Do you want to backup the decrypted data of this partition ? (if unsure, say NO)"
+    msg_bitlocker_request_password="Please enter the BitLocker clear key, recovery password or user password (it will be shown in cleartext):"
+#######################################################################
+
+  target_path="${BITLOCKER_DECRYPTED_PARTITIONS_PATH}/$device"
+
+  if [[ -f "${target_path}/dislocker-file" ]]
+  then
+    echo "Device $fancy_dev_name is already decrypted. Skipping asking if you want to decrypt it"
+    return 0
+  fi
+
+  while true
+  do
+    echo
+    echo $msg_bitlocker_disclaimer_00
+    echo $fancy_dev_name
+    echo
+    echo $msg_bitlocker_disclaimer_01
+    echo $msg_bitlocker_disclaimer_02
+    echo $msg_bitlocker_disclaimer_03
+    echo
+    echo $msg_bitlocker_disclaimer_04
+    echo $msg_bitlocker_disclaimer_05
+    echo
+    echo $msg_bitlocker_disclaimer_06
+    echo $msg_bitlocker_disclaimer_07
+    echo
+    echo $msg_bitlocker_disclaimer_08
+    echo -n "[y/N] "
+    read should_decrypt
+    case "$should_decrypt" in
+            n|N|[nN][oO])
+
+        return 1
+        ;;
+      *)
+    esac
+
+    mkdir -p "$target_path"
+
+    read -p "$msg_bitlocker_request_password " bitlocker_password
+
+    echo
+    echo "Attempting to use the BitLocker password as the recovery password"
+    dislocker /dev/${device} "$target_path" -p${bitlocker_password}
+    if [[ "$?" == "0" ]];  then echo $msg_succeed_to_decrypt_img; return 0;   fi
+
+    echo
+    echo "Attempting to use the BitLocker password as the user password"
+    dislocker /dev/${device} "$target_path" -u${bitlocker_password}
+    if [[ "$?" == "0" ]];  then echo $msg_succeed_to_decrypt_img; return 0;   fi
+
+    echo
+    echo
+    echo "The password did not work. Please try a new password."
+  done
+
+  return 0
+}
+
+
 get_existing_disk_image() {
    # show existing images so that user can choose then return chosen to file ANS_TMP
    local ANS_TMP="$1"
