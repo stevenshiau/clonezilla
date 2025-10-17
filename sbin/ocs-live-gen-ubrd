@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #=====================================================================
-#  File:   ocs-live-u-bootable-rawdisk
+#  File:   ocs-live-gen-ubrd (a.k.a: ocs-live-u-bootable-rawdisk)
 #  Author: Ceasar Sun
 #  Co-Translator: Jouni Järvinen (@rautamiekka)
 #  Desc:   Merge OCS zip and U-boot enabled bootable raw image as a new U-boot enabled OCS live raw disk.
@@ -21,23 +21,31 @@ DEFAULT_BOOTABLE_RAW_CHECKSUM="http://free.nchc.org.tw/clonezilla-riscv/DC-ROMA-
 #DEFAULT_BOOTABLE_RAW_CHECKSUM="http://localhost:8080/clonezilla-riscv/DC-ROMA-L2A/bootable-img.template/MD5SUM.txt"
 
 # Temp directory (PID as name to avoid conflict)
-TMPDIR_ROOT="${PWD}/ocs_repack_$$"
+TMPDIR_ROOT="${PWD}/ocs_gen-ubrd_$$"
 MOUNT_POINT="${TMPDIR_ROOT}/mnt"
 
 # TEXT for searching partition name in bootable template image
 # "rootfs" is referred to in the DC-ROMA L2A startup procedure :
 #   -  https://bianbu-linux.spacemit.com/en/device/boot/
-BOOTFS_PART_NAME="bootfs"
+BOOTFS_PARTLABEL="bootfs"
+ENV_PARTLABEL="env"
 
 # Runtime Variables / Control flag
 OCS_ZIP=""
 LOOP_DEVICE=""
-KPARTX_MAP=""
+BOOTFS_KPARTX_MAP=""
+ENV_KPARTX_MAP=""
 DOWNLOADED_TEMPLATE=""
+OUTPUT_RAWDISK=""
 FULL_SELF_CLI="$BASH_SOURCE$(printf " %q" "$@")"
+SOFT_ITEAMS="vmlinuz initrd.img dtbs repack-raw_info.txt"
 
 DEBUG_MODE=false
 VERBOSE_MODE=
+THIS_VERSION="1.0.2-1"
+OCS_U_BOOT_ENV_VERSION=""
+
+ANS_IF_OVERWRITE=""
 
 #---------------------------#
 #  Functions                #
@@ -68,6 +76,7 @@ Mandatory arguments to long options are mandatory for short options too.
    OCS_ZIP_FILE                     Required, OCS zip file
    -bt|--bootable_template=FILE     OCS bootable template raw image。
                                     Script will use '${DEFAULT_BOOTABLE_RAW_TEMPLATE}' as default template if none is assigned. 
+   -o|--output=FILE                 File name of output。
    -d|--debug                       Debug mode : to keep TMPDIR_ROOT
    -v|--verbose                     Verbose mode
    -h|--help                        Show help
@@ -75,7 +84,7 @@ Mandatory arguments to long options are mandatory for short options too.
 Example:
  ~$ sudo $(basename $0) clonezilla-live-3.2.2-5-riscv64.zip	
  ~$ sudo $(basename $0) my_repack_ocs.zip --bootable_template /path/to/boot.raw --debug
- ~$ sudo $(basename $0) my_repack_ocs.zip -d -v -bt /path/to/boot.raw 
+ ~$ sudo $(basename $0) my_repack_ocs.zip -d -v -bt /path/to/boot.raw -o /path/to/my-output.img
 EOF
 }
 
@@ -102,10 +111,10 @@ cleanup() {
     fi
 
     # 2. Delete kpartx mapper
-    if [[ -n "${KPARTX_MAP}" ]]; then
-        echo "Removing kpartx map ${KPARTX_MAP} ..."
+    if [[ -n "${BOOTFS_KPARTX_MAP}" ]]; then
+        echo "Removing kpartx map ${BOOTFS_KPARTX_MAP} ..."
         kpartx ${VERBOSE_MODE} -d "${LOOP_DEVICE}" || echo "Warning: kpartx -d failed"
-        KPARTX_MAP=""
+        BOOTFS_KPARTX_MAP=""
     fi
 
     # 3. Release loop device
@@ -145,6 +154,11 @@ while [[ $# -gt 0 ]]; do
             BOOTABLE_TEMPLATE_RAWDISK="${2:-}"
             [[ -z "${BOOTABLE_TEMPLATE_RAWDISK}" ]] && die "Missing argument for --bootable_template"
             [[ ! -e "${BOOTABLE_TEMPLATE_RAWDISK}" ]] && die "Template file : '${BOOTABLE_TEMPLATE_RAWDISK}' doesn't existed !"
+            shift 2
+            ;;
+        -o|--output)
+            OUTPUT_RAWDISK="${2:-}"
+            [[ -z "${OUTPUT_RAWDISK}" ]] && die "Missing argument for --output"
             shift 2
             ;;
         -d|--debug)
@@ -235,18 +249,39 @@ for cmd in kpartx losetup mount umount unzip basename dirname; do
 done
 
 #---------------------------#
-#  1. Create temp directory    #
+#  1. Prepare : working directory and OCS zip file    #
 #---------------------------#
+
+# Ask overwrite answer if output file existed
+OCS_BASENAME="$(basename "${OCS_ZIP}" .zip)"   # Remove suffix '.zip'
+[[ -z "${OUTPUT_RAWDISK}" ]] && FINAL_IMG="${OCS_BASENAME}_u-bootable.img" || FINAL_IMG="${OUTPUT_RAWDISK}"
+
+# If target exists, ask before overwrite
+if [[ -e "${FINAL_IMG}" ]]; then
+    read -p "Output file : ${FINAL_IMG} exists, overwrite (y/N)？" ANS_IF_OVERWRITE
+    # Rename if $ans_if_overwrite not ^[Yy]$ ]]
+    [[ "${ANS_IF_OVERWRITE}" =~ ^[Yy]$ ]] || mv ${VERBOSE_MODE} "${FINAL_IMG}" "${FINAL_IMG}_$$"
+fi
+
 mkdir ${VERBOSE_MODE} -p "${MOUNT_POINT}"
 echo "Create Temp directory : ${MOUNT_POINT}"
 
+#  1.1 Unzip OCS zip then rsync contents   #
+echo "Extracting OCS zip ..."
+TMP_UNZIP="${TMPDIR_ROOT}/unzipped"
+mkdir ${VERBOSE_MODE} -p "${TMP_UNZIP}"
+unzip $( [[ $VERBOSE_MODE ]] || echo "-q" ) "${OCS_ZIP}" -d "${TMP_UNZIP}" || die "unzip failed"
+
 #---------------------------------------#
-#  2. Deat with "bootfs" in raw device  #
+#  2. Deal with U-bootable raw device   #
 #---------------------------------------#
 TMP_RAW="${TMPDIR_ROOT}/raw_image.img"
 echo "Copying bootable raw image to temporary file ..."
 cp -a ${VERBOSE_MODE} "${BOOTABLE_TEMPLATE_RAWDISK}" "${TMP_RAW}"
 
+#---------------------------------------#
+#  2.1 Create loop and mapper device    #
+#---------------------------------------#
 echo "Setting up loop device ..."
 LOOP_DEVICE=$(losetup ${VERBOSE_MODE} -f --show "${TMP_RAW}")
 [[ -z "${LOOP_DEVICE}" ]] && die "Create loop device failed ..."
@@ -255,47 +290,61 @@ echo "Creating partition mappings with kpartx ..."
 kpartx ${VERBOSE_MODE} -a -s "${LOOP_DEVICE}"
 sleep 1   # wait for device mapper
 
+#----------------------------------------------#
+#  2.2 Find "env", "bootfs" then mount ,sync from ZIP  #
+#----------------------------------------------#
 # Search device mapper id which the partition "name" = "bootfs"
-KPARTX_MAP="/dev/mapper/$(lsblk -ln -o NAME,LABEL ${LOOP_DEVICE}  \
-    | awk -v bootfs_part_name="$BOOTFS_PART_NAME" '$2 == bootfs_part_name {print $1}' \
+BOOTFS_KPARTX_MAP="/dev/mapper/$(lsblk -ln -o NAME,TYPE,PARTLABEL,PARTUUID ${LOOP_DEVICE}  \
+    | awk -v this_partlabel="$BOOTFS_PARTLABEL" '$3 == this_partlabel {print $1}' \
     2>/dev/null || true)"
 
-[[ -b "${KPARTX_MAP}" ]] && echo "Find available partition : '${KPARTX_MAP}' .." ||  die "Unable to find partition "name" = bootfs (say : /dev/mapper/*p5)"
+# Search device mapper id which the partition "name" = "env"
+ENV_KPARTX_MAP="/dev/mapper/$(lsblk -ln -o NAME,TYPE,PARTLABEL,PARTUUID ${LOOP_DEVICE}  \
+    | awk -v this_partlabel="$ENV_PARTLABEL" '$3 == this_partlabel {print $1}' \
+    2>/dev/null || true)"
 
-echo "Mounting partition ${KPARTX_MAP} to ${MOUNT_POINT} ..."
-mount ${VERBOSE_MODE} "${KPARTX_MAP}" "${MOUNT_POINT}"
+[[ -b "${BOOTFS_KPARTX_MAP}" && -b "${ENV_KPARTX_MAP}" ]] && echo "Find available partition pf 'env' and 'bootfs': ''${ENV_KPARTX_MAP}' / '${BOOTFS_KPARTX_MAP}'  .." ||  die "Unable to find partition "name" = bootfs (say : /dev/mapper/*p5)"
 
-#---------------------------#
-#  3. Unzip OCS zip then rsync contents   #
-#---------------------------#
-echo "Extracting OCS zip ..."
-TMP_UNZIP="${TMPDIR_ROOT}/unzipped"
-mkdir ${VERBOSE_MODE} -p "${TMP_UNZIP}"
-unzip $( [[ $VERBOSE_MODE ]] || echo "-q" ) "${OCS_ZIP}" -d "${TMP_UNZIP}" || die "unzip failed"
+echo "Mounting partition ${BOOTFS_KPARTX_MAP} to ${MOUNT_POINT} ..."
+mount ${VERBOSE_MODE} "${BOOTFS_KPARTX_MAP}" "${MOUNT_POINT}"
 
-echo "Rsyncing extracted files to mounted partition ..."
-rsync -a ${VERBOSE_MODE} "${TMP_UNZIP}/." "${MOUNT_POINT}/" || die "rsync failed"
-#cp ${VERBOSE_MODE} -a "${TMP_UNZIP}/." "${MOUNT_POINT}/" || die "copy failed"
+#  Save u-Boot env of raw imag as file  #
+dd if=${ENV_KPARTX_MAP} bs=1 skip=4 | tr '\0' '\n' | sed -e '/^$/d' -e  '/^\o377*$/d' > "${TMP_UNZIP}"/live/ocs-u-boot-env-exported.txt
+OCS_U_BOOT_ENV_VERSION="$(grep -E '^ocs_u_boot_env_version=' "${TMP_UNZIP}/live/ocs-u-boot-env-exported.txt" | cut -d'=' -f2-)"
 
-#--------------------------------#
-#  4. Write repack info to file  #
-#--------------------------------#
-INFO_FILE="${MOUNT_POINT}/repack-raw_info.txt"
+#----------------------------------------------#
+# 2.3 Check soft links and save repack info
+#----------------------------------------------#
+for _item in $SOFT_ITEAMS ; do 
+    echo "Check soft link :'${_item}' in '${MOUNT_POINT}/' ..."
+    [[ -L "${MOUNT_POINT}/${_item}" && \
+        "$(readlink -f "${MOUNT_POINT}/${_item}")" == "$(readlink -f "${MOUNT_POINT}/live/${_item}")" ]] \
+        || ( rm -rf ${VERBOSE_MODE} "${MOUNT_POINT}/${_item}" ; ln -sf ${VERBOSE_MODE} "${MOUNT_POINT}/live/${_item}" "${MOUNT_POINT}/${_item}")
+done
+
+#  Write repack info to file  #
+INFO_FILE="${TMP_UNZIP}/live/repack-raw_info.txt"
 {
     echo "=== Repack Info  ==="
-    echo "Date                  : $(date '+%Y-%m-%d %H:%M:%S')"
-    echo "Original OCS Zip      : ${OCS_ZIP}"
-    echo "Bootable Raw Template : ${BOOTABLE_TEMPLATE_RAWDISK}"
-    echo "Loop Device           : ${LOOP_DEVICE}"
-    echo "Bootfs Mapper         : ${KPARTX_MAP}"
-    echo "Full Self Command     : ${FULL_SELF_CLI}"
+    echo " * Date                  : $(date '+%Y-%m-%d %H:%M:%S')"
+    echo " * OCS-live-ubrd Version : ${THIS_VERSION}"
+    echo " * U-Boot ENV Version    : ${OCS_U_BOOT_ENV_VERSION}"
+    echo " * Original OCS Zip      : $(md5sum ${OCS_ZIP})"
+    echo " * Template RAM MD5SUM   : $(md5sum ${BOOTABLE_TEMPLATE_RAWDISK})"
+    echo " * Loop Device           : ${LOOP_DEVICE}"
+    echo " * Bootfs / ENV Mapper   : ${BOOTFS_KPARTX_MAP} / ${ENV_KPARTX_MAP} "
+    echo " * Full Self Command     : ${FULL_SELF_CLI}"
     echo "=== End of info ==="
 } > "${INFO_FILE}"
-
 echo "Write Repack Info into: ${INFO_FILE}"
+cat "${TMP_UNZIP}/live/repack-raw_info.txt"
+
+# To sync tmp-zip dir to "${MOUNT_POINT}
+echo "Syncing extracted files to mounted partition ..."
+rsync -a ${VERBOSE_MODE} "${TMP_UNZIP}/." "${MOUNT_POINT}/" || die "rsync failed"
 
 #---------------------------------------#
-#  5. Umount then rename raw device     #
+#  3. Umount , remove loop device       #
 #---------------------------------------#
 echo "Syncing filesystem ..."
 sync
@@ -309,23 +358,16 @@ kpartx ${VERBOSE_MODE} -d "${LOOP_DEVICE}" || echo "Warning: kpartx -d failed"
 # Release loop device (same with function : cleanup ）
 losetup ${VERBOSE_MODE} -d "${LOOP_DEVICE}" || echo "Warning: losetup -d failed"
 
-# Generate its output name
-OCS_BASENAME="$(basename "${OCS_ZIP}" .zip)"   # Remove suffix '.zip'
-FINAL_IMG="${OCS_BASENAME}_u-bootable.img"
-
-# If target exists, ask before overwrite
-if [[ -e "${FINAL_IMG}" ]]; then
-    read -p "Output file : ${FINAL_IMG} exists, overwrite (y/N)？" ans
-    [[ "${ans}" =~ ^[Yy]$ ]] || mv ${VERBOSE_MODE} "${FINAL_IMG}" "${FINAL_IMG}_$$"
-fi
-
+#---------------------------------------#
+#  4. Rename output ,show dd command    #
+#---------------------------------------#
 echo "Renaming temporary raw image to ${FINAL_IMG} ..."
 mv ${VERBOSE_MODE} "${TMP_RAW}" "${FINAL_IMG}"
 
 echo "=== Done ==="
 echo "Output : ${FINAL_IMG}"
 echo "Then, you can use the following command to create a bootable OCS disk with U-boot/SPI enabled :"
-echo " $ sudo dd if=${FINAL_IMG} of=/dev/mmcdevice bs=1024M conv=fsync"
+echo " $ sudo dd if=${FINAL_IMG} of=/dev/mmcblk0 bs=1024M conv=fsync"
 
 # If debug mode, show temp dir location before exit (same with cleanup)
 if $DEBUG_MODE; then
