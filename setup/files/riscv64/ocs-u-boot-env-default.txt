@@ -1,0 +1,254 @@
+# -------------------------------------------------
+# 基本環境與一般參數
+# -------------------------------------------------
+add_bootarg=run set_console; run set_loglevel;
+arch=riscv
+ocs_u_boot_env_version=1.0.5
+
+autoload=0
+baudrate=115200
+board=k1-x
+board_name=k1-x
+bootargs=
+
+cpu=x60
+console=
+detect_dtb=echo "OCS_info: product_name: ${product_name}"; run dtb_env; \
+           echo "OCS_info: select ${dtb_name} to load";
+device_version=1
+dtb_addr=0x31000000
+dtb_env=if test -n "${product_name}"; then \
+           if test "${product_name}" = k1_evb; then setenv dtb_name ${dtb_dir}/k1-x_evb.dtb; \
+           elif test "${product_name}" = k1_deb1; then setenv dtb_name ${dtb_dir}/k1-x_deb1.dtb; \
+           elif test "${product_name}" = k1_deb2; then setenv dtb_name ${dtb_dir}/k1-x_deb2.dtb; \
+           elif test "${product_name}" = k1_hs450; then setenv dtb_name ${dtb_dir}/k1-x_hs450.dtb; \
+           elif test "${product_name}" = k1_kx312; then setenv dtb_name ${dtb_dir}/k1-x_kx312.dtb; \
+           elif test "${product_name}" = k1_mingo; then setenv dtb_name ${dtb_dir}/k1-x_mingo.dtb; \
+           elif test "${product_name}" = k1_MINI-PC; then setenv dtb_name ${dtb_dir}/k1-x_MINI-PC.dtb; \
+           else echo "OCS_info: match dtb by product_name: ${dtb_dir}/${product_name}.dtb"; \
+                setenv dtb_name ${dtb_dir}/${product_name}.dtb; fi; fi;
+dtb_name=k1-x_evb.dtb
+earlycon=sbi
+eeprom_i2c_index=2
+eeprom_pin_group=0
+
+esp_index=5
+esp_name=ESP
+
+gatewayip=10.0.92.1
+grub_file=EFI/BOOT/BOOTRISCV64.EFI
+init=/init
+ipaddr=10.0.92.253
+kernel_addr_r=0x11000000
+kernel_comp_addr_r=0x200000
+kernel_comp_size=0x10000000
+knl_name=Image.itb
+loadaddr=0x200000
+
+loglevel=5
+
+mac_mapping_file=/home/it/nfs/bianbu/mac_mapping.txt
+manufacture_date=01/16/2023 11:02:20
+manufacturer=spacemit
+mmc_rootfstype=ext4
+mtdids=nor0=d420c000.spi-0
+net_data_path=net_flash_file/net_flash_file/
+netdev=eth0
+netmask=255.255.255.0
+
+nor_root=/dev/mtdblock6
+nor_rootfstype=squashfs
+phy_link_time=10000
+phyaddr0=1
+pmic_type=0
+product_name=k1-x_deb1
+pxefile_addr_r=0x0c200000
+ramdisk_addr=0x21000000
+ramdisk_combo=-
+ramdisk_name=initramfs-generic.img
+ramdisk_size=-
+
+mtdparts=d420c000.spi-0:64K@0(bootinfo),64K@64K(private),256K@128K(fsbl),64K@384K(env),\
+         192K@448K(opensbi),-@640K(uboot)
+
+scriptaddr=0x2c100000
+sdk_version=1
+serial#=0123456789ABCDEF
+serverip=10.0.92.148
+
+splashfile=ocs-riscv.bmp
+splashimage=0x11000000
+splashpos=m,m
+stderr=serial
+stdin=serial,usbkbd,usbkbd1
+stdout=serial
+stdout_flash=serial,vidconsole
+uboot_status=IN_UBOOT
+usb_start=true
+vendor=spacemit
+workqueue.default_affinity_scope=system
+
+commonargs=if test "${cmdlineargs}" != "";then setenv bootargs "${cmdlineargs}" ; \
+            else setenv bootargs earlyprintk plymouth.ignore-serial-consoles \
+                 plymouth.prefer-fbcon clk_ignore_unused swiotlb=65536 \
+                 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}; fi
+
+set_console=if test "${console}" != "";then setenv bootargs "${bootargs}" console=${console}; fi
+set_loglevel=if test "${loglevel}" != "";then setenv bootargs "${bootargs}" loglevel=${loglevel}; fi
+set_mmc_args=setenv bootargs "${bootargs}" rootwait rootfstype=${mmc_rootfstype};
+set_nor_args=setenv bootargs "${bootargs}" mtdparts=${mtdparts} rootfstype=ext4
+set_root_arg=run get_rootfs_uuid; setenv bootargs "${bootargs}" root=UUID=${rootfs_uuid};
+set_rootfs_env=if test "${bootfs_devname}" = mmc; then \
+                  setenv blk_root "/dev/mmcblk${boot_devnum}p${rootfs_part}"; \
+               elif test "${bootfs_devname}" = nvme; then \
+                  setenv blk_root "/dev/nvme${boot_devnum}n1p${rootfs_part}"; \
+               else echo "not define rootfs part at this blk device, add to env"; fi;
+
+get_esp_index=env set esp_index ${bootfs_part}; \
+              part number ${bootfs_devname} ${boot_devnum} ${esp_name} esp_index;
+get_rootfs_env=part number ${bootfs_devname} ${boot_devnum} rootfs rootfs_part; \
+                setexpr rootfs_part ${rootfs_part} + 0; \
+                if test ${rootfs_part} > 9; then run rootfs_part_to_ul; fi; \
+                echo "OCS_info: get rootfs_part index:${rootfs_part}";
+get_rootfs_uuid=part number ${bootfs_devname} ${boot_devnum} rootfs rootfs_part; \
+                fsuuid ${bootfs_devname} ${boot_devnum}:${rootfs_part} rootfs_uuid;
+
+rootfs_part_to_ul=echo "OCS_info: set rootfs_part to ul"; \
+                    setexpr temp_num_0 ${rootfs_part} / a; \
+                    setexpr temp_num_1 ${rootfs_part} % a; \
+                    setenv rootfs_part ${temp_num_0}${temp_num_1};
+
+
+load_grub=echo "Loading grub..."; load ${bootfs_devname} ${boot_devnum}:${esp_index} \
+           ${kernel_addr_r} ${grub_file}; \
+           echo "OCS_info: load ${bootfs_devname} ${boot_devnum}:${esp_index} ${kernel_addr_r} ${grub_file}"; \
+           sleep 5; # bootm command for fit image, booti command for PE or compress PE image
+loaddtb=echo "Loading dtb..."; \
+        if load ${bootfs_devname} ${boot_devnum}:${bootfs_part} ${dtb_addr} ${dtb_name}; \
+        then echo "OCS_info: load ${bootfs_devname} ${boot_devnum}:${bootfs_part} ${dtb_addr} ${dtb_name}"; \
+             sleep 5; \
+        else echo "OCS_info: load dtb from bootfs fail, use built-in dtb and clean env.dtb_addr"; \
+             setenv dtb_addr ""; sleep 5; fi;
+loadknl=echo "Loading kernel..."; \
+        echo "OCS_info: load ${bootfs_devname} ${boot_devnum}:${bootfs_part} ${kernel_addr_r} ${knl_name}...."; \
+        sleep 2; \
+        load ${bootfs_devname} ${boot_devnum}:${bootfs_part} ${kernel_addr_r} ${knl_name};
+loadramdisk=echo "Loading ramdisk ..."; \
+            echo "OCS_info: load ${bootfs_devname} ${boot_devnum}:${bootfs_part} ${ramdisk_addr} ${ramdisk_name} ..."; \
+            sleep 3 ; \
+            if load ${bootfs_devname} ${boot_devnum}:${bootfs_part} ${ramdisk_addr} ${ramdisk_name}; \
+            then size ${bootfs_devname} ${boot_devnum}:${bootfs_part} ${ramdisk_name}; \
+                 setenv ramdisk_size ${filesize}; \
+                 setenv ramdisk_combo ${ramdisk_addr}:${ramdisk_size}; \
+            else echo "OCS_info: load ramdisk from bootfs fail, use built-in ramdisk"; \
+                 setenv ramdisk_addr -; fi;
+
+start_kernel=echo "OCS_info: bootargs=${bootargs}"; fdt addr ${kernel_addr_r}; \
+             if fdt list /; then \
+                 echo "OCS_info: ----> bootm ${kernel_addr_r} ${ramdisk_combo} ${dtb_addr}" ; \
+                 sleep 5; bootm ${kernel_addr_r} ${ramdisk_combo} ${dtb_addr}; \
+             else \
+                 echo "OCS_info: ----> booti ${kernel_addr_r} ${ramdisk_combo} ${dtb_addr}" ; \
+                 sleep 5; booti ${kernel_addr_r} ${ramdisk_combo} ${dtb_addr}; \
+             fi; \
+             echo "########### Run 'start_kernel' failed by default config, check your boot config #############"
+boot_grub=env set -e -bs product_name "${product_name}"; \
+          env set -e -bs bootargs "${bootargs}"; \
+          run detect_dtb; run loaddtb; run usb_start; run load_grub; \
+          bootefi ${kernel_addr_r} ${dtb_addr};
+boot_kernel=run set_root_arg; run detect_dtb; run loadknl; run loaddtb; \
+             run loadramdisk; run start_kernel;
+
+efi_boot=echo "OCS_info: Try to boot from ${bootfs_devname}${boot_devnum} ..."; \
+          run commonargs; run add_bootarg; run set_mmc_args; \
+          run get_esp_index; if test -e ${bootfs_devname} ${boot_devnum}:${esp_index} ${grub_file}; \
+          then run boot_grub; fi; \
+          echo "########### run 'efi_boot'failed by default config, check your boot config #############"
+nfs_boot=echo "Try to boot from NFS ..."; run commonargs; run add_bootarg; \
+          setenv bootargs "${bootargs}" root=/dev/nfs nfsroot=${serverip}:${rootfs_path} \
+          bootfs=${serverip}:${bootfs_path} ip=${ipaddr}:${serverip}:${gatewayip}:${netmask}::${netdev}:off \
+          noipath; echo "bootargs: ${bootargs}"; run detect_dtb; \
+          echo "Loading kernel from NFS..."; nfs ${kernel_addr_r} ${serverip}:${bootfs_path}/${knl_name}; \
+          echo "Loading dtb from NFS..."; nfs ${dtb_addr} ${serverip}:${bootfs_path}/${dtb_name}; \
+          if test -n "${ramdisk_name}"; then \
+              echo "Loading ramdisk from NFS..."; \
+              nfs ${ramdisk_addr} ${serverip}:${bootfs_path}/${ramdisk_name}; \
+              setenv ramdisk_size ${filesize}; \
+              setenv ramdisk_combo ${ramdisk_addr}:${ramdisk_size}; \
+          else setenv ramdisk_combo -; fi; \
+          run start_kernel; \
+          echo "########### boot kernel failed from NFS, check your boot config #############"
+nor_boot=echo "Try to boot from ${bootfs_devname}${boot_devnum} ..."; \
+          run commonargs; run add_bootarg; run set_nor_args; \
+          run get_esp_index; if test -e ${bootfs_devname} ${boot_devnum}:${esp_index} ${grub_file}; \
+          then run boot_grub; else run boot_kernel; fi; \
+          echo "########### boot failed by default config, check your boot config #############"
+mmc_boot=echo "OCS_info: Try to boot from ${bootfs_devname}${boot_devnum} ..."; \
+           sleep 3; run commonargs; run add_bootarg; run set_mmc_args; \
+           run get_esp_index; if test -e ${bootfs_devname} ${boot_devnum}:${esp_index} ${grub_file}; \
+           then run boot_grub; else run boot_kernel; fi; \
+           echo "########### boot failed by default config, check your boot config #############"
+
+autoboot=if test ${boot_device} = nand; then run nand_boot; \
+          elif test ${boot_device} = nor; then run nor_boot; \
+          elif test ${boot_device} = mmc; then run mmc_boot; \
+          elif test ${boot_device} = nfs; then run nfs_boot; fi;
+
+show_boot_info=run commonargs; run add_bootarg; run detect_dtb; \
+                echo "=== SHOW U-BOOT ARGS (10 seconds) ===" ; \
+                echo "u_boot_env_version:${ocs_u_boot_env_version}"; \
+                echo "board             :${board}"; \
+                echo "board_name        :${board_name}"; \
+                echo "boot_device       :${boot_device}"; \
+                echo "bootfs_devname    :${bootfs_devname}"; \
+                echo "boot_devnum       :${boot_devnum}"; \
+                echo "dtb_name          :${dtb_name}"; \
+                echo "esp_index         :${esp_index}"; \
+                echo "grub_file         :${grub_file}"; \
+                echo "bootargs          :${bootargs}"; \
+                echo "start_kernel ->   :bootm ${kernel_addr_r} ${ramdisk_combo} ${dtb_addr}"; \
+                echo "boot_grub ->      :bootefi ${kernel_addr_r} ${dtb_addr};"; \
+                echo "loaddtb ->        :load ${bootfs_devname} ${boot_devnum}:${bootfs_part} ${dtb_addr} ${dtb_name}"; \
+                sleep 10;
+
+
+# Default Boot Option
+bootcmd=setenv cmdlineargs "${cmdlineargs} ${ocs_toram_args}  ${ocs_lockb_args}"; run mmc_boot
+bootdelay=10
+
+#
+## Useless for default menu
+#setenv bootmenu_default 3
+
+bootmenu_0="----- Clonezilla U-Boot Menu -----"=run show_boot_info
+bootmenu_1="Boot Clonezilla To-RAM (use preset keyboard layout)"=setenv cmdlineargs "${cmdlineargs} ${ocs_toram_args}  ${ocs_lockb_args}"; run mmc_boot
+bootmenu_2="Boot Clonezilla To-RAM (choose keyboard layout later)"=setenv cmdlineargs "${cmdlineargs} ${ocs_toram_args}"; sleep 5; run mmc_boot
+bootmenu_3="Boot Clonezilla"=run mmc_boot
+bootmenu_4=" --> Autoboot"=run autoboot
+bootmenu_5=" --> Show Boot Info"=run show_boot_info;
+bootmenu_6=" --> [Testing] Boot Clonezilla via EFI"=run efi_boot
+bootmenu_7=" --> Power Reset..."=reset
+
+#bootmenu_6="-------- Flash Options --------"=run flash_default
+#bootmenu_7="recovery from usb"=run flash_from_usb
+#bootmenu_8="recovery from mmc"=run flash_from_mmc
+#bootmenu_9="recovery from net"=run flash_from_net
+#flash_default=echo "Returning to Boot Menu..."
+#flash_from_mmc=echo "recovery from mmc...... " flash_image mmc;
+#flash_from_net=echo "recovery from net...... " flash_image net;
+#flash_from_usb=echo "recovery from usb...... "; flash_image usb;
+
+# -------------------------------------------------
+# 補充說明（不屬於環境變數，只為方便閱讀）
+# -------------------------------------------------
+# 1. duplicate entries (e.g., baudrate, bootdelay, gatewayip, netmask, serverip, splashfile)
+#    are kept as‑is to preserve original file content.
+# 2. Long commands are split with back‑slashes ( \ ) for visual clarity;
+#    the actual file still contains a single line with spaces.
+# 3. Sections are logically grouped:
+#    - Boot process & menus
+#    - Device detection (dtb, env, rootfs)
+#    - Storage boot (mmc, nand, nor, nfs)
+#    - Kernel / ramdisk handling
+#    - Miscellaneous utilities & helpers
+# -------------------------------------------------
