@@ -16111,17 +16111,21 @@ clean_raid_metadata_in_disk() {
 } # end of clean_raid_metadata_in_disk
 #
 unmount_dislocker_mount_point_if_necessary(){
+  # here we unmount both /home/partimage and also backup partitions on $BITLOCKER_DECRYPTED_PARTITIONS_PATH (/tmp/bitlocker_decrypted_partitions)
+
+  #########################################################################
+  #this is a global setting
+  BITLOCKER_DECRYPTED_PARTITIONS_PATH="/tmp/bitlocker_decrypted_partitions"
+  #########################################################################
+
   # Function to unmount dislocker (bitlocker) device
-  local im dir_2_umount cmd_ rc
+  local im dir_2_umount cmd_ rc dislocker_backup_partitions
   # root@debian:~# mount |grep -Ew /home/partimag
   # /tmp/ocsroot_bitlocker_root/dislocker-file on /home/partimag type fuseblk (rw,noatime,user_id=0,group_id=0,allow_other,blksize=4096)
-  if [ -z "$(LC_ALL=C mount | grep -Ew "${ocsroot}/*" |\
-	  grep -Ewo "dislocker-file")" ]; then
-    # Not a dislocker device for ocsroot.
-    echo "The mounted bitlocker device was not found. Skip unmounting it."
-    return 3
-  fi
-  dir_2_umount=" $ocsroot $pre_ocsroot_path $pre_bitlocker_path"
+
+  dislocker_backup_partitions=$(LC_ALL=C mount |grep dislocker |grep /tmp/bitlocker_decrypted_partitions |cut -d" " -f3)
+
+  dir_2_umount=" $ocsroot $pre_ocsroot_path $pre_bitlocker_path $dislocker_backup_partitions"
   for im in $dir_2_umount; do
     if mountpoint $im &>/dev/null; then
       cmd_="umount $im"
@@ -16141,6 +16145,8 @@ unmount_dislocker_mount_point_if_necessary(){
   done
 } # end of unmount_dislocker_mount_point_if_necessary
 #
+
+
 get_netdev_type_on_system() {
   # Function to get the network type on the system.
   # Return type: none; wired; wireless; both
