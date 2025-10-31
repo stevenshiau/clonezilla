@@ -2671,6 +2671,9 @@ SH_END
     rmdir $mnt_pnt/boot/grub 2>/dev/null
   fi
 
+  if [ -d "$mnt_pnt/sys/firmware/efi/efivars" ]; then
+    unmount_wait_and_try $mnt_pnt/sys/firmware/efi/efivars
+  fi
   unmount_wait_and_try $mnt_pnt/sys
   unmount_wait_and_try $mnt_pnt/proc
   unmount_wait_and_try $mnt_pnt/dev
@@ -2814,9 +2817,15 @@ SH_END
   # Remove the device.map in case it provents the restored OS fails to run update-grub2 due to different boot device name (e.g. sda <-> hda issue)
   [ -f "$mnt_pnt/$extra_root_path/boot/grub/device.map" ] && rm -f $mnt_pnt/$extra_root_path/boot/grub/device.map
 
+  if [ -d "$mnt_pnt/$extra_root_path/sys/firmware/efi/efivars" ]; then
+    unmount_wait_and_try $mnt_pnt/$extra_root_path/sys/firmware/efi/efivars
+  fi
   unmount_wait_and_try $mnt_pnt/$extra_root_path/sys
   unmount_wait_and_try $mnt_pnt/$extra_root_path/proc
   unmount_wait_and_try $mnt_pnt/$extra_root_path/dev
+  if [ -d "$mnt_pnt/$extra_root_path/run" ]; then
+    unmount_wait_and_try $mnt_pnt/$extra_root_path/run
+  fi
   unmount_wait_and_try $mnt_pnt
   [ -d "$mnt_pnt/$extra_root_path/dev" ] && rmdir $mnt_pnt/$extra_root_path/dev
   [ -d "$mnt_pnt" -a -n "$mnt_pnt" ] && rmdir $mnt_pnt
@@ -2936,6 +2945,9 @@ do_run_update_initrd_from_restored_os() {
       echo "The tool to update initramfs was NOT found in function do_run_update_initrd_from_restored_os!"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       unmount_wait_and_try $mnt_pnt/$extra_root_path/boot
+      if [ -d "$mnt_pnt/$extra_root_path/sys/firmware/efi/efivars" ]; then
+        unmount_wait_and_try $mnt_pnt/$extra_root_path/sys/firmware/efi/efivars
+      fi
       unmount_wait_and_try $mnt_pnt/$extra_root_path/sys
       unmount_wait_and_try $mnt_pnt/$extra_root_path/proc
       unmount_wait_and_try $mnt_pnt/$extra_root_path/dev
@@ -2964,6 +2976,9 @@ SH_END
   #
   if [ "$diff_grub_pt_flag" = "yes" ]; then
     chroot $mnt_pnt/$extra_root_path/ umount /boot/
+  fi
+  if [ -d "$mnt_pnt/$extra_root_path/sys/firmware/efi/efivars" ]; then
+    unmount_wait_and_try $mnt_pnt/$extra_root_path/sys/firmware/efi/efivars
   fi
   unmount_wait_and_try $mnt_pnt/$extra_root_path/sys
   unmount_wait_and_try $mnt_pnt/$extra_root_path/proc
