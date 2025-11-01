@@ -151,8 +151,12 @@ if [ "$use_fb_term" = "yes" ];then
   ocs_live_run_tmp="$(mktemp /tmp/ocs_live_run_tmp.XXXXXX)"
   cat <<-RUN_END > $ocs_live_run_tmp
 #!/bin/bash
+export TERM=$fb_term
+echo "Using TERM=$TERM"
 $ocs_live_run
 echo "\${PIPESTATUS[0]}" > ${ocs_live_run_tmp}.rc
+sync;sync;sync
+
 RUN_END
   chmod 755 $ocs_live_run_tmp
   case "$fb_term" in
@@ -176,6 +180,9 @@ RUN_END
        if [ -n "$fontwidth" -a -n "$fontheight" ]; then 
          font_opts="--font-width=$fontwidth --font-height=$fontheight"
        fi
+       # It's useless to "export TERM=fbterm" because fbterm will set TERM=linux
+       # by default according to fbterm's manual.
+       # Hence we have to set TERM when running $ocs_live_final_tmp
        set +e
        fbterm $font_opts -- $ocs_live_run_tmp
        EXIT="$(cat ${ocs_live_run_tmp}.rc)"
@@ -236,6 +243,8 @@ if [ "$use_fb_term" = "yes" ]; then
   ocs_live_final_tmp="$(mktemp /tmp/ocs_live_final_tmp.XXXXXX)"
   cat <<-RUN_END > $ocs_live_final_tmp
 #!/bin/bash
+export TERM=$fb_term
+echo "Using TERM=$TERM"
 ocs-live-final-action $EXIT
 RUN_END
   chmod 755 $ocs_live_final_tmp
@@ -246,13 +255,11 @@ RUN_END
        set +e
        # bterm need full path command even it's in the PATH already.
        bterm -l $LANG -f $uni_font $ocs_live_final_tmp
-       EXIT=$?
        ;;
   "jfbterm")
        export TERM=jfbterm
        set +e
        jfbterm -q -e $ocs_live_final_tmp
-       EXIT=$?
        ;;
   "fbterm")
        . /etc/default/console-setup
@@ -261,9 +268,11 @@ RUN_END
        if [ -n "$fontwidth" -a -n "$fontheight" ]; then 
          font_opts="--font-width=$fontwidth --font-height=$fontheight"
        fi
+       # It's useless to "export TERM=fbterm" because fbterm will set TERM=linux
+       # by default according to fbterm's manual.
+       # Hence we have to set TERM when running $ocs_live_final_tmp
        set +e
        fbterm $font_opts -- $ocs_live_final_tmp
-       EXIT="$(cat ${ocs_live_run_tmp}.rc)"
        # Avoid fbterm issue
        disable_stdin_non_blocking_mode
        ;;
