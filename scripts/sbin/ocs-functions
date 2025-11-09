@@ -1752,7 +1752,7 @@ image_save() {
     bitlocker_path="${bitlocker_decr_part_dir}/${tgt_file}/dislocker-file"
     if [[ -f $bitlocker_path ]]
     then
-      echo "$msg_using_bitlocker"
+      echo "$msg_using_bitlocker" | tee --append ${OCS_LOGFILE}
       echo "Bitlocked partition will be decrypted. Source device will change from $source_dev to $bitlocker_path" | tee --append ${OCS_LOGFILE}
       source_dev="$bitlocker_path"
       part_fs="ntfs" # ocs-get-dev-info does not support dislocker files and I don't have a way to test ReFS anyway  # $(ocs-get-dev-info $source_dev filesystem 2>/dev/null)" # ntfs :)
@@ -4920,9 +4920,10 @@ ask_to_decrypt_bitlocker_partition() {
 
   target_path="${bitlocker_decr_part_dir}/$device"
 
-  if [[ -f "${target_path}/dislocker-file" ]]
-  then
-    echo "Device $fancy_dev_name is already decrypted. Skipping asking if you want to decrypt it"
+  if [[ -f "${target_path}/dislocker-file" ]]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "The BitLocker device $fancy_dev_name is already decrypted. No need to ask for decryption again." | tee --append $OCS_LOGFILE
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     return 0
   fi
 
@@ -4931,39 +4932,34 @@ ask_to_decrypt_bitlocker_partition() {
     echo
     echo $msg_bitlocker_disclaimer_00
     echo $fancy_dev_name
-    echo
     echo $msg_bitlocker_disclaimer_01
     echo $msg_bitlocker_disclaimer_02
     echo $msg_bitlocker_disclaimer_03
     echo
     echo $msg_bitlocker_disclaimer_04
     echo $msg_bitlocker_disclaimer_05
-    echo
     echo $msg_bitlocker_disclaimer_06
     echo $msg_bitlocker_disclaimer_07
     echo
-    echo $msg_bitlocker_disclaimer_08
-    echo -n "[y/N] "
+    echo -n "$msg_bitlocker_disclaimer_08 (y/N) " | tee --append ${OCS_LOGFILE}
     read should_decrypt
     case "$should_decrypt" in
-            n|N|[nN][oO])
-
-        return 1
-        ;;
-      *)
+       y|Y|[yY][eE][sS])
+           echo "$msg_bitlocker_backup_decrypted_data" | tee --append ${OCS_LOGFILE} ;;
+       *)  
+           echo "$msg_bitlocker_backup_encrypted_data" | tee --append ${OCS_LOGFILE}
+	   return 1 ;;
     esac
 
     mkdir -p "$target_path"
-
     read -s -p "$msg_bitlocker_request_password " bitlocker_password
-
     echo
-    echo "$msg_bitlocker_use_recovery_password..."
+    echo "$msg_bitlocker_use_recovery_password"
     dislocker /dev/${device} "$target_path" -p${bitlocker_password}
     if [[ "$?" == "0" ]];  then echo $msg_succeed_to_decrypt_img; return 0;   fi
 
     echo
-    echo "$msg_bitlocker_use_user_password..."
+    echo "$msg_bitlocker_use_user_password"
     dislocker /dev/${device} "$target_path" -u${bitlocker_password}
     if [[ "$?" == "0" ]];  then echo $msg_succeed_to_decrypt_img; return 0;   fi
 
