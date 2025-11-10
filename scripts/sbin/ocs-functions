@@ -2395,13 +2395,6 @@ check_if_input_device_exist() {
     # The "${valid_devices[@]}" expansion correctly handles spaces.
     echo "${valid_devices[@]}" > "$output_file"
     echo "The selected devices: ${valid_devices[@]}" | tee --append "${OCS_LOGFILE}"
-
-
-    # here we check if there are BitLocker partitions. In case they exist, we ask the user if
-    # s/he wants to input the password.
-    # the advantage of doing this now is that all passwords are asked in a row
-    # so wheenver the backup really starts, it would pause in the middle asking to decrypt bitlocker
-    deal_with_bitlocker_partitions "${valid_devices[@]}"
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "No inputted devices found!" | tee --append "${OCS_LOGFILE}"
@@ -4915,6 +4908,8 @@ ask_to_decrypt_bitlocker_partition() {
   local bitlocker_password
   local target_path
   local should_decrypt
+  # ocs_decrypt_bitlocker is from drbl-ocs.conf.
+  
   device=$1
   fancy_dev_name="$device (Size: $(LANG=C ocs-get-dev-info $device size) Label: $(LANG=C ocs-get-dev-info $device label))"
 
@@ -9373,6 +9368,12 @@ task_saveparts() {
     # It should be found in the initramfs. So we use extract_crypttab_from_initramfs.
     # save_crypttab_from_os "$target_dir_fullpath" $clted_luks_devs_map_sv
   fi
+
+  # Here we check if there are BitLocker partitions. In case they exist, we ask the user if
+  # s/he wants to input the password.
+  # the advantage of doing this now is that all passwords are asked in a row
+  # so wheenver the backup really starts, it would pause in the middle asking to decrypt bitlocker
+  deal_with_bitlocker_partitions "$clted_normal_devs"
 
   for partition in $clted_normal_devs; do
     # not LVM or LUKS, normal partition
