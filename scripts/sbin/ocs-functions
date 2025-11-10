@@ -16886,3 +16886,103 @@ restore_mtd_emmcboot_dev_prepare(){
   done
   echo $retrun_dev | xargs
 } # end of restore_mtd_emmcboot_dev_prepare
+#
+check_luks_dev_then_ask_if_open_it() {
+  local fnd_lks_dev id
+  # OCS_PARAM_TMP, target_hd, target_parts are global variables.
+  if [ -n "$target_hd" ]; then
+    for id in $target_hd; do
+      fnd_lks_dev="$(LA_CLL=C blkid -o device --match-token TYPE=crypto_LUKS /dev/${id}*)"
+      if [ -n "$fnd_lks_dev" ]; then
+	break
+      fi
+    done
+  elif [ -n "$target_parts" ]; then
+    for id in $target_parts; do
+      fnd_lks_dev="$(LA_CLL=C blkid -o device --match-token TYPE=crypto_LUKS /dev/${id}*)"
+      if [ -n "$fnd_lks_dev" ]; then
+	break
+      fi
+    done
+  fi
+  if [ -z "$fnd_lks_dev" ]; then
+    echo "No LUKS device was found."
+    return 7
+  fi
+  # Found LUKS dev, ask it.
+  if [ -z "$enable_luks_mode" ]; then
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    "$msg_mode: $ocs_mode_prompt" --menu "$msg_found_luks_do_you_want_open_it\n$msg_if_yes_open_luks\n$msg_if_no_dd_mode_will_be_used" \
+    0 0 0 $DIA_ESC \
+    "-luks yes " "$msg_open_luks_dev" \
+    "-luks no "  "$msg_do_not_open_luks_dev" \
+    2>> $OCS_PARAM_TMP
+  else
+    case "$enable_luks_mode" in
+      y|Y|[yY][eE][sS]) echo "-luks yes " >> $OCS_PARAM_TMP;;
+      n|N|[nN][oO]) echo "-luks no " >> $OCS_PARAM_TMP;;
+      *)
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+         echo "Unknown option for -luks|--enable-luks"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo $msg_delimiter_star_line
+         exit 1;;
+    esac
+  fi
+  echo "File: $OCS_PARAM_TMP"
+  cat $OCS_PARAM_TMP
+} # end of check_luks_dev_then_ask_if_open_it
+#
+check_bitlocker_dev_then_ask_if_open_it() {
+  local fnd_bitlocker_dev id
+  # OCS_PARAM_TMP, target_hd, target_parts are global variables.
+  if [ -n "$target_hd" ]; then
+    for id in $target_hd; do
+      fnd_bitlocker_dev="$(LA_CLL=C blkid -o device --match-token TYPE=BitLocker /dev/${id}*)"
+      if [ -n "$fnd_bitlocker_dev" ]; then
+	break
+      fi
+    done
+  elif [ -n "$target_parts" ]; then
+    for id in $target_parts; do
+      fnd_bitlocker_dev="$(LA_CLL=C blkid -o device --match-token TYPE=BitLocker /dev/${id}*)"
+      if [ -n "$fnd_bitlocker_dev" ]; then
+	break
+      fi
+    done
+  fi
+  if [ -z "$fnd_bitlocker_dev" ]; then
+    echo "No BitLocker device was found."
+    return 7
+  fi
+  # Found LUKS dev, ask it.
+  if [ -z "$ocs_decrypt_bitlocker" ]; then
+    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+    "$msg_mode: $ocs_mode_prompt" --menu "$msg_bitlocker_disclaimer_00 $fnd_bitlocker_dev\n\
+  $msg_bitlocker_disclaimer_01\n\
+  $msg_bitlocker_disclaimer_02\n\
+  $msg_bitlocker_disclaimer_03\n\
+  $msg_bitlocker_disclaimer_04\n\
+  $msg_bitlocker_disclaimer_05\n\
+  $msg_bitlocker_disclaimer_06\n\
+  $msg_bitlocker_disclaimer_07\n\
+  $msg_bitlocker_disclaimer_08"\
+    0 0 0 $DIA_ESC \
+    "-dblk no "  "$msg_do_not_decrypt_bitlocker_dev" \
+    "-dblk yes " "$msg_decrypt_bitlocker_dev" \
+    2>> $OCS_PARAM_TMP
+  else
+    case "$ocs_decrypt_bitlocker" in
+      y|Y|[yY][eE][sS]) echo "-dblk yes " >> $OCS_PARAM_TMP;;
+      n|N|[nN][oO]) echo "-dblk no " >> $OCS_PARAM_TMP;;
+      *)
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+         echo "Unknown option for -dblk|--decrypt-bitlocker"
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo $msg_delimiter_star_line
+         exit 1;;
+    esac
+  fi
+  echo "File: $OCS_PARAM_TMP"
+  cat $OCS_PARAM_TMP
+} # end of check_bitlocker_dev_then_ask_if_open_it
