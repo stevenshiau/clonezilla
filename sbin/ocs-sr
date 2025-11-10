@@ -156,6 +156,7 @@ USAGE() {
     echo " -plu, --put-log-files-usb  Put Clonezilla live related log files to Clonezilla live USB drive."
     echo " -scpt, --skip-check-part-table  Skip checking the partition table of the source disk, i.e., just save it without checking it is MBR or GPT format."
     echo " -luks, --enable-luks MODE  Open LUKS device or not. MODE can be either yes or no."
+    echo " -dblk, --decrypt-bitlocker MODE   Decrypt BitLocker device or not. MODE can be either yes or no."
     USAGE_reserved_word_for_save
     echo
     echo " Options for restoring:"
@@ -751,6 +752,16 @@ parse_ocs_sr_cmd_options_with_dash() {
     -uoab|--use-ocs-alias-blkdev)
             use_ocs_alias_blkdev="yes"
 	    shift; n_shift=$((n_shift+1));;
+    -dblk|--decrypt-bitlocker)
+            shift; n_shift=$((n_shift+1)); 
+            # skip the -xx option, in case 
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              ocs_decrypt_bitlocker="$1"
+              shift; n_shift=$((n_shift+1)); 
+            fi
+            [ -z "$ocs_decrypt_bitlocker" ] && USAGE && exit 1
+	    ;;
+
     -*)     echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
             exit 2 ;;
@@ -1112,6 +1123,7 @@ get_extra_param_when_type_is_ask_user_and_interactive_mode() {
      trap "[ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP" HUP INT QUIT TERM EXIT
      # Check LUKS device. If exists, ask if open it.
      check_luks_dev_then_ask_if_open_it # OCS_PARAM_TMP is the global variable
+     check_bitlocker_dev_then_ask_if_open_it # OCS_PARAM_TMP is the global variable
 
      set_ocs_sr_extra_param save $ocs_sr_type
      # In interactive mode, we reset OCS_OPTS instead of appending it. Later wrap_up_opt will process more.
