@@ -4908,6 +4908,8 @@ ask_to_decrypt_bitlocker_partition() {
   local bitlocker_password
   local target_path
   local should_decrypt
+  local show_password_flag
+  local show_password_prompt
   # ocs_decrypt_bitlocker is from drbl-ocs.conf.
   
   device=$1
@@ -4952,23 +4954,54 @@ ask_to_decrypt_bitlocker_partition() {
 	   return 1 ;;
     esac
 
-    mkdir -p "$target_path"
-    echo  "Device: $fancy_dev_name"
-    read -s -p "$msg_bitlocker_request_password " bitlocker_password
-    echo
-    echo
-    echo "$msg_bitlocker_use_recovery_password"
-    dislocker /dev/${device} "$target_path" -p${bitlocker_password}
-    if [[ "$?" == "0" ]];  then echo $msg_succeed_to_decrypt_img; return 0;   fi
 
-    echo
-    echo "$msg_bitlocker_use_user_password"
-    dislocker /dev/${device} "$target_path" -u${bitlocker_password}
-    if [[ "$?" == "0" ]];  then echo $msg_succeed_to_decrypt_img; return 0;   fi
+    while true
+    do
+        echo
+        echo $msg_bitlocker_ask_for_passwd_01
+        echo $fancy_dev_name
+        echo $msg_bitlocker_ask_for_passwd_02
+        echo $msg_bitlocker_ask_for_passwd_03
+        echo $msg_bitlocker_ask_for_passwd_04
+        echo $msg_bitlocker_ask_for_passwd_05
+        read -p "$msg_please_choose_1_2_3 " show_password_prompt
 
-    echo
-    echo
-    echo "$msg_bitlocker_password_not_work"
+        if [ "$show_password_prompt" == 3 ]
+        then
+            echo $msg_bitlocker_not_decrypting_this_partition
+            return 1
+        elif [ "$show_password_prompt" == 2 ]
+        then
+            # echo "we want to see the password"
+            show_password_flag=""
+        elif [ "$show_password_prompt" == 1 ]
+        then
+            #echo "we DO NOT want to see the password"
+            show_password_flag=" -s "
+        else
+            # ask again
+            continue
+        fi
+
+        mkdir -p "$target_path"
+        echo  "Device: $fancy_dev_name"
+        read $show_password_flag -p "$msg_bitlocker_request_password " bitlocker_password
+        echo
+        echo
+        echo "$msg_bitlocker_use_recovery_password"
+        dislocker /dev/${device} "$target_path" -p${bitlocker_password}
+        if [[ "$?" == "0" ]];  then echo $msg_succeed_to_decrypt_img; return 0;   fi
+
+        echo
+        echo "$msg_bitlocker_use_user_password"
+        dislocker /dev/${device} "$target_path" -u${bitlocker_password}
+        if [[ "$?" == "0" ]];  then echo $msg_succeed_to_decrypt_img; return 0;   fi
+
+        echo
+        echo
+        echo "$msg_bitlocker_password_not_work"
+    done
+
   done
 
   return 0
