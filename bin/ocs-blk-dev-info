@@ -50,14 +50,15 @@ echo "$lsblk_output" | jq -c '.blockdevices[]' | while IFS= read -r device_json;
     # Use a single jq command to:
     # 1. Add the new 'id_path_tag' field.
     # 2. Use '(.field // "")' to handle potential null values before piping to gsub.
+    # 3. Model and label might contain quotes ("). Remove it so that it won't break dialog menu.
     echo "$device_json" | jq \
         --arg id_path_tag "$id_path_tag" \
         '. + {id_path_tag: $id_path_tag} |
          .type = (.type // "" | gsub(" "; "_")) |
          .size = (.size // "" | gsub(" "; "_")) |
-         .model = (.model // "" | gsub(" "; "_")) |
+         .model = (.model // "" | gsub("\""; "") | gsub(" "; "_")) |
          .fstype = (.fstype // "" | gsub(" "; "_")) |
          .serial = (.serial // "" | gsub(" "; "_")) |
-         .label = (.label // "" | gsub(" "; "_")) |
+         .label = (.label // "" | gsub("\""; "") | gsub(" "; "_")) |
          .id_path_tag = (.id_path_tag // "" | gsub(" "; "_"))'
 done | jq -s . > "$ocs_out_f"
