@@ -3,7 +3,7 @@
 # License: GPL
 #
 # To solve the small partition image restored to larger partition problem.
-#
+# Improved by Google's Gemini for safety and reliability.
 
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 
@@ -23,10 +23,61 @@ USAGE() {
    echo "DEVICE name can be with or without /dev/, e.g., /dev/sda1 or sda1."
    echo
    echo "OPTION:"
-   echo "-b, --batch  Run program in batch mode, i.e. without any prompt or wait to press enter."
+   echo "-b, --batch    Run program in batch mode, i.e. without any prompt or wait to press enter."
    echo "-n, --ntfsfix  Run ntfsfix before resizing a NTFS partition."
    echo
    echo "Example: $0 /dev/sdc1"
+}
+
+cleanup() {
+  # If the partition variable is set and currently mounted, unmount it.
+  if [ -n "$partition" ] && findmnt --source "$partition" >/dev/null 2>&1; then
+     # Only unmount if it looks like we mounted it in a temp dir
+     if findmnt --source "$partition" -n -o TARGET | grep -q "tmp/.*mnt\."; then
+         echo "Interrupted! Unmounting $partition..."
+         umount "$partition" 2>/dev/null
+     fi
+  fi
+  # Remove any temporary mount directories created by this script
+  rm -rf /tmp/*mnt.?????? 2>/dev/null
+}
+trap cleanup EXIT INT TERM
+
+# Handles the logic for FS types that must be mounted to be resized (XFS, JFS, BTRFS, NILFS2)
+resize_via_mount() {
+  local fs_type="$1"
+  local resize_cmd_template="$2" # Use __MNT__ as placeholder for mountpoint
+  local tool_name="${resize_cmd_template%% *}" # Get the first word (command name)
+
+  if ! type "$tool_name" &>/dev/null; then
+      echo "$tool_name: command not found! Skip growing this partition ${partition}"
+      return 1
+  fi
+
+  local TMP_MNT
+  TMP_MNT="$(mktemp -d /tmp/${fs_type}mnt.XXXXXX)"
+  
+  # Try to mount
+  mount -t "$fs_type" "$partition" "$TMP_MNT"
+  local rc=$?
+  
+  if [ "$rc" -eq 0 ]; then
+    echo "Running resize operation for $fs_type on $partition..."
+    
+    # Replace __MNT__ with the actual temp path and execute
+    local final_cmd="${resize_cmd_template//__MNT__/$TMP_MNT}"
+    echo "Executing: $final_cmd"
+    eval "$final_cmd"
+    
+    sleep 1
+    umount "$partition"
+    [ -d "$TMP_MNT" ] && rmdir "$TMP_MNT"
+  else
+    echo "Failed to mount $fs_type partition $partition!"
+    echo "Without mounting, we cannot increase the filesystem size to fit partition size!"
+    echo "Program terminated!"
+    exit 1
+  fi
 }
 
 # Parse command-line options
@@ -34,10 +85,10 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -b|--batch)
             batch_mode="yes"
-	    shift;;
+            shift;;
     -n|--ntfsfix)
             run_ntfsfix="yes"
-	    shift;;
+            shift;;
     -*)     echo "${0}: ${1}: invalid option" >&2
             USAGE >& 2
             exit 2 ;;
@@ -49,9 +100,9 @@ done
 # No matter the input is like /dev/sda or sda, format it as /dev/sda
 partition="$(format_dev_name_with_leading_dev $1)"
 
-######
-## main script
-######
+###################
+### Main script ###
+###################
 check_if_root
 ask_and_load_lang_set
 #
@@ -63,15 +114,15 @@ if [ ! -b "$partition" ]; then
   my_ocs_exit 1
 fi
 
-if [ -n "$(grep -Ew "^$partition" /proc/mounts)" ]; then
+if findmnt --source "$partition" >/dev/null; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "Partition $partition is already mounted! You must unmount it first! Program terminated!"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   [ -f "$part_info" ] && rm -f $part_info
   exit 1
 fi
-# check partition, if no such partition exist, exit, otherwise
-# "parted $partition p" will hang
+
+# Check partition, if no such partition exist, exit, otherwise "parted $partition p" will hang
 part_fs="$(ocs-get-dev-info $partition filesystem)"
 if [ -z "$part_fs" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -80,16 +131,13 @@ if [ -z "$part_fs" ]; then
   exit 1
 fi
 
-part_start="$(ocs-get-dev-info $partition start)"
-part_end="$(ocs-get-dev-info $partition end)"
-
 case "$part_fs" in
    reiserfs)
               if ! command -v resize_reiserfs &> /dev/null; then
                  echo "resize_reiserfs: command not found! Skip resizing this partition ${partition}"
-		 exit 1
-	      fi
-	      [ "$batch_mode" = "yes" ] && resize_reiserfs_opt="-f"
+                 exit 1
+              fi
+              [ "$batch_mode" = "yes" ] && resize_reiserfs_opt="-f"
               echo "resize_reiserfs $resize_reiserfs_opt ${partition}"
               resize_reiserfs $resize_reiserfs_opt ${partition}
               ;;
@@ -98,138 +146,60 @@ case "$part_fs" in
                  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
                  echo "Program fatresize not found! Skip this partition ${partition}"
                  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-		 exit 1
-	      fi
-	      fat_fs_size="$(LC_ALL=C lsblk -b -n -d -o size ${partition})"
-	      # A workaround to avoid fatresize 1.1.0 bug. We do not extend it to the boundary.
-	      # Just try to resize it smaller.
-	      # If we run fatresize with "-s max", it will complain:
-	      # .Error: Can't have overlapping partitions.
-	      # Ref: https://github.com/ya-mouse/fatresize/issues/18
+                 exit 1
+              fi
+              fat_fs_size="$(LC_ALL=C lsblk -b -n -d -o size ${partition})"
+              # A workaround to avoid fatresize 1.1.0 bug. We do not extend it to the boundary.
+              # Just try to resize it smaller.
+              # If we run fatresize with "-s max", it will complain:
+              # .Error: Can't have overlapping partitions.
+              # Ref: https://github.com/ya-mouse/fatresize/issues/18
               #      https://gitlab.tails.boum.org/tails/tails/-/issues/18699
-	      [ "$batch_mode" = "yes" ] && fatresize_opt="-f"
-	      fatresize $fatresize_opt -p --verbose -s $((fat_fs_size - 1)) ${partition}
+              [ "$batch_mode" = "yes" ] && fatresize_opt="-f"
+              fatresize $fatresize_opt -p --verbose -s $((fat_fs_size - 1)) ${partition}
               ;;
    ext2|ext3|ext4)
-              if ! command -v e2fsck &> /dev/null || ! command -v resize2fs &> /dev/null ; then
+              if ! command -v e2fsck &> /dev/null || ! command -v resize2fs &> /dev/null; then
                  echo "e2fsck: command not found! Skip resizing this partition ${partition}"
-		 exit 1
-	      fi
-	      [ "$batch_mode" = "yes" ] && resize2fs_opt="-f"
+                 exit 1
+              fi
+              [ "$batch_mode" = "yes" ] && resize2fs_opt="-f"
               echo "e2fsck -f -y ${partition}; resize2fs -p $resize2fs_opt ${partition}"
               e2fsck -f -y ${partition}
               resize2fs -p $resize2fs_opt ${partition}
               ;;
-        ntfs)
+   ntfs)
               if ! command -v ntfsresize &> /dev/null; then
                  echo "ntfsresize: command not found! Skip resizing this partition ${partition}"
-		 exit 1
-	      fi
-	      [ "$batch_mode" = "yes" ] && ntfsresize_opt="-f -f"
+                 exit 1
+              fi
+              [ "$batch_mode" = "yes" ] && ntfsresize_opt="-f -f"
               if [ "$run_ntfsfix" = "yes" ]; then
                 ntfsfix ${partition}
-	      fi
+              fi
               echo "ntfsresize $ntfsresize_opt ${partition}"
               ntfsresize $ntfsresize_opt ${partition}
               ;;
-        xfs)
-              if ! type xfs_growfs &> /dev/null; then
-                 echo "xfs_growfs: command not found! Skip growing this partition ${partition}"
-		 exit 1
-	      fi
-	      XFS_TMP="$(mktemp -d /tmp/xfsmnt.XXXXXX)"
-	      mount -t xfs ${partition} $XFS_TMP
-	      rc=$?
-	      if [ "$rc" -eq 0 ]; then
-                echo "Runninig \"xfs_growfs ${partition}\"..."
-                xfs_growfs ${partition}
-		sleep 1
-		umount ${partition}
-		rcm=$?
-	        if [ "$rcm" -eq 0 ]; then
-		  [ -d "$XFS_TMP" ] && rmdir $XFS_TMP
-	        fi
-	      else
-	        echo "Failed to mount xfs partition ${partition}! Without mounting xfs partition, we can not increase the filesystem size to fit partition size!"
-		echo "Program terminated!"
-		exit 1
-              fi
+   xfs)
+              # Mount, then run xfs_growfs on the mountpoint
+              resize_via_mount "xfs" "xfs_growfs __MNT__"
               ;;
-        jfs)
-	      # Ref: http://jfs.sourceforge.net/project/pub/faq.txt
-	      # Q2. Can the size of the file system be increased?
-	      # A2. Yes, you need release 1.0.21 or above for the file system. The FS must be mounted and you need to  use the -o remount option.
-              # example: mount -o remount,resize /mount point
-	      JFS_TMP="$(mktemp -d /tmp/jfsmnt.XXXXXX)"
-	      mount -t jfs ${partition} $JFS_TMP
-	      rc=$?
-	      if [ "$rc" -eq 0 ]; then
-                echo -n "Resizing jfs ${partition}\"... "
-		mount -o remount,resize ${partition}
-		sleep 1
-		echo "done!"
-		umount ${partition}
-		rcm=$?
-	        if [ "$rcm" -eq 0 ]; then
-		  [ -d "$JFS_TMP" ] && rmdir $JFS_TMP
-	        fi
-	      else
-	        echo "Failed to mount jfs partition ${partition}! Without mounting jfs partition, we can not increase the filesystem size to fit partition size!"
-		echo "Program terminated!"
-		exit 1
-              fi
+   jfs)
+              # Ref: http://jfs.sourceforge.net/project/pub/faq.txt
+              # Mount, then remount with resize option
+              resize_via_mount "jfs" "mount -o remount,resize __MNT__"
               ;;
-        btrfs)
-              if ! type btrfs &> /dev/null; then
-                 echo "btrfs: command not found! Skip growing this partition ${partition}"
-		 exit 1
-	      fi
-	      BTRFS_TMP="$(mktemp -d /tmp/btrfsmnt.XXXXXX)"
-	      mount -t btrfs ${partition} $BTRFS_TMP
-	      rc=$?
-	      if [ "$rc" -eq 0 ]; then
-                # Was: echo "Runninig \"btrfsctl -r max ${BTRFS_TMP}\"..."
-                # Was: btrfsctl -r max ${BTRFS_TMP}
-		echo "Running \"btrfs filesystem resize max ${BTRFS_TMP}\"..."
-		btrfs filesystem resize max ${BTRFS_TMP}
-		sleep 1
-		umount ${partition}
-		rcm=$?
-	        if [ "$rcm" -eq 0 ]; then
-		  [ -d "$BTRFS_TMP" ] && rmdir $BTRFS_TMP
-	        fi
-	      else
-	        echo "Failed to mount btrfs partition ${partition}! Without mounting btrfs partition, we can not increase the filesystem size to fit partition size!"
-		echo "Program terminated!"
-		exit 1
-              fi
+   btrfs)
+              # Mount, then run btrfs filesystem resize on the mountpoint
+              resize_via_mount "btrfs" "btrfs filesystem resize max __MNT__"
               ;;
-        nilfs2)
-              if ! type nilfs-resize &> /dev/null; then
-                 echo "nilfs-resize: command not found! Skip growing this partition ${partition}"
-		 exit 1
-	      fi
-	      NILFS_TMP="$(mktemp -d /tmp/nilfsmnt.XXXXXX)"
-	      mount -t nilfs2 ${partition} $NILFS_TMP
-	      rc=$?
-	      if [ "$rc" -eq 0 ]; then
-		echo "Running \"nilfs-resize -y ${partition}\"..."
-		nilfs-resize -y ${partition}
-		sleep 1
-		umount ${partition}
-		rcm=$?
-	        if [ "$rcm" -eq 0 ]; then
-		  [ -d "$NILFS_TMP" ] && rmdir $NILFS_TMP
-	        fi
-	      else
-	        echo "Failed to mount nilfs2 partition ${partition}! Without mounting nilfs2 partition, we can not increase the filesystem size to fit partition size!"
-		echo "Program terminated!"
-		exit 1
-              fi
+   nilfs2)
+              # Mount, then run nilfs-resize on the DEVICE (but it requires the device to be mounted)
+              resize_via_mount "nilfs2" "nilfs-resize -y $partition"
               ;;
-        *)
-	      echo "\"$part_fs\" is an unknown or unsupported filesystem... Skip resizing that."
-	      exit 1
+   *)
+              echo "\"$part_fs\" is an unknown or unsupported filesystem... Skip resizing that."
+              exit 1
 esac
 
 [ -f "$part_info" ] && rm -f $part_info
