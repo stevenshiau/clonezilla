@@ -4899,8 +4899,8 @@ deal_with_bitlocker_partitions() {
 ask_to_decrypt_bitlocker_partition() {
   # this will ask for the bitlocker password of partition $1 ( $device )
   # and use dislocker to mount it on "${bitlocker_decr_part_dir}/$device"
-  # example: "/tmp/bitlocker_decrypted_partitions/sdb2"
-  # after the mount, a file called  "/tmp/bitlocker_decrypted_partitions/sdb2/dislocker-file" should exist.
+  # example: "/tmp/bitlocker_decrypted_part/sdb2"
+  # after the mount, a file called  "/tmp/bitlocker_decrypted_part/sdb2/dislocker-file" should exist.
   # the existence of this file should inform the backup function to backup it instead of the encrypted device
 
   local device
@@ -16138,16 +16138,14 @@ clean_raid_metadata_in_disk() {
 } # end of clean_raid_metadata_in_disk
 #
 unmount_dislocker_mount_point_if_necessary(){
-  # here we unmount both /home/partimage and also backup partitions on $bitlocker_decr_part_dir (/tmp/bitlocker_decrypted_partitions)
-
-  # Function to unmount dislocker (bitlocker) device
+  # Function to unmount dislocker (bitlocker) device, $bitlocker_decr_part_dir (/tmp/bitlocker_decrypted_part)
   local im dir_2_umount cmd_ rc dislocker_backup_partitions
   # root@debian:~# mount |grep -Ew /home/partimag
   # /tmp/ocsroot_bitlocker_root/dislocker-file on /home/partimag type fuseblk (rw,noatime,user_id=0,group_id=0,allow_other,blksize=4096)
 
-  dislocker_backup_partitions=$(LC_ALL=C mount |grep dislocker |grep $bitlocker_decr_part_dir |cut -d" " -f3)
+  dislocker_backup_partitions=$(LC_ALL=C mount | grep dislocker | grep $bitlocker_decr_part_dir |cut -d" " -f3)
 
-  dir_2_umount=" $ocsroot $pre_ocsroot_path $pre_bitlocker_path $dislocker_backup_partitions"
+  dir_2_umount="$pre_bitlocker_path $dislocker_backup_partitions"
   for im in $dir_2_umount; do
     if mountpoint $im &>/dev/null; then
       cmd_="umount $im"
