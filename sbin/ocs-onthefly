@@ -307,7 +307,13 @@ clone_over_net() {
            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         else
            check_if_dev_busy $src_dev
-           onthefly_feed_partition_or_lv_in_server $part_fs $src_dev
+           local bitlocker_partition_unlocked="${bitlocker_decr_part_dir}/${src_dev}/dislocker-file"
+           if [[ -f "$bitlocker_partition_unlocked" ]]
+           then
+              onthefly_feed_partition_or_lv_in_server $part_fs ..${bitlocker_partition_unlocked}
+           else
+              onthefly_feed_partition_or_lv_in_server $part_fs $src_dev
+           fi
         fi
         example_target="sda1, sda2 or..."
         ;;
@@ -330,7 +336,13 @@ clone_over_net() {
              echo "Skip feeding partition $spart since it is $part_fs..." | tee --append $OCS_LOGFILE
           else
              check_if_dev_busy $spart
-             onthefly_feed_partition_or_lv_in_server $part_fs $spart
+             local bitlocker_partition_unlocked="${bitlocker_decr_part_dir}/${spart}/dislocker-file"
+             if [[ -f "$bitlocker_partition_unlocked" ]]
+             then
+                onthefly_feed_partition_or_lv_in_server $part_fs ..${bitlocker_partition_unlocked}
+             else
+                onthefly_feed_partition_or_lv_in_server $part_fs $spart
+             fi
           fi
         done
         exec 5<&-
