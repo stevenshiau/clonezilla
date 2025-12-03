@@ -379,11 +379,26 @@ if [ -n "$(ls -l $tmp_sys_files_path/mt86+x*.mbr 2>/dev/null)" ] && \
 fi
 
 # For memtest86+ in legacy BIOS:
+# For memtest <= 7.2
 # memtest86+.bin -> mt86+x32.mbr
 # memtest86+x32.bin -> mt86+x32.mbr
 # memtest86+ia32.bin -> mt86+x32.mbr
 # memtest86+x64.bin -> mt86+x64.mbr
-if [ -e "$tmp_sys_files_path/mt86+x32.mbr" ]; then
+# For memtest >= 8.0, Unified format
+# mt86+ia32
+# mt86+x64
+if [ -e "$tmp_sys_files_path/mt86+ia32" ]; then
+  mt86_x32_legacy="mt86+ia32"
+elif [ -e "$tmp_sys_files_path/mt86+x32.mbr" ]; then
+  mt86_x32_legacy="mt86+x32.mbr"
+fi
+if [ -e "$tmp_sys_files_path/mt86+x64" ]; then
+  mt86_x64_legacy="mt86+x64"
+elif [ -e "$tmp_sys_files_path/mt86+x64.mbr" ]; then
+  mt86_x64_legacy="mt86+x64.mbr"
+fi
+
+if [ -n "$mt86_x32_legacy" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 
 # Note! *.bin is specially purpose for syslinux, 
@@ -393,7 +408,7 @@ label memtest (32 bits)
   # MENU HIDE
   MENU LABEL Memory test using Memtest86+ (32 bits)
   # MENU PASSWD
-  kernel $sys_files_dir/mt86+x32.mbr
+  kernel $sys_files_dir/$mt86_x32_legacy
   TEXT HELP
   Run memory test using 32-bit Memtest86+
   ENDTEXT
@@ -401,7 +416,7 @@ label memtest (32 bits)
 BOOT_MENU_END
 fi
 
-if [ -e "$tmp_sys_files_path/mt86+x64.mbr" ]; then
+if [ -n "$mt86_x64_legacy" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 
 # Note! *.bin is specially purpose for syslinux, 
@@ -411,7 +426,7 @@ label memtest (64 bits)
   # MENU HIDE
   MENU LABEL Memory test using Memtest86+ (64 bits)
   # MENU PASSWD
-  kernel $sys_files_dir/mt86+x64.mbr
+  kernel $sys_files_dir/$mt86_x64_legacy
   TEXT HELP
   Run memory test using 64-bit Memtest86+
   ENDTEXT
@@ -757,12 +772,21 @@ BOOT_MENU_END
 # The following depends on the image exists or not 
 
 # For memtest86+ in uEFI BIOS:
+# For memtest <= 7.2,
 # memtest86+x64.efi -> mt86+x64.efi
-if [ -e "$tmp_sys_files_path/mt86+x64.efi" ]; then
+# For memtest >= 8.0, Unified format
+# mt86+ia32
+# mt86+x64
+if [ -e "$tmp_sys_files_path/mt86+x64" ]; then
+  mt86_x64_efi="mt86+x64"
+elif [ -e "$tmp_sys_files_path/mt86+x64.efi" ]; then
+  mt86_x64_efi="mt86+x64.efi"
+fi
+if [ -n "$mt86_x64_efi" ]; then
   cat <<-BOOT_MENU_END >> $output_file
 menuentry "Memtest using Memtest86+" --id memtest86+ {
-  search --no-floppy --set=root -f $sys_files_dir/mt86+x64.efi
-  linux $sys_files_dir/mt86+x64.efi
+  search --no-floppy --set=root -f $sys_files_dir/$mt86_x64_efi
+  linux $sys_files_dir/$mt86_x64_efi
 }
 
 BOOT_MENU_END
