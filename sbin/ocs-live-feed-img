@@ -1446,6 +1446,33 @@ task_start_feed_img_for_cast() {
              get_known_partition_proc_format $idisk all $part_rec_f
              target_parts="$target_parts $(awk -F":" '/^data_dev:/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
            done
+           # Add detection for MTD/EMMC devices ---
+           # The previous step only detects partitions of the source drive (e.g., nvme0n1).
+           # We need to manually check for independent block devices like mtdblock0.
+           # Same logic from check_mtd_emmcboot_dev in ocs-sr.
+           shopt -s nullglob
+           local extra_devs_list=""
+           # Check for MTD block devices (e.g., /dev/mtdblock0)
+           for i in /dev/mtdblock*; do
+             if [ -b "$i" ]; then
+                # Remove the "/dev/" prefix to get the bare name
+                extra_devs_list="$extra_devs_list ${i#/dev/}"
+             fi
+           done
+           # Check for eMMC boot partitions (e.g., /dev/mmcblk0boot0)
+           for i in /dev/mmcblk*boot*; do
+             if [ -b "$i" ]; then
+                # Remove the "/dev/" prefix to get the bare name
+                extra_devs_list="$extra_devs_list ${i#/dev/}"
+             fi
+           done
+           # Restore default glob behavior
+           shopt -u nullglob
+           # If extra devices were found, append them to the target list
+           if [ -n "$extra_devs_list" ]; then
+             target_parts="$target_parts $extra_devs_list"
+           fi
+  
            ;;
         "part-2-mparts")
            pseudo_img_cmd="ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -smtd -smmcb -p true saveparts \"${target_dir}\" $target_parts"
