@@ -1769,7 +1769,7 @@ image_save() {
   fi
 
   if [ -z "$part_fs" ]; then
-    echo "Refusing to fsck unknown or unsupported file system on $source_dev." | tee --append ${OCS_LOGFILE}
+    echo "Skip fscking unknown or unsupported file system on $source_dev." | tee --append ${OCS_LOGFILE}
   else
     if [ "$fsck_src_part_auto" = "yes" ]; then
       # It's auto (actually say "yes" to all), so we add "-y" for fsck.
@@ -8608,6 +8608,10 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # Check if target disk/part name exists in the image.
   # It might be the image from disk or partition (including bare block device with file system) that we need to convert
   # Input: $target_hd (for restoredisk); $target_parts (for restoreparts); dsksname_from_img
+  if [ "$(echo $target_hd | wc -w)" -gt 1 ]; then
+     echo "Multiple target devices detected ($target_hd). Skipping source-destination device conversion in the image dir."
+     return 5
+  fi
   if [ -n "$target_hd" ]; then
     dest_dev_="$target_hd"
   elif [ -n "$target_parts" ]; then
