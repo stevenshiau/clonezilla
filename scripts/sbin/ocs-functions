@@ -9171,7 +9171,7 @@ task_saveparts() {
   fi
 
   echo -n "Searching MTD block (/dev/mtdblock*) and eMMC boot (/dev/mmcblk*boot*) devices... "
-  target_parts+=" $(check_mtd_emmcboot_dev)"
+  target_parts+=" $(check_mtd_emmcboot_dev save)"
   echo "done!"
 
   # check if the device exists
@@ -16872,6 +16872,7 @@ check_mtd_emmcboot_dev(){
   # This functon checks for the existence of MTD block devices (/dev/mtdblock*)
   # and eMMC boot partitions (/dev/mmcblk*boot*). If found, it collects them
   # into a single, space-separated variable.
+  local spd_mode_=$1
   local -a found_devices
   local special_devices
   
@@ -16880,13 +16881,24 @@ check_mtd_emmcboot_dev(){
   shopt -s nullglob
   
   # Create an array by expanding both glob patterns at once.
-  if [[ "$save_mtdblock" == "yes" ]]; then
-    found_devices+=(/dev/mtdblock*)
-  fi
-  
-  if [[ "$save_mmcblkboot" == "yes" ]]; then
-    found_devices+=(/dev/mmcblk*boot*)
-  fi
+  case "$spd_mode_" in
+  save)
+    if [[ "$save_mtdblock" == "yes" ]]; then
+      found_devices+=(/dev/mtdblock*)
+    fi
+    if [[ "$save_mmcblkboot" == "yes" ]]; then
+      found_devices+=(/dev/mmcblk*boot*)
+    fi
+    ;;
+  restore)
+    if [[ "$restore_mtdblock" == "yes" ]]; then
+      found_devices+=(/dev/mtdblock*)
+    fi
+    if [[ "$restore_mmcblkboot" == "yes" ]]; then
+      found_devices+=(/dev/mmcblk*boot*)
+    fi
+    ;;
+  esac
   
   # Disable nullglob to restore default shell behavior and avoid side effects.
   shopt -u nullglob
@@ -16911,7 +16923,7 @@ restore_mtd_emmcboot_dev_prepare(){
   # ocsroot & target_dir are gloable variables
   local special_dev all_plist retrun_dev
 
-  special_dev="$(check_mtd_emmcboot_dev 2>/dev/null)"
+  special_dev="$(check_mtd_emmcboot_dev restore 2>/dev/null)"
 
   all_plist="$(get_parts_list_from_img "$ocsroot/$target_dir")" 
   for isd in $special_dev; do
