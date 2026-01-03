@@ -6532,13 +6532,12 @@ udp_send_part_img_or_dev() {
     # get the filesystem
     ptfs="$(ocs-get-dev-info /dev/$part filesystem 2>/dev/null)"
     if [ -z "$ptfs" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Unable to identify the file system on /dev/$part." | tee --append $OCS_LOGFILE
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Unable to identify the file system on /dev/$part. Will use dd mode." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop." | tee --append $OCS_LOGFILE
-      exit 1
-    fi
-    if ! `is_partclone_support_fs $ptfs`; then
+      # Set the file system as "dd".
+      ptfs="dd"
+    elif ! `is_partclone_support_fs $ptfs`; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "The file system \"$ptfs\" on /dev/$part is not supported by Partclone. Use Partclone dd mode for raw device deployment." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
