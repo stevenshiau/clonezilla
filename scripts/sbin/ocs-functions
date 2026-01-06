@@ -14844,6 +14844,14 @@ create_bt_image_files_from_partclone_img() {
         cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT -s - --btfiles -z ${bt_buffer_size} -o $ocsroot_btzone/$tgt_dir/$img_file"
       fi
       echo "Preparing image slice files for BT use: $ocsroot_btzone/$tgt_dir/${img_file}/" | tee --append ${OCS_LOGFILE}
+      cat <<_EOT_ | tee -a ${OCS_LOGFILE}
+( for img in "$target_d"/$img_file_prefix; do
+    cat \$img
+  done
+) \
+| $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
+| LC_ALL=C $cmd_partclone_extract
+_EOT_
       ( for img in "$target_d"/$img_file_prefix; do
           cat $img
         done
