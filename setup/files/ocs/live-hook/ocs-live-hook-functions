@@ -704,7 +704,7 @@ get_non_free_net_firmware_for_ubuntu() {
   # firmware-atheros, firmware-brcm80211, firmware-bnx2, firmware-bnx2x, firmware-ipw2x00, firmware-ipw3945, firmware-iwlwifi
   # $mirror_url and $debian_dist are from hook
   local target_dir="$1"
-  local DISTRIB_ID tmp_wd f inst_cmd
+  local DISTRIB_ID tmp_wd f inst_cmd rc
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "XXXXXXXXX! No target_dir in function get_non_free_net_firmware!"
@@ -717,6 +717,15 @@ get_non_free_net_firmware_for_ubuntu() {
     return 0
   fi
   tmp_wd="$(mktemp -d /tmp/nic_firmware.XXXXXX)"
+  # Get latest nic-firmware.lst
+  ocs-get-nic-fw-lst $tmp_wd
+  rc=$?
+  if [ "$rc" -gt 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "XXXXXXXXX! Failed to generate nic-firmware.lst!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    exit 1
+  fi
   # >= Ubuntu 21.04, nic-firmware is not available anymore in udeb format.
   # Hence we have to extract them from linux-firmware.
   # Find the license doc and firmware then put them.
@@ -750,7 +759,7 @@ get_non_free_net_firmware_for_ubuntu() {
       echo "File $tmp_wd/firm_tmp/$f not found. Skip putting it."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
-  done <<< "$(cat /usr/share/drbl/setup/files/ocs/live-hook/nic-firmware.lst)"
+  done <<< "$(cat $tmp_wd/nic-firmware.lst)"
 
   # Clean unnecessary files
   apt-get clean
