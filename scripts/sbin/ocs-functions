@@ -11120,6 +11120,7 @@ USAGE_common_general() {
     echo " -rmtd, --restore-mtdblock   Restore MTD block device (/dev/mtdblock*)"
     echo " -rmmcb, --restore-mmcblk    Restore eMMC boot device (/dev/mmcblk*boot*)"
     echo " -uoab, --use-ocs-alias-blkdev  Use Clonezilla alias block device name (i.e., ocs-*d*)"
+    echo " -reluks, --reencrypt-luks   Reencrypt LUKS encrypted volumes (change master key) in-place in the destination device"
     echo " -v, --verbose            Prints verbose information"
 } # end of USAGE_common_general
 #
@@ -16255,10 +16256,18 @@ save_luks_dev_header(){
 restore_luks_dev_header(){
   local img_d_="$1"
   local lk_dev_="$(format_dev_name_without_leading_dev $2)" # e.g., sda1
-  local lks_hdrt_cmd
+  local lks_hdrt_cmd re_cmd
   lks_hdrt_cmd="cryptsetup luksHeaderRestore -q --header-backup-file ${img_d_}/${lk_dev_}-luksHeader.bin /dev/${lk_dev_}"
   echo "Running: $lks_hdrt_cmd"
   eval $lks_hdrt_cmd
+  sync; sync; sync
+  if [ "$reencrypt_luks" = "yes" ]; then
+    # Regenerate new master-key
+    re_cmd="cryptsetup reencrypt /dev/${lk_dev_} --device-size 1S"
+    echo "Now reencrypt LUKS encrypted volumes in-place..."
+    echo "Running: $re_cmd"
+    eval $re_cmd
+  fi
 } # end of restore_luks_dev_header
 #
 inactive_busy_luks_dev() {
