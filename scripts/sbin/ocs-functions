@@ -2179,7 +2179,7 @@ get_known_partition_proc_format() {
        # Skip swap and extended partition
        # We do not use the output of fdisk -l, it's type mabe like Extended, Ext'd, it's not easy to tell... We do not use file to get the partition type, either, since in newer version (e.g. in Debian lenny) it won't show anything about extended.
        echo -n "."
-       part_type="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem 2>/dev/null | sort)"
+       part_type="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem parttype 2>/dev/null | sort)"
        rc=$?
        [ "$rc" -gt 0 ] && continue 
        # Make part_type in one line
@@ -2235,7 +2235,7 @@ check_grub_partition() {
     #[ -n "$(echo "$fs" | grep -i "ntfs")" ] && continue
     # process the boot loader
     # 2012/06/07, due to an issue about mount: it will hang when mounting extended partition. We have to skip mounting extended partition.
-    p_type="$(LC_ALL=C ocs-get-dev-info "$grub_p" type filesystem 2>/dev/null)"
+    p_type="$(LC_ALL=C ocs-get-dev-info "$grub_p" type filesystem parttype 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 ] && continue 
     [ -n "$(echo $p_type | grep -Eiw "(swap|extended|0x5|0xf)")" ] && continue
@@ -2313,7 +2313,7 @@ mount_root_partition_for_separate_boot_part() {
     root_partition="/dev/$ipartition"
     # process the boot loader
     # 2012/06/07, due to an issue about mount: it will hang when mounting extended partition. We have to skip mounting extended partition.
-    p_type="$(LC_ALL=C ocs-get-dev-info "$root_partition" type filesystem 2>/dev/null)"
+    p_type="$(LC_ALL=C ocs-get-dev-info "$root_partition" type filesystem parttype 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 ] && continue 
     [ -n "$(echo $p_type | grep -Eiw "(swap|extended|0x5|0xf)")" ] && continue
@@ -4473,7 +4473,7 @@ get_disk_or_part_hardware_info() {
     # Partition 
     
     # First check if swap/extended one. If so, skip it.
-    part_type="$(jq -r ".[] | select(.name == \"$p\") | .type, .fstype" $hwinfo_json_f)"
+    part_type="$(jq -r ".[] | select(.name == \"$p\") | .type, .fstype, .parttype" $hwinfo_json_f)"
     rc=$?
     # The return "8" means return "continue" (8 characters). 
     # Here this function is extracted from a loop.
@@ -4724,7 +4724,7 @@ get_input_dev_name() {
         for p in $dev_list; do
           echo -n "."
           # skip swap and extended partition
-          FILE="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem 2>/dev/null)"
+          FILE="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem parttype 2>/dev/null)"
           rc=$?
           if [ "$rc" = "0" ]; then
             [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue
@@ -4799,7 +4799,7 @@ get_input_dev_name() {
     for p in $(reduce_multipath_dev $dev_list); do
        DEV_MODEL=""
        echo -n "."
-       FILE="$(jq -r ".[] | select(.name == \"$p\") | .type, .fstype" $blk_info_f)"
+       FILE="$(jq -r ".[] | select(.name == \"$p\") | .type, .fstype, .parttype" $blk_info_f)"
        rc=$?
        if [ "$rc" = "0" ]; then
          [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue
@@ -8027,7 +8027,7 @@ start_ocs_service() {
       for ihd in $target_hd; do
         for partition in `get_parts_list_from_img "$imagedir/$target_dir"`; do
           if [ -n "$(echo "$partition" | grep -iE "$ihd|mtdblock|mmcblk.*boot")" ]; then
-            # Ex. hda2 is for hda, so when hda is chosen, we will include hda2 as target partition.
+            # Ex. sda2 is for hda, so when sda is chosen, we will include sda2 as target partition.
             target_parts="$target_parts $partition"
           fi
         done
