@@ -27,7 +27,7 @@ ocs_out_f="$1"
 udevadm settle
 
 # Run lsblk with JSON output, excluding loop, ram, and rom devices (-e 1,7,11)
-lsblk_output=$(LC_ALL=C lsblk -J -o name,type,size,model,fstype,serial,label -e 1,7,11 -x name 2>/dev/null)
+lsblk_output=$(LC_ALL=C lsblk -J -o name,type,size,model,fstype,serial,label,parttype -e 1,7,11 -x name 2>/dev/null)
 
 # Check if lsblk output is empty or contains no devices
 if [ -z "$lsblk_output" ] || [ "$(echo "$lsblk_output" | jq '.blockdevices | length')" -eq 0 ]; then
@@ -60,5 +60,6 @@ echo "$lsblk_output" | jq -c '.blockdevices[]' | while IFS= read -r device_json;
          .fstype = (.fstype // "" | gsub(" "; "_")) |
          .serial = (.serial // "" | gsub(" "; "_")) |
          .label = (.label // "" | gsub("\""; "") | gsub(" "; "_")) |
+         .parttype = (.parttype // "" | gsub("\""; "") | gsub(" "; "_")) |
          .id_path_tag = (.id_path_tag // "" | gsub(" "; "_"))'
 done | jq -s . > "$ocs_out_f"

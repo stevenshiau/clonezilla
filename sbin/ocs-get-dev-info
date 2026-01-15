@@ -98,7 +98,7 @@ _gather_all_info() {
   local assignments
 
   # 1. Use jq to get info from lsblk.
-  assignments=$(lsblk -p --json -o NAME,SIZE,TYPE,FSTYPE,UUID,PARTUUID,PTUUID,PARTLABEL,LABEL,MODEL "$device" 2>/dev/null |
+  assignments=$(lsblk -p --json -o NAME,SIZE,TYPE,FSTYPE,UUID,PARTUUID,PTUUID,PARTLABEL,LABEL,MODEL,PARTTYPE "$device" 2>/dev/null |
     jq -r '
       .blockdevices[] | select(.name == "'"$device"'") |
       "info_size=\((.size // "") | @sh); " +
@@ -109,7 +109,8 @@ _gather_all_info() {
       "info_ptuuid=\((.ptuuid // "") | @sh); " +
       "info_partlabel=\((.partlabel // "") | @sh); " +
       "info_label=\((.label // "") | @sh); " +
-      "info_model=\((.model // "") | @sh);"
+      "info_model=\((.model // "") | @sh); " +
+      "info_parttype=\((.parttype // "") | @sh); "
     ')
 
   if [[ -n "$assignments" ]]; then
@@ -150,6 +151,7 @@ _gather_all_info() {
   echo "_dev_partlabel='${info_partlabel//\'/\'\\\'\'}'"
   echo "_dev_label='${info_label//\'/\'\\\'\'}'"
   echo "_dev_model='${info_model//\'/\'\\\'\'}'"
+  echo "_dev_parttype='${info_parttype//\'/\'\\\'\'}'"
   echo "_dev_serial_short='${info_serial_short//\'/\'\\\'\'}'"
   echo "_dev_serial_long='${info_serial_long//\'/\'\\\'\'}'"
 }
@@ -196,6 +198,7 @@ for wanted in $request; do
     UUID|uuid) echo "$_dev_uuid" ;;
     PTUUID|ptuuid) echo "$_dev_ptuuid" ;;
     PARTUUID|partuuid) echo "$_dev_partuuid" ;;
+    PARTTYPE|parttype) echo "$_dev_parttype" ;;
     PARTLABEL|partlabel) echo "$_dev_partlabel" ;;
     LABEL|label) echo "$_dev_label" ;;
     SERIALNO|serialno)
