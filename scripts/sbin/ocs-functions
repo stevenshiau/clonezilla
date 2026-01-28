@@ -3467,8 +3467,20 @@ create_mbr_partition_table() {
 create_gpt_partition_table() {
   local do_gpt_dd sgdisk_rc
   local opt_wm sfdisk_cmd_gpt
+  local pt_file sect_size_from_img sect_size_from_disk pt_tab
+  do_ntfs_512to4k_fix_flag=""  # do_ntfs_512to4k_fix_flag is a global variable
   echo $msg_delimiter_star_line
 
+  # Get sector size "sector-size:"
+  pt_file="$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf"
+  sect_size_from_img="$(grep "^sector-size:" $pt_file | awk -F":" '{print $2}' | xargs)"
+  sect_size_from_disk="$(cat /sys/block/$(format_dev_name_without_leading_dev $tgt_hd_file)/queue/physical_block_size | xargs)"
+  if [ "$sect_size_from_img" -eq 512 -a "$sect_size_from_disk" -eq 4096 ]; then
+    pt_tab="$(mktemp /tmp/pt_tab.XXXXXX)"
+    ocs-pt-512-4k-convert 512to4k $pt_file $pt_tab
+    pt_file=$pt_tab
+    do_ntfs_512to4k_fix_flag="yes"
+  fi
   # Before really create partition table, we should do some tasks...
   clean_mbr_partition_table_before_gen_gpt_table $tgt_hd_file
   # Due to some reason, although LVM was deactived before we ran sfdisk, "sfdisk --force..." might cause LVM to active again. Therefore we have to deactive and run "blockdev --rereadpt..." to make the kernel know the new partition table again.
@@ -3487,7 +3499,7 @@ create_gpt_partition_table() {
   case "$create_part_type" in
     "proportion")
        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-       echo "Create the proportional partition table in $tgt_hd_file based on $tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf and the size of $tgt_hd_file..." | tee --append $OCS_LOGFILE
+       echo "Create the proportional partition table in $tgt_hd_file based on $pt_file and the size of $tgt_hd_file..." | tee --append $OCS_LOGFILE
        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
        # We use environmental variable EXTRA_SFDISK_OPT so it can be used in ocs-expand-mbr-pt
        EXTRA_SFDISK_OPT=""
@@ -3496,7 +3508,7 @@ create_gpt_partition_table() {
          ocs_expand_gpt_pt_opt="-icds"
          PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT -C"
        fi
-       sfdisk_cmd_gpt="EXTRA_SFDISK_OPT=\"$EXTRA_SFDISK_OPT $opt_wm\" ocs-expand-gpt-pt $ocs_expand_gpt_pt_opt --batch \"$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf\" $tgt_hd_file 2>&1"
+       sfdisk_cmd_gpt="EXTRA_SFDISK_OPT=\"$EXTRA_SFDISK_OPT $opt_wm\" ocs-expand-gpt-pt $ocs_expand_gpt_pt_opt --batch \"$pt_file\" $tgt_hd_file 2>&1"
        echo "Running: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
        eval $sfdisk_cmd_gpt | tee -a $OCS_LOGFILE
        RETVAL="${PIPESTATUS[0]}"
@@ -3551,8 +3563,8 @@ create_gpt_partition_table() {
       if [ "$create_part_by_sfdisk" = "no" ]; then
         # Force to use dd to create GPT partition table
         do_gpt_dd="yes"
-      elif [ -n "$(LC_ALL=C grep -Ew "^label: gpt" "$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf")" ]; then
-	sfdisk_cmd_gpt="LC_ALL=C grep -Ev '^last-lba:' \"$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf\" | sfdisk $opt_wm $sfdisk_opt $tgt_hd_file 2>&1"
+      elif [ -n "$(LC_ALL=C grep -Ew "^label: gpt" "$pt_file")" ]; then
+	sfdisk_cmd_gpt="LC_ALL=C grep -Ev '^last-lba:' \"$pt_file\" | sfdisk $opt_wm $sfdisk_opt $tgt_hd_file 2>&1"
         echo "Running: $sfdisk_cmd_gpt" | tee -a $OCS_LOGFILE
 	eval $sfdisk_cmd_gpt | tee -a $OCS_LOGFILE
         RETVAL="${PIPESTATUS[0]}"
@@ -5645,6 +5657,7 @@ unicast_restore_by_partclone() {
   local file_ fs_ partclone_img_info_tmp file_basename
   local unzip_cmd_error cmd_partclone_rest split_flag link_flag restore_flag run_cmd_
   local -a retcodes='()'
+  local pt_opt_extra="$1"
   # First, we find the filesystem 
   file_="$(unalias ls &>/dev/null; ls "$target_d"/$img_file.*-img* 2>/dev/null | sort | head -n 1)"
   if [ -n "${file_}" ]; then
@@ -5736,10 +5749,10 @@ unicast_restore_by_partclone() {
 
   start_time="$(date +%s%N)"
   if [ "$fs_" != "dd" ]; then
-    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt -L $partclone_img_info_tmp -s - -r -o $part"
+    cmd_partclone_rest="partclone.${fs_} $pt_opt_extra $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt -L $partclone_img_info_tmp -s - -r -o $part"
   else
     # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when restoring
-    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt -z ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part"
+    cmd_partclone_rest="partclone.${fs_} $pt_opt_extra $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt -z ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part"
   fi
   # partclone_hfsp does not put any header, so just cat them
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
@@ -6203,6 +6216,7 @@ do_unicast_stdin_restore() {
   local img_file="$(to_filename $2)"
   local part="$(format_dev_name_with_leading_dev $3)"  # part is like /dev/sda1, /dev/centos/root, /dev/mapper/ocs_ZYX
   local start_time end_time image_name_ split_by dd_report_sig_pid part_size hdtmp pt_type pt_swap fn
+  local hdtmp esp_part part_orig
   # if the report_msg is empty, put the initial one: image_name_
   image_name_="$(basename "$target_d")"
   [ -z "$report_msg" ] && report_msg="Unicast restored $image_name_,"
@@ -6210,6 +6224,12 @@ do_unicast_stdin_restore() {
   check_if_dev_busy $part
 
   pt_swap="$(grep -Eo "^$part[[:space:]]+swap[[:space:]]+" "$target_d"/dev-fs.list 2>/dev/null)"
+  hdtmp="$(get_disk_from_part $part)"
+  hdtmp="$(format_dev_name_without_leading_dev $hdtmp)" # e.g., sda
+  esp_part="no"
+  if [ -n "$(grep -Ew "^$part" "$target_d"/${hdtmp}-pt.sf | grep -Eio "type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B,")" ]; then 
+    esp_part="yes"
+  fi
 
   echo $msg_delimiter_star_line
   # time_elapsed, time_elapsed_in_min and speed are global variables
@@ -6228,7 +6248,26 @@ do_unicast_stdin_restore() {
   elif is_partclone_image "$target_d" $img_file; then
     # The saved image is from partclone
     clean_filesystem_header_in_dev $part
-    unicast_restore_by_partclone
+    if [ "$esp_part" = "yes" -a "$do_ntfs_512to4k_fix_flag" = "yes" ]; then
+      # When NTFS fix is required for sector 512B to 4kn disk,
+      # We only support the image saved by Partclone can be restored to an image file
+      # and its content will be copied by mounting it.
+      # Now restore the image to a tmp file, mount it and copy the files to destination partition
+      echo "In the case for 512B to 4kn disk. Using an alternative solution to clone ESP device."
+      part_orig="$part" # Keep the original block device name
+      part="$(mktemp -u /tmp/esp_part_img.XXXXXX)" # New destination file, not block device
+      esp_mnt="$(mktemp -d /tmp/esp_mnt.XXXXXX)"
+      mkdir $esp_mnt/src $esp_mnt/dest
+      # We have to add option for partclone.vfat: --restore_raw_file (-W)
+      unicast_restore_by_partclone --restore_raw_file
+      mkfs.vfat $part_orig
+      mount -o loop $part $esp_mnt/src
+      mount -t vfat $part_orig $esp_mnt/dest
+      cp -a $esp_mnt/src/. $esp_mnt/dest/
+      umount $esp_mnt/src $esp_mnt/dest/
+    else
+      unicast_restore_by_partclone
+    fi
   elif is_dd_image "$target_d" $img_file; then
     # The saved image is from dd
     clean_filesystem_header_in_dev $part
@@ -6258,9 +6297,12 @@ do_unicast_stdin_restore() {
   echo "Finished unicast restoring image ${target_d##*/} to $part." | tee --append ${OCS_LOGFILE}
   sleep 1
   # Informing kernel that the OS that partition table has changed since for BSD system, the partitions info exists in the slice
-  hdtmp="$(get_disk_from_part $part)"
-  pt_type="$(get_partition_table_type_from_disk $hdtmp)"
-  inform_kernel_partition_table_changed $pt_type $hdtmp | tee --append ${OCS_LOGFILE}
+  if [ -b "$part" ]; then
+    # Only when the part is a block device we need to inform kernel.
+    hdtmp="$(get_disk_from_part $part)"
+    pt_type="$(get_partition_table_type_from_disk $hdtmp)"
+    inform_kernel_partition_table_changed $pt_type $hdtmp | tee --append ${OCS_LOGFILE}
+  fi
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   #copy_log "$target_d" $img_file
   return $rc
@@ -8790,6 +8832,34 @@ clear_ntfs_volume_dirty_flag() {
     fi
   done
 } # end of clear_ntfs_volume_dirty_flag
+#
+do_ntfs_512to4k_fix() {
+  # For every NTFS partition, fix BPS (Bytes Per Sector, Offset 11, 12) as 4096 (0x0010)
+  # printf '\x00\x10' | dd of=/dev/$ntfs_p bs=1 seek=11 count=2 conv=notrunc
+  # printf '\x01' | dd of=/dev/$ntfs_p bs=1 seek=13 count=1 conv=notrunc
+  # The ntfsfix it
+  local tgt_parts_="$*" # e.g., sda, sda1...
+  local ipartition p_fs
+  if [ -z "$tgt_parts_" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No \$tgt_parts_ was assigned in function do_ntfs_512to4k_fix!"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 1
+  fi
+  for ipartition in $tgt_parts_; do
+    is_whole_disk $ipartition && continue
+    p_fs="$(LC_ALL=C ocs-get-dev-info /dev/$ipartition filesystem 2>/dev/null)"
+    if [ "$p_fs" = "ntfs" ]; then
+      echo "Now fix Bytes Per Sector (Offset 11, 12) as 4096 (0x0010) for /dev/$ipartition..." | tee --append $OCS_LOGFILE
+      printf '\x00\x10' | dd of=/dev/$ipartition bs=1 seek=11 count=2 conv=notrunc | tee --append $OCS_LOGFILE
+      printf '\x01' | dd of=/dev/$ipartition bs=1 seek=13 count=1 conv=notrunc | tee --append $OCS_LOGFILE
+      clear_ntfs_volume_dirty_flag $ipartition
+      echo "Running: ntfsfix /dev/$ipartition" | tee --append $OCS_LOGFILE
+      ntfsfix /dev/$ipartition | tee --append $OCS_LOGFILE
+      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+    fi
+  done
+} # end of do_ntfs_512to4k_fix
 
 # task "savedisk"
 # parameter:
@@ -10333,6 +10403,12 @@ task_restoreparts() {
   # Clear the NTFS volume dirty flag if the volume can be fixed and mounted.
   if [ "$rm_ntfs_vol_dirty_flag" = "yes" ]; then
     clear_ntfs_volume_dirty_flag $target_parts
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  fi
+
+  # Do 512B to 4kn fix for NTFS
+  if [ "$do_ntfs_512to4k_fix_flag" = "yes" ]; then
+    do_ntfs_512to4k_fix $target_parts
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
