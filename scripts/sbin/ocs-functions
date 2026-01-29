@@ -3472,9 +3472,19 @@ create_gpt_partition_table() {
   echo $msg_delimiter_star_line
 
   # Get sector size "sector-size:"
+  # Drive Type	physical_block_size	logical_block_size (or hw_sector_size)
+  # 4Kn (4K Native)	4096	4096
+  # 512e (Emulated)	4096	512
+  # 512n (Native)	512	512
+  # We should read /sys/block/<device>/queue/logical_block_size (or hw_sector_size for older Linux kernel)
+  # to determine the target sector size for conversion logic.
+  # i.e., priority: logical_block_size (Standard/Modern) -> hw_sector_size (Legacy) -> 512 (Default)
   pt_file="$tgt_dir/$(to_filename ${tgt_hd_name})-pt.sf"
   sect_size_from_img="$(grep "^sector-size:" $pt_file | awk -F":" '{print $2}' | xargs)"
-  sect_size_from_disk="$(cat /sys/block/$(format_dev_name_without_leading_dev $tgt_hd_file)/queue/physical_block_size | xargs)"
+  sect_size_from_disk="$(cat "/sys/block/$(format_dev_name_without_leading_dev $tgt_hd_file)/queue/logical_block_size" 2>/dev/null)"
+  if [ -z "$sect_size_from_disk" ]; then
+    sect_size_from_disk="$(cat "/sys/block/$(format_dev_name_without_leading_dev $tgt_hd_file)/queue/hw_sector_size" 2>/dev/null)"
+  fi
   if [ "$sect_size_from_img" -eq 512 -a "$sect_size_from_disk" -eq 4096 ]; then
     pt_tab="$(mktemp /tmp/pt_tab.XXXXXX)"
     ocs-pt-512-4k-convert 512to4k $pt_file $pt_tab
@@ -6253,7 +6263,9 @@ do_unicast_stdin_restore() {
       # We only support the image saved by Partclone can be restored to an image file
       # and its content will be copied by mounting it.
       # Now restore the image to a tmp file, mount it and copy the files to destination partition
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "In the case for 512B to 4kn disk. Using an alternative solution to clone ESP device."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       part_orig="$part" # Keep the original block device name
       part="$(mktemp -u /tmp/esp_part_img.XXXXXX)" # New destination file, not block device
       esp_mnt="$(mktemp -d /tmp/esp_mnt.XXXXXX)"
