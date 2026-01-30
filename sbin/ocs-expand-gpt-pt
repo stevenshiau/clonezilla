@@ -62,14 +62,10 @@ src_sector_size=$(grep "sector-size:" "$orig_sf" | awk '{print $2}')
 # Priority: logical_block_size (Standard/Modern) -> hw_sector_size (Legacy) -> 512 (Default)
 tgt_dev_name=$(basename "$target_disk")
 tgt_sector_size=$(cat "/sys/block/$tgt_dev_name/queue/logical_block_size" 2>/dev/null)
-
 if [ -z "$tgt_sector_size" ]; then
     tgt_sector_size=$(cat "/sys/block/$tgt_dev_name/queue/hw_sector_size" 2>/dev/null)
 fi
-
-if [ -z "$tgt_sector_size" ]; then
-    tgt_sector_size=512
-fi
+[ -z "$tgt_sector_size" ] && tgt_sector_size=512
 
 echo "Source Sector: $src_sector_size | Target Sector: $tgt_sector_size"
 
@@ -143,8 +139,8 @@ while read -r line; do
 done < "$new_sf_tmp"
 
 # Calculate Expansion Ratio
-# Account for 2048 sector offset (which is the same 1MB alignment for 512B and 4Kn)
-available_space=$((tgt_disk_size - total_static - 2048))
+# Note: Subtract 34 sectors for GPT Backup Header so we don't truncate the last partition
+available_space=$((tgt_disk_size - total_static - 2048 - 34))
 
 if [ "$total_expandable" -gt 0 ]; then
     ratio=$(echo "scale=10; $available_space / $total_expandable" | bc -l)
@@ -188,13 +184,17 @@ while read -r line; do
 done < "$new_sf_tmp"
 
 # --- 4. Final Boundary Fix ---
+# Only cap if we somehow exceeded the limit (should be rare now with correct calculation)
 last_line=$(tail -n 1 "$new_sf")
 last_start=$(echo "$last_line" | sed -E 's/.*start=([0-9]+).*/\1/')
-final_size=$((last_usable - last_start))
+current_end=$((last_start + new_size))
 
-[ "$final_size" -lt 0 ] && { echo "Error: Partitions exceed disk size!"; exit 1; }
-
-sed -i "$ s/size=[0-9]*/size=$final_size/" "$new_sf"
+if [ "$current_end" -gt "$last_usable" ]; then
+    final_size=$((last_usable - last_start))
+    [ "$final_size" -lt 0 ] && { echo "Error: Partitions exceed disk size!"; exit 1; }
+    echo "Warning: Adjusting last partition to fit disk boundary."
+    sed -i "$ s/size=[0-9]*/size=$final_size/" "$new_sf"
+fi
 
 # --- 5. Execution ---
 echo "Applying new partition layout to $target_disk..."
