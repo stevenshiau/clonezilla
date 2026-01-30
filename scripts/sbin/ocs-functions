@@ -6275,7 +6275,9 @@ do_unicast_stdin_restore() {
       mkfs.vfat $part_orig
       mount -o loop $part $esp_mnt/src
       mount -t vfat $part_orig $esp_mnt/dest
-      cp -a $esp_mnt/src/. $esp_mnt/dest/
+      cp_cmd="cp -a $esp_mnt/src/. $esp_mnt/dest/"
+      echo "Running: $cp_cmd"
+      eval $cp_cmd
       umount $esp_mnt/src $esp_mnt/dest/
     else
       unicast_restore_by_partclone
@@ -10351,6 +10353,12 @@ task_restoreparts() {
     done
   fi
 
+  # Do 512B to 4kn fix for NTFS
+  if [ "$do_ntfs_512to4k_fix_flag" = "yes" ]; then
+    do_ntfs_512to4k_fix $target_parts
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+  fi
+
   # resize partition if necessary
   if [ "$resize_partition" = "on" ]; then
     resize_ntfsfix_opt=""
@@ -10415,12 +10423,6 @@ task_restoreparts() {
   # Clear the NTFS volume dirty flag if the volume can be fixed and mounted.
   if [ "$rm_ntfs_vol_dirty_flag" = "yes" ]; then
     clear_ntfs_volume_dirty_flag $target_parts
-    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-  fi
-
-  # Do 512B to 4kn fix for NTFS
-  if [ "$do_ntfs_512to4k_fix_flag" = "yes" ]; then
-    do_ntfs_512to4k_fix $target_parts
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
@@ -15358,6 +15360,7 @@ local_partition_to_partiton_clone() {
   local tgt_p="$3"  # tgt_p is like /dev/hdb1
   local pt_size ret dd_img_info_tmp dd_report_sig_pid start_time end_time partition
   local cmd_partclone
+  local hdtmp esp_part part_orig
   # FORCE_TO_USE_DD, USE_NTFSCLONE_IN_OCS_ONTHEFLY, USE_PARTCLONE_IN_OCS_ONTHEFLY are global variabls.
   if [ -z "$pt_fs" -o -z "$src_p" -o -z "$tgt_p" ]; then
     echo "Wrong options in local_partition_to_partiton_clone!!!" | tee --append $OCS_LOGFILE
@@ -15367,6 +15370,14 @@ local_partition_to_partiton_clone() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Source partition file system is $pt_fs..." | tee --append $OCS_LOGFILE
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+  esp_part="no"
+  if [[ "$pt_fs" =~ "fat" ]]; then
+    hdtmp="$(get_disk_from_part $src_p)"
+    if [ -n "$(LC_ALL=C sfdisk -d $hdtmp | grep -Ew "^$part"  | grep -Eio "type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B,")" ]; then 
+      esp_part="yes"
+    fi
+  fi
 
   echo "Cloning the $src_p to $tgt_p..." | tee --append $OCS_LOGFILE
   clean_filesystem_header_in_dev $tgt_p
@@ -15399,22 +15410,42 @@ local_partition_to_partiton_clone() {
     ntfsclone $ntfsclone_progress_option --restore-image --overwrite $tgt_p -
     ret=$?
   elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
-    # Ex: partclone.reiserfs -b -s /dev/hda3 -O /dev/hdc1
-    get_partclone_direct_io_opt read $src_p # Obtain ptcl_read_dio_opt
-    get_partclone_direct_io_opt write $tgt_p # Obtain ptcl_write_dio_opt
-    echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
-    if [ "$pt_fs" != "dd" ]; then
-      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -b -s $src_p -O $tgt_p"
+    if [ "$esp_part" = "yes" -a "$do_ntfs_512to4k_fix_flag" = "yes" ]; then
+      # When NTFS fix is required for sector 512B to 4kn disk,
+      # We only support the image saved by Partclone can be restored to an image file
+      # and its content will be copied by mounting it.
+      # Now restore the image to a tmp file, mount it and copy the files to destination partition
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "In the case for 512B to 4kn disk. Using an alternative solution to clone ESP device."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      esp_mnt="$(mktemp -d /tmp/esp_mnt.XXXXXX)"
+      mkdir $esp_mnt/src $esp_mnt/dest
+      mkfs.vfat $tgt_p
+      mount -o loop $src_p $esp_mnt/src
+      mount -t vfat $tgt_p $esp_mnt/dest
+      cp_cmd="cp -a $esp_mnt/src/. $esp_mnt/dest/"
+      echo "Running: $cp_cmd"
+      eval $cp_cmd
+      umount $esp_mnt/src $esp_mnt/dest/
+      ret=$?
     else
-      # Some parameters for partclone.dd are not required. Here "-b" is not provided by partclone.dd when run in dev to dev
-      cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
+      # Ex: partclone.reiserfs -b -s /dev/hda3 -O /dev/hdc1
+      get_partclone_direct_io_opt read $src_p # Obtain ptcl_read_dio_opt
+      get_partclone_direct_io_opt write $tgt_p # Obtain ptcl_write_dio_opt
+      echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
+      if [ "$pt_fs" != "dd" ]; then
+        cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -b -s $src_p -O $tgt_p"
+      else
+        # Some parameters for partclone.dd are not required. Here "-b" is not provided by partclone.dd when run in dev to dev
+        cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
+      fi
+      echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
+      LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
+      ret=$?
+      cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
+      ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
+      cp "${PARTCLONE_LOG}" $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
     fi
-    echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
-    LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
-    ret=$?
-    cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
-    ocs_log_rotate $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
-    cp "${PARTCLONE_LOG}" $ocs_log_dir/partclone-$(to_filename ${tgt_p#/dev/*}).log
   elif `is_partimage_support_fs $pt_fs`; then
     echo "Using partimage to clone..."  
     partimage $DEFAULT_STDOUT_PARTIMAGE_SAVE_OPT save $src_p stdout 2> /dev/null | \
