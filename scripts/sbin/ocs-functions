@@ -10353,12 +10353,6 @@ task_restoreparts() {
     done
   fi
 
-  # Do 512B to 4kn fix for NTFS
-  if [ "$do_ntfs_512to4k_fix_flag" = "yes" ]; then
-    do_ntfs_512to4k_fix $target_parts
-    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
-  fi
-
   # resize partition if necessary
   if [ "$resize_partition" = "on" ]; then
     resize_ntfsfix_opt=""
@@ -10379,6 +10373,14 @@ task_restoreparts() {
       ocs-expand-lvm -b /dev/$partition | tee --append $OCS_LOGFILE
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     done
+  fi
+
+  # Do 512B to 4kn fix for NTFS. This should be after NTFS file system is resized.
+  # Otherwise you have to enter MS Windows rescue mode, in the command prompt run:
+  # chkdsk c: /f
+  if [ "$do_ntfs_512to4k_fix_flag" = "yes" ]; then
+    do_ntfs_512to4k_fix $target_parts
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
   # Do files checksum check. This must be before any further commands (like grub reinstalling) are done.
