@@ -5590,17 +5590,11 @@ _EOT_
     split)
       # ntfsclone+split will NOT put header in 2nd and later volumes, so just cat them
 cat <<_EOT_ >> ${OCS_LOGFILE}
-      ( for img in "$target_d"/$img_file_prefix; do
-          cat \$img
-        done
-      ) \
+      ( for img in "$target_d"/$img_file_prefix; do cat \$img; done ) \
       | $unzip_stdin_cmd \
       | partimage $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT -o -d restore $part stdin | tee --append ${OCS_LOGFILE}
 _EOT_
-      ( for img in "$target_d"/$img_file_prefix; do
-          cat $img
-        done
-      ) \
+      ( for img in "$target_d"/$img_file_prefix; do cat $img; done ) \
       | $unzip_stdin_cmd \
       | partimage $DEFAULT_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_OPT -o -d restore $part stdin | tee --append ${OCS_LOGFILE}
       ;;
@@ -5646,10 +5640,7 @@ unicast_restore_by_ntfsclone() {
 
   start_time="$(date +%s%N)"
   # ntfsclone does not put any header, so just cat them
-  ( for img in "$target_d"/$img_file_prefix; do
-      cat $img
-    done
-  ) | \
+  ( for img in "$target_d"/$img_file_prefix; do cat $img; done ) | \
   $unzip_stdin_cmd | \
   ntfsclone $ntfsclone_restore_extra_opt_def --restore-image --overwrite $part - | tee $ntfs_img_info_tmp
   rc="${PIPESTATUS[0]}"
@@ -5770,17 +5761,11 @@ unicast_restore_by_partclone() {
   cat)
     # Could be link + split image. Use for loop to cat the source image then unzip it.
     cat <<_EOT_ | tee -a ${OCS_LOGFILE}
-( for img in "$target_d"/$img_file_prefix; do
-    cat \$img
-  done
-) \
+( for img in "$target_d"/$img_file_prefix; do cat \$img; done ) \
 | $unzip_stdin_cmd 2> $unzip_cmd_error \
 | LC_ALL=C $cmd_partclone_rest
 _EOT_
-    ( for img in "$target_d"/$img_file_prefix; do
-        cat $img
-      done
-    ) \
+    ( for img in "$target_d"/$img_file_prefix; do cat $img; done ) \
     | $unzip_stdin_cmd 2> $unzip_cmd_error \
     | LC_ALL=C $cmd_partclone_rest
     retcodes=(${PIPESTATUS[@]})
@@ -5888,10 +5873,7 @@ unicast_restore_by_dd() {
     echo 1 > $unzip_retcode_file
     echo 1 > $dd_retcode_file
     (
-      ( for img in "$target_d"/$img_file_prefix; do
-          cat $img
-        done
-      ) \
+      ( for img in "$target_d"/$img_file_prefix; do cat $img; done ) \
       | ( $unzip_stdin_cmd ; echo $? > $unzip_retcode_file ) \
       | ( LC_ALL=C dd bs=${dd_buffer_size} of=$part ; echo $? > $dd_retcode_file ) \
     ) 2>&1 \
@@ -6445,10 +6427,7 @@ multicast_feed_img_for_partimage() {
         ;;
       split)
         # partimage+split will NOT put header in 2nd and later volumes, so just cat them
-        ( for img in "$imagedir/$target_d"/$img_file_prefix; do
-            cat $img
-          done
-        )
+        ( for img in "$imagedir/$target_d"/$img_file_prefix; do cat $img; done )
 	;;
     esac
   ) \
@@ -6466,10 +6445,7 @@ multicast_feed_img_for_ntfsclone() {
   fi
   # we use the original format (do not uncompress) to save the bandwidth
   # ntfsclone does not put any header, so just cat them
-  ( for img in "$imagedir/$target_d"/$img_file_prefix; do
-      cat $img
-    done
-  ) | \
+  ( for img in "$imagedir/$target_d"/$img_file_prefix; do cat $img; done ) | \
   $udpcast_send_cmd 2>$udpcast_stderr
 } # end of multicast_feed_img_for_ntfsclone
 #
@@ -6523,10 +6499,7 @@ multicast_feed_img_for_partclone() {
   fi
   # we use the original format (do not uncompress) to save the bandwidth
   # partclone does not put any header, so just cat them
-  ( for img in "$imagedir/$target_d"/$img_file_prefix; do
-      cat $img
-    done
-  ) | \
+  ( for img in "$imagedir/$target_d"/$img_file_prefix; do cat $img; done ) | \
   $udpcast_send_cmd 2>$udpcast_stderr
 } # end of multicast_feed_img_for_partclone
 #
@@ -14954,7 +14927,7 @@ create_bt_image_files_from_partclone_img() {
       fi
       echo "Preparing image slice files for BT use: $ocsroot_btzone/$tgt_dir/${img_file}/" | tee --append ${OCS_LOGFILE}
       cat <<_EOT_ | tee -a ${OCS_LOGFILE}
-( for img in "$target_d"/$img_file_prefix; do cat \$img done ) \
+( for img in "$target_d"/$img_file_prefix; do cat \$img; done ) \
 | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
 | LC_ALL=C $cmd_partclone_extract
 _EOT_
@@ -14977,10 +14950,7 @@ _EOT_
       cd "$ocsroot_btzone/$tgt_dir/$img_file"
 
       img_size_sum="$(LC_ALL=C du -sb "$target_d"/${img_file_prefix}* | awk '{print $1}')"
-      ( for img in "$target_d"/$img_file_prefix; do
-          cat $img
-        done
-      ) \
+      ( for img in "$target_d"/$img_file_prefix; do cat $img; done ) \
       | pv -petf -s $img_size_sum \
       | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
       > "$ocsroot_btzone/$tgt_dir/${img_file}.ptcl.img"
