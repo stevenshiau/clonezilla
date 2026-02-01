@@ -14856,7 +14856,7 @@ create_bt_image_files_from_partclone_img() {
   local idev="$1"  # e.g. sda1, vg001/lv001
   local target_d   # e.g. /home/partimag/my-img
   local img_file   # e.g. sda1, vg001-lv001 (use for something like sda1.ext4-ptcl-img.gz.aa)
-  local file_ unzip_stdin_cmd_error img_size_sum img_file_prefix cmd_partclone_extract
+  local file_ unzip_stdin_cmd_error img_size_sum img_file_prefix cmd_partclone_extract hd_tmp pt_size_
   unzip_stdin_cmd_error="$(mktemp /tmp/unzip_stdin_cmd_error.XXXXXX)"
   if [ -z "$idev" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -14933,22 +14933,32 @@ create_bt_image_files_from_partclone_img() {
       if [ "$fs_" != "dd" ]; then
         cmd_partclone_extract="partclone.${fs_} -d -r $PARTCLONE_RESTORE_OPT -s - -T -z ${bt_buffer_size} -o $ocsroot_btzone/$tgt_dir/$img_file"
       else
+        # Get partition size so that we can assign it to partclone.dd with "-S". 
+	# Otherwise partclone.dd has no idea about the size the dd image from stdin.
+	# Priority: partition table file -> data Stream
+        hd_tmp="$(get_diskname $idev)"
+	pt_size_="$(ocs-pt-size-from-sf "$target_d"/${hd_tmp}-pt.sf $idev)"
+	if [ -z "$pt_size_" ]; then
+          pt_size_="$((for img in "$target_d"/$img_file_prefix; do cat $img; done) \
+		      | $unzip_stdin_cmd | wc -c)"
+	fi
+	if [ -z "$pt_size_" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+	  echo "Failed to get the dd image size in create_bt_image_files_from_partclone_img."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+  	  exit 1
+        fi
         # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when extracting 
-        cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT -s - --btfiles -z ${bt_buffer_size} -o $ocsroot_btzone/$tgt_dir/$img_file"
+        cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT -s - -S $pt_size_ --btfiles -z ${bt_buffer_size} -o $ocsroot_btzone/$tgt_dir/$img_file"
       fi
       echo "Preparing image slice files for BT use: $ocsroot_btzone/$tgt_dir/${img_file}/" | tee --append ${OCS_LOGFILE}
       cat <<_EOT_ | tee -a ${OCS_LOGFILE}
-( for img in "$target_d"/$img_file_prefix; do
-    cat \$img
-  done
-) \
+( for img in "$target_d"/$img_file_prefix; do cat \$img done ) \
 | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
 | LC_ALL=C $cmd_partclone_extract
 _EOT_
-      ( for img in "$target_d"/$img_file_prefix; do
-          cat $img
-        done
-      ) \
+      ( for img in "$target_d"/$img_file_prefix; do cat $img; done ) \
       | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
       | LC_ALL=C $cmd_partclone_extract
       retcodes=(${PIPESTATUS[@]})
