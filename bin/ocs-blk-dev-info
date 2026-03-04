@@ -37,8 +37,9 @@ fi
 
 # Process the entire JSON output
 echo "$lsblk_output" | jq -c '.blockdevices[]' | while IFS= read -r device_json; do
-    # Extract name to query udevadm
+    # Extract name and type to query udevadm and check for disk
     name=$(echo "$device_json" | jq -r '.name')
+    dev_type=$(echo "$device_json" | jq -r '.type')
     dev_path="/dev/$name"
 
     # Query udevadm for ID_PATH_TAG
@@ -47,9 +48,19 @@ echo "$lsblk_output" | jq -c '.blockdevices[]' | while IFS= read -r device_json;
     # If ID_PATH_TAG is empty, set it to "N/A"
     id_path_tag=${id_path_tag:-N/A}
 
+    # Check logical_block_size if the device is a disk
+    logical_block_size=""
+    if [ "$dev_type" = "disk" ]; then
+        if [ -f "/sys/block/$name/queue/logical_block_size" ]; then
+            logical_block_size=$(cat "/sys/block/$name/queue/logical_block_size")
+        fi
+    fi
+
     # Safely inject the ID path tag, handle nulls, and replace spaces and quotes with underscores.
-    echo "$device_json" | jq --arg id_path_tag "$id_path_tag" '
+    # The logical_block_size is appended only if the device is a disk and the file was successfully read.
+    echo "$device_json" | jq --arg id_path_tag "$id_path_tag" --arg logical_block_size "$logical_block_size" '
         . + {id_path_tag: $id_path_tag} |
+        (if $logical_block_size != "" then . + {logical_block_size: $logical_block_size} else . end) |
         with_entries(
             if .value == null then
                 .value = ""
