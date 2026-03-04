@@ -4490,7 +4490,7 @@ get_disk_or_part_hardware_info() {
   local p="$1"  # p is like hda, sda, or hda1, sda1
   local flag_skip_lvm="$2"  # yes/no/default, default is no
   local hwinfo_json_f="$3"
-  local dsize x dsk_ rc serialno part_fs part_lb
+  local dsize x dsk_ rc serialno part_fs part_lb logical_blk_size
   dsize="" # device size
 
   if ! is_supported_dev "$p"; then
@@ -4568,6 +4568,9 @@ get_disk_or_part_hardware_info() {
     # Append it
     [ -n "$part_fs" ] && dsize="${dsize}|${part_fs}"
 
+    # Show the logical block size
+    logical_blk_size="$(jq -r ".[] | select(.name == \"$p\") | .logical_block_size" $hwinfo_json_f)"
+
     # Put ID path
     id_path_tag="$(jq -r ".[] | select(.name == \"$p\") | .id_path_tag" $hwinfo_json_f)"
     # If empty, set it to "No_ID_path|"
@@ -4579,7 +4582,7 @@ get_disk_or_part_hardware_info() {
     serialno="${serialno:-No_disk_serial_no}"
 
     # Put them together
-    DEV_MODEL="${dsize}|${dmodel}|${id_path_tag}|${serialno}"
+    DEV_MODEL="${dsize}|${dmodel}|${id_path_tag}|block:${logical_blk_size}|${serialno}"
   fi
 
   # just in case if nothing found
