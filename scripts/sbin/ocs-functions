@@ -9693,6 +9693,18 @@ task_restoredisk() {
   create_temp_image_for_different_target_dev_name_if_necessary
   # Obtain create_temp_img_flag, new ocsroot (/tmp) and target_dir="${target_dir}-tmp-cnvted"
 
+  # Auto-append MDRAID devices to target_hd so
+  # their sub-partitions are queued for data restoration
+  if [ -n "$(ls "$ocsroot/$target_dir"/*-config.env 2>/dev/null)" ]; then
+    for env_f in "$ocsroot/$target_dir"/*-config.env; do
+      md_dev="$(basename "$env_f" -config.env)"
+      if [ -z "$(echo $target_hd | grep -Ew "$md_dev")" ]; then
+        target_hd="$target_hd $md_dev"
+        echo "Auto-appended MDRAID device $md_dev to target disks." | tee --append $OCS_LOGFILE
+      fi
+    done
+  fi
+
   # find the available partitions
   target_parts=""
   # Note! $target_dir is not absolute path, because when task_saveparts do the real job later, it will add $ocsroot, so we have to put $ocsroot here.
@@ -9990,6 +10002,11 @@ task_restoreparts() {
 
   # turn on hd dma 
   for ihd in $target_hd; do
+    # Skip existence and DMA checks for MD devices
+    # because they haven't been assembled yet!
+    if [[ "$ihd" =~ ^md[0-9]+ ]]; then
+      continue
+    fi
     check_specify_hd_exists $ihd
     [ "$force_dma_on" = "yes" ] && turn_on_hd_dma /dev/$ihd
   done
@@ -10032,10 +10049,28 @@ task_restoreparts() {
 
   if [ "$create_part" = "yes" ]; then
     for ihd in $target_hd; do
+      # Skip MD device partitioning here.
+      # ocs-restore-mdraid-layout handles the partition table for the array.
+      if [[ "$ihd" =~ ^md[0-9]+ ]]; then
+         continue
+      fi
       # LUKS
       inactive_busy_luks_dev /dev/$ihd
       create_partition /dev/$ihd "$target_dir_fullpath"
     done
+    # Recreate MDRAID layout after physical partitions exist
+    # Check if MDRAID configuration files exist in the image directory
+    if [ -n "$(ls "$target_dir_fullpath"/*-config.env 2>/dev/null)" ]; then
+      echo "MDRAID configuration found in image. Recreating MDRAID arrays..." | tee --append $OCS_LOGFILE
+      # 1. Force the kernel to update device nodes for the newly created physical partitions
+      udevadm settle
+      sleep 3
+      # 2. Rebuild the RAID arrays and their internal sub-partitions
+      ocs-restore-mdraid-layout -b "$target_dir_fullpath" | tee --append $OCS_LOGFILE
+      # 3. Give the kernel time to populate the new virtual /dev/mdXpY block devices
+      udevadm settle
+      sleep 3
+    fi
   else
     # Although disk partition is not created, still some options we have to process for partition only, e.g. "-C" to partclone
     if [ "$chk_tgt_disk_size_bf_mk_pt" = "no" ]; then
