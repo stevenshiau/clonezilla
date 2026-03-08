@@ -2,7 +2,9 @@
 # Author: Steven Shiau <steven _at_ clonezilla org>
 # License: GPL 
 # Description: This program is used to convert the clonezilla image from one device to another device, 
-# e.g., sda to nvme0n1
+# e.g., sda to nvme0n1. 
+# 2026/3/7 Upgraded to support multi-device arrays simultaneously with the help from Google's Gemini.
+# //NOTE// Only the required files for restoring will be converted. Most of the info files won't be modified.
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -40,6 +42,8 @@ USAGE() {
     echo "$ocs" '-d /home/images NOMOREXP hda sda'
     echo "To convert the image located in /home/images/, which was originally saved from sda, to mmcblk0, use: "
     echo "$ocs" '-d /home/images NOMOREWIN sda mmcblk0'
+    echo "To convert multiple devices simultaneously, quote them: "
+    echo "$ocs" '-d /home/images MY_IMG "nvme0n1 nvme1n1" "sda sdb"'
 }
 #
 wait_for_confirm() {
@@ -76,7 +80,7 @@ while [ $# -gt 0 ]; do
 	    ;;
     -d|--ocsroot)
             # overwrite the ocsroot in drbl.conf
-            shift; 
+            shift;
             if [ -z "$(echo $1 |grep ^-.)" ]; then
               # skip the -xx option, in case 
               ocsroot="$1"
@@ -92,17 +96,30 @@ while [ $# -gt 0 ]; do
 done
 
 image_name="$1"
-src_dev="$(strip_leading_dev $2)" # No matter the input is like /dev/sda or sda, format it as sda
-tgt_dev="$(strip_leading_dev $3)" # No matter the input is like /dev/sda or sda, format it as sda
+# Convert the space-separated strings into bash arrays to support multi-disk mapping
+src_dev_array=($(strip_leading_dev "$2"))
+tgt_dev_array=($(strip_leading_dev "$3"))
 
 #
 ask_and_load_lang_set $specified_lang
 
-# 
-for i in image_name src_dev tgt_dev; do
+# Ensure required parameters were provided
+for i in image_name; do
   eval iv=\$$i
   [ -z "$iv" ] && USAGE && exit 1
 done
+
+if [ ${#src_dev_array[@]} -eq 0 ] || [ ${#tgt_dev_array[@]} -eq 0 ]; then
+  USAGE && exit 1
+fi
+
+# Ensure the arrays match in length
+if [ "${#src_dev_array[@]}" -ne "${#tgt_dev_array[@]}" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo "Error: The number of source devices (${#src_dev_array[@]}) does not match the number of target devices (${#tgt_dev_array[@]})."
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  exit 1
+fi
 
 # ocs root
 echo "Clonezilla image dir: $ocsroot"
@@ -120,59 +137,69 @@ if [ ! -d "$ocsroot/$image_name" ]; then
   exit 1
 fi
 
-ocs_sr_type="" # For the function is_whole_disk
-if ! is_whole_disk "$src_dev" ; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "$src_dev is not a disk. Only disk can be assigned."
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "Program terminated!"
-  exit 1
-fi
-if ! is_whole_disk "$tgt_dev"; then
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "$tgt_dev is not a disk. Only disk can be assigned."
-  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  echo "Program terminated!"
-  exit 1
-fi
+# VALIDATION LOOP: Iterate through all mapped devices
+for i in "${!src_dev_array[@]}"; do
+  src_dev="${src_dev_array[$i]}"
+  tgt_dev="${tgt_dev_array[$i]}"
+  src_dev_bname="$(to_filename ${src_dev})"
+  tgt_dev_bname="$(to_filename ${tgt_dev})"
 
-# Check if src and target is same. If it's in force mode, we create it anyway.
-if [ "$force_mode" = "no" ]; then
-  if [ "$src_dev" = "$tgt_dev" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Source device ($src_dev) and target device ($tgt_dev) are same one!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "Skip converting!"
-    exit 1
-  fi
-else
-  # force_mode is yes
-  if [ "$src_dev" = "$tgt_dev" ]; then
-    echo "Although source device ($src_dev) and target device ($tgt_dev) are the same, but it's forced to continue. This program is exited with return code 0."
-    exit 0
-  fi
-fi
-
-# check src_dev
-check_input_hd $src_dev
-if [ -z "$(unalias ls 2>/dev/null; ls "$ocsroot/$image_name/$(to_filename ${src_dev})"* 2>/dev/null)" ]; then
-  if [ -e "$ocsroot/$image_name/00-pseudo-img-note.txt" ]; then
-    # Do not exit when this is in the client of Clonezilla lite server since the source
-    # device file does not exist in the pseudo image.
-    echo "File $ocsroot/$image_name/00-pseudo-img-note.txt was found. This should be in Clonezilla lite client."
-  else
+  ocs_sr_type="" # For the function is_whole_disk
+  if ! is_whole_disk "$src_dev" ; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "$ocsroot/$image_name/$(to_filename ${src_dev})* NOT found!"
+    echo "$src_dev is not a disk. Only disk can be assigned."
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "Program terminated!"
     exit 1
   fi
-fi
+  if ! is_whole_disk "$tgt_dev"; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "$tgt_dev is not a disk. Only disk can be assigned."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "Program terminated!"
+    exit 1
+  fi
 
-# check tgt_dev
-check_input_hd $tgt_dev
+  # Check if src and target is same
+  if [ "$src_dev" = "$tgt_dev" ]; then
+    if [ "$force_mode" = "no" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Source device ($src_dev) and target device ($tgt_dev) are same one! Skipping validation for this mapping."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    else
+      echo "Source and target device are identical ($src_dev). Force mode is on. Skipping conversion logic for this identical map."
+    fi
+    continue
+  fi
 
-#
+  # check src_dev
+  check_input_hd $src_dev
+  if [ -z "$(unalias ls 2>/dev/null; ls "$ocsroot/$image_name/${src_dev_bname}"* 2>/dev/null)" ]; then
+    if [ -e "$ocsroot/$image_name/00-pseudo-img-note.txt" ]; then
+      echo "File $ocsroot/$image_name/00-pseudo-img-note.txt was found. This should be in Clonezilla lite client."
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$ocsroot/$image_name/${src_dev_bname}* NOT found!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "Program terminated!"
+      exit 1
+    fi
+  fi
+
+  # check tgt_dev
+  check_input_hd $tgt_dev
+
+  if [ "$force_mode" = "no" ]; then
+    if [ -n "$(unalias ls 2>/dev/null; ls "$ocsroot/$image_name/${tgt_dev_bname}"* 2>/dev/null)" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Target device files ($ocsroot/$image_name/${tgt_dev_bname}*) already exist!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      wait_for_confirm
+    fi
+  fi
+done # End Validation Loop
+
+# Ask for confirmation once before touching any files
 if [ "$batch_mode" = "no" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
@@ -184,250 +211,274 @@ if [ "$batch_mode" = "no" ]; then
   wait_for_confirm
 fi
 
-# The files in an image are, for example: 
-# Clonezilla 1.x
-# chs.sf  disk  sda1.ntfs-img  mbr  parts  pt.sf
-# Clonezilla 2.x
-# Ex 1:
-# sda-chs.sf  disk  sda1.ntfs-img  sda-mbr  parts  sda-pt.sf
-# Ex 2:
-# disk sda1.aa sda3.aa sda-chs.sf sda-mbr sda-pt.sf parts swappt-sda2.info sda-pt.parted
-# chs.sf is not necessary to be modified.
-# In this example, just modify: disk parts pt.sf sda-pt.sf, actually pt.sf only exists in clonezilla 1.x, and sda-pt.sf only exists in clonezilla 2.x. Anyway, if it is found, just modify that.
-# files_2_be_mod_about_disk means the content of file contains disk name, e.g. sda, cciss/c0d0
-# files_2_be_mod_about_parts means the content of file contains partition name, e.g. sda1, cciss/c0d0p1
-files_2_be_mod_about_disk="disk $(to_filename ${src_dev})-pt.parted $(to_filename ${src_dev})-pt.parted.compact blkdev.list blkid.list"
-files_2_be_mod_about_parts="parts pt.sf $(to_filename ${src_dev})-pt.sf dev-fs.list blkdev.list blkid.list" 
+# Initialize the conversion log file
+> "$ocsroot/$image_name/device_name_converted.info"
 
-# Special cases. Only part of it can be changed.
-# case (1):
-# There are 3 files (lvm_etch.conf  lvm_logv.list  lvm_vg_dev.list) about LVM devices in Clonezilla image, and only lvm_vg_dev.list is necessary to be modified. We separate this from the above is because it's format is like "/dev/sda" instead of "sda".
-# case (2):
-# luks-dev.list is like:
-# ========================================================
-# # <Block device> <UUID> <Device mapper>
-# /dev/sda3 d40857a5-9585-44a2-9a7d-be840ea22520 sda3_crypt
-# ========================================================
-# We can only modify /dev/sda3, not sda3_crypt since it's device mapped name.
-files_2_be_mod_about_parts_sc="lvm_vg_dev.list luks-dev.list"
-
-if [ "$force_mode" = "no" ]; then
-  if [ -n "$(unalias ls 2>/dev/null; ls "$ocsroot/$image_name/$(to_filename ${tgt_dev})"* 2>/dev/null)" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Target device files ($ocsroot/$image_name/$(to_filename ${tgt_dev})*) already exist!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    wait_for_confirm
+# ====================================================================
+# MAIN CONVERSION LOOP
+# ====================================================================
+for i in "${!src_dev_array[@]}"; do
+  src_dev="${src_dev_array[$i]}"
+  tgt_dev="${tgt_dev_array[$i]}"
+  
+  if [ "$src_dev" = "$tgt_dev" ]; then
+    # Safely skip processing if device names map exactly to themselves (e.g. md127 -> md127)
+    continue
   fi
-fi
 
-# Avoid name collision, e.g., $src_dev is nvme0n1 and $tgt_dev is sda.
-# Protect existing target names by renaming them to a temporary name.
-# This prevents duplicates if 'sda' already exists in blkid.list
-for file in `echo $files_2_be_mod_about_disk $files_2_be_mod_about_parts $files_2_be_mod_about_parts_sc | tr ' ' '\n' | sort -u`; do
-  [ ! -e "$ocsroot/$image_name/$file" ] && continue
-  sed -i -e "s|/dev/${tgt_dev}|/dev/${tgt_dev}_orig_in_img#|g" "$ocsroot/$image_name/$file"
-done
+  src_dev_bname="$(to_filename ${src_dev})"
+  tgt_dev_bname="$(to_filename ${tgt_dev})"
 
-# Begin conversion
-# We process parts before disk since blkdev.list & blkid.list contain both disk and parts, e.g.,
-# ===========
-# md127     `-md127        30G raid0                                                                  
-# md127p1     |-md127p1     4G part  ext4                                                             
-# md127p2     `-md127p2    26G part  btrfs           
-# ===========
-# If we process disk and parts, it will become:
-# ===========
-# sdd     `-sdd        30G raid0                                                                  
-# sddp1     |-sddp1     4G part  ext4                                                             
-# sddp2     `-sddp2    26G part  btrfs                   
-# ===========
-# if we process parts first, then disk, and it will be correct:
-# ===========
-# sdd     `-sdd        30G raid0                                                                  
-# sdd1     |-sdd1       4G part  ext4                                                             
-# sdd2     `-sdd2      26G part  btrfs                   
-# ===========
-echo $msg_delimiter_star_line
-# (1) Parts before disk
-for ifile in $files_2_be_mod_about_parts; do
-  [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
-  echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
-  case $tgt_dev in
-  cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
-    # sda1 -> cciss/c0d0p1 or sda1 -> mmcblk0p1
-    # How about cciss/c0d0p1 -> cciss/c0d1p1?
-    # How about mmcblk0p1 -> sda1? OK!
-    # nvme0n1p1 -> sda1
-    LC_ALL=C perl -pi -e "s|$src_dev[p]?|${tgt_dev}p|g" "$ocsroot/$image_name/$ifile"
-    ;;
-  *)
-    # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda, i.e. cciss/c0d0p1 -> sda1
-    LC_ALL=C perl -pi -e "s|$src_dev[p]?|$tgt_dev|g" "$ocsroot/$image_name/$ifile"
-    ;;
-  esac
-  echo "done!"
-done
-echo $msg_delimiter_star_line
-# (2) Process disk after parts
-for ifile in $files_2_be_mod_about_disk; do
-  [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
-  echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
-  LC_ALL=C perl -pi -e "s|$src_dev|$tgt_dev|g" "$ocsroot/$image_name/$ifile"
-  echo "done!"
-done
+  echo "--------------------------------------------------------"
+  echo "Converting mapping: $src_dev -> $tgt_dev"
+  echo "--------------------------------------------------------"
 
-echo $msg_delimiter_star_line
-# (3) Special cases about parts
-for ifile in $files_2_be_mod_about_parts_sc; do
-  [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
-  echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
-  case $tgt_dev in
-  cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
-    LC_ALL=C perl -pi -e "s|/dev/$src_dev[p]?|/dev/${tgt_dev}p|g" "$ocsroot/$image_name/$ifile"
-    ;;
-  *)
-    # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda, i.e. cciss/c0d0p1 -> sda1
-    LC_ALL=C perl -pi -e "s|/dev/$src_dev[p]?|/dev/$tgt_dev|g" "$ocsroot/$image_name/$ifile"
-    ;;
-  esac
-  echo "done!"
-done
-echo $msg_delimiter_star_line
+  # files_2_be_mod_about_disk means the content of file contains disk name, e.g. sda, cciss/c0d0
+  # files_2_be_mod_about_parts means the content of file contains partition name, e.g. sda1, cciss/c0d0p1
+  files_2_be_mod_about_disk="disk ${src_dev_bname}-pt.parted ${src_dev_bname}-pt.parted.compact blkdev.list blkid.list"
+  files_2_be_mod_about_parts="parts pt.sf ${src_dev_bname}-pt.sf dev-fs.list blkdev.list blkid.list" 
 
-# Change the file names
-# sda, sda1.ntfs-img...
-# sda1.ntfs-img -> sda1.ntfs-img
-# For clonezilla 2.x format, sda-mbr, sda-pt.sf, sda-pt.parted, sda-chs.sf also will be processed here: sda-mbr -> sda-mbr...
-# filenames_2_be_mod_about_disk="$(to_filename ${src_dev})-pt.sf $(to_filename ${src_dev})-chs.sf $(to_filename ${src_dev})-hidden-data-after-mbr $(to_filename ${src_dev})-mbr $(to_filename ${src_dev})-pt.parted $(to_filename ${src_dev})-pt.parted.compact $(to_filename ${src_dev})-gpt-1st $(to_filename ${src_dev})-gpt-2nd $(to_filename ${src_dev})-gpt.gdisk $(to_filename ${src_dev})-gpt.sgdisk"
-# Better way to list all of them:
-filenames_2_be_mod_about_disk="$(LC_ALL=C find "$ocsroot/$image_name/" -name \
-"$(to_filename ${src_dev})-*" -print | sort)"
-filenames_2_be_mod_about_parts="$(LC_ALL=C find "$ocsroot/$image_name/" \( -name \
-"$(to_filename ${src_dev})*.*-img*" -o -name "$(to_filename ${src_dev})*.files-*sum.info.gz" \
--o -name "$(to_filename ${src_dev})*-ebr" -o -name "$(to_filename ${src_dev})*-luksHeader.bin" \) -print | sort)"
-filenames_2_be_mod_about_swap="$(LC_ALL=C find "$ocsroot/$image_name/" -name \
-"swappt-$(to_filename ${src_dev})*.info" -print | sort)"
-# For *.torrent and part dir, e.g., sda1.torrent, sda1
-# files example under $ocsroot/btzone/:
-#  ├── btraw-psdo-20190522-145631
-#  │   ├── 00-pseudo-img-note.txt
-#  │   ├── sda1.torrent
-#  │   ├── sda1.torrent.info
-#  │   └── sda2.torrent
-#  │   └── sda2.torrent.info
-#  └── xenial-x86-20171202-zst
-#      ├── Info-img-id.txt
-#      ├── sda1 (dir)
-#      └── sda1.torrent
-#      └── sda1.torrent.info
-filenames_2_be_mod_about_bt_metadata="$(LC_ALL=C find "$ocsroot/btzone/$image_name/" \( -name "$(to_filename ${src_dev})*.torrent*" \) -print 2>/dev/null | sort)"
-filenames_2_be_mod_about_bt_part_dir="$(LC_ALL=C find "$ocsroot/btzone/$image_name/" -type d \( -name "$(to_filename ${src_dev})*" \) -print 2>/dev/null | sort)"
+  # Special cases. Only part of it can be changed.
+  # Case (1):
+  # There are 3 files (e.g., lvm_etch.conf  lvm_logv.list  lvm_vg_dev.list) about LVM devices in Clonezilla image, but only lvm_vg_dev.list is necessary to be modified. We separate this from the above is because its format is like "/dev/sda" instead of "sda".
+  # Case (2):
+  # luks-dev.list is like:
+  # ========================================================
+  # # <Block device> <UUID> <Device mapper>
+  # /dev/sda3 d40857a5-9585-44a2-9a7d-be840ea22520 sda3_crypt
+  # ========================================================
+  # We can only modify /dev/sda3, not sda3_crypt since it's device mapped name.
+  # Case (3):
+  # The MDRAID config file, e.g., md127-config.env is like:
+  # ========================================================
+  # MD_UUID=249dc032:84a1ae90:f8b7994a:690b84bf
+  # MD_NAME=astra:0
+  # MD_META=1.2
+  # MD_LEVEL=raid1
+  # MD_DEVICES_COUNT=2
+  # MD_CHUNK=
+  # MD_LAYOUT=
+  # MD_MEMBERS_ORDERED="/dev/nvme0n1p2 /dev/nvme1n1p2"
+  # ========================================================
+  # md*-detail.info: for active array (e.g., md127-detail.info)
+  # ${src_dev_bname}*-examine.info: for underlying device (e.g., nvme0n1p2-examine.info, from partition)
+  MD_ENV="$(LC_ALL=C find "$ocsroot/$image_name/" \( -name "md*-config.env" \
+  -o -name "md*-detail.info" -o -name "${src_dev_bname}*-examine.info" \) -printf "%f\n")"
+  files_2_be_mod_about_parts_sc="lvm_vg_dev.list luks-dev.list ${MD_ENV}"
 
-# Process the disk-related file names
-while read -r im; do
-  [ ! -e "$im" ] && continue
-  imname="$(LC_ALL=C basename "$im")"
-  newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})/$(to_filename ${tgt_dev})/g")"
-  if [ -z "$newname" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Name converted failed!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "Program terminated!"
-    exit 1
-  fi
-  mv -vf "$ocsroot/$image_name/$imname" "$ocsroot/$image_name/$newname"
-done <<< "$filenames_2_be_mod_about_disk"
+  # Protect existing target names by renaming them to a temporary name.
+  # This prevents duplicates if 'sda' already exists in blkid.list
+  for file in `echo $files_2_be_mod_about_disk $files_2_be_mod_about_parts $files_2_be_mod_about_parts_sc | tr ' ' '\n' | sort -u`; do
+    [ ! -e "$ocsroot/$image_name/$file" ] && continue
+    sed -i -e "s|/dev/${tgt_dev}|/dev/${tgt_dev}_orig_in_img#|g" "$ocsroot/$image_name/$file"
+  done
 
-# Process the partition-related file names
-while read -r im; do
-  [ ! -e "$im" ] && continue
-  imname="$(LC_ALL=C basename "$im")"
-  # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
-  # cciss/c0d0p1 -> sda1
-  case $tgt_dev in
-  cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
-    newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
-    ;;
-  *)
-    newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})/g")"
-    ;;
-  esac
-  if [ -z "$newname" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Name converted failed!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "Program terminated!"
-    exit 1
-  fi
-  mv -vf "$ocsroot/$image_name/$imname" "$ocsroot/$image_name/$newname"
-done <<< "$filenames_2_be_mod_about_parts"
+  # We process parts before disk since blkdev.list & blkid.list contain both disk and parts, e.g.,
+  # ===========
+  # md127     `-md127        30G raid0                                                                  
+  # md127p1     |-md127p1     4G part  ext4                                                             
+  # md127p2     `-md127p2    26G part  btrfs           
+  # ===========
+  # If we process disk and parts, it will become:
+  # ===========
+  # sdd     `-sdd        30G raid0                                                                  
+  # sddp1     |-sddp1     4G part  ext4                                                             
+  # sddp2     `-sddp2    26G part  btrfs                   
+  # ===========
+  # if we process parts first, then disk, and it will be correct:
+  # ===========
+  # sdd     `-sdd        30G raid0                                                                  
+  # sdd1     |-sdd1       4G part  ext4                                                             
+  # sdd2     `-sdd2      26G part  btrfs                   
+  # ===========
+  echo $msg_delimiter_star_line
+  # (1) Parts before disk
+  for ifile in $files_2_be_mod_about_parts; do
+    [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
+    echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
+    case $tgt_dev in
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
+      # sda1 -> cciss/c0d0p1 or sda1 -> mmcblk0p1
+      # How about cciss/c0d0p1 -> cciss/c0d1p1?
+      # How about mmcblk0p1 -> sda1? OK!
+      # nvme0n1p1 -> sda1
+      LC_ALL=C perl -pi -e "s|$src_dev[p]?|${tgt_dev}p|g" "$ocsroot/$image_name/$ifile"
+      ;;
+    *)
+      # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda, i.e. cciss/c0d0p1 -> sda1
+      LC_ALL=C perl -pi -e "s|$src_dev[p]?|$tgt_dev|g" "$ocsroot/$image_name/$ifile"
+      ;;
+    esac
+    echo "done!"
+  done
+  
+  echo $msg_delimiter_star_line
+  # (2) Process disk after parts
+  for ifile in $files_2_be_mod_about_disk; do
+    [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
+    echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
+    LC_ALL=C perl -pi -e "s|$src_dev|$tgt_dev|g" "$ocsroot/$image_name/$ifile"
+    echo "done!"
+  done
 
-# For swappt-*.info
-while read -r im; do
-  [ ! -e "$im" ] && continue
-  imname="$(LC_ALL=C basename "$im")"
-  case $tgt_dev in
-  cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
-   newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
-   ;;
-  *)
-   # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
-   # cciss/c0d0p1 -> sda1
-   newname="$(LC_ALL=C echo $imname| sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})/g")"
-   ;;
-  esac
-  if [ -z "$newname" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Name converted failed!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "Program terminated!"
-    exit 1
-  fi
-  mv -vf "$ocsroot/$image_name/$imname" "$ocsroot/$image_name/$newname"
-done <<< "$filenames_2_be_mod_about_swap"
+  echo $msg_delimiter_star_line
+  # (3) Special cases about parts
+  for ifile in $files_2_be_mod_about_parts_sc; do
+    [ ! -e "$ocsroot/$image_name/$ifile" ] && continue
+    echo -n "Change $src_dev to $tgt_dev in $ocsroot/$image_name/$ifile... "
+    case $tgt_dev in
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
+      LC_ALL=C perl -pi -e "s|/dev/$src_dev[p]?|/dev/${tgt_dev}p|g" "$ocsroot/$image_name/$ifile"
+      ;;
+    *)
+      # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda, i.e. cciss/c0d0p1 -> sda1
+      LC_ALL=C perl -pi -e "s|/dev/$src_dev[p]?|/dev/$tgt_dev|g" "$ocsroot/$image_name/$ifile"
+      ;;
+    esac
+    echo "done!"
+  done
+  echo $msg_delimiter_star_line
 
-# For *.torrent and part dir, e.g., sda1.torrent, sda1
-# files example under $ocsroot/btzone/:
-#  ├── btraw-psdo-20190522-145631
-#  │   ├── 00-pseudo-img-note.txt
-#  │   ├── sda1.torrent
-#  │   ├── sda1.torrent.info
-#  │   └── sda2.torrent
-#  │   └── sda2.torrent.info
-#  └── xenial-x86-20171202-zst
-#      ├── Info-img-id.txt
-#      ├── sda1 (dir)
-#      └── sda1.torrent
-#      └── sda1.torrent.info
-while read -r im; do
-  [ ! -e "$im" ] && continue
-  imname="$(LC_ALL=C basename "$im")"
-  # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
-  # cciss/c0d0p1 -> sda1
-  case $tgt_dev in
-  cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
-    newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})p/g")"
-    ;;
-  *)
-    newname="$(LC_ALL=C echo $imname | sed -r -e "s/$(to_filename ${src_dev})[p]?/$(to_filename ${tgt_dev})/g")"
-    ;;
-  esac
-  if [ -z "$newname" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "Name converted failed!"
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "Program terminated!"
-    exit 1
-  fi
-  mv -vf "$ocsroot/btzone/$image_name/$imname" "$ocsroot/btzone/$image_name/$newname"
-done <<< "$filenames_2_be_mod_about_bt_metadata $filenames_2_be_mod_about_bt_part_dir"
+  # Change the file names
+  # sda, sda1.ntfs-img...
+  # sda1.ntfs-img -> sda1.ntfs-img
+  # For clonezilla 2.x format, sda-mbr, sda-pt.sf, sda-pt.parted, sda-chs.sf also will be processed here: sda-mbr -> sda-mbr...
+  # filenames_2_be_mod_about_disk="${src_dev_bname}-pt.sf ${src_dev_bname}-chs.sf ${src_dev_bname}-hidden-data-after-mbr ${src_dev_bname}-mbr ${src_dev_bname}-pt.parted ${src_dev_bname}-pt.parted.compact ${src_dev_bname}-gpt-1st ${src_dev_bname}-gpt-2nd ${src_dev_bname}-gpt.gdisk ${src_dev_bname}-gpt.sgdisk"
+  # Better way to list all of them:
+  filenames_2_be_mod_about_disk="$(LC_ALL=C find "$ocsroot/$image_name/" -name \
+  "${src_dev_bname}-*" -print | sort)"
+  filenames_2_be_mod_about_parts="$(LC_ALL=C find "$ocsroot/$image_name/" \
+  \( -name "${src_dev_bname}*.*-img*" -o -name "${src_dev_bname}*.files-*sum.info.gz" \
+  -o -name "${src_dev_bname}*-ebr" -o -name "${src_dev_bname}*-luksHeader.bin" \
+  -o -name "${src_dev_bname}*-examine.info" \) -print | sort)"
+  filenames_2_be_mod_about_swap="$(LC_ALL=C find "$ocsroot/$image_name/" -name \
+  "swappt-${src_dev_bname}*.info" -print | sort)"
+  # For *.torrent and part dir, e.g., sda1.torrent, sda1
+  # files example under $ocsroot/btzone/:
+  #  ├── btraw-psdo-20190522-145631
+  #  │   ├── 00-pseudo-img-note.txt
+  #  │   ├── sda1.torrent
+  #  │   ├── sda1.torrent.info
+  #  │   └── sda2.torrent
+  #  │   └── sda2.torrent.info
+  #  └── xenial-x86-20171202-zst
+  #      ├── Info-img-id.txt
+  #      ├── sda1 (dir)
+  #      └── sda1.torrent
+  #      └── sda1.torrent.info
+  filenames_2_be_mod_about_bt_metadata="$(LC_ALL=C find "$ocsroot/btzone/$image_name/" \
+	  \( -name "${src_dev_bname}*.torrent*" \) -print 2>/dev/null | sort)"
+  filenames_2_be_mod_about_bt_part_dir="$(LC_ALL=C find "$ocsroot/btzone/$image_name/" \
+	  -type d \( -name "${src_dev_bname}*" \) -print 2>/dev/null | sort)"
 
-# Put a tag file
-  cat <<-CNVT_END > "$ocsroot/$image_name/device_name_converted.info"
+  # Process the disk-related file names
+  while read -r im; do
+    [ ! -e "$im" ] && continue
+    imname="$(LC_ALL=C basename "$im")"
+    newname="$(LC_ALL=C echo $imname | sed -r -e "s/${src_dev_bname}/${tgt_dev_bname}/g")"
+    if [ -z "$newname" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Name converted failed!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "Program terminated!"
+      exit 1
+    fi
+    mv -vf "$ocsroot/$image_name/$imname" "$ocsroot/$image_name/$newname"
+  done <<< "$filenames_2_be_mod_about_disk"
+
+  # Process the partition-related file names
+  while read -r im; do
+    [ ! -e "$im" ] && continue
+    imname="$(LC_ALL=C basename "$im")"
+    # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
+    # cciss/c0d0p1 -> sda1
+    case $tgt_dev in
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
+      newname="$(LC_ALL=C echo $imname | sed -r -e "s/${src_dev_bname}[p]?/${tgt_dev_bname}p/g")"
+      ;;
+    *)
+      newname="$(LC_ALL=C echo $imname | sed -r -e "s/${src_dev_bname}[p]?/${tgt_dev_bname}/g")"
+      ;;
+    esac
+    if [ -z "$newname" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Name converted failed!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "Program terminated!"
+      exit 1
+    fi
+    mv -vf "$ocsroot/$image_name/$imname" "$ocsroot/$image_name/$newname"
+  done <<< "$filenames_2_be_mod_about_parts"
+
+  # For swappt-*.info
+  while read -r im; do
+    [ ! -e "$im" ] && continue
+    imname="$(LC_ALL=C basename "$im")"
+    case $tgt_dev in
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
+     newname="$(LC_ALL=C echo $imname| sed -r -e "s/${src_dev_bname}[p]?/${tgt_dev_bname}p/g")"
+     ;;
+    *)
+     # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
+     # cciss/c0d0p1 -> sda1
+     newname="$(LC_ALL=C echo $imname| sed -r -e "s/${src_dev_bname}[p]?/${tgt_dev_bname}/g")"
+     ;;
+    esac
+    if [ -z "$newname" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Name converted failed!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "Program terminated!"
+      exit 1
+    fi
+    mv -vf "$ocsroot/$image_name/$imname" "$ocsroot/$image_name/$newname"
+  done <<< "$filenames_2_be_mod_about_swap"
+
+  # For BT metadata
+  # For *.torrent and part dir, e.g., sda1.torrent, sda1
+  # files example under $ocsroot/btzone/:
+  #  ├── btraw-psdo-20190522-145631
+  #  │   ├── 00-pseudo-img-note.txt
+  #  │   ├── sda1.torrent
+  #  │   ├── sda1.torrent.info
+  #  │   └── sda2.torrent
+  #  │   └── sda2.torrent.info
+  #  └── xenial-x86-20171202-zst
+  #      ├── Info-img-id.txt
+  #      ├── sda1 (dir)
+  #      └── sda1.torrent
+  #      └── sda1.torrent.info
+  while read -r im; do
+    [ ! -e "$im" ] && continue
+    imname="$(LC_ALL=C basename "$im")"
+    # [p]? is for cciss device partitions, e.g. when convering cciss/c0d0 to sda
+    # cciss/c0d0p1 -> sda1
+    case $tgt_dev in
+    cciss*|mmcblk*|md*|rd*|ida*|nvme*|nbd*|loop*)
+      newname="$(LC_ALL=C echo $imname | sed -r -e "s/${src_dev_bname}[p]?/${tgt_dev_bname}p/g")"
+      ;;
+    *)
+      newname="$(LC_ALL=C echo $imname | sed -r -e "s/${src_dev_bname}[p]?/${tgt_dev_bname}/g")"
+      ;;
+    esac
+    if [ -z "$newname" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Name converted failed!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "Program terminated!"
+      exit 1
+    fi
+    mv -vf "$ocsroot/btzone/$image_name/$imname" "$ocsroot/btzone/$image_name/$newname"
+  done <<< "$filenames_2_be_mod_about_bt_metadata $filenames_2_be_mod_about_bt_part_dir"
+
+  # Append to tag file
+  cat <<-CNVT_END >> "$ocsroot/$image_name/device_name_converted.info"
 # This image was converted from $src_dev to $tgt_dev
 orig_dev="$src_dev"
 new_dev="$tgt_dev"
 
 CNVT_END
+
+done # End of multi-disk array loop
 
 exit 0
