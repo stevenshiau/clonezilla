@@ -9131,6 +9131,9 @@ save_part_table_mbr_dm_info(){
     LC_ALL=C lsblk -JOb > $target_dir_fullpath/blkdev.json
   fi
 
+  # Dump software RAID info
+  ocs-save-mdraid-layout "$target_dir_fullpath" | tee --append $OCS_LOGFILE
+
   # Save partition table
   echo "Saving block devices output by fdisk as $target_dir_fullpath/fdisk.list..." | tee --append $OCS_LOGFILE
   LC_ALL=C fdisk -x --bytes > $target_dir_fullpath/fdisk.list
@@ -16115,32 +16118,6 @@ is_linux_raid_member() {
     return 1 # It is not a RAID member
   fi
 } # end of is_linux_raid_member
-#
-dump_software_raid_info_if_exists() {
-  local img_dir="$1" 
-  local md_devs
-  # /proc/mdstat e.g.,
-  # root@debian:~# cat /proc/mdstat
-  # Personalities : [raid1] [raid0] [linear] [multipath] [raid6] [raid5] [raid4] [raid10]
-  # md125 : active (auto-read-only) raid1 sdb1[1] sda1[0]
-  #       499968 blocks super 1.0 [2/2] [UU]
-  #       bitmap: 0/1 pages [0KB], 65536KB chunk
-  # 
-  # md126 : active raid0 sda3[0] sdb3[1]
-  #       15761408 blocks super 1.2 512k chunks
-  # 
-  # md127 : active (auto-read-only) raid1 sda2[0] sdb2[1]
-  #       12573696 blocks super 1.2 [2/2] [UU]
-  #       bitmap: 0/1 pages [0KB], 65536KB chunk
-  md_devs="$(LC_ALL=C grep -Ewi active /proc/mdstat | awk -F":" '{print $1}')"
-  if [ -n "$md_devs" ]; then
-    cat /proc/mdstat > "$img_dir/mdstat.txt"
-    mdadm --detail --scan  > "$img_dir/mdadm.conf"
-    for im in $md_devs; do
-      mdadm --query --detail --export /dev/$im > "$img_dir/${im}.txt"
-    done
-  fi
-} # end of dump_software_raid_info_if_exists
 #
 is_md_dev() {
   local dev_=${1#/dev/*}
