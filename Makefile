@@ -16,6 +16,7 @@ all:	ocs-sbin
 ocs-sbin:
 	(cd sbin; ln -fs ocs-prep-repo prep-ocsroot)
 	(cd sbin; ln -fs ocs-cvt-dev cnvt-ocs-dev)
+	(cd sbin; ln -fs ocs-create-tmp-img create-ocs-tmp-img)
 
 build:
 	@echo "Nothing to build."
