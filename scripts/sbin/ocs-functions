@@ -8641,10 +8641,8 @@ rm_tmp_cnvt_img() {
 #
 create_temp_image_for_different_target_dev_name_if_necessary() {
   # If the target_hd does not equal to the one in target_dir, create a temp image by create-ocs-tmp-img
-  # TODO 200806:
-  # (1) How about if target_hd is multi harddisks ? -> Won't supported. Too complicated.
-  # (2) Add an option in create-ocs-tmp-img to assign the ocsroot
-  # (3) Avoid multiple unicast clones to convert the same image.
+  # TODO 2025/03/08:
+  # (1) Avoid multiple unicast clones to convert the same image.
   # img_cnvt_count is a global variable for removing the temp converted image dir
   local tmp_img_from_to_opt do_convert_flag
   local dest_dev_ cnvt_cmd_ md_src_dsk_flag
@@ -8652,10 +8650,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # Check if target disk/part name exists in the image.
   # It might be the image from disk or partition (including bare block device with file system) that we need to convert
   # Input: $target_hd (for restoredisk); $target_parts (for restoreparts); dsksname_from_img
-  if [ "$(echo $target_hd | wc -w)" -gt 1 ]; then
-     echo "Multiple target devices detected ($target_hd). Skipping source-destination device conversion in the image dir."
-     return 5
-  fi
+  #
   if [ -n "$target_hd" ]; then
     dest_dev_="$target_hd"
   elif [ -n "$target_parts" ]; then
@@ -8695,33 +8690,32 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   fi
   # Some cases not supported:
   # (1) Unicast clone with batch mode (Since maybe there will be more than 1 restoration, and they will create the same temp image, which will be in a mess.
-  # (2) source hardisk number is >= 2
   # for BT, the port is assigned as "bt" from ocs-sr
   # for d2d, the port is assigned as "ld2d" or "nd2d" from ocs-sr
-  if [ "$src_dsk_no" -ge 2 ]; then
-    md_src_dsk_flag="no"
-    for id in $dsksname_from_img; do
-      if [ -n "$(echo "$id" | grep -iEw "^md[0-9]+.*")" ]; then
-	md_src_dsk_flag="yes"
-	break
-      fi
-    done
-    if [ "$md_src_dsk_flag" = "yes" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Found Linux software RAID device. It is hard to tell it's disk or partition by its name." \
-      | tee --append ${OCS_LOGFILE}
-      echo "Skip checking the source disk number when converting..."
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    else
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "$msg_create_cvrt_img_for_more_than_2_disks_not_supported $msg_only_same_disk_name_work_try_cnvt_ocs_dev_instead" | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
-      exit 1
-    fi
-  fi
-  # Not in the above 3 cases, do it.
+  #
+  # Not in the above mentioned cases, do it.
   # Creating a temp converted image:
+  # =================================================================
+  # ADDED FOR MDRAID: Filter out virtual MD devices.
+  # We ONLY want to pass physical disks to ocs-cvt-dev for renaming,
+  # otherwise md127 might get accidentally mapped to sda!
+  # =================================================================
+  local filtered_src=""
+  for dev in $dsksname_from_img; do
+    if [[ ! "$dev" =~ ^md[0-9]+ ]]; then
+      filtered_src="$filtered_src $dev"
+    fi
+  done
+  local filtered_tgt=""
+  for dev in $target_hd; do
+    if [[ ! "$dev" =~ ^md[0-9]+ ]]; then
+      filtered_tgt="$filtered_tgt $dev"
+    fi
+  done
+  # Overwrite the variables before ocs-cvt-dev sees them
+  dsksname_from_img="$(echo $filtered_src | xargs)"
+  target_hd="$(echo $filtered_tgt | xargs)"
+  # =================================================================
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Creating a tmp Clonezilla image \"${target_dir}-tmp-cnvted\" based on the image \"$target_dir\" so that we can restore the image $target_dir (was saved from $dsksname_from_img) to $dest_dev_..."
   echo "$msg_restored_OS_change_fstab_grub_conf"
@@ -8734,7 +8728,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
        -n "${target_dir}-tmp-cnvted" ]; then
     rm -rf "$ocsroot/${target_dir}-tmp-cnvted" 
   fi
-  cnvt_cmd_="create-ocs-tmp-img -or $ocsroot $tmp_img_from_to_opt \"$target_dir\" \"${target_dir}-tmp-cnvted\" $dsksname_from_img $dest_dev_"
+  cnvt_cmd_="create-ocs-tmp-img -or $ocsroot $tmp_img_from_to_opt \"$target_dir\" \"${target_dir}-tmp-cnvted\" \"$dsksname_from_img\" \"$dest_dev_\""
   echo "Running: $cnvt_cmd_"
   eval $cnvt_cmd_
   # Change the ocsroot to /tmp now since create-ocs-tmp-img will create the image in /tmp
