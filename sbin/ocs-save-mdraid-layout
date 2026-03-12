@@ -100,6 +100,15 @@ for MD in $MD_DEVICES; do
         print slot, dev
     }' | sort -n | awk '{print $2}')"
     
+    # ====================================================================
+    # Extract Data Offset
+    # ====================================================================
+    FIRST_MEMBER="$(echo "$MD_MEMBERS_ORDERED" | grep -v "missing" | head -n 1)"
+    MD_DATA_OFFSET=""
+    if [ -n "$FIRST_MEMBER" ] && [ -b "$FIRST_MEMBER" ]; then
+        MD_DATA_OFFSET="$(LC_ALL=C mdadm --examine "$FIRST_MEMBER" 2>/dev/null | grep -i 'Data Offset' | grep -oE '[0-9]+' | head -n 1)"
+    fi
+
     # Write configuration to env file for the restore script
     ENV_FILE="$IMG_DIR/${MD}-config.env"
     echo "MD_UUID=$MD_UUID" > "$ENV_FILE"
@@ -109,18 +118,22 @@ for MD in $MD_DEVICES; do
     echo "MD_DEVICES_COUNT=$MD_DEVICES_COUNT" >> "$ENV_FILE"
     echo "MD_CHUNK=$MD_CHUNK" >> "$ENV_FILE"
     echo "MD_LAYOUT=$MD_LAYOUT" >> "$ENV_FILE"
+    echo "MD_DATA_OFFSET=$MD_DATA_OFFSET" >> "$ENV_FILE"
     echo "MD_MEMBERS_ORDERED=\"$(echo $MD_MEMBERS_ORDERED)\"" >> "$ENV_FILE"
     
     echo "  -> Saved Level: $MD_LEVEL | Devices: $MD_DEVICES_COUNT"
     [ -n "$MD_CHUNK" ] && echo "  -> Saved Chunk Size: ${MD_CHUNK}K"
     [ -n "$MD_LAYOUT" ] && echo "  -> Saved Layout: $MD_LAYOUT"
+    [ -n "$MD_DATA_OFFSET" ] && echo "  -> Saved Data Offset: ${MD_DATA_OFFSET} sectors"
     echo "  -> Saved Order: $(echo $MD_MEMBERS_ORDERED | tr '\n' ' ')"
 
-    # 2. Dump the internal partition table of the RAID device using Clonezilla naming scheme
+    # 6. Dump the internal partition table of the RAID device using Clonezilla naming scheme
     echo "Dumping partition table for $MD_PATH..."
-    sfdisk -d "$MD_PATH" > "$IMG_DIR/${MD}-pt.sf" 2>/dev/null || true
+    if ! is_block_device_with_fs $MD_PATH; then
+      sfdisk -d "$MD_PATH" > "$IMG_DIR/${MD}-pt.sf" 2>/dev/null || true
+    fi
 
-    # 3. Backup physical disk layouts
+    # 7. Backup physical disk layouts
     for MEMBER in $MD_MEMBERS_ORDERED; do
         if [[ "$MEMBER" == "missing" ]] || [ ! -b "$MEMBER" ]; then
             continue
@@ -147,9 +160,11 @@ for MD in $MD_DEVICES; do
         
         # Backup the GPT partition table
         if [ -b "$PARENT_PATH" ]; then
-            if [ ! -f "$IMG_DIR/${PARENT_KNAME}-pt.sf" ]; then
-                echo "  -> Dumping physical partition table for $PARENT_PATH..."
-                sfdisk -d "$PARENT_PATH" > "$IMG_DIR/${PARENT_KNAME}-pt.sf" 2>/dev/null || true
+            if ! is_block_device_with_fs $PARENT_PATH; then
+              if [ ! -f "$IMG_DIR/${PARENT_KNAME}-pt.sf" ]; then
+                  echo "  -> Dumping physical partition table for $PARENT_PATH..."
+                  sfdisk -d "$PARENT_PATH" > "$IMG_DIR/${PARENT_KNAME}-pt.sf" 2>/dev/null || true
+              fi
             fi
         fi
     done
