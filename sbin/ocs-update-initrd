@@ -208,6 +208,37 @@ if [ ! -d "$hd_img/boot/" ]; then
    else
      mount_root_partition_for_separate_boot_part $hd_img  # return variable $found_root_partition
    fi
+
+   # ========================================================
+   # Fallback for MDRAID devices / Bare file systems
+   # ========================================================
+   if [ -z "$found_root_partition" ]; then
+     echo "Standard root discovery failed. Attempting aggressive mount discovery..."
+     fallback_parts="$selected_parts"
+     [ -z "$fallback_parts" ] && fallback_parts="$(awk '/^md/ {print $1}' /proc/mdstat 2>/dev/null)"
+     for ipart in $fallback_parts; do
+       ipart="${ipart#/dev/}"
+       mrc=32
+       # Standard mount fallback if explicit types fail
+       mount /dev/$ipart $hd_img >/tmp/mnt_err_$ipart 2>&1
+       mrc=$?
+       if [ "$mrc" -eq 0 ]; then
+         # Look for deterministic OS files
+         if [ -f "$hd_img/etc/fstab" -o -f "$hd_img/etc/os-release" ] && [ ! -e "$hd_img/Clonezilla-Live-Version" ]; then
+           found_root_partition="/dev/$ipart"
+           unmount_wait_and_try $hd_img
+           echo "Aggressive discovery found root on $found_root_partition!"
+           break
+         fi
+         unmount_wait_and_try $hd_img
+       else
+         echo "Failed to mount /dev/$ipart in aggressive discovery. Error logs:"
+         cat /tmp/mnt_err_${ipart}_xfs 2>/dev/null
+         cat /tmp/mnt_err_$ipart 2>/dev/null
+       fi
+     done
+   fi
+   # ========================================================
    unmount_wait_and_try $grub_partition 2>/dev/null
 else
    # In this case, /boot must co-exist with root system in same partition, 
