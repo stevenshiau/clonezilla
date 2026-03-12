@@ -8975,6 +8975,35 @@ task_savedisk() {
     rm -f $part_rec_f
   fi
 
+  # ====================================================================
+  # NEW: Auto-append related MDRAID devices
+  # If the selected physical disks contain MDRAID member partitions,
+  # the associated active MD arrays must be appended so their contents
+  # are saved properly.
+  # ====================================================================
+  auto_mds="$(get_md_devices_from_disk_or_part "$target_hd")"
+  for imd in $auto_mds; do
+    if is_partition "$imd"; then
+      # MD array operates as a standalone partition (e.g., md126 directly formatted)
+      if [ -z "$(echo "$target_parts" | grep -Ew "$imd")" ]; then
+        target_parts="$target_parts $imd"
+        echo "Auto-appended MDRAID partition $imd to target_parts." | tee --append $OCS_LOGFILE
+      fi
+    else
+      # MD array operates as a disk with sub-partitions (e.g., md127p1, md127p2)
+      if [ -z "$(echo "$target_hd" | grep -Ew "$imd")" ]; then
+        target_hd="$target_hd $imd"
+        echo "Auto-appended MDRAID disk $imd to target_hd." | tee --append $OCS_LOGFILE
+        part_rec_f="$(mktemp /tmp/part_rec_f.XXXXXX)"
+        get_known_partition_proc_format "$imd" all $part_rec_f
+        target_parts="$target_parts $(awk -F":" '/^data_dev:/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
+        target_swap_parts="$target_swap_parts $(awk -F":" '/^swap_dev:/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
+        target_extended_parts="$target_extended_parts $(awk -F":" '/^extended_dev:/ {print $2}' $part_rec_f | sed -r -e "s|^[[:space:]]*||g")"
+        rm -f $part_rec_f
+      fi
+    fi
+  done
+
   # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
   # instead it's on a disk (e.g. /dev/sdb).
   pv_on_dsk="$(get_pv_on_disk_from_local_machine)"  # pv_on_dsk: sda, sdb...
@@ -9021,6 +9050,8 @@ task_savedisk() {
     # e.g., gen_md5sum="no"
     eval gen_${imtd}="no"
   done
+  # Export intended target disks to prevent drops
+  export INTENDED_TARGET_HD="$target_hd"
 
   task_saveparts "$target_dir" "$target_parts"
   rc_task_savedisk="$(($rc_task_savedisk + $?))"
@@ -9336,6 +9367,16 @@ task_saveparts() {
 	    target_hd="$target_hd $hd_tmp"
     fi
   done
+
+  # NEW: Recover intended disks dropped because they only contain RAID members
+  if [ -n "$INTENDED_TARGET_HD" ]; then
+    for idisk in $INTENDED_TARGET_HD; do
+      if [ -z "$(echo $target_hd | grep -Ew "$idisk" 2>/dev/null)" ]; then
+        target_hd="$target_hd $idisk"
+        echo "Auto-recovered intended target disk $idisk into target_hd." | tee --append $OCS_LOGFILE
+      fi
+    done
+  fi
 
   # Check if mbr and gpt partition table coexist
   for ihd in $target_hd; do
@@ -9735,6 +9776,10 @@ task_restoredisk() {
     eval check_${imtd}="no"
   done
   echo "Running: task_restoreparts \"$target_dir\" \"$target_parts\" \"$port\"" >> $OCS_LOGFILE
+
+  # Export intended target disks to prevent drops
+  export INTENDED_TARGET_HD="$target_hd"
+
   task_restoreparts "$target_dir" "$target_parts" "$port"
 
   echo "End of restoredisk job for image $target_dir." | tee --append $OCS_LOGFILE
@@ -9972,6 +10017,32 @@ task_restoreparts() {
     done
     dsksname_from_img="$source_hd"
     src_dsk_no="$(echo $dsksname_from_img | wc -w)"
+  fi
+
+  # NEW: MDRAID & Empty Disk Recovery
+  # Clonezilla drops disks from target_hd and source_hd if they have no data
+  # partitions in the 'parts' file (e.g. disks only containing linux_raid_member).
+  # We must recover them so their partition tables are recreated perfectly.
+  if [ -n "$(echo "$ocs_sr_type" | grep -Ei "restoredisk")" ]; then
+    if [ -n "$INTENDED_TARGET_HD" ]; then
+      for idisk in $INTENDED_TARGET_HD; do
+        if [ -z "$(echo $target_hd | grep -Ew "$idisk" 2>/dev/null)" ]; then
+          target_hd="$target_hd $idisk"
+          echo "Auto-recovered intended target disk $idisk into target_hd." | tee --append $OCS_LOGFILE
+        fi
+      done
+    fi
+    if [ -f "$ocsroot/$target_dir/disk" ]; then
+      intended_src="$(cat "$ocsroot/$target_dir/disk")"
+      for idisk in $intended_src; do
+        if [ -z "$(echo $source_hd | grep -Ew "$idisk" 2>/dev/null)" ]; then
+          source_hd="$source_hd $idisk"
+          echo "Auto-recovered intended source disk $idisk into source_hd." | tee --append $OCS_LOGFILE
+        fi
+      done
+      dsksname_from_img="$source_hd"
+      src_dsk_no="$(echo $dsksname_from_img | wc -w)"
+    fi
   fi
 
   # It might be done in task_restoredisk
