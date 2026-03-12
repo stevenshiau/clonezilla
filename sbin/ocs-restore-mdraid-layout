@@ -63,43 +63,49 @@ if [ ! -d "$IMG_DIR" ]; then
 fi
 
 echo "------------------------------------------"
-echo "1: Recreating the MDRAID Array"
+echo "1: Recreating the MDRAID Arrays"
 echo "------------------------------------------"
 
-MD_DUMP=$(ls "$IMG_DIR"/md*-pt.sf 2>/dev/null | head -n 1)
-
-if [ -z "$MD_DUMP" ]; then
-    echo "Error: Could not find an MD partition dump (e.g., md127-pt.sf)."
+# Check if there are any config files
+if ! ls "$IMG_DIR"/md*-config.env 1> /dev/null 2>&1; then
+    echo "Error: Could not find any MDRAID configuration files (e.g., md127-config.env)."
     exit 1
 fi
 
-MD_DEV_NAME=$(basename "$MD_DUMP" -pt.sf)
-MD_DEV_PATH="/dev/$MD_DEV_NAME"
+# Loop through all saved MDRAID configurations
+for ENV_FILE in "$IMG_DIR"/md*-config.env; do
+    [ -e "$ENV_FILE" ] || continue
+    
+    MD_DEV_NAME=$(basename "$ENV_FILE" -config.env)
+    MD_DEV_PATH="/dev/$MD_DEV_NAME"
+    MD_DUMP="$IMG_DIR/${MD_DEV_NAME}-pt.sf"
 
-if [ "$ocs_batch_mode" != "on" ]; then
-  echo "WARNING: This will overwrite MDRAID layout on the target devices $MD_DEV_PATH."
-  confirm_continue_or_not_default_quit
-fi
+    if [ "$ocs_batch_mode" != "on" ]; then
+      echo "WARNING: This will overwrite MDRAID layout on the target device $MD_DEV_PATH."
+      confirm_continue_or_not_default_quit
+    fi
 
-if [ -e "$MD_DEV_PATH" ]; then
-  mdadm --stop $MD_DEV_PATH 2>/dev/null || true
-fi
+    if [ -e "$MD_DEV_PATH" ]; then
+      mdadm --stop $MD_DEV_PATH 2>/dev/null || true
+    fi
 
-echo "  -> Target MD array: $MD_DEV_PATH"
+    echo "  -> Target MD array: $MD_DEV_PATH"
 
-MD_UUID_PARAM=""
-MD_NAME_PARAM=""
-MD_META_PARAM=""
-MD_LEVEL_PARAM=""
-MD_DEVICES_PARAM=""
-MD_CHUNK_PARAM=""
-MD_LAYOUT_PARAM=""
-MD_DATA_OFFSET_PARAM=""
-MD_MEMBERS=""
+    MD_UUID_PARAM=""
+    MD_NAME_PARAM=""
+    MD_META_PARAM=""
+    MD_LEVEL_PARAM=""
+    MD_DEVICES_PARAM=""
+    MD_CHUNK_PARAM=""
+    MD_LAYOUT_PARAM=""
+    MD_DATA_OFFSET_PARAM=""
+    MD_MEMBERS=""
 
-# Parse all advanced variables from the env config
-if [ -f "$IMG_DIR/${MD_DEV_NAME}-config.env" ]; then
-    source "$IMG_DIR/${MD_DEV_NAME}-config.env"
+    # Unset variables to prevent leakage from the previous loop iteration
+    unset MD_UUID MD_NAME MD_META MD_LEVEL MD_DEVICES_COUNT MD_CHUNK MD_LAYOUT MD_DATA_OFFSET MD_MEMBERS_ORDERED
+    
+    # Parse all advanced variables from the env config
+    source "$ENV_FILE"
     
     [ -n "${MD_UUID:-}" ] && MD_UUID_PARAM="--uuid=$MD_UUID"
     [ -n "${MD_NAME:-}" ] && MD_NAME_PARAM="--name=$MD_NAME"
@@ -108,49 +114,53 @@ if [ -f "$IMG_DIR/${MD_DEV_NAME}-config.env" ]; then
     [ -n "${MD_DEVICES_COUNT:-}" ] && MD_DEVICES_PARAM="--raid-devices=$MD_DEVICES_COUNT"
     [ -n "${MD_CHUNK:-}" ] && MD_CHUNK_PARAM="--chunk=$MD_CHUNK"
     [ -n "${MD_LAYOUT:-}" ] && MD_LAYOUT_PARAM="--layout=$MD_LAYOUT"
-    [ -n "${MD_DATA_OFFSET:-}" ] && MD_DATA_OFFSET_PARAM="--data-offset=$MD_DATA_OFFSET"
+    [ -n "${MD_DATA_OFFSET:-}" ] && MD_DATA_OFFSET_PARAM="--data-offset=${MD_DATA_OFFSET}s"
     [ -n "${MD_MEMBERS_ORDERED:-}" ] && MD_MEMBERS="$MD_MEMBERS_ORDERED"
-else
-    echo "Error: Configuration file ${MD_DEV_NAME}-config.env not found!"
-    exit 1
-fi
 
-echo "  -> Array Level: ${MD_LEVEL:-Unknown} | Devices: ${MD_DEVICES_COUNT:-Unknown}"
-echo "  -> Exact Device Order: $MD_MEMBERS"
+    echo "  -> Array Level: ${MD_LEVEL:-Unknown} | Devices: ${MD_DEVICES_COUNT:-Unknown}"
+    echo "  -> Exact Device Order: $MD_MEMBERS"
 
-# Silently clear old superblocks from target disks before creating to prevent interactive prompts
-for MEMBER in $MD_MEMBERS; do
-    if [ "$MEMBER" != "missing" ] && [ -b "$MEMBER" ]; then
-        mdadm --zero-superblock "$MEMBER" 2>/dev/null || true
-    fi
-done
+    # Silently clear old superblocks from target disks before creating to prevent interactive prompts
+    for MEMBER in $MD_MEMBERS; do
+        if [ "$MEMBER" != "missing" ] && [ -b "$MEMBER" ]; then
+            mdadm --zero-superblock "$MEMBER" 2>/dev/null || true
+        fi
+    done
 
-# Construct the create command dynamically. MD_MEMBERS handles the physical disk paths and any 'missing' keywords.
-CREATE_CMD="yes | mdadm --create \"$MD_DEV_PATH\" --force --run $MD_LEVEL_PARAM $MD_DEVICES_PARAM $MD_META_PARAM $MD_DATA_OFFSET_PARAM $MD_UUID_PARAM $MD_NAME_PARAM $MD_CHUNK_PARAM $MD_LAYOUT_PARAM $MD_MEMBERS --bitmap=internal --assume-clean"
+    # Construct the create command dynamically. MD_MEMBERS handles the physical disk paths and any 'missing' keywords.
+    CREATE_CMD="yes | mdadm --create \"$MD_DEV_PATH\" --force --run $MD_LEVEL_PARAM $MD_DEVICES_PARAM $MD_META_PARAM $MD_DATA_OFFSET_PARAM $MD_UUID_PARAM $MD_NAME_PARAM $MD_CHUNK_PARAM $MD_LAYOUT_PARAM $MD_MEMBERS --assume-clean"
 
-echo "  -> Running: $CREATE_CMD"
-eval "$CREATE_CMD"
+    echo "  -> Running: $CREATE_CMD"
+    eval "$CREATE_CMD"
 
-udevadm settle
-sleep 3
-
-echo "------------------------------------------"
-echo "Phase 2: Restoring MD Array Internal Partitions"
-echo "------------------------------------------"
-
-if [ -b "$MD_DEV_PATH" ]; then
-    echo "  -> Applying internal partition table to $MD_DEV_PATH..."
-    sfdisk --force "$MD_DEV_PATH" < "$MD_DUMP"
-    
-    # TARGETED partprobe for MD device
-    echo "  -> Reloading partition table for $MD_DEV_PATH..."
-    partprobe "$MD_DEV_PATH" 2>/dev/null || true
     udevadm settle
     sleep 3
-else
-    echo "Error: $MD_DEV_PATH was not created successfully."
-    exit 1
-fi
+
+    # ====================================================================
+    # CRITICAL COMPATIBILITY FIX: Strip modern feature flags (like BBL)
+    # ====================================================================
+    echo "  -> Stripping modern mdadm feature flags..."
+    mdadm --stop "$MD_DEV_PATH" 2>/dev/null || true
+    if ! mdadm --assemble "$MD_DEV_PATH" --update=no-bbl $MD_MEMBERS 2>/dev/null; then
+        mdadm --assemble "$MD_DEV_PATH" $MD_MEMBERS 2>/dev/null || true
+    fi
+    udevadm settle
+    sleep 3
+
+    if [ -f "$MD_DUMP" ]; then
+        echo "------------------------------------------"
+        echo "Phase 2: Restoring MD Array Internal Partitions for $MD_DEV_PATH"
+        echo "------------------------------------------"
+        echo "  -> Applying internal partition table to $MD_DEV_PATH..."
+        sfdisk --force "$MD_DEV_PATH" < "$MD_DUMP"
+        
+        # TARGETED partprobe for MD device
+        echo "  -> Reloading partition table for $MD_DEV_PATH..."
+        partprobe "$MD_DEV_PATH" 2>/dev/null || true
+        udevadm settle
+        sleep 3
+    fi
+done
 
 echo "Restoration Complete (Layout & Metadata Only)!"
 echo "Advanced RAID array is now structurally identical to the original."
