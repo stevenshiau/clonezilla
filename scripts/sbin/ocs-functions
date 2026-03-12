@@ -261,10 +261,10 @@ is_gpt_partitition_table_disk() {
     echo "No input parameter \$input_disk_ in function is_gpt_partitition_table!"
     return 3
   fi
-  if [ -n "$(LC_ALL=C parted -s $input_disk_ print | grep -iE "^Partition Table:" | grep -iE "gpt")" ]
+  if [ -n "$(LC_ALL=C parted -s $input_disk_ print 2>/dev/null | grep -iE "^Partition Table:" | grep -iE "gpt")" ]
   then 
     rt_code=0
-  elif [ -n "$(LC_ALL=C sfdisk -d $input_disk_ | grep -Ei "^label:[[:space:]]+gpt")" ]; then
+  elif [ -n "$(LC_ALL=C sfdisk -d $input_disk_ 2>/dev/null | grep -Ei "^label:[[:space:]]+gpt")" ]; then
     # Sometimes parted has some issues failing to identify that. E.g., 
     # https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
     rt_code=0
@@ -308,10 +308,10 @@ is_mbr_partitition_table_disk() {
     echo "No input parameter \$input_disk_ in function is_mbr_partitition_table!"
     return 3
   fi
-  if [ -n "$(LC_ALL=C parted -s $input_disk_ print | grep -iE "^Partition Table:" | grep -iE "msdos")" ]
+  if [ -n "$(LC_ALL=C parted -s $input_disk_ print 2>/dev/null | grep -iE "^Partition Table:" | grep -iE "msdos")" ]
   then
     rt_code=0
-  elif [ -n "$(LC_ALL=C sfdisk -d $input_disk_ | grep -Ei "^label:[[:space:]]+dos")" ]; then
+  elif [ -n "$(LC_ALL=C sfdisk -d $input_disk_ 2>/dev/null | grep -Ei "^label:[[:space:]]+dos")" ]; then
     # Sometimes parted has some issues failing to identify that. E.g., 
     # https://lists.gnu.org/archive/html/bug-parted/2022-04/msg00001.html
     rt_code=0
@@ -6229,7 +6229,7 @@ do_unicast_stdin_restore() {
   hdtmp="$(get_disk_from_part $part)"
   hdtmp="$(format_dev_name_without_leading_dev $hdtmp)" # e.g., sda
   esp_part="no"
-  if [ -n "$(grep -Ew "^$part" "$target_d"/${hdtmp}-pt.sf | grep -Eio "type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B,")" ]; then 
+  if [ -n "$(grep -Ew "^$part" "$target_d"/${hdtmp}-pt.sf 2>/dev/null | grep -Eio "type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B,")" ]; then 
     esp_part="yes"
   fi
 
@@ -12713,7 +12713,7 @@ is_partition() {
     if [[ "$t_mode" == "restore" ]]; then
       # Check image metadata for sub-partitions or LVM usage.
       if grep -Eq "^${dev_name}p[1-9]+" "$ocsroot/$target_dir/blkdev.list" || \
-         grep -Ewq "/dev/${dev_name}" "$ocsroot/$target_dir/lvm_vg_dev.list"; then
+         grep -Ewq "/dev/${dev_name}" "$ocsroot/$target_dir/lvm_vg_dev.list" 2>/dev/null; then
         return 1 # It's a disk because it contains other things.
       else
         return 0 # It's a bare device used as a partition.
