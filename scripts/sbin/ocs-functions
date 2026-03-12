@@ -16160,6 +16160,46 @@ is_md_dev() {
   return $rc
 } # end of is_md_dev
 #
+get_md_devices_from_disk_or_part() {
+  local input_devs="$1"
+  local md_list=""
+  local active_mds members member member_name idev
+  local added=1
+
+  [ -z "$input_devs" ] && return 0
+  [ ! -e /proc/mdstat ] && return 0
+
+  active_mds="$(LC_ALL=C awk '/^md/ {print $1}' /proc/mdstat 2>/dev/null)"
+
+  # Loop until no new arrays are discovered (supports arrays stacked on arrays)
+  while [ "$added" -eq 1 ]; do
+    added=0
+    for md in $active_mds; do
+      # Skip if already added
+      if echo " $md_list " | grep -q " $md "; then
+        continue
+      fi
+
+      members="$(LC_ALL=C mdadm --detail /dev/$md 2>/dev/null | awk '/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+[0-9]+/ {print $NF}')"
+      for member in $members; do
+        member_name="$(basename "$member")"
+        # Check against physical input devices AND already discovered md arrays
+        for idev in $input_devs $md_list; do
+          idev="${idev#/dev/}"
+          # Match exact name (e.g. sda) or partition name (e.g. nvme0n1p3)
+          if [ "$member_name" = "$idev" ] || echo "$member_name" | grep -qE "^${idev}p?[0-9]+$"; then
+            md_list="$md_list $md"
+            added=1
+            break 2
+          fi
+        done
+      done
+    done
+  done
+
+  echo "$md_list" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed -e 's/^ *//' -e 's/ *$//'
+} # end of get_md_devices_from_disk_or_part
+#
 cnvt_img_key_name_for_saving_mode(){
   local key_v="$1"
   local ip date_fmt
