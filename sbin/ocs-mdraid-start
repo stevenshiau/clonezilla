@@ -1,0 +1,28 @@
+#!/bin/bash
+# License: GPL
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to scan and start MDRAID devices (Linux Software RAID)
+# Modeled after Clonezilla's ocs-lvm2-start
+
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load MDRAID module first
+if modinfo md_mod &>/dev/null; then
+  modprobe md_mod 2>/dev/null
+fi
+sleep 1
+
+if type mdadm &>/dev/null; then
+    echo "Setting up the Software RAID (MDRAID) devices"
+    # Scan all physical drives and assemble arrays. 
+    # The --run flag forces the array to start even if it is degraded.
+    mdadm --assemble --scan --run >/dev/null 2>&1
+    
+    # Check if any arrays successfully assembled
+    if grep -q "^md" /proc/mdstat 2>/dev/null; then
+        echo "MDRAID arrays successfully assembled."
+    fi
+fi

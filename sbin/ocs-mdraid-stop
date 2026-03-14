@@ -1,0 +1,34 @@
+#!/bin/bash
+# License: GPL
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: Program to safely stop active MDRAID devices
+# Modeled after Clonezilla's ocs-lvm2-stop
+
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+if type mdadm &>/dev/null && [ -f /proc/mdstat ]; then
+    echo "Shutting down the Software RAID (MDRAID) devices"
+
+    # Parse /proc/mdstat to find all active md devices
+    ACTIVE_MDS=$(awk '/^md/ {print $1}' /proc/mdstat 2>/dev/null | sort -r)
+
+    for md in $ACTIVE_MDS; do
+        # Verify the array is actually active before attempting to stop
+        MD_IS_ACTIVE=$(grep -Ew "^$md" /proc/mdstat | grep -w "active")
+        if [ -n "$MD_IS_ACTIVE" ]; then
+            echo "  Shutting Down MDRAID device: /dev/$md "
+            # If the device is busy (e.g. mounted), mdadm will exit with an error
+            # and leave the array running to prevent system crash.
+            mdadm --stop /dev/$md >/dev/null 2>&1
+            
+            if [ "$?" -ne 0 ]; then
+                echo "  Unable to shutdown: /dev/$md (Device or resource busy)"
+            fi
+        fi
+    done
+    
+    echo "Finished Shutting down the Software RAID (MDRAID) devices"
+fi
