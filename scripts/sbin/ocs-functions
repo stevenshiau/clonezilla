@@ -4492,7 +4492,7 @@ get_disk_or_part_hardware_info() {
   # ///NOTE/// To use this function, the device must exist in this system. Otherwise the hardware info (for example, if /dev/hda1 is not created yet) won't be found.
   # DEV_MODEL is a global variable to output
   local p="$1"  # p is like hda, sda, or hda1, sda1
-  local flag_skip_lvm="$2"  # yes/no/default, default is no
+  local flag_skip_lvm_raid="$2"  # yes/no/default, default is no
   local hwinfo_json_f="$3"
   local dsize x dsk_ rc serialno part_fs part_lb logical_blk_size
   dsize="" # device size
@@ -4515,8 +4515,8 @@ get_disk_or_part_hardware_info() {
     [ "$rc" -gt 0 ] && return 8
     [ -n "$(echo $part_type | grep -Eiw "(extended|0x5|0xf)")" ] && return 8
 
-    if [ "$flag_skip_lvm" = "yes" ]; then
-      [ -n "$(echo "$part_type" | grep -Ei "LVM")" ] && return 8
+    if [ "$flag_skip_lvm_raid" = "yes" ]; then
+     [ -n "$(echo "$part_type" | grep -Ei "(lvm|raid)")" ] && return 8
     fi
 
     # Size
@@ -4690,7 +4690,7 @@ get_input_dev_name() {
     # shows the result. 
     # There is nothing in the screen when function is called if we just 
     # use echo the result to stdout.
-    local dev_type selection skip_lvm msg_choose_dev_to_what dev_to_be_exclude
+    local dev_type selection skip_lvm_raid msg_choose_dev_to_what dev_to_be_exclude
     local dev_list=""
     local HARDDEVS=""
     local target_dev=""
@@ -4717,12 +4717,12 @@ get_input_dev_name() {
     ANS_TMP="$1"
     dev_type="$2"
     selection="$3"
-    skip_lvm="$4"
+    skip_lvm_raid="$4"
     msg_choose_dev_to_what="$5"
     dev_to_be_exclude="$6"
     [ -z "$dev_type" ] && echo "You must specify the type get be entered!!! $msg_program_stop!" && exit 1
     [ -z "$selection" -o "$selection" = "default" ] && selection="checklist"
-    [ -z "$skip_lvm" -o "$skip_lvm" = "default" ] && skip_lvm="no"
+    [ -z "$skip_lvm_raid" -o "$skip_lvm_raid" = "default" ] && skip_lvm_raid="no"
 
     get_not_busy_disks_or_parts $dev_type "" "$dev_to_be_exclude"  # we will get dev_list
 
@@ -4760,15 +4760,16 @@ get_input_dev_name() {
         for p in $dev_list; do
           echo -n "."
           # skip swap and extended partition
-          FILE="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem parttype 2>/dev/null)"
+          FILE="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem parttype 2>/dev/null | tr [:upper:] [:lower:])"
           rc=$?
           if [ "$rc" = "0" ]; then
             [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue
           fi
-	  if [ "$skip_lvm" = "yes" ]; then
-            # We should not skip LVM if the device is whole block disk (e.g., /dev/sdb which is PV)
-            if ! is_whole_disk /dev/$p; then
-              [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
+	  if [ "$skip_lvm_raid" = "yes" ]; then
+            # Exception: we should keep LVM or MDRAID if the device is whole block disk
+	    # e.g., /dev/sdb which is PV or /dev/md127 with xfs.
+            if is_block_device_with_fs /dev/$p; then
+              [ "$rc" = "0" ] && case "$FILE" in *lvm*|*raid*) continue ;; esac
 	    fi
 	  fi
           NUMDEV=$[NUMDEV+1]
@@ -4835,15 +4836,16 @@ get_input_dev_name() {
     for p in $(reduce_multipath_dev $dev_list); do
        DEV_MODEL=""
        echo -n "."
-       FILE="$(jq -r ".[] | select(.name == \"$p\") | .type, .fstype, .parttype" $blk_info_f)"
+       FILE="$(jq -r ".[] | select(.name == \"$p\") | .type, .fstype, .parttype" $blk_info_f | tr [:upper:] [:lower:])"
        rc=$?
        if [ "$rc" = "0" ]; then
          [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue
        fi
-       if [ "$skip_lvm" = "yes" ]; then
-         # We should not skip LVM if the device is whole block disk (e.g., /dev/sdb which is PV)
-         if ! is_whole_disk /dev/$p; then
-           [ "$rc" = "0" ] && case "$FILE" in *[Ll][Vv][Mm]*) continue ;; esac
+       if [ "$skip_lvm_raid" = "yes" ]; then
+         # Exception: we should keep LVM or MDRAID if the device is whole block disk
+	 # e.g., /dev/sdb which is PV or /dev/md127 with xfs.
+         if is_block_device_with_fs /dev/$p; then
+           [ "$rc" = "0" ] && case "$FILE" in *lvm*|*raid*) continue ;; esac
 	 fi
        fi
        get_disk_or_part_hardware_info "$p" default $blk_info_f
@@ -8473,7 +8475,7 @@ get_target_hd_name_from_local_machine() {
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
   [ -z "$input_selection_opt" ] && input_selection_opt="default"
   while [ "$ASK_DEV_NAME" -ne 0 ]; do
-    get_input_dev_name $ANS_TMP harddisk $input_selection_opt default "$input_dev_prompt"
+    get_input_dev_name $ANS_TMP harddisk $input_selection_opt yes "$input_dev_prompt"
     target_hd="$(cat $ANS_TMP | tr -d \")"
     if [ -e "${ANS_TMP}.ocs-ad" ]; then
       target_hd_ad="$(cat ${ANS_TMP}.ocs-ad | tr -d \")"
@@ -8497,7 +8499,7 @@ get_target_parts_name_from_local_machine() {
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
   [ -z "$input_selection_opt" ] && input_selection_opt="default"
   while [ "$ASK_DEV_NAME" -ne 0 ]; do
-    get_input_dev_name $ANS_TMP partition $input_selection_opt default "$input_dev_prompt"
+    get_input_dev_name $ANS_TMP partition $input_selection_opt yes "$input_dev_prompt"
     # we have to remove " (comes with checklist in dialog) so that for loop
     # will work (Specially for FC3/4...)
     target_parts="$(cat $ANS_TMP | tr -d \")"
@@ -8521,7 +8523,7 @@ get_target_device_name_from_local_machine() {
   trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
   [ -z "$input_selection_opt" ] && input_selection_opt="default"
   while [ "$ASK_DEV_NAME" -ne 0 ]; do
-    get_input_dev_name $ANS_TMP device $input_selection_opt default "$input_dev_prompt"
+    get_input_dev_name $ANS_TMP device $input_selection_opt yes "$input_dev_prompt"
     # we have to remove " (comes with checklist in dialog) so that for loop
     # will work (Specially for FC3/4...)
     tgt_devs="$(cat $ANS_TMP | tr -d \")"
