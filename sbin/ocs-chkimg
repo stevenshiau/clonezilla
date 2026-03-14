@@ -534,10 +534,10 @@ task_checkimage() {
 	continue
       fi
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      if [ -e "target_dir_fullpath/$(to_filename ${hdsk})-pt.parted" ]; then
-        echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${hdsk})-pt.parted!" | tee --append ${OCS_LOGFILE}
+      if [ -e "target_dir_fullpath/$(to_filename ${ihd})-pt.parted" ]; then
+        echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
       else
-        echo "File $target_dir_fullpath/$(to_filename ${hdsk})-pt.parted not found!" | tee --append ${OCS_LOGFILE}
+        echo "File $target_dir_fullpath/$(to_filename ${ihd})-pt.parted not found!" | tee --append ${OCS_LOGFILE}
 	echo "Assume it's for whole disk as a file system or RAID cases..."
       fi
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -577,6 +577,12 @@ task_checkimage() {
         done
         ;;
        unknown)
+        if is_md_dev $ihd; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Found Linux Software RAID: $ihd. Assume no need to check partition table."
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          continue
+        fi
         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
         echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted!" | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
