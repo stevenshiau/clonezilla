@@ -3081,7 +3081,7 @@ swapoff_dev() {
   done
 } # end of swapoff_dev
 #
-turn_off_swap_and_LVM2() {
+turn_off_swap_LVM2_MDRAID() {
   local d_devs="$(format_dev_name_with_leading_dev $*)"  # e.g., /dev/sda
   local $sw_p fs_
   # Part 1: swap
@@ -3109,7 +3109,13 @@ turn_off_swap_and_LVM2() {
   # gentoo, but actually just run "vgchange -an" will be ok.
   ocs-lvm2-stop | tee --append ${OCS_LOGFILE}
   sleep 1
-} # end of turn_off_swap_and_LVM2
+
+  # Part 3: MDRAID
+  # Stop MDRAID so that the HD will not be occupied
+  ocs-mdraid-stop | tee --append ${OCS_LOGFILE}
+  sleep 1
+
+} # end of turn_off_swap_LVM2_MDRAID
 #
 check_integrity_of_partition_table_in_disk() {
   # This function is used to check the integrity of partition table in disk. In Clonezilla, we use parted to parse the filesystem in partition table, if the partition table is weird, we have to show warning messages.
@@ -3699,9 +3705,9 @@ create_partition() {
 
   check_input_hd $tgt_hd_name
 
-  turn_off_swap_and_LVM2 $tgt_hd_file
+  turn_off_swap_LVM2_MDRAID $tgt_hd_file
 
-  # The following actions must be after turn_off_swap_and_LVM2, since if swap and LVM2 is not off, partimage or ntfsclone will not be able to write the busy partitions. 
+  # The following actions must be after turn_off_swap_LVM2_MDRAID, since if swap/LVM2/MDRAID is not off, partimage or ntfsclone will not be able to write the busy partitions. 
 
   echo "Creating partition in $tgt_hd_file..." | tee --append $OCS_LOGFILE
   check_if_disk_busy_before_create_partition $tgt_hd_file
@@ -9423,7 +9429,7 @@ task_saveparts() {
     [ "$force_dma_on" = "yes" ] && turn_on_hd_dma /dev/$ihd
   done
   # Turn off swap and LVM2, unlock the busy partitions.
-  turn_off_swap_and_LVM2 $target_parts $target_swap_parts
+  turn_off_swap_LVM2_MDRAID $target_parts $target_swap_parts
 
   # Create the image directory
   mkdir -p "$target_dir_fullpath"
@@ -10644,7 +10650,7 @@ task_restoreparts() {
   # 
   # Reinstall whole MBR (512 bytes)
   if [ "$dump_mbr_in_the_end" = "yes" ]; then
-    turn_off_swap_and_LVM2 $target_hd
+    turn_off_swap_LVM2_MDRAID $target_hd
     sleep 1
     for ihd in $target_hd; do
       # Ref: http://en.wikipedia.org/wiki/Master_boot_record
