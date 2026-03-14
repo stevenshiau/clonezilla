@@ -72,6 +72,40 @@ if ! ls "$IMG_DIR"/md*-config.env 1> /dev/null 2>&1; then
     exit 1
 fi
 
+# ====================================================================
+# The "udev Auto-Assembly Race Condition" Preventer
+# We MUST stop all arrays and zero all superblocks across ALL configs 
+# simultaneously before recreating, otherwise udev will lock the disks.
+# ====================================================================
+echo "  -> Stopping any background arrays auto-assembled by udev..."
+if type ocs-mdraid-stop &>/dev/null; then
+    ocs-mdraid-stop
+else
+    ACTIVE_MDS=$(awk '/^md/ {print $1}' /proc/mdstat 2>/dev/null)
+    for md in $ACTIVE_MDS; do
+        mdadm --stop /dev/$md 2>/dev/null || true
+    done
+fi
+udevadm settle
+sleep 2
+
+echo "  -> Pre-wiping all MDRAID superblocks to clear stale metadata..."
+for ENV_FILE in "$IMG_DIR"/md*-config.env; do
+    [ -e "$ENV_FILE" ] || continue
+    # Run in subshell to isolate variables
+    (
+        source "$ENV_FILE"
+        for MEMBER in $MD_MEMBERS_ORDERED; do
+            if [ "$MEMBER" != "missing" ] && [ -b "$MEMBER" ]; then
+                mdadm --zero-superblock "$MEMBER" 2>/dev/null || true
+                wipefs -a "$MEMBER" 2>/dev/null || true
+            fi
+        done
+    )
+done
+udevadm settle
+# ====================================================================
+
 # Loop through all saved MDRAID configurations
 for ENV_FILE in "$IMG_DIR"/md*-config.env; do
     [ -e "$ENV_FILE" ] || continue
@@ -81,12 +115,8 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
     MD_DUMP="$IMG_DIR/${MD_DEV_NAME}-pt.sf"
 
     if [ "$ocs_batch_mode" != "on" ]; then
-      echo "WARNING: This will overwrite MDRAID layout on the target device $MD_DEV_PATH."
+      echo "WARNING: This will overwrite MDRAID layout on target device $MD_DEV_PATH."
       confirm_continue_or_not_default_quit
-    fi
-
-    if [ -e "$MD_DEV_PATH" ]; then
-      mdadm --stop $MD_DEV_PATH 2>/dev/null || true
     fi
 
     echo "  -> Target MD array: $MD_DEV_PATH"
@@ -120,14 +150,7 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
     echo "  -> Array Level: ${MD_LEVEL:-Unknown} | Devices: ${MD_DEVICES_COUNT:-Unknown}"
     echo "  -> Exact Device Order: $MD_MEMBERS"
 
-    # Silently clear old superblocks from target disks before creating to prevent interactive prompts
-    for MEMBER in $MD_MEMBERS; do
-        if [ "$MEMBER" != "missing" ] && [ -b "$MEMBER" ]; then
-            mdadm --zero-superblock "$MEMBER" 2>/dev/null || true
-        fi
-    done
-
-    # Construct the create command dynamically. MD_MEMBERS handles the physical disk paths and any 'missing' keywords.
+    # Construct the create command dynamically. 
     CREATE_CMD="yes | mdadm --create \"$MD_DEV_PATH\" --force --run $MD_LEVEL_PARAM $MD_DEVICES_PARAM $MD_META_PARAM $MD_DATA_OFFSET_PARAM $MD_UUID_PARAM $MD_NAME_PARAM $MD_CHUNK_PARAM $MD_LAYOUT_PARAM $MD_MEMBERS --assume-clean"
 
     echo "  -> Running: $CREATE_CMD"
@@ -136,9 +159,7 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
     udevadm settle
     sleep 3
 
-    # ====================================================================
-    # CRITICAL COMPATIBILITY FIX: Strip modern feature flags (like BBL)
-    # ====================================================================
+    # Strip modern feature flags (like BBL)
     echo "  -> Stripping modern mdadm feature flags..."
     mdadm --stop "$MD_DEV_PATH" 2>/dev/null || true
     if ! mdadm --assemble "$MD_DEV_PATH" --update=no-bbl $MD_MEMBERS 2>/dev/null; then
