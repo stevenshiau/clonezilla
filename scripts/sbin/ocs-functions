@@ -7162,8 +7162,8 @@ restore_logv() {
   local tgt_parts="$1"  # tgt_parts is like: sda1 sda2 sda5
   local mode="$2" # mode is unicast, multicast, d2d, bittorrent, or netcat_nuttcp
   local port="$3"
-  local volg is_in_chosen_partition lvm_tmp ipt lsrc_dev rc lv_corr_pt_his lv_corr_pt 
-  # target_dir_fullpath is local (in function task_saveparts) global variable, since restore_logv is used in function task_restoreparts 
+  local volg is_in_chosen_partition lvm_tmp ipt lsrc_dev rc lv_corr_pt_his lv_corr_pt
+  # target_dir_fullpath is local (in function task_saveparts) global variable, since restore_logv is used in function task_restoreparts
   # source_hd and target_hd are from ocs-onthefly.
   check_ocs_variables_if_fails_quit restore_logv \
   tgt_parts mode | tee --append $OCS_LOGFILE
@@ -7190,9 +7190,20 @@ restore_logv() {
     for ipt in $tgt_parts; do
       if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
         # Found the chosen partitions is in the VG
-        if check_LVM_partition /dev/$ipt; then
-          clean_filesystem_header_in_dev /dev/$ipt
-        fi
+        # === SELECTIVE MDRAID ASSASSINATION ====
+        # Find if this specific partition is being held hostage by a phantom array
+        ipt_kname="$(basename "$ipt")"
+        for md_sys in /sys/class/block/md*; do
+            if [ -d "$md_sys" ] && [ -e "$md_sys/slaves/$ipt_kname" ]; then
+                stale_md="/dev/$(basename "$md_sys")"
+                echo "  -> PV target /dev/$ipt is held by stale array $stale_md. Stopping $stale_md..." | tee --append $OCS_LOGFILE
+                umount "$stale_md" 2>/dev/null || true
+                mdadm --stop "$stale_md" 2>/dev/null || true
+            fi
+        done
+        # =============================================
+        mdadm --zero-superblock /dev/$ipt 2>/dev/null || true
+        clean_filesystem_header_in_dev /dev/$ipt
       fi
     done
   done < $LOGV_PARSE_CONF
@@ -7211,11 +7222,26 @@ restore_logv() {
   # create PV first
   echo "Creating the PV... " | tee --append $OCS_LOGFILE
   while read vg dev uuid; do
+    # === SELECTIVE MDRAID ASSASSINATION ====
+    # Prevent pvcreate from failing if the kernel still holds the partition
+    dev_kname="$(basename "$dev")"
+    for md_sys in /sys/class/block/md*; do
+        if [ -d "$md_sys" ] && [ -e "$md_sys/slaves/$dev_kname" ]; then
+            stale_md="/dev/$(basename "$md_sys")"
+            echo "  -> PV target $dev is held by stale array $stale_md. Stopping $stale_md..." | tee --append $OCS_LOGFILE
+            umount "$stale_md" 2>/dev/null || true
+            mdadm --stop "$stale_md" 2>/dev/null || true
+        fi
+    done
+    # =============================================
     if [ "$vg" = "/NOT_FOUND" -o ! -e "$target_dir_fullpath/lvm_$vg.conf" ]; then
       if is_whole_disk $dev; then
         # Make sure there is no any partition on the disk. Otherwise even -ff is used, pvcreate will still quit it.
         clean_mbr_gpt_part_table $dev
       fi
+      # Double insurance: wipe RAID superblocks before pvcreate
+      mdadm --zero-superblock $dev 2>/dev/null || true
+      wipefs -a -f $dev 2>/dev/null || true
       pvcreate -ff --yes --uuid $uuid --zero y $dev 3<&- 4<&-
     else
       cp -f "$target_dir_fullpath/lvm_$vg.conf" $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
@@ -7223,12 +7249,15 @@ restore_logv() {
         # Make sure there is no any partition on the disk. Otherwise even -ff is used, pvcreate will still quit it.
         clean_mbr_gpt_part_table $dev
       fi
+      # Double insurance: wipe RAID superblocks before pvcreate
+      mdadm --zero-superblock $dev 2>/dev/null || true
+      wipefs -a -f $dev 2>/dev/null || true
       pvcreate -ff --yes --uuid $uuid --zero y --restorefile $lvm_tmp/lvm_$vg.conf $dev 3<&- 4<&-
       rm -f $lvm_tmp/lvm_$vg.conf
     fi
   done < $PV_PARSE_CONF
   echo "done." | tee --append $OCS_LOGFILE
-  
+
   if [ -z "$(grep -v "/NOT_FOUND" $PV_PARSE_CONF 2>/dev/null)" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "///WARNING/// The volume group setting is not found." | tee --append $OCS_LOGFILE
@@ -7261,7 +7290,7 @@ restore_logv() {
     fi
     if [ ! -e "$target_dir_fullpath/lvm_$vg.conf" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "///WARNING/// "lvm_$vg.conf" not found." | tee --append $OCS_LOGFILE
+      echo "///WARNING/// lvm_$vg.conf not found." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
       # copy_log "$target_dir_fullpath" "lvm"
@@ -7275,7 +7304,7 @@ restore_logv() {
     rm -f "$lvm_tmp/lvm_$vg.conf"
     [ $rc -ne 0 ] && break
   done < $PV_PARSE_CONF
-  [ -d "$lvm_tmp" -a -n "$lvm_tmp" ] && rmdir $lvm_tmp 
+  [ -d "$lvm_tmp" -a -n "$lvm_tmp" ] && rmdir $lvm_tmp
   echo "done." | tee --append $OCS_LOGFILE
   if [ $rc -ne 0 ]; then
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
@@ -7284,7 +7313,7 @@ restore_logv() {
   fi
   #
   ocs-lvm2-start
-  
+
   if [ ! -e "$LOGV_PARSE_CONF" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "///WARNING/// $(basename $LOGV_PARSE_CONF) not found." | tee --append $OCS_LOGFILE
@@ -7314,7 +7343,7 @@ restore_logv() {
       if [ -n "$(grep -E "[[:space:]]+/dev/$ipt[[:space:]]+" $PV_PARSE_CONF | grep -E "\<$volg\>")" ]; then
         # Found the chosen partitions is in the VG
         is_in_chosen_partition="yes"
-	lv_corr_pt="$ipt"
+        lv_corr_pt="$ipt"
         break
       fi
     done
@@ -7326,7 +7355,7 @@ restore_logv() {
     # Log the logical volume which is restored. The leading "/dev/" is removed, i.e. the results might be: lucid-server/root lucid-server/usr
     target_logv="$target_logv ${lv#/dev/*}"
     # create the swap if it's swap partition
-    case "$fs" in 
+    case "$fs" in
       *[Ss][Ww][Aa][Pp]*)
          echo $msg_delimiter_star_line
          echo "Found the swap partition $lv info, create it by:" | tee --append ${OCS_LOGFILE}
@@ -7344,7 +7373,7 @@ restore_logv() {
          mkswap $label_opt $uuid_opt $lv | tee --append ${OCS_LOGFILE}
          echo $msg_delimiter_star_line
          # then skip the rest.
-         continue;; 
+         continue;;
     esac
     echo "Restoring device $fn..." | tee --append $OCS_LOGFILE
     rc=""
@@ -7375,21 +7404,21 @@ restore_logv() {
           exit 1
         fi
         lsrc_dev="$(echo $lv_corr_pt | replace_disk_name_stdin $target_hd $source_hd)"
-	echo "Processing local LV $fn with corresponding device $lsrc_dev to $lv_corr_pt cloning..." \
-	| tee --append ${OCS_LOGFILE}
-	if [ -z "$(echo $lv_corr_pt_his | grep -E "$target_dir_fullpath $lsrc_dev $lv_corr_pt")" ]; then
+        echo "Processing local LV $fn with corresponding device $lsrc_dev to $lv_corr_pt cloning..." \
+        | tee --append ${OCS_LOGFILE}
+        if [ -z "$(echo $lv_corr_pt_his | grep -E "$target_dir_fullpath $lsrc_dev $lv_corr_pt")" ]; then
           # Since there might be multiple LVs in the same corresponding partition, we only have to do once.
           # E.g., LV: root, home, var, etc in /dev/nvme0n1p3, but we only do once:
-	  # do_d2d_local_restore /tmp/d2d-pseudo-tmp-cnvted nvme0n1p3 sda3
+          # do_d2d_local_restore /tmp/d2d-pseudo-tmp-cnvted nvme0n1p3 sda3
           # Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/f6a7e860c9
           do_d2d_local_restore "$target_dir_fullpath" $lsrc_dev $lv_corr_pt
           rc="$?"
-	  # It's done once, so keep the process history in lv_corr_pt_his.
-	  lv_corr_pt_his="$target_dir_fullpath $lsrc_dev $lv_corr_pt"
+          # It's done once, so keep the process history in lv_corr_pt_his.
+          lv_corr_pt_his="$target_dir_fullpath $lsrc_dev $lv_corr_pt"
         else
           echo "The cloning for local LV $fn with corresponding device $lsrc_dev to $lv_corr_pt was done previously. No need to do it again..." \
-	  | tee --append ${OCS_LOGFILE}
-	fi
+          | tee --append ${OCS_LOGFILE}
+        fi
         ;;
       "netcat_nuttcp")
         # Device to device via network
