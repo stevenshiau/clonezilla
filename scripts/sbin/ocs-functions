@@ -7147,6 +7147,13 @@ save_logv() {
      *extended*) 
        continue ;;
    esac
+   # --- THIN PROVISIONING ---
+   # Skip saving thin pool data container (It should not be dumped via dd or partclone.dd)
+   if [ -n "$(LC_ALL=C lvs --noheadings -o segtype $lv 2>/dev/null | grep -Ew 'thin-pool')" ]; then
+     echo "Device $lv is a thin pool container. Skipping data saving." | tee --append $OCS_LOGFILE
+     continue
+   fi
+   # --- THIN PROVISIONING ---
    image_save $lv "$target_dir_fullpath" $fn
    rc_save_logv="$(($rc_save_logv + $?))"
    echo $msg_delimiter_star_line
@@ -7314,6 +7321,47 @@ restore_logv() {
   #
   ocs-lvm2-start
 
+  # --- THIN PROVISIONING ---
+  # Fix thin pools because vgcfgrestore creates broken thin pools (missing kernel metadata)
+  echo "Checking for thin pools to repair..." | tee --append $OCS_LOGFILE
+  while read vg dev uuid; do
+    [ "$vg" = "/NOT_FOUND" ] && continue
+    thin_pools="$(LC_ALL=C lvs --noheadings -o lv_name,segtype $vg 2>/dev/null | awk '$2=="thin-pool" {print $1}')"
+
+    for tp in $thin_pools; do
+      echo "Fixing thin pool $vg/$tp..." | tee --append $OCS_LOGFILE
+      # Get thin LVs in this pool
+      thin_lvs="$(LC_ALL=C lvs --noheadings --units b -o lv_name,pool_lv,lv_size $vg 2>/dev/null | awk -v pool="$tp" '$2==pool {print $1 ":" $3}')"
+
+      # Get sizes and chunk size
+      tp_size="$(LC_ALL=C lvs --noheadings --units b -o lv_size $vg/${tp}_tdata 2>/dev/null | awk '{print $1}')"
+      tpmeta_size="$(LC_ALL=C lvs --noheadings --units b -o lv_size $vg/${tp}_tmeta 2>/dev/null | awk '{print $1}')"
+      chunk_size="$(LC_ALL=C lvs --noheadings --units b -o chunk_size $vg/$tp 2>/dev/null | awk '{print $1}')"
+
+      # Remove thin LVs (they are inactive and broken right now)
+      for tlv in $thin_lvs; do
+        lv_name="${tlv%:*}"
+        LC_ALL=C lvremove -y -f $vg/$lv_name &>/dev/null
+      done
+
+      # Remove broken thin pool
+      LC_ALL=C lvremove -y -f $vg/$tp &>/dev/null
+
+      # Recreate thin pool freshly (this creates the proper kernel metadata)
+      chunk_opt=""
+      [ -n "$chunk_size" ] && chunk_opt="-c $chunk_size"
+      LC_ALL=C lvcreate -y --type thin-pool -L ${tp_size} --poolmetadatasize ${tpmeta_size} $chunk_opt $vg/$tp | tee --append $OCS_LOGFILE
+
+      # Recreate thin LVs so they are active and ready for cloning
+      for tlv in $thin_lvs; do
+        lv_name="${tlv%:*}"
+        lv_size="${tlv#*:}"
+        LC_ALL=C lvcreate -y -V ${lv_size} --thin -n $lv_name $vg/$tp | tee --append $OCS_LOGFILE
+      done
+    done
+  done < $PV_PARSE_CONF
+  # --- THIN PROVISIONING ---
+
   if [ ! -e "$LOGV_PARSE_CONF" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "///WARNING/// $(basename $LOGV_PARSE_CONF) not found." | tee --append $OCS_LOGFILE
@@ -7375,6 +7423,15 @@ restore_logv() {
          # then skip the rest.
          continue;;
     esac
+
+    # --- THIN PROVISIONING ---
+    # Skip thin pool data restoration (It shouldn't be restored by partclone.dd or dd)
+    if [ -n "$(LC_ALL=C lvs --noheadings -o segtype $lv 2>/dev/null | grep -Ew 'thin-pool')" ]; then
+      echo "Device $lv is a thin pool. Skipping data restoration." | tee --append $OCS_LOGFILE
+      continue
+    fi
+    # --- THIN PROVISIONING ---
+
     echo "Restoring device $fn..." | tee --append $OCS_LOGFILE
     rc=""
     case "$mode" in
@@ -9482,22 +9539,6 @@ task_saveparts() {
     if [ -n "$(LC_ALL=C pvscan | grep -E '^[[:space:]]*PV /' |\
 	       awk '{print $2}' | grep -Ew "^/dev/${partition}$")" ]; then
       if check_LVM_partition /dev/$partition; then
-        # LVM
-        # We have to do save LVM (PV/VG/LV) together, not follow every partition
-	# First check if it's a LVM thin provisioning device.
-        check_if_containing_thin_lv /dev/$partition
-	rc=$?
-	if [ $rc -gt 0 ]; then
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-          echo "Found LVM thin provisioning in device /dev/$partition."
-          echo "Clonezilla does not support LVM thin provisioning."
-          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-          echo $msg_delimiter_star_line
-	  LC_ALL=C lvs -o lv_name,lv_attr,segtype,vg_name,devices
-          echo $msg_delimiter_star_line
-          echo "$msg_program_stop!"
-          my_ocs_exit 1
-        fi
         do_LVM_save="yes"
         continue
       fi
