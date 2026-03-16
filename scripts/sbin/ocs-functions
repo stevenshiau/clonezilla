@@ -10744,8 +10744,9 @@ task_restoreparts() {
   # Updating EFI NVRAM for the boot device
   if [ "$update_efi_nvram" = "yes" ]; then
     for ihd in $target_hd; do
-      if `is_gpt_partitition_table_disk /dev/$ihd` && \
-        ! `is_gpt_disk_with_bios_boot_part_in_legacy_bios /dev/$ihd`; then
+      # Updating EFI NVRAM for the boot device
+      # Only attempt EFI updates if the disk is GPT and the system is actually booted in UEFI mode
+      if `is_gpt_partitition_table_disk /dev/$ihd` && [ -d "/sys/firmware/efi/efivars" ]; then
         efi_info_tmp="$(mktemp /tmp/efi_info.XXXXXX)"
 	update_efi_nvram_boot_entry_cmd="update-efi-nvram-boot-entry -r \"$target_dir_fullpath/efi-nvram.dat\" -f $efi_info_tmp /dev/$ihd"
 	echo "Running: $update_efi_nvram_boot_entry_cmd" | tee --append $OCS_LOGFILE
