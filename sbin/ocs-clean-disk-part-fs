@@ -24,9 +24,11 @@ USAGE() {
     echo "To run $ocs:"
     echo "$ocs [OPTION] DISK"
     echo "DISK is the disk device name, e.g. /dev/sda, /dev/sdb..."
+    echo "Options:"
+    echo "-b, --batch   Run in batch mode (no prompt). Used by Clonezilla engine."
     echo "Ex:"
-    echo "To clean the file system/LVM info in every partition on disk /dev/sdg, including /dev/sdg itself, run"
-    echo "   $ocs /dev/sdg"
+    echo "To silently clean the metadata on disk /dev/sdg:"
+    echo "   $ocs -b /dev/sdg"
     echo
 } # end of USAGE
 
@@ -36,9 +38,13 @@ USAGE() {
 
 ocs_file="$0"
 ocs=`basename $ocs_file`
-#
+batch_mode="no"
+
 while [ $# -gt 0 ]; do
  case "$1" in
+   -b|--batch)
+           batch_mode="yes"
+           shift ;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
            exit 2 ;;
@@ -56,6 +62,23 @@ if [ -z "$dev_clean" ]; then
 fi
 
 dev_clean_name="${dev_clean#/dev/*}"  # like sdg
+
+# ====================================================================
+# Interactive Confirmation Mode (Default)
+# ====================================================================
+if [ "$batch_mode" = "no" ]; then
+    echo $msg_delimiter_star_line
+    echo "Current Layout for $dev_clean:"
+    lsblk "$dev_clean" 2>/dev/null | sed 's/^/  /'
+    echo $msg_delimiter_star_line
+    read -p "⚠️  Do you want to wipe LVM/MDRAID/Filesystem metadata on $dev_clean? [y/N]: " ans
+    if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+        echo "   -> Aborted by user. No changes were made."
+        exit 0
+    fi
+    echo "   -> Proceeding to clean metadata on $dev_clean..."
+fi
+# ====================================================================
 
 BACKUP_DEVS=""
 # Return the available partitions on disk in variable $BACKUP_DEVS
@@ -80,6 +103,10 @@ if [ -b "/dev/$dev_clean_name" ]; then
   # Clean the raid metadata in the disk first.
   clean_raid_metadata_in_disk /dev/$dev_clean_name
   clean_filesystem_header_in_dev /dev/$dev_clean_name
+fi
+
+if [ "$batch_mode" = "no" ]; then
+    echo "   -> Metadata on $dev_clean successfully wiped!"
 fi
 
 exit 0
