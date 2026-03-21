@@ -3112,9 +3112,12 @@ turn_off_swap_LVM2_MDRAID() {
 
   # Part 3: MDRAID
   # Stop MDRAID so that the HD will not be occupied
-  ocs-mdraid-stop | tee --append ${OCS_LOGFILE}
-  sleep 1
-
+  # ONLY shut down arrays during RESTORE! If we shut them down during save,
+  # they vanish from /proc/mdstat and we cannot back them up!
+  if [[ "$ocs_sr_type" == *restore* ]]; then
+    ocs-mdraid-stop | tee --append ${OCS_LOGFILE}
+    sleep 1
+  fi
 } # end of turn_off_swap_LVM2_MDRAID
 #
 check_integrity_of_partition_table_in_disk() {
