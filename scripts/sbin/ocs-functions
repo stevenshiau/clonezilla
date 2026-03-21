@@ -9088,7 +9088,7 @@ task_savedisk() {
   fi
 
   # ====================================================================
-  # NEW: Auto-append related MDRAID devices
+  # Auto-append related MDRAID devices
   # If the selected physical disks contain MDRAID member partitions,
   # the associated active MD arrays must be appended so their contents
   # are saved properly.
@@ -9097,9 +9097,26 @@ task_savedisk() {
   for imd in $auto_mds; do
     if is_partition "$imd"; then
       # MD array operates as a standalone partition (e.g., md126 directly formatted)
-      if [ -z "$(echo "$target_parts" | grep -Ew "$imd")" ]; then
-        target_parts="$target_parts $imd"
-        echo "Auto-appended MDRAID partition $imd to target_parts." | tee --append $OCS_LOGFILE
+      part_type="$(LC_ALL=C ocs-get-dev-info "/dev/$imd" type filesystem parttype 2>/dev/null | sort)"
+      if [ -n "$(echo "$part_type" | grep -Ei "swap")" ]; then
+        if [ -z "$(echo "$target_swap_parts" | grep -Ew "$imd")" ]; then
+          target_swap_parts="$target_swap_parts $imd"
+          echo "Auto-appended MDRAID swap partition $imd to target_swap_parts." | tee --append $OCS_LOGFILE
+        fi
+      elif [ -n "$(echo "$part_type" | grep -Eiw "(extended|0x5|0xf)")" ]; then
+        if [ -z "$(echo "$target_extended_parts" | grep -Ew "$imd")" ]; then
+          target_extended_parts="$target_extended_parts $imd"
+          echo "Auto-appended MDRAID extended partition $imd to target_extended_parts." | tee --append $OCS_LOGFILE
+        fi
+      else
+        if [ -z "$(echo "$target_parts" | grep -Ew "$imd")" ]; then
+          target_parts="$target_parts $imd"
+          echo "Auto-appended MDRAID data partition $imd to target_parts." | tee --append $OCS_LOGFILE
+        fi
+      fi
+      # Also add it to target_hd so the layout is dumped correctly by ocs-save-mdraid-layout
+      if [ -z "$(echo "$target_hd" | grep -Ew "$imd")" ]; then
+        target_hd="$target_hd $imd"
       fi
     else
       # MD array operates as a disk with sub-partitions (e.g., md127p1, md127p2)
@@ -10496,8 +10513,22 @@ task_restoreparts() {
         ;;
        unknown)
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-	echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted or no such file." | tee --append ${OCS_LOGFILE}
+        echo "Unknown partition table format from the file $target_dir_fullpath/$(to_filename ${ihd})-pt.parted or no such file." | tee --append ${OCS_LOGFILE}
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        # Check if this "unknown" disk is actually a standalone swap partition (e.g. md127)
+        if [ -e "$target_dir_fullpath/swappt-$(to_filename ${ihd}).info" ]; then
+          echo "Found the swap partition /dev/$ihd info in the image dir, create it by:" | tee --append $OCS_LOGFILE
+          UUID=""
+          LABEL=""
+          . "$target_dir_fullpath/swappt-$(to_filename ${ihd}).info"
+          uuid_opt=""
+          label_opt=""
+          [ -n "$UUID" ] && uuid_opt="-U $UUID"
+          [ -n "$LABEL" ] && label_opt="-L $LABEL"
+          echo "mkswap $label_opt $uuid_opt /dev/$ihd" | tee --append $OCS_LOGFILE
+          mkswap $label_opt $uuid_opt /dev/$ihd | tee --append $OCS_LOGFILE
+          echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+        fi
         ;;
       esac
     done
