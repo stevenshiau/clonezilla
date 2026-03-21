@@ -10,7 +10,8 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . /etc/drbl/drbl-ocs.conf
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
-# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+# Load the config in ocs-live.conf.
+# This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
 [ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
 
 #
@@ -78,14 +79,7 @@ fi
 # simultaneously before recreating, otherwise udev will lock the disks.
 # ====================================================================
 echo "  -> Stopping any background arrays auto-assembled by udev..."
-if type ocs-mdraid-stop &>/dev/null; then
-    ocs-mdraid-stop
-else
-    ACTIVE_MDS=$(awk '/^md/ {print $1}' /proc/mdstat 2>/dev/null)
-    for md in $ACTIVE_MDS; do
-        mdadm --stop /dev/$md 2>/dev/null || true
-    done
-fi
+ocs-mdraid-stop
 udevadm settle
 sleep 2
 
@@ -137,16 +131,7 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
     # Parse all advanced variables from the env config
     source "$ENV_FILE"
 
-    # ==== Sanitize Array Name ====
-    # Some mdadm versions (4.3 & 4.4, not <=4.2 or >=4.5) strictly
-    # enforce POSIX-compatible array names.
-    # We must convert characters like ':' to '_' to prevent creation failures.
-    if [ -n "${MD_NAME:-}" ]; then
-        SAFE_MD_NAME="$(echo "$MD_NAME" | sed -r -e 's/[^a-zA-Z0-9.-]/_/g')"
-        MD_NAME_PARAM="--name=$SAFE_MD_NAME"
-    fi
-    # ==================================
-
+    [ -n "${MD_NAME:-}" ] && MD_NAME_PARAM="--name=$MD_NAME"
     [ -n "${MD_UUID:-}" ] && MD_UUID_PARAM="--uuid=$MD_UUID"
     [ -n "${MD_META:-}" ] && MD_META_PARAM="--metadata=$MD_META"
     [ -n "${MD_LEVEL:-}" ] && MD_LEVEL_PARAM="--level=$MD_LEVEL"
@@ -159,23 +144,54 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
     echo "  -> Array Level: ${MD_LEVEL:-Unknown} | Devices: ${MD_DEVICES_COUNT:-Unknown}"
     echo "  -> Exact Device Order: $MD_MEMBERS"
 
-    # Construct the create command dynamically. 
-    CREATE_CMD="yes | mdadm --create \"$MD_DEV_PATH\" --force --run $MD_LEVEL_PARAM $MD_DEVICES_PARAM $MD_META_PARAM $MD_DATA_OFFSET_PARAM $MD_UUID_PARAM $MD_NAME_PARAM $MD_CHUNK_PARAM $MD_LAYOUT_PARAM $MD_MEMBERS --assume-clean"
-
-    echo "  -> Running: $CREATE_CMD"
-    eval "$CREATE_CMD"
-
+    # ====================================================================
+    # Selective MDRAID Assassination
+    # Prevent mdadm --create from failing or grabbing the wrong size if 
+    # the kernel still holds the physical partitions in a phantom array.
+    # ====================================================================
+    for MEMBER in $MD_MEMBERS; do
+        if [ "$MEMBER" != "missing" ] && [ -b "$MEMBER" ]; then
+            MEMBER_KNAME="$(basename "$MEMBER")"
+            for md_sys in /sys/class/block/md*; do
+                if [ -d "$md_sys" ] && [ -e "$md_sys/slaves/$MEMBER_KNAME" ]; then
+                    stale_md="/dev/$(basename "$md_sys")"
+                    echo "  -> Target $MEMBER is held by stale array $stale_md. Stopping $stale_md..."
+                    umount "$stale_md" 2>/dev/null || true
+                    mdadm --stop "$stale_md" 2>/dev/null || true
+                fi
+            done
+            # Ensure the superblock is wiped one last time before creation
+            mdadm --zero-superblock "$MEMBER" 2>/dev/null || true
+        fi
+    done
     udevadm settle
-    sleep 3
+    sleep 2
+    # ====================================================================
 
-    # Strip modern feature flags (like BBL)
-    echo "  -> Stripping modern mdadm feature flags..."
-    mdadm --stop "$MD_DEV_PATH" 2>/dev/null || true
-    if ! mdadm --assemble "$MD_DEV_PATH" --update=no-bbl $MD_MEMBERS 2>/dev/null; then
-        mdadm --assemble "$MD_DEV_PATH" $MD_MEMBERS 2>/dev/null || true
+    # ====================================================================
+    # Smart Array Name Retry Logic
+    # ====================================================================
+    BASE_CMD="mdadm --create \"$MD_DEV_PATH\" --force --run $MD_LEVEL_PARAM $MD_DEVICES_PARAM $MD_META_PARAM $MD_DATA_OFFSET_PARAM $MD_UUID_PARAM $MD_CHUNK_PARAM $MD_LAYOUT_PARAM $MD_MEMBERS --assume-clean"
+
+    echo "  -> Attempting to create array with original name: ${MD_NAME:-None}"
+    if ! eval "yes | $BASE_CMD $MD_NAME_PARAM" 2>/dev/null; then
+        echo "  -> [Warning] Creation failed! Current mdadm likely rejects non-POSIX characters like ':'."
+        
+        SAFE_MD_NAME="$(echo "$MD_NAME" | sed -r -e 's/[^a-zA-Z0-9.-]/_/g')"
+        echo "  -> Retrying with sanitized name: $SAFE_MD_NAME..."
+        
+        MD_NAME_PARAM="--name=$SAFE_MD_NAME"
+        if ! eval "yes | $BASE_CMD $MD_NAME_PARAM"; then
+            echo "  -> [Error] Array creation failed completely!"
+            exit 1
+        fi
+    else
+        echo "  -> Array created successfully with original name."
     fi
+
     udevadm settle
     sleep 3
+    # ====================================================================
 
     if [ -f "$MD_DUMP" ]; then
         echo "------------------------------------------"
