@@ -1433,6 +1433,36 @@ task_start_feed_img_for_cast() {
         if [ -d "$ocsroot/${target_dir}" ]; then
           mv "$imagedir/${target_dir}" "$imagedir/${target_dir}-saved"
         fi
+	# ====================================================================
+        # Auto-append related MDRAID devices for massive deployment
+        # If the user selected raw disks that contain MDRAID partitions,
+        # we MUST append the MD arrays so the pseudo image captures them.
+        # ====================================================================
+        if [ "$cast_dev_type" = "disk-2-mdisks" ] || [ "$cast_dev_type" = "part-2-mparts" ]; then
+          echo "Ensuring MDRAID arrays are assembled for massive deployment detection..." | tee --append $OCS_LOGFILE
+	  ocs-mdraid-start | tee --append $OCS_LOGFILE
+          udevadm settle
+          sleep 2
+        fi
+
+        if [ "$cast_dev_type" = "disk-2-mdisks" ]; then
+          auto_mds="$(get_md_devices_from_disk_or_part "$target_hd")"
+          for imd in $auto_mds; do
+            if [ -z "$(echo "$target_hd" | grep -Ew "$imd")" ]; then
+              target_hd="$target_hd $imd"
+              echo "Auto-appended MDRAID device $imd to target disks for massive deployment." | tee --append $OCS_LOGFILE
+            fi
+          done
+        elif [ "$cast_dev_type" = "part-2-mparts" ]; then
+          auto_mds="$(get_md_devices_from_disk_or_part "$target_parts")"
+          for imd in $auto_mds; do
+            if [ -z "$(echo "$target_parts" | grep -Ew "$imd")" ]; then
+              target_parts="$target_parts $imd"
+              echo "Auto-appended MDRAID device $imd to target partitions for massive deployment." | tee --append $OCS_LOGFILE
+            fi
+          done
+        fi
+        # ====================================================================
         case "$cast_dev_type" in
         "disk-2-mdisks")
            pseudo_img_cmd="ocs-sr $btsrc_dev_fsck_opt -sfs -nogui -q2 --batch -j2 -scs -senc -smtd -smmcb -p true savedisk \"${target_dir}\" $target_hd"
