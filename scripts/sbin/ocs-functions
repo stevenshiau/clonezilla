@@ -16528,6 +16528,26 @@ clean_raid_metadata_in_disk() {
   local disk_="${1#/dev/*}" # e.g., sdb
   local clean_cmd
   if [ -n "$disk_" -a -e "/dev/$disk_" ]; then
+    # ====================================================================
+    # Udev Race Condition Prevention for MDRAID
+    # Stop arrays and aggressively wipe sub-partitions to prevent udev from
+    # reassembling arrays and locking the disk while sfdisk rewrites the layout.
+    # ====================================================================
+    if type ocs-mdraid-stop &>/dev/null; then
+      ocs-mdraid-stop >/dev/null 2>&1
+    fi
+
+    shopt -s nullglob
+    # $disk_ is just the name (e.g., nvme0n1), so we construct the full /dev/ path
+    for part in /dev/${disk_}p[0-9]* /dev/${disk_}[0-9]*; do
+      if [ -b "$part" ]; then
+        umount "$part" 2>/dev/null || true
+        mdadm --zero-superblock "$part" 2>/dev/null || true
+        wipefs -a "$part" 2>/dev/null || true
+      fi
+    done
+    shopt -u nullglob
+    # ====================================================================
     echo "Cleaning RAID metadata in device /dev/$disk_..."
     clean_cmd="mdadm --zero-superblock /dev/$disk_"
     echo "Running: $clean_cmd"
