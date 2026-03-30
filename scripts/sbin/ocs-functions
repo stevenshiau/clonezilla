@@ -17542,3 +17542,567 @@ chk_partclone_rescue_opt() {
     ptcl_rescue_opt="--rescue"
   fi
 } # end of chk_partclone_rescue_opt
+#
+check_if_system_support_ecryptfs(){
+  local rc
+  # Not really. It might be bulit-in
+  # So let's check /proc/filesystems
+  modprobe ecryptfs 2>/dev/null
+  sleep 1
+  if ! grep -Ewq "ecryptfs" /proc/filesystems; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "File system \"ecryptfs\" is not supported by the running Linux kernel \"`uname -r`\"" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    grand_jobs_before_exit
+    exit 1
+  fi
+  if ! type mount.ecryptfs &>/dev/null; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No \"ecryptfs\" related program was found on this system." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    my_ocs_exit 1
+  fi
+} # end of check_if_system_support_ecryptfs
+#
+check_if_system_support_gocryptfs(){
+  if ! type gocryptfs &>/dev/null; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "No \"gocryptfs\" related program was found on this system." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
+    my_ocs_exit 1
+  fi
+} # end of check_if_system_support_gocryptfs
+#
+task_ecryptfs_mount_point() {
+  local task_type="$1"
+  local pass1 pass2 ecryptfs_pf
+  local TMP grc rc ask_ ans_ rc_bindfs ocs_ecryptfs_opt
+  local enc_cmd_
+  # ecrypt_mntpnt, bindfs_mntpnt, webdav_bindfs_flag, target_dir_orig and
+  # target_dir, passwd_ecryptfs and passwd_file_ecryptfs are gloable variables.
+  # Change the ocsroot to /tmp now since we will create the mount point in /tmp
+
+  if `is_s3fs_ocsroot` || `is_cloudfuse_ocsroot`; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Using ecryptfs with s3fs or cloudfuse has an issue." | tee --append ${OCS_LOGFILE}
+    echo "Please check this URL for more info:" | tee --append ${OCS_LOGFILE}
+    echo "https://github.com/s3fs-fuse/s3fs-fuse/issues/166" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    exit 1
+  fi
+  check_if_system_support_ecryptfs
+  # Define the ecryptfs option
+  ocs_ecryptfs_opt="ecryptfs_cipher=$ocs_ecryptfs_cipher,ecryptfs_key_bytes=$ocs_ecryptfs_key_bytes,no_sig_cache,ecryptfs_enable_filename_crypto=n,ecryptfs_passthrough"
+  ###
+  ecrypt_mntpnt="$(mktemp -d /tmp/ecryptfs_mnt.XXXXXX)"
+  ecryptfs_pf=$(mktemp /tmp/ecryptfs_f.XXXXXX)
+  # Force to set the mode
+  chmod 600 $ecryptfs_pf
+  TMP=$(mktemp /tmp/ecryptfs_tmp.XXXXXX)
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  grc="1" # grand rc for the really working return code
+  # Collect the password for ecryptfs. This is because for ecryptfs it only 
+  # ask once, no confirmation.
+
+  while [ "$grc" -ne 0 ]; do
+    if [ -z "$passwd_ecryptfs" -a -z "$passwd_file_ecryptfs" ]; then
+      # Not spedified by user. Ask passwd_ecryptfs
+      rc="1"
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+      case "$task_type" in
+       *save*) 
+              # For saving, we ask twice.
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING | tee --append ${OCS_LOGFILE}
+  	    echo "$msg_remember_passphrase_of_ecryptfs" | tee --append ${OCS_LOGFILE}
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
+  	    echo -e "*** $msg_enter_passphrase_to_encrypt_img: ${target_dir} ***\n($msg_it_will_not_be_echoed)" | tee --append ${OCS_LOGFILE}
+              read -s pass1
+  	    echo -e "*** $msg_reenter_passphrase_to_encrypt_img: ${target_dir} ***\n($msg_it_will_not_be_echoed)" | tee --append ${OCS_LOGFILE}
+              read -s pass2
+              while [ "$pass1" != "$pass2" ]; do
+                [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+                echo "$msg_passphrases_not_match" | tee --append ${OCS_LOGFILE}
+                [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  	      echo -e "*** $msg_enter_passphrase_to_encrypt_img: ${target_dir} ***\n($msg_it_will_not_be_echoed)" | tee --append ${OCS_LOGFILE}
+                read -s pass1
+  	      echo -e "*** $msg_reenter_passphrase_to_encrypt_img: ${target_dir} ***\n($msg_it_will_not_be_echoed)" | tee --append ${OCS_LOGFILE}
+                read -s pass2
+              done
+              if [ -z "$pass1" ]; then
+                [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  	        echo "$msg_passphrase_empty" | tee --append ${OCS_LOGFILE}
+                [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+                echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+  	        my_ocs_exit 1
+              fi
+              # set the matched passphrase
+              passwd_ecryptfs="$pass1"
+              ;;
+          *)
+              # For restoring, we ask once only.
+  	    echo -e "*** $msg_enter_passphrase_for_decrypt_img: ${target_dir} ***\n($msg_it_will_not_be_echoed)" | tee --append ${OCS_LOGFILE}
+              read -s passwd_ecryptfs
+              ;;
+      esac
+    fi
+    # Now at least there is passwd_ecryptfs or passwd_file_ecryptfs
+    if [ -n "$passwd_ecryptfs" ]; then
+      # Put it in the file
+      echo "passphrase_passwd=$passwd_ecryptfs" > $ecryptfs_pf
+    elif [ -e "$passwd_file_ecryptfs" ]; then
+      cat $passwd_file_ecryptfs > $ecryptfs_pf
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Not password for ecryptfs was inputted or assigned in a file." | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+      my_ocs_exit 1
+    fi
+
+    #
+    webdav_bindfs_flag="no"
+    ask_="true"
+    #
+    while [ "$ask_" = "true" ]; do
+      # If ocsroot is webdav, we have to use bindfs as the middle layer.
+      # Reason: eCryptFS belongs to a class of pseudo-filesystems, i.e. file systems that run on top of a layer of conventional FS. But davfs2 refers to the network stack-based file systems that are not compatible with eCryptFS. Therefore it is necessary to use fs-wrapper - bindfs. It will hide all incompatibilities though cause some inconvenience.
+      # Ref: http://www.linux.org.ru/wiki/en/WebDav%2Be%D0%A1ryptFS
+      #      https://bugs.launchpad.net/ecryptfs/+bug/277578/comments/25
+      if `is_davfs_ocsroot`; then
+        bindfs_mntpnt="$(mktemp -d /tmp/bindfs_mnt.XXXXXX)"
+	bindfs "$ocsroot/${target_dir}" $bindfs_mntpnt
+	rc_bindfs="$?"
+	if [ "$rc_bindfs" -eq 0 ]; then
+          webdav_bindfs_flag="yes"
+	  enc_cmd_="LC_ALL=C mount -t ecryptfs $bindfs_mntpnt $ecrypt_mntpnt -o $ocs_ecryptfs_opt,key=passphrase:passphrase_passwd_file=$ecryptfs_pf"
+	  echo "Running: $enc_cmd_"
+	  eval $enc_cmd_
+          rc="$?"
+        else
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "Failed to bindfs WebDAV image by:" | tee --append ${OCS_LOGFILE}
+	  echo "bindfs \"$ocsroot/${target_dir}\" $bindfs_mntpnt" | tee --append ${OCS_LOGFILE}
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+          [ "$save_restore_error_log" = "yes" ] && copy_error_log
+          exit 1
+        fi
+      else
+        enc_cmd_="LC_ALL=C mount -t ecryptfs \"$ocsroot/${target_dir}\" \"$ecrypt_mntpnt\" -o $ocs_ecryptfs_opt,key=passphrase:passphrase_passwd_file=$ecryptfs_pf"
+	echo "Running: $enc_cmd_"
+	eval $enc_cmd_
+        rc="$?"
+      fi
+      # Even wrong passphrase could give rc=0. However, the data are not really
+      # decrypted. Therefore we have to use another method to check.
+      if [ "$rc" -ne 0 ]; then
+        # Pause so that user can read the error message
+        echo -n "$msg_press_enter_to_continue..."
+        read
+        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+        --yesno "$msg_failed_to_encrypt_img\n$msg_do_u_want_to_do_it_again" 0 0
+        ans_="$?"
+        case "$ans_" in
+          0) # yes is chosen
+             ask_="true";;
+          1) # no is chosen
+             echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+             [ -f "$TMP" ] && rm -f $TMP
+             [ -f "$ecryptfs_pf" ] && rm -f $ecryptfs_pf
+             my_ocs_exit 1;;
+        esac
+      else
+        # Got the one we want
+        ask_="false"
+        # Do not keep the file on system. For security.
+        [ -f "$ecryptfs_pf" ] && rm -f $ecryptfs_pf
+      fi
+    done
+    if [ -z "$(echo "$task_type" | grep -e "save")" ]; then
+      # Image exists already.
+      # Check if the image really decrypted correctly by testing file "clonezilla-img". This is only for restoring
+      # The results of "file -Lbi clonezilla-img" might be charset=utf-8 or us-ascii, or even others. Therefore just check it not binary and grep a line.
+      if [ -z "$(LC_ALL=C file -Lbi "${ecrypt_mntpnt}/clonezilla-img" | grep -Ew "charset=binary")" -a \
+           -n "$(grep -e "^This image was saved by Clonezilla" "${ecrypt_mntpnt}/clonezilla-img")" ]; then
+        grc=0
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+        echo "$msg_succeed_to_decrypt_img: ${target_dir}" | tee -a $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "$msg_failed_to_decrypt_img: ${target_dir} " | tee -a $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	umount $ecrypt_mntpnt
+	if [ "$webdav_bindfs_flag" = "yes" ]; then
+	  umount $bindfs_mntpnt 2>/dev/null
+        fi
+        grc=1
+        confirm_continue_or_not_default_continue
+	# Reset the value passwd_ecryptfs and passwd_file_ecryptfs so user can input it again
+	passwd_ecryptfs=""
+	passwd_file_ecryptfs=""
+      fi
+    else
+      # For saving task, the return code for "mount -t ecryptfs" can be used.
+      # Since the above while loop is done, it means monting is OK now.
+      grc=0
+    fi
+  done
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_encrypt_img_dir_is_now_as: ${ecrypt_mntpnt}" | tee -a $OCS_LOGFILE
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  if [ "$ocs_sr_mode" = "interactive" ]; then
+    sleep 3
+  fi
+  # Save the original ocsroot for later use
+  ocsroot_orig="$ocsroot"
+  ocsroot="$(dirname ${ecrypt_mntpnt})"
+  # Save the original image dir for later use
+  target_dir_orig="${target_dir}"
+  target_dir="$(basename "${ecrypt_mntpnt}")"
+  #
+  [ -f "$TMP" ] && rm -f $TMP
+  return $grc
+} # end of task_ecryptfs_mount_point
+#
+task_gocryptfs_mount_point() {
+  local task_type="$1"
+  local pass1 pass2 gocryptfs_pf
+  local TMP grc rc ask_ ans_ rc_bindfs pass_file_opt
+  local enc_cmd_ init_cmd_ rwo_opt
+  if `is_s3fs_ocsroot` || `is_cloudfuse_ocsroot`; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Using gocryptfs with s3fs or cloudfuse has an issue." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    exit 1
+  fi
+  check_if_system_support_gocryptfs
+  ecrypt_mntpnt="$(mktemp -d /tmp/gocryptfs_mnt.XXXXXX)"
+  gocryptfs_pf=$(mktemp /tmp/gocryptfs_f.XXXXXX)
+  chmod 600 $gocryptfs_pf
+  TMP=$(mktemp /tmp/gocryptfs_tmp.XXXXXX)
+  trap "[ -f \"\$TMP\" ] && rm -f \$TMP" HUP INT QUIT TERM EXIT
+  grc="1"
+  while [ "$grc" -ne 0 ]; do
+    if [ -z "$passwd_gocryptfs" -a -z "$passwd_file_gocryptfs" ]; then
+      rc="1"
+      echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+      case "$task_type" in
+       *save*)
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING | tee --append ${OCS_LOGFILE}
+              echo "$msg_remember_passphrase_of_ecryptfs" | tee --append ${OCS_LOGFILE}
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
+              echo -e "*** $msg_enter_passphrase_to_encrypt_img: ${target_dir} ***
+($msg_it_will_not_be_echoed)" | tee --append ${OCS_LOGFILE}
+              read -s pass1
+              echo -e "*** $msg_reenter_passphrase_to_encrypt_img: ${target_dir} ***
+($msg_it_will_not_be_echoed)" | tee --append ${OCS_LOGFILE}
+              read -s pass2
+              while [ "$pass1" != "$pass2" ]; do
+                [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+                echo "$msg_passphrases_not_match" | tee --append ${OCS_LOGFILE}
+                [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+                echo -e "*** $msg_enter_passphrase_to_encrypt_img: ${target_dir} ***
+($msg_it_will_not_be_echoed)" | tee --append ${OCS_LOGFILE}
+                read -s pass1
+                echo -e "*** $msg_reenter_passphrase_to_encrypt_img: ${target_dir} ***
+($msg_it_will_not_be_echoed)" | tee --append ${OCS_LOGFILE}
+                read -s pass2
+              done
+              if [ -z "$pass1" ]; then
+                [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+                echo "$msg_passphrase_empty" | tee --append ${OCS_LOGFILE}
+                [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+                echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+                my_ocs_exit 1
+              fi
+              passwd_gocryptfs="$pass1"
+              ;;
+       *)
+              echo -e "*** $msg_enter_passphrase_for_decrypt_img: ${target_dir} ***
+($msg_it_will_not_be_echoed)" | tee --append ${OCS_LOGFILE}
+              read -s passwd_gocryptfs
+              ;;
+      esac
+    fi
+    if [ -n "$passwd_gocryptfs" ]; then
+      echo "passphrase_passwd=$passwd_gocryptfs" > $gocryptfs_pf
+    elif [ -e "$passwd_file_gocryptfs" ]; then
+      cat $passwd_file_gocryptfs > $gocryptfs_pf
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Not password for gocryptfs was inputted or assigned in a file." | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+      my_ocs_exit 1
+    fi
+    local real_pass="$(cat $gocryptfs_pf | sed -e 's/^passphrase_passwd=//')"
+    echo -n "$real_pass" > $gocryptfs_pf
+    pass_file_opt="-passfile $gocryptfs_pf"
+    webdav_bindfs_flag="no"
+    if `is_davfs_ocsroot`; then
+      bindfs_mntpnt="$(mktemp -d /tmp/bindfs_mnt.XXXXXX)"
+      bindfs "$ocsroot/${target_dir}" "$bindfs_mntpnt"
+      rc_bindfs="$?"
+      if [ "$rc_bindfs" -eq 0 ]; then
+        webdav_bindfs_flag="yes"
+        case "$task_type" in
+         *save*)
+           # Initialize gocryptfs
+           # Clean the files in the image dir if the existing files exist.
+           # Otherwise gocryptfs -init will fail.
+           [ -n "$bindfs_mntpnt" ] && rm -f $bindfs_mntpnt/*
+           init_cmd_="gocryptfs -init -plaintextnames $pass_file_opt \"$bindfs_mntpnt\""
+           echo "Running: $init_cmd_" | tee --append ${OCS_LOGFILE}
+           eval "$init_cmd_" 2>&1 | tee --append ${OCS_LOGFILE}
+           rwo_opt="-rw"
+           ;;
+         *restore*)
+           rwo_opt="-ro"
+           ;;
+        esac
+        enc_cmd_="LC_ALL=C gocryptfs $rwo_opt $pass_file_opt \"$bindfs_mntpnt\" \"$ecrypt_mntpnt\""
+        echo "Running: $enc_cmd_" | tee --append ${OCS_LOGFILE}
+        eval "$enc_cmd_" 2>&1 | tee --append ${OCS_LOGFILE}
+        rc="${PIPESTATUS[0]}"
+        [ -f "$gocryptfs_pf" ] && rm -f "$gocryptfs_pf"
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "Failed to bindfs WebDAV image by:" | tee --append ${OCS_LOGFILE}
+        echo "bindfs \"$ocsroot/${target_dir}\" $bindfs_mntpnt" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+        [ "$save_restore_error_log" = "yes" ] && copy_error_log
+        exit 1
+      fi
+    else
+      # Standard (non-WebDAV) mount processing
+      case "$task_type" in
+       *save*)
+         # Initialize gocryptfs
+         # Clean the files in the image dir if the existing files exist.
+         # Otherwise gocryptfs -init will fail.
+         [ -n "$ocsroot/${target_dir}" ] && rm -f $ocsroot/${target_dir}/*
+         init_cmd_="LC_ALL=C gocryptfs -init -plaintextnames $pass_file_opt \"$ocsroot/${target_dir}\""
+         echo "Running: $init_cmd_" | tee --append ${OCS_LOGFILE}
+         eval "$init_cmd_" 2>&1 | tee --append ${OCS_LOGFILE}
+         rwo_opt="-rw"
+         ;;
+       *)
+         rwo_opt="-ro"
+         ;;
+      esac
+      enc_cmd_="LC_ALL=C gocryptfs $rwo_opt $pass_file_opt \"$ocsroot/${target_dir}\" \"$ecrypt_mntpnt\""
+      echo "Running: $enc_cmd_" | tee --append ${OCS_LOGFILE}
+      eval "$enc_cmd_" 2>&1 | tee --append ${OCS_LOGFILE}
+      rc="${PIPESTATUS[0]}"
+      [ -f "$gocryptfs_pf" ] && rm -f "$gocryptfs_pf"
+    fi
+    if [ -z "$(echo "$task_type" | grep -e "save")" ]; then
+      if [ -z "$(LC_ALL=C file -Lbi "${ecrypt_mntpnt}/clonezilla-img" | grep -Ew "charset=binary")" -a \
+           -n "$(grep -e "^This image was saved by Clonezilla" "${ecrypt_mntpnt}/clonezilla-img" 2>/dev/null)" ]; then
+        grc=0
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+        echo "$msg_succeed_to_decrypt_img: ${target_dir}" | tee -a $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo $msg_delimiter_star_line | tee -a $OCS_LOGFILE
+      else
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+        echo "$msg_failed_to_decrypt_img: ${target_dir} " | tee -a $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+	umount $ecrypt_mntpnt
+	if [ "$webdav_bindfs_flag" = "yes" ]; then
+	  umount $bindfs_mntpnt 2>/dev/null
+        fi
+        grc=1
+        confirm_continue_or_not_default_continue -d "$msg_do_you_want_to_try_to_open_it_again"
+	passwd_gocryptfs=""
+	passwd_file_gocryptfs=""
+      fi
+    else
+      grc=0
+    fi
+  done
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$msg_encrypt_img_dir_is_now_as: ${ecrypt_mntpnt}" | tee -a $OCS_LOGFILE
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  if [ "$ocs_sr_mode" = "interactive" ]; then
+    sleep 3
+  fi
+  ocsroot_orig="$ocsroot"
+  ocsroot="$(dirname ${ecrypt_mntpnt})"
+  target_dir_orig="${target_dir}"
+  target_dir="$(basename "${ecrypt_mntpnt}")"
+  [ -f "$TMP" ] && rm -f $TMP
+  return $grc
+} # end of task_gocryptfs_mount_point
+#
+umount_ecryptfs_mount_point_if_necessary(){
+  local rc rc_bindfs
+  if [ "$encrypt_ocs_img" = "yes" ]; then
+    if [ -n "$ecrypt_mntpnt" ]; then
+      umount $ecrypt_mntpnt 2>/dev/null
+      rc=$?
+      if [ "$rc" -eq 0 ]; then
+        if [ -d "$ecrypt_mntpnt" -a \
+             -n "$(echo "$ecrypt_mntpnt" | grep -w "ecryptfs_mnt")" ]; then
+	  # It's just a mounting point. Better not to use "rm -rf" in case wrongly remove all the dir.
+          rmdir "$ecrypt_mntpnt"
+        fi
+      fi
+      if [ "$webdav_bindfs_flag" = "yes" ]; then
+        umount $bindfs_mntpnt 2>/dev/null
+        rc_bindfs=$?
+        if [ -d "$bindfs_mntpnt" -a \
+             -n "$(echo "$bindfs_mntpnt" | grep -w "bindfs_mnt")" ]; then
+	  # It's just a mounting point. Better not to use "rm -rf" in case wrongly remove all the dir.
+          rmdir "$bindfs_mntpnt"
+        fi
+      fi
+    fi
+  fi
+} # end of umount_ecryptfs_mount_point_if_necessary
+#
+umount_gocryptfs_mount_point_if_necessary(){
+  local rc rc_bindfs
+  if [ "$gocrypt_ocs_img" = "yes" ]; then
+    if [ -n "$ecrypt_mntpnt" ]; then
+      umount "$ecrypt_mntpnt" 2>/dev/null
+      rc=$?
+      if [ "$rc" -eq 0 ]; then
+        if [ -d "$ecrypt_mntpnt" -a -n "$(echo "$ecrypt_mntpnt" | grep -w "gocryptfs_mnt")" ]; then
+	  rmdir "$ecrypt_mntpnt"
+        fi
+      fi
+      if [ "$webdav_bindfs_flag" = "yes" ]; then
+        umount $bindfs_mntpnt 2>/dev/null
+        rc_bindfs=$?
+        if [ -d "$bindfs_mntpnt" -a -n "$(echo "$bindfs_mntpnt" | grep -w "bindfs_mnt")" ]; then
+	  rmdir "$bindfs_mntpnt"
+        fi
+      fi
+    fi
+  fi
+} # end of umount_gocryptfs_mount_point_if_necessary
+#
+is_ecryptfs_img() {
+  local tgt_dir rc_enc
+  tgt_dir_abs="$1"  # absolute path
+  rc_enc="1"
+   if [ -e "${tgt_dir_abs}/ecryptfs.info" ] && \
+      [ -n "$(LC_ALL=C file -Lbi "${tgt_dir_abs}/clonezilla-img" | grep -Ew "charset=binary")" ]; then 		   
+     rc_enc="0"
+   fi
+   return $rc_enc
+} # end of is_ecryptfs_img
+#
+is_gocryptfs_img() {
+  local tgt_dir rc_enc
+  tgt_dir_abs="$1"
+  rc_enc="1"
+   if [ -e "${tgt_dir_abs}/gocryptfs.info" ] && \
+      [ -n "$(LC_ALL=C file -Lbi "${tgt_dir_abs}/clonezilla-img" | grep -Ew "charset=binary")" ]; then
+     rc_enc="0"
+   fi
+   return $rc_enc
+} # end of is_gocryptfs_img
+#
+prepare_gocryptfs_mount_point_if_necessary() {
+  local rc_=1
+  # Function to prepare gocryptfs mount point
+  case "$ocs_sr_type" in
+   *save*) if [ "$gocrypt_ocs_img" = "yes" ]; then
+	     mkdir -p "$ocsroot/$target_dir"
+             # Reset the variables ocsroot_orig and target_dir_orig before really mounting it.
+             ocsroot_orig=""
+             target_dir_orig=""
+	     task_gocryptfs_mount_point "$ocs_sr_type"
+	     rc_="$?"
+           fi
+	   ;;
+   *)
+	   # For the rest, we all need the existing image
+	   gocrypt_ocs_img="no"
+	   # Check if the image is encrypted or not.
+	   if is_gocryptfs_img "$ocsroot/$target_dir"; then
+             gocrypt_ocs_img="yes"
+             # Reset the variables ocsroot_orig and target_dir_orig before really mounting it.
+             ocsroot_orig=""
+             target_dir_orig=""
+	     task_gocryptfs_mount_point "$ocs_sr_type"
+	     rc_="$?"
+           fi
+	   ;;
+  esac
+  return $rc_
+} # end of prepare_gocryptfs_mount_point_if_necessary
+
+#
+get_gocryptfs_info() {
+  # Function to get the gocrypted image info, including disks list, partitions list, imaging time, and disks' sizes.
+  # It's put in the encrypted image dir while keeping unencrypted so that we can tell the image.
+  # Input variables: $ocsroot, $target_dir
+  local disk_size_
+  # ocsroot, target_dir, disk_list, parts_list, img_time, disks_size_all are global variables
+  disk_list=""
+  parts_list=""
+  img_time=""
+  disks_size_all=""
+  if [ -e $ocsroot/$target_dir/disk ]; then
+    disk_list="$(get_disk_list_from_img "$ocsroot/$target_dir")"
+  fi
+
+  if [ -e $ocsroot/$target_dir/parts ]; then
+    parts_list="$(get_parts_list_from_img "$ocsroot/$target_dir")"
+  fi
+
+  img_time="$(get_img_created_time "$ocsroot/$target_dir")"
+
+  disks_size_all=""
+  for ihd in $disk_list; do
+    disk_size_=""
+    if [ -e "$ocsroot/$target_dir/$(to_filename ${ihd})-pt.parted.compact" ]; then
+      disk_size_="$(LC_ALL=C grep -E "^Disk /dev/" "$ocsroot/$target_dir/$(to_filename ${ihd})-pt.parted.compact" | awk -F":" '{print $2}' | sed -r -e "s/[[:space:]]//g")"
+    fi
+    [ -n "$disk_size_" ] && disks_size_all="$(LC_ALL=C echo "${disks_size_all}_${disk_size_}" | tr ' ' _)"
+  done
+} # end of get_gocryptfs_info
+#
+put_gocryptfs_tag_file_in_img(){
+  # Function to put the unencrypted file "gocryptfs.info" in the encrypted image dir
+  # Inputs are ocsroot_orig, target_dir_orig, disk_list, parts_list, img_time, disks_size_all
+  # Put a tag file in the original image dir
+  if [ -n "$ocsroot_orig" -a -n "$target_dir_orig" ]; then
+    echo "# This image was saved with gocryptfs" > "$ocsroot_orig/$target_dir_orig/gocryptfs.info"
+    echo "disk_of_img=\"$disk_list\"" >> "$ocsroot_orig/$target_dir_orig/gocryptfs.info"
+    echo "parts_of_img=\"$parts_list\"" >> "$ocsroot_orig/$target_dir_orig/gocryptfs.info"
+    echo "time_of_img=\"$img_time\"" >> "$ocsroot_orig/$target_dir_orig/gocryptfs.info"
+    echo "disks_size_all_of_img=\"$disks_size_all\"" >> "$ocsroot_orig/$target_dir_orig/gocryptfs.info"
+  fi
+} # end of put_gocryptfs_tag_file_in_img
+#
+get_gocryptfs_info_path() {
+  # gocryptfs does not have ecryptfs_passthrough like ecryptfs.
+  # Hence we should read "gocryptfs.info" (i.e., run ". $imagedir/$file/gocryptfs.info ")
+  # from the physical dir, not the mounted point for gocryptfs
+  local q_path_="$1"
+  local gomnt_src gnmnt_fs r_path_
+  # /home/partimag/2026-03-28-05-img-goc   1987076 326156   1660920  17% /tmp/gocryptfs_mnt.GIo4OE
+  gomnt_src="$(LC_ALL=C findmnt -Un -o source -T $q_path_)"
+  gnmnt_fs="$(LC_ALL=C findmnt -n -o FSTYPE -T $q_path_)"
+  # gocryptfs is based on fuse, so the fs might be fuse.gocryptfs or gocryptfs.
+  if [[ "$gnmnt_fs" == *gocryptfs* ]]; then
+    # In this case, it's inside mounted point, we have to reture its source path
+    r_path_="$gomnt_src"
+  else
+    # In this case, it's not inside mounted point, we have to reture the directory itself
+    r_path_="$q_path_"
+  fi
+  echo "$r_path_"
+} # end of get_gocryptfs_info_path
