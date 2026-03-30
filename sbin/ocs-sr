@@ -95,6 +95,7 @@ do_rm_hardware_record="yes"
 do_update_syslinux="yes"
 # Default not to put yes or no for encrypting the image dir
 encrypt_ocs_img=""
+gocrypt_ocs_img=""
 # Default to remove the ntfs volume dirty flag after it's restored.
 rm_ntfs_vol_dirty_flag="yes"
 # Default to save the file system in the partition or LV. If no, it means to save other info as a disk image. This is only for some special cases.
@@ -155,6 +156,8 @@ USAGE() {
     echo " -sfs, --skip-fs-save     Do not save the file system for device, just save the rest of files. This is mainly for BT from device massive deployment. A tag file 00-pseudo-img-note.txt will be added in the image dir, too."
     echo " -pe, --passwd-ecryptfs PASSWD  Set the password to encrypt the image. Use with option \"-enc\" when saving, or restoring when the image is encrypted. //NOTE// This is not a safe way to use it because the password is shown in the command line or system processes."
     echo " -pfe, --passwd-file-ecryptfs FILE  Set the password to encrypt the image in the FILE. Use with option -enc, or restoring when the image is encrypted. The file contains the password to encrypt the image. Its format is like: passphrase_passwd=YOURPASSWORD."
+    echo " -pg, --passwd-gocryptfs PASSWD  Set the password to encrypt the image. Use with option \"-goc\" when saving, or restoring when the image is encrypted. //NOTE// This is not a safe way to use it because the password is shown in the command line or system processes."
+    echo " -pfg, --passwd-file-gocryptfs FILE  Set the password to encrypt the image in the FILE. Use with option -goc, or restoring when the image is encrypted. The file contains the password to encrypt the image. Its format is like: YOURPASSWORD."
     echo " -plu, --put-log-files-usb  Put Clonezilla live related log files to Clonezilla live USB drive."
     echo " -scpt, --skip-check-part-table  Skip checking the partition table of the source disk, i.e., just save it without checking it is MBR or GPT format."
     echo " -luks, --enable-luks MODE  Open LUKS device or not. MODE can be either yes or no."
@@ -376,6 +379,12 @@ parse_ocs_sr_cmd_options_with_dash() {
     -senc|--skip-enc-ocs-img)
             encrypt_ocs_img="no"
 	    shift; n_shift=$((n_shift+1));;
+    -goc|--gocrypt-ocs-img)
+            gocrypt_ocs_img="yes"
+	    shift; n_shift=$((n_shift+1));;
+    -sgoc|--skip-gocrypt-ocs-img)
+            gocrypt_ocs_img="no"
+	    shift; n_shift=$((n_shift+1));;
     -pe|--passwd-ecryptfs)
             shift; n_shift=$((n_shift+1))
             if [ -z "$(echo $1 |grep ^-.)" ]; then
@@ -396,6 +405,24 @@ parse_ocs_sr_cmd_options_with_dash() {
               shift; n_shift=$((n_shift+1))
             fi
             [ -z "$passwd_file_ecryptfs" ] && USAGE && exit 1
+            ;;
+    -pg|--passwd-gocryptfs)
+            shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case
+              passwd_gocryptfs=$1
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$passwd_gocryptfs" ] && USAGE && exit 1
+            ;;
+    -pfg|--passwd-file-gocryptfs)
+            shift; n_shift=$((n_shift+1))
+            if [ -z "$(echo $1 |grep ^-.)" ]; then
+              # skip the -xx option, in case
+              passwd_file_gocryptfs=$1
+              shift; n_shift=$((n_shift+1))
+            fi
+            [ -z "$passwd_file_gocryptfs" ] && USAGE && exit 1
             ;;
     -m|--module)
             shift; n_shift=$((n_shift+1))
@@ -1263,6 +1290,7 @@ do_savedisk_job(){
   # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
   # The original ones will be kept as ocsroot_orig and target_dir_orig.
   prepare_ecryptfs_mount_point_if_necessary
+  prepare_gocryptfs_mount_point_if_necessary
 
   task_processing_after_parameters_checked
 
@@ -1411,6 +1439,7 @@ do_restoredisk_job(){
   # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
   # The original ones will be kept as ocsroot_orig and target_dir_orig.
   prepare_ecryptfs_mount_point_if_necessary
+  prepare_gocryptfs_mount_point_if_necessary
 
   task_processing_after_parameters_checked
 
@@ -1538,6 +1567,7 @@ do_saveparts_job() {
   # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
   # The original ones will be kept as ocsroot_orig and target_dir_orig.
   prepare_ecryptfs_mount_point_if_necessary
+  prepare_gocryptfs_mount_point_if_necessary
 
   task_processing_after_parameters_checked
 
@@ -1661,6 +1691,7 @@ do_restoreparts_job(){
   # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
   # The original ones will be kept as ocsroot_orig and target_dir_orig.
   prepare_ecryptfs_mount_point_if_necessary
+  prepare_gocryptfs_mount_point_if_necessary
 
   task_processing_after_parameters_checked
 
