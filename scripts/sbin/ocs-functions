@@ -2587,7 +2587,7 @@ test_run_grub1_from_restored_os(){
   # Here we assume if we can "chroot $mount_dir ls", we can run it.
   # run_grub1_from_restored_os_mode is global variable
   local root_prt="$1"   # e.g. /dev/sda2, the partition where / exists
-  local rc_
+  local rc_=0
   if [ -z "$root_prt" ]; then
     echo "Variable root_prt not assigned in function test_run_grub1_from_restored_os." | tee --append ${OCS_LOGFILE}
     echo "Program terminated." | tee --append ${OCS_LOGFILE}
@@ -2707,7 +2707,7 @@ test_run_grub2_from_restored_os(){
   # Here we assume if we can "chroot $mount_dir ls", we can run it.
   # run_grub2_from_restored_os_mode is global variable
   local root_prt="$1"   # e.g. /dev/sda2, the partition where / exists
-  local rc_
+  local rc_=0
   if [ -z "$root_prt" ]; then
     echo "Variable root_prt not assigned in function test_run_grub2_from_restored_os." | tee --append ${OCS_LOGFILE}
     echo "Program terminated." | tee --append ${OCS_LOGFILE}
@@ -3948,13 +3948,13 @@ task_preprocessing() {
 } # end of task_preprocessing
 #
 prepare_ecryptfs_mount_point_if_necessary() {
-  local rc_
-  # Reset the variables ocsroot_orig and target_dir_orig
-  ocsroot_orig=""
-  target_dir_orig=""
+  local rc_=1
   # Function to prepare ecryptefs mount point
   case "$ocs_sr_type" in
    *save*) if [ "$encrypt_ocs_img" = "yes" ]; then 
+             # Reset the variables ocsroot_orig and target_dir_orig before really mounting it.
+             ocsroot_orig=""
+             target_dir_orig=""
 	     mkdir -p "$ocsroot/$target_dir"
 	     task_ecryptfs_mount_point "$ocs_sr_type"
 	     rc_="$?"
@@ -3966,6 +3966,9 @@ prepare_ecryptfs_mount_point_if_necessary() {
 	   # Check if the image is encrypted or not.
 	   if is_ecryptfs_img "$ocsroot/$target_dir"; then
              encrypt_ocs_img="yes"
+             # Reset the variables ocsroot_orig and target_dir_orig before really mounting it.
+             ocsroot_orig=""
+             target_dir_orig=""
 	     task_ecryptfs_mount_point "$ocs_sr_type"
 	     rc_="$?"
            fi
@@ -4197,11 +4200,20 @@ task_postprocessing() {
 	# Put a tag file in the original image dir
 	put_ecryptefs_tag_file_in_img # Inputs are ocsroot_orig, target_dir_orig, 
 	                              # disk_list, parts_list, img_time, disks_size_all
+      elif [ "$gocrypt_ocs_img" = "yes" ]; then
+	# Before unmounting gocryptfs img, we have to keep something for later to be saved in the file gocryptfs.info.
+        get_gocryptfs_info  # Inputs are global variables $ocsroot and $target_dir
+	                   # Outputs are disk_list, parts_list, img_time, disks_size_all
+        umount_gocryptfs_mount_point_if_necessary
+	# Put a tag file in the original image dir
+	put_gocryptfs_tag_file_in_img # Inputs are ocsroot_orig, target_dir_orig, 
+	                              # disk_list, parts_list, img_time, disks_size_all
       fi
       ;;
     *)
-      # For restoring or others, we still need to unmount the ecryptfs system.
+      # For restoring or others, we still need to unmount the ecryptfs/gocryptfs system.
       umount_ecryptfs_mount_point_if_necessary
+      umount_gocryptfs_mount_point_if_necessary
       ;;
   esac
 
@@ -4359,13 +4371,27 @@ rm_target_image_if_exist() {
     # If it's ecryptfs mounting point, we should not remove it.
     # Otherwise it will show busy error message.
     tgt_image_fs="$(LC_ALL=C df -T "$tgt_image" 2>/dev/null | tail -n 1 | awk -F" " '{print $2}')"
-    if [ "$encrypt_ocs_img" = "yes" ] && [ "$tgt_image_fs" = "ecryptfs" ]; then
+    # gocryptfs is based on fuse, so the fs might be fuse.gocryptfs or gocryptfs.
+    if [[ "$encrypt_ocs_img" == "yes" || "$gocrypt_ocs_img" == "yes" ]] && \
+       [[ "$tgt_image_fs" == "ecryptfs" || "$tgt_image_fs" == *gocryptfs* ]]; then
       if [ -n "$ocsroot_orig" -a \
 	   -n "$target_dir_orig" -a \
 	   -d "$ocsroot_orig/$target_dir_orig" ]; then
         # We have to clean all the files from the ecryptfs source dir, otherwise
 	# if there is same file existing, the ecryptfs won't be able to create it.
-        rm -f $ocsroot_orig/"$target_dir_orig"/*
+	# For gocryptfs, after "gocryptfs -init", the file gocryptfs.conf will be created. We have to keep it.
+	case "$tgt_image_fs" in
+	ecryptfs)
+	 rm -f "$ocsroot_orig/$target_dir_orig"/*
+	 ;;
+	*gocryptfs*)
+         for file in "$ocsroot_orig/$target_dir_orig"/*; do
+           if [ "$(basename "$file")" != "gocryptfs.conf" ]; then
+             rm -f "$file"
+           fi
+         done
+         ;;
+        esac
       fi
     else
       [ -f "$tgt_image" ] && rm -f $tgt_image
@@ -5072,7 +5098,7 @@ get_existing_disk_image() {
    local tgt_file="" ans_ list_des
    local ASK_IMGNAME=1
    local TMP="$(mktemp /tmp/ocs.XXXXXX)"
-   local disk_size_ ihd disks_size_all
+   local disk_size_ ihd disks_size_all mnt_src
 
    case "$list_mode" in
      "rest-unenc") list_des="$msg_choose_the_image_to_restore $msg_only_nonenc_is_shown" ;;
@@ -5097,11 +5123,17 @@ get_existing_disk_image() {
      [ -e "$imagedir/$file/00-pseudo-img-note.txt" ] && continue
      # When mode is nonenc or enc, we should skip some dirs.
      case "$list_mode" in
-       "rest-unenc") [ -e "$imagedir/$file/ecryptfs.info" ] && continue ;;
+       "rest-unenc") { [ -e "$imagedir/$file/ecryptfs.info" ] || [ -e "$imagedir/$file/gocryptfs.info" ]; } && continue ;;
      esac
      if is_ecryptfs_img $imagedir/$file; then
        # Encrypted image
        . $imagedir/$file/ecryptfs.info
+       fileinfo="${time_of_img}-enc"
+       fileinfo=$fileinfo"_""$(echo "$disk_of_img" | tr ' ' _)"
+       disks_size_all="$disks_size_all_of_img"
+     elif is_gocryptfs_img "$imagedir/$file"; then
+       mnt_src="$(get_gocryptfs_info_path $imagedir/$file/)"
+       . "$mnt_src/gocryptfs.info"
        fileinfo="${time_of_img}-enc"
        fileinfo=$fileinfo"_""$(echo "$disk_of_img" | tr ' ' _)"
        disks_size_all="$disks_size_all_of_img"
@@ -5173,7 +5205,7 @@ get_existing_parts_image() {
    # show existing partitions images so that user can choose then return chosen to file ANS_TMP
    local ANS_TMP="$1"
    local list_mode="$2"
-   local tgt_file="" ans_ list_des
+   local tgt_file="" ans_ list_des mnt_src
    local ASK_IMGNAME=1
    local TMP="$(mktemp /tmp/ocs.XXXXXX)"
    case "$list_mode" in
@@ -5200,18 +5232,26 @@ get_existing_parts_image() {
      [ ! -f "$imagedir/$file/parts" -a ! -f "$imagedir/$file/disk" ] && continue
      # When mode is nonenc, enc or checksum, we should skip some dirs.
      case "$list_mode" in
-       "nonenc"|"rest-unenc") [ -e "$imagedir/$file/ecryptfs.info" ] && continue ;;
-       "enc")    [ ! -e "$imagedir/$file/ecryptfs.info" ] && continue ;;
+       "nonenc"|"rest-unenc") { [ -e "$imagedir/$file/ecryptfs.info" ] || [ -e "$imagedir/$file/gocryptfs.info" ]; } && continue ;;
+       "enc")    { [ ! -e "$imagedir/$file/ecryptfs.info" ] && [ ! -e "$imagedir/$file/gocryptfs.info" ]; } && continue ;;
        "checksum")  [ -z "$(ls $imagedir/$file/*-*sum.info* 2>/dev/null)" ] && continue ;;
      esac
      if is_ecryptfs_img $imagedir/$file; then
-       # Encrypted image
        . $imagedir/$file/ecryptfs.info
        fileinfo="${time_of_img}-enc"
        if [ -f "$imagedir/$file/parts" ]; then 
-	 fileinfo=$fileinfo"_""$(echo $parts_of_img | tr ' ' _)"
+         fileinfo=$fileinfo"_""$(echo $parts_of_img | tr ' ' _)"
        elif [ -f "$imagedir/$file/disk" ]; then 
-	 fileinfo=$fileinfo"_""$(echo $disk_of_img | tr ' ' _)"
+         fileinfo=$fileinfo"_""$(echo $disk_of_img | tr ' ' _)"
+       fi
+     elif is_gocryptfs_img "$imagedir/$file"; then
+       mnt_src="$(get_gocryptfs_info_path $imagedir/$file/)"
+       . "$mnt_src/gocryptfs.info"
+       fileinfo="${time_of_img}-enc"
+       if [ -f "$imagedir/$file/parts" ]; then 
+         fileinfo=$fileinfo"_""$(echo $parts_of_img | tr ' ' _)"
+       elif [ -f "$imagedir/$file/disk" ]; then 
+         fileinfo=$fileinfo"_""$(echo $disk_of_img | tr ' ' _)"
        fi
      else
        fileinfo="$(get_img_created_time $imagedir/$file)"
@@ -10959,7 +10999,7 @@ do_startdisk() {
       # Check if the image is encrypted. If so, exit. We do not support it for Clonezilla SE.
       case "$task" in
         *restore*)
-          if is_ecryptfs_img "$ocsroot/$target_image"; then
+          if is_ecryptfs_img "$ocsroot/$target_image" || is_gocryptfs_img "$ocsroot/$target_image"; then
             [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
             echo "$msg_restoring_encrypted_img_not_supported_in_clonezilla_se." | tee --append ${OCS_LOGFILE}
             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -11093,7 +11133,7 @@ do_startparts () {
       # Check if the image is encrypted. If so, exit. We do not support it for Clonezilla SE.
       case "$task" in
         *restore*)
-          if is_ecryptfs_img "$ocsroot/$target_image"; then
+          if is_ecryptfs_img "$ocsroot/$target_image" || is_gocryptfs_img "$ocsroot/$target_image"; then
             [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
             echo "$msg_restoring_encrypted_img_not_supported_in_clonezilla_se." | tee --append ${OCS_LOGFILE}
             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -14188,7 +14228,7 @@ put_ecryptefs_tag_file_in_img(){
 get_parts_list_from_img() {
   # Return partitions list without /dev/, like sda1, sda2...
   local img_path="$1"  # Full path for the image dir
-  local p_lst
+  local p_lst mnt_src
   if [ -z "$img_path" -o \
        ! -d "$img_path" ]; then
     my_ocs_exit 1
@@ -14196,6 +14236,10 @@ get_parts_list_from_img() {
   p_lst=""
   if is_ecryptfs_img $img_path; then
     . $img_path/ecryptfs.info
+    p_lst="$parts_of_img"
+  elif is_gocryptfs_img $img_path; then
+    mnt_src="$(get_gocryptfs_info_path $img_path/)"
+    . "$mnt_src/gocryptfs.info"
     p_lst="$parts_of_img"
   else
     p_lst="$(LC_ALL=C cat $img_path/parts)"
@@ -14206,7 +14250,7 @@ get_parts_list_from_img() {
 #
 get_disk_list_from_img() {
   local img_path="$1"  # Full path for the image dir
-  local d_lst
+  local d_lst mnt_src
   if [ -z "$img_path" -o \
        ! -d "$img_path" ]; then
     my_ocs_exit 1
@@ -14214,6 +14258,10 @@ get_disk_list_from_img() {
   d_lst=""
   if is_ecryptfs_img $img_path; then
     . $img_path/ecryptfs.info
+    d_lst="$disk_of_img"
+  elif is_gocryptfs_img $img_path; then
+    mnt_src="$(get_gocryptfs_info_path $img_path/)"
+    . "$mnt_src/gocryptfs.info"
     d_lst="$disk_of_img"
   else
     d_lst="$(LC_ALL=C cat $img_path/disk)"
@@ -14224,7 +14272,7 @@ get_disk_list_from_img() {
 #
 get_img_created_time() {
   local img_path="$1" # img_path is $ocsroot/$target_dir/
-  local img_tm
+  local img_tm mnt_src
   if [ -z "$img_path" -o \
        ! -d "$img_path" ]; then
     my_ocs_exit 1
@@ -14232,6 +14280,10 @@ get_img_created_time() {
   img_tm=""
   if is_ecryptfs_img $img_path; then
     . $img_path/ecryptfs.info
+    img_tm="$time_of_img"
+  elif is_gocryptfs_img $img_path; then
+    mnt_src="$(get_gocryptfs_info_path $img_path/)"
+    . "$mnt_src/gocryptfs.info"
     img_tm="$time_of_img"
   else
     # First we find the tag in the file "clonezilla-img". Suppress all the space because it might be used in dialog prompt.
