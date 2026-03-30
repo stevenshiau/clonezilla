@@ -535,8 +535,9 @@ task_convertimage() {
         rct="$(($rct + $rc))"
       fi
     done
-    # Since the converted image is not encrypted, we should remove ecryptfs.info
+    # Since the converted image is not encrypted, we should remove ecryptfs.info & gocryptfs.info
     rm -f $target_dir_fullpath/ecryptfs.info
+    rm -f $target_dir_fullpath/gocryptfs.info
   fi
 
   if [ "$rct" -gt 0 ]; then
@@ -759,6 +760,7 @@ else
 fi
 
 ecryptfs_rc="1"
+gocryptfs_rc="1"
 if is_ecryptfs_img $ocsroot/$ocs_src_img_name; then
   # If it's encrypted image, we have to decrypt it.
   ocs_sr_type="restore"
@@ -774,13 +776,26 @@ if is_ecryptfs_img $ocsroot/$ocs_src_img_name; then
     echo "$msg_program_stop"
     my_ocs_exit 1
   fi
+elif is_gocryptfs_img $ocsroot/$ocs_src_img_name; then
+  ocs_sr_type="restore"
+  target_dir="$ocs_src_img_name"
+  prepare_gocryptfs_mount_point_if_necessary 
+  gocryptfs_rc="$?"
+  if [ "$gocryptfs_rc" -eq 0 ];
+  then
+    ocs_src_img_name="$target_dir"
+    ocs_tmp_img_opt="-or $ocsroot"
+  else
+    echo "$msg_program_stop"
+    my_ocs_exit 1
+  fi
 fi
 
 #
 check_if_old_format_img "$ocs_src_img_name"
 
 # Before creating the destination image, we have to set the correct ocsroot otherwise it's reset by prepare_ecryptfs_mount_point_if_necessary. 
-if [ "$ecryptfs_rc" -eq 0 ]; then
+if [ "$ecryptfs_rc" -eq 0 ] || [ "$gocryptfs_rc" -eq 0 ]; then
   # The image to be processed is encrypted, and we have to let ocs-create-tmp-img create the image in the original image repository
   ocsroot="$ocsroot_orig"
 fi
@@ -808,7 +823,7 @@ if [ "$chk_img_restoreable" = "yes" ]; then
   if [ "$rc_ocs" -eq 0 ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
     echo "$msg_new_compression_format_image_created_successfully: $ocs_dest_img_name"
-    if [ "$ecryptfs_rc" -eq 0 ]; then
+    if [ "$ecryptfs_rc" -eq 0 ] || [ "$gocryptfs_rc" -eq 0 ]; then
       echo "$msg_converted_img_is_not_encrypted"
     fi
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL

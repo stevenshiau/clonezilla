@@ -313,6 +313,7 @@ if [ "$src_disk_no" -ne 1 ]; then
 fi
 
 ecryptfs_rc="1"
+gocryptfs_rc="1"
 if is_ecryptfs_img $ocsroot/$image_name; then
   # If it's encrypted image, we have to decrypt it.
   ocs_sr_type="restore"
@@ -325,6 +326,18 @@ if is_ecryptfs_img $ocsroot/$image_name; then
     # From now on we switch the image repository to $ocsroot (-or option of ocs-create-tmp-img) (i.e. /tmp/ in this case).
     # i.e. image repository is in $ocsroot (/tmp, -or option of ocs-create-tmp-img), and
     #      temp image (-t option of ocs-create-tmp-img) is in /tmp/, too.
+    image_name="$target_dir"
+    ocs_tmp_img_opt="-or $ocsroot"
+  else
+    echo "$msg_program_stop"
+    my_ocs_exit 1
+  fi
+elif is_gocryptfs_img $ocsroot/$image_name; then
+  ocs_sr_type="restore"
+  target_dir="$image_name"
+  prepare_gocryptfs_mount_point_if_necessary
+  gocryptfs_rc="$?"
+  if [ "$gocryptfs_rc" -eq 0 ]; then
     image_name="$target_dir"
     ocs_tmp_img_opt="-or $ocsroot"
   else

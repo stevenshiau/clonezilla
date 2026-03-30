@@ -72,14 +72,22 @@ task_decrypt_image(){
   # The original ones will be kept as ocsroot_orig and target_dir_orig.
   prepare_ecryptfs_mount_point_if_necessary 
   rc_="$?"
+  if [ "$rc_" -ne 0 ]; then
+    # Not ecryptfs, try gocryptfs
+    rc_=""
+    prepare_gocryptfs_mount_point_if_necessary
+    rc_="$?"
+  fi
 
   if [ "$rc_" -eq 0 ]; then
     # If the existing target image exists, remove it before copying files.
     # We have to clean all the files from the ecryptfs source dir, otherwise
     # if there is same file existing, the ecryptfs won't be able to create it.
+    # For gocryptfs, after "gocryptfs -init", the file gocryptfs.conf will be created.
+    # We have to keep it, and it will be kept in rm_target_image_if_exist
     rm_target_image_if_exist "$ocsroot/$ocs_dest_img_name"
 
-    rsync -avP $ocsroot/$target_dir/* $ocsroot_orig/$ocs_dest_img_name/
+    rsync -avP --exclude="gocryptfs.info" $ocsroot/$target_dir/* $ocsroot_orig/$ocs_dest_img_name/
     rc_=$?
   else
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -196,7 +204,7 @@ fi
 check_input_target_image "$ocsroot/$ocs_src_img_name"
 
 # Check if it's already an unencrypted image or not
-if ! is_ecryptfs_img $ocsroot/$ocs_src_img_name; then
+if ! is_ecryptfs_img $ocsroot/$ocs_src_img_name && ! is_gocryptfs_img $ocsroot/$ocs_src_img_name; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "$msg_is_unencrypted_image_already: $ocs_src_img_name"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -231,9 +239,14 @@ else
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 fi
 
-umount_ecryptfs_mount_point_if_necessary
-# Deal with the encryption tag file ecryptfs.info
-rm -f $ocsroot_orig/$ocs_dest_img_name/ecryptfs.info
+if is_ecryptfs_img $ocsroot_orig/$ocs_src_img_name; then
+  # Deal with the encryption tag file ecryptfs.info
+  umount_ecryptfs_mount_point_if_necessary
+  rm -f $ocsroot_orig/$ocs_dest_img_name/ecryptfs.info
+elif is_gocryptfs_img $ocsroot_orig/$ocs_src_img_name; then
+  umount_gocryptfs_mount_point_if_necessary
+  rm -f $ocsroot_orig/$ocs_dest_img_name/gocryptfs.info
+fi
 
 #
 if [ "$mode" = "interactive" ]; then

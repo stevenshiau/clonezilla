@@ -27,6 +27,7 @@ USAGE() {
     echo "Options:"
     echo "-b, --batch-mode   Run image checking in batch mode"
     echo "-d, --delete-src-img     Force to delete source image after encryption. By default it's kept."
+    echo "-t, --enc-type TYPE      Encryption type to use: ecryptfs or gocryptfs (default: gocryptfs)."
     echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
     echo "-nogui, --nogui          Do not show GUI (TUI) of Partclone when checking, use text only"
     echo "-sc, --skip-check-restorable  Skip checking the image if restorable after it is converted."
@@ -70,8 +71,16 @@ task_encrypt_image(){
   ocs_sr_type="save"
   # //NOTE// If encrypt_ocs_img="yes", after this step, ocsroot and target_dir will be changed
   # The original ones will be kept as ocsroot_orig and target_dir_orig.
-  prepare_ecryptfs_mount_point_if_necessary 
-  rc_="$?"
+  rc_=
+  if [ "$enc_type" = "ecryptfs" ]; then
+    encrypt_ocs_img="yes"
+    prepare_ecryptfs_mount_point_if_necessary 
+    rc_="$?"
+  elif [ "$enc_type" = "gocryptfs" ]; then
+    gocrypt_ocs_img="yes"
+    prepare_gocryptfs_mount_point_if_necessary
+    rc_="$?"
+  fi
 
   if [ "$rc_" -eq 0 ]; then
     # If the existing target image exists, remove it before copying files.
@@ -115,6 +124,14 @@ while [ $# -gt 0 ]; do
  case "$1" in
    -b|--batch) ocs_batch_mode="on"; shift;;
    -d|--delete-src-img) ocs_rm_src_img="yes"; shift;;
+   -t|--enc-type)
+           shift;
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             enc_type="$1"
+             shift;
+           fi
+           [ -z "$enc_type" ] && USAGE && exit 1
+           ;;
    -or|--ocsroot)
            # overwrite the ocsroot in drbl.conf
            shift; 
@@ -161,6 +178,8 @@ check_DIA_set_ESC $DIA
 #
 [ -z "$IMG_CLONE_CMP" ] && IMG_CLONE_CMP="$IMG_CLONE_CMP_def"
 
+[ -z "$enc_type" ] && enc_type="gocryptfs"
+
 # imagedir is a variable which ask_user related function need
 imagedir="$ocsroot"
 [ -z "$ocs_src_img_name" ] && ocs_src_img_name="ask_user"
@@ -196,7 +215,7 @@ fi
 check_input_target_image "$ocsroot/$ocs_src_img_name"
 
 # Check if it's already an encrypted image or not
-if is_ecryptfs_img $ocsroot/$ocs_src_img_name; then
+if is_ecryptfs_img $ocsroot/$ocs_src_img_name || is_gocryptfs_img $ocsroot/$ocs_src_img_name; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
   echo "$msg_is_encrypted_image_already: $ocs_src_img_name"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -231,13 +250,16 @@ else
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
 fi
 
-# Deal with the encryption tag file ecryptfs.info
-get_ecryptfs_info  # Inputs are global variables $ocsroot and $target_dir
-                   # Outputs are disk_list, parts_list, img_time, disks_size_all
-umount_ecryptfs_mount_point_if_necessary
-# Put a tag file in the original image dir
-put_ecryptefs_tag_file_in_img # Inputs are ocsroot_orig, target_dir_orig, 
-                              # disk_list, parts_list, img_time, disks_size_all
+# Deal with the encryption tag file ecryptfs.info or gocryptfs.info
+if [ "$enc_type" = "ecryptfs" ]; then
+  get_ecryptfs_info
+  umount_ecryptfs_mount_point_if_necessary
+  put_ecryptefs_tag_file_in_img
+elif [ "$enc_type" = "gocryptfs" ]; then
+  get_gocryptfs_info
+  umount_gocryptfs_mount_point_if_necessary
+  put_gocryptfs_tag_file_in_img
+fi
 
 #
 if [ "$mode" = "interactive" ]; then
