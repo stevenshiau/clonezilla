@@ -1412,7 +1412,7 @@ save_part_by_partclone() {
       dd)
          # Special case, dd, no compression + no splitting.
          # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt $ptcl_rescue_opt -z ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output \"$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}\""
+         cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT_DD $ptcl_read_dio_opt $ptcl_rescue_opt -L $partclone_img_info_tmp -s $source_dev --output \"$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}\""
          ;;
        *)
          # Special case, not dd, no compression + no splitting
@@ -1423,7 +1423,7 @@ save_part_by_partclone() {
     case "$fs_p" in
       dd)
          # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-         cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt $ptcl_rescue_opt -z ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
+         cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT_DD $ptcl_read_dio_opt $ptcl_rescue_opt -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
          ;;
        *)
          cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt $ptcl_rescue_opt -L $partclone_img_info_tmp -c -s $source_dev --output - | $compress_prog_opt"
@@ -1658,7 +1658,7 @@ save_part_by_dd() {
 
     get_partclone_direct_io_opt read $source_dev # Obtain ptcl_read_dio_opt
 
-    cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -z ${partclone_dd_bs} -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
+    cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT_DD $ptcl_read_dio_opt -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
     case "$VOL_LIMIT" in
       [1-9]*)
          # $tgt_dir/${tgt_file}.dd-img. is prefix, the last "." is necessary make the output file is like hda1.dd-img.aa, hda1.dd-img.ab. We do not add -d to make it like hda1.dd-img.00, hda1.dd-img.01, since it will confuse people that it looks like created by partimage (hda1.dd-img.000, hda1.$dd-img.001)
@@ -5827,7 +5827,7 @@ unicast_restore_by_partclone() {
     cmd_partclone_rest="partclone.${fs_} $pt_opt_extra $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt -L $partclone_img_info_tmp -s - -r -o $part"
   else
     # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when restoring
-    cmd_partclone_rest="partclone.${fs_} $pt_opt_extra $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt -z ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part"
+    cmd_partclone_rest="partclone.dd $pt_opt_extra $PARTCLONE_RESTORE_OPT_DD $ptcl_write_dio_opt -L $partclone_img_info_tmp -s - -o $part"
   fi
   # partclone_hfsp does not put any header, so just cat them
   # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
@@ -5994,7 +5994,7 @@ unicast_restore_by_dd() {
   done
 ) \
 | $unzip_stdin_cmd 2> $unzip_cmd_error \
-| LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -z ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
+| LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT_DD -L $partclone_img_info_tmp -s - -o $part
 _EOT_
     ( for img in "$target_d"/$img_file_prefix; do
         # Exclude the image info file like "sda1.dd-img.info" and "sda1.files-md5sum.info.gz"
@@ -6003,7 +6003,7 @@ _EOT_
       done
     ) \
     | $unzip_stdin_cmd 2> $unzip_cmd_error \
-    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -z ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
+    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT_DD -L $partclone_img_info_tmp -s - -o $part
     retcodes=(${PIPESTATUS[@]})
     
     if [ ${retcodes[1]} -eq 0 -a ${retcodes[2]} -eq 0 ]; then
@@ -6172,7 +6172,7 @@ multicast_restore_by_partclone() {
     cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt -L $partclone_img_info_tmp -s - -r -o $part"
   else
     # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when restoring
-    cmd_partclone_rest="partclone.${fs_} $PARTCLONE_RESTORE_OPT $ptcl_write_dio_opt -z ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part"
+    cmd_partclone_rest="partclone.dd $PARTCLONE_RESTORE_OPT_DD $ptcl_write_dio_opt -L $partclone_img_info_tmp -s - -o $part"
   fi
 cat <<_EOT_ >> ${OCS_LOGFILE}
   $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
@@ -6256,7 +6256,7 @@ multicast_restore_by_dd() {
     start_time="$(date +%s%N)"
     # //NOTE// Here we force to use LC_ALL=C for partclone since we need to use get_partclone_image_info to parse the log file to get the rate. Only the keyword in English is supported in get_partclone_image_info.
     $udpcast_rec_cmd 2>$udpcast_stderr | $unzip_stdin_cmd | \
-    LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -z ${partclone_dd_bs} -L $partclone_img_info_tmp -s - -o $part
+    LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT_DD -L $partclone_img_info_tmp -s - -o $part
     rc="$?"
     end_time="$(date +%s%N)"
     cat "${partclone_img_info_tmp}" >> ${OCS_LOGFILE}
@@ -15797,10 +15797,10 @@ local_partition_to_partiton_clone() {
       get_partclone_direct_io_opt write $tgt_p # Obtain ptcl_write_dio_opt
       echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
       if [ "$pt_fs" != "dd" ]; then
-        cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $PARTCLONE_D2D_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -b -s $src_p -O $tgt_p"
+        cmd_partclone="partclone.${pt_fs} $PARTCLONE_D2D_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -b -s $src_p -O $tgt_p"
       else
         # Some parameters for partclone.dd are not required. Here "-b" and "-aX' are not provided by partclone.dd when run in dev to dev
-        cmd_partclone="partclone.${pt_fs} $PARTCLONE_RESTORE_OPT $PARTCLONE_D2D_OPT_dd $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
+        cmd_partclone="partclone.dd $PARTCLONE_D2D_OPT_DD $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
       fi
       echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
       LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
