@@ -356,6 +356,15 @@ create_gparted_live_iso(){
   # Prepare the sort file for xorriso.
   gen_iso_sort_file $ISOSYSLNX_TMP/syslinux/iso_sort.txt
 
+  # Create b3sum checksum in dir $ISOSYSLNX_TMP
+  # //NOTE// Use subshell to keep the work dir
+  ( create_live_binary_checksum $ISOSYSLNX_TMP b3 ) # output files: b3sum.txt, b3sum.README
+  for isum in b3sum.txt b3sum.README; do
+    if [ -e "$ISOSYSLNX_TMP/$isum" ]; then
+      doc_insert_in_root="$doc_insert_in_root /$isum=$ISOSYSLNX_TMP/$isum"
+    fi
+  done
+
   # Create the iso file
   xorriso \
    -as mkisofs -R -r -J -joliet-long -l -cache-inodes -iso-level 3 \
@@ -556,6 +565,11 @@ create_gparted_live_zip() {
   [ -e "$WD/$real_target_zip" ] && rm -f $WD/$real_target_zip
   # Before packing it, make sure all the mode is writable
   chmod -R u+w $USB_TMP
+
+  # Create b3sum checksum in dir $USB_TMP
+  # //NOTE// Use subshell to keep the work dir
+  ( create_live_binary_checksum $USB_TMP b3 ) # output files: b3sum.txt, b3sum.README
+
   (cd $USB_TMP; zip -0 -r $WD/$real_target_zip .)
   echo "The created release file is $real_target_zip. You can extract all the files into your pendrive, and run makeboot.bat from pendrive in MS windows."
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -1024,6 +1038,10 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
 
   # Disable zsync, it might fail due to download files after /etc/resolv.conf is deconfigured.
   $pref lb config --zsync false
+
+  # Disable checksum, we will create it by ourselves since later the grub.cfg
+  # and some files will be modified by ocs-iso/ocs-live-dev.
+  $pref lb config --checksums none
 
   # Create a source tarball or not.
   if [ "$gen_source_tarball" = "yes" ]; then

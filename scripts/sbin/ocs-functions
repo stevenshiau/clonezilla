@@ -18160,3 +18160,46 @@ get_gocryptfs_info_path() {
   fi
   echo "$r_path_"
 } # end of get_gocryptfs_info_path
+#
+create_live_binary_checksum() {
+  # This part is borrowed from Debian live-build.
+  LV_CHECKSUMS_DEF="b3" # Default to use b3sum
+  LV_WDIR="$1"
+  LV_CHECKSUMS="$2"
+  # Default to use b3sum.
+  if [ -z "$LV_WDIR" ]; then
+    echo "No Live system working dir was assigned in create_live_binary_checksum."
+    exit 1
+  fi
+  if [ ! -d "$LV_WDIR" ]; then
+    echo "\"$LV_WDIR\" was not found."
+    exit 1
+  fi
+  [ -z "$LV_CHECKSUMS" ] && LV_CHECKSUMS="$LV_CHECKSUMS_DEF"
+  for CHECKSUM in ${LV_CHECKSUMS}; do
+  	CHECKSUMS="${CHECKSUM}sum.txt"
+  	echo "Begin creating binary ${CHECKSUMS} in dir $LV_WDIR..."
+  	# Remove old checksums
+  	if [ -f $LV_WDIR/${CHECKSUMS} ]
+  	then
+  		rm -f $LV_WDIR/${CHECKSUMS}
+  	fi
+  	# Calculating checksums
+  	cd $LV_WDIR
+  	find . -type f \
+  		\! -path './syslinux/isolinux.bin' \
+  		\! -path './boot/boot.bin' \
+  		\! -path './boot/grub/stage2_eltorito' \
+  		\! -path './*SUMS' \
+  		\! -path './*sum.txt' \
+  		\! -path './*sum.README' \
+  		-print0 | LC_ALL=C sort -z | xargs -0 ${CHECKSUM}sum > ${CHECKSUMS}
+  
+  	cat > ${CHECKSUM}sum.README << EOF
+The file ${CHECKSUMS} contains the ${CHECKSUM} checksums of all files on this medium.
+
+You can verify them automatically with the 'verify-checksums' boot parameter,
+or, manually with: '${CHECKSUM}sum -c ${CHECKSUMS}'.
+EOF
+  done
+} # end of create_live_binary_checksum
