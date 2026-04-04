@@ -902,3 +902,28 @@ FNT_END
   ln -s /etc/fonts/conf.avail/70-force-bitmaps.conf /etc/fonts/conf.d/70-force-bitmaps.conf
   fc-cache -fv
 } # end of enable_bitmaps_fonts_for_fontconfig
+#
+copy_extra_prog_to_initrd() {
+  local add_pkgs="$1" # full path
+  local pkg_path
+  [ -z "$add_pkgs" ] && return 3
+  cat <<-ADDPROG_END > /usr/share/initramfs-tools/hooks/add_progs
+#!/bin/sh
+# Added by Clonezilla live
+PREREQ=""
+prereqs() { echo "\$PREREQ"; }
+case "\$1" in
+    prereqs)
+        prereqs
+        exit 0
+        ;;
+esac
+. /usr/share/initramfs-tools/hook-functions
+for program in $add_pkgs; do
+  pkg_path="\$(dirname \$program)"
+  copy_exec \$program $pkg_path
+done
+ADDPROG_END
+  chmod 755 /usr/share/initramfs-tools/hooks/add_progs
+  update_initramfs_flag="yes"
+} # copy_extra_prog_to_initrd
