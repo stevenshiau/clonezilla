@@ -1,0 +1,460 @@
+#!/bin/bash
+# License: GPL 
+# Author: Steven Shiau <steven _at_ clonezilla org>
+# Description: To convert the image of Clonezilla from 
+# existing encryption format to another one, or encrypt/decrypt it.
+
+#
+DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
+. $DRBL_SCRIPT_PATH/sbin/drbl-conf-functions
+. /etc/drbl/drbl-ocs.conf
+. $DRBL_SCRIPT_PATH/sbin/ocs-functions
+
+# Load the config in ocs-live.conf. This is specially for Clonezilla live. It will overwrite some settings of /etc/drbl/drbl-ocs.conf, such as $DIA...
+[ -e "/etc/ocs/ocs-live.conf" ] && . /etc/ocs/ocs-live.conf
+
+# Settings
+verbose="no"
+chk_img_restoreable_def="yes"
+ocs_rm_src_img="no"
+enc_type_dest="gocryptfs"
+
+#
+ocs_file="$0"
+ocs=`basename $ocs_file`
+
+case "$ocs" in
+  ocs-decrypt-img)
+    enc_type_dest="none"
+    ;;
+  ocs-encrypt-img)
+    enc_type_dest="gocryptfs"
+    ;;
+esac
+
+#
+USAGE() {
+    case "$ocs" in
+      ocs-decrypt-img)
+        echo "$ocs - To decrypt the image of Clonezilla from existing one."
+        ;;
+      ocs-encrypt-img)
+        echo "$ocs - To encrypt the image of Clonezilla from existing one."
+        ;;
+      *)
+        echo "$ocs - To convert the image of Clonezilla from existing encryption format to another one, or encrypt/decrypt it."
+        ;;
+    esac
+    echo "Usage:"
+    echo "To run $ocs:"
+    echo "$ocs [OPTION] SRC_IMAGE_NAME DEST_IMAGE_NAME"
+    echo "Options:"
+    echo "-b, --batch-mode   Run image checking in batch mode"
+    echo "-d, --delete-src-img     Force to delete source image after conversion. By default it's kept."
+    echo "-t, --enc-type TYPE      Encryption type for destination image: none, ecryptfs or gocryptfs (default: $enc_type_dest)."
+    echo "-or, --ocsroot DIR Specify DIR (absolute path) as directory ocsroot (i.e. overwrite the ocsroot assigned in drbl.conf)"
+    echo "-nogui, --nogui          Do not show GUI (TUI) of Partclone when checking, use text only"
+    echo "-sc, --skip-check-restorable  Skip checking the image if restorable after it is converted."
+    echo "-v, --verbose            Prints verbose information"
+    echo "SRC_IMAGE_NAME and DEST_IMAGE_NAME are the image dir name, not absolute path"
+    echo "If \"ask_user\" is used as SRC_IMAGE_NAME or DEST_IMAGE_NAME, a dialog menu will be shown to allow selection or inputing."
+    echo "If no SRC_IMAGE_NAME or DEST_IMAGE_NAME is specified, a dialog menu will be shown."
+    echo "Ex:"
+    case "$ocs" in
+      ocs-decrypt-img)
+        echo "   To decrypt the image \"my-image-enc\" to \"my-image\", run"
+        echo "   $ocs my-image-enc my-image"
+        ;;
+      ocs-encrypt-img)
+        echo "   To encrypt the image \"my-image\" to \"my-image-gocryptfs\" (gocryptfs), run"
+        echo "   $ocs -t gocryptfs my-image my-image-gocryptfs"
+        ;;
+      *)
+        echo "   To convert the image \"my-image-ecryptfs\" (eCryptfs) to \"my-image-gocryptfs\" (gocryptfs), run"
+        echo "   $ocs -t gocryptfs my-image-ecryptfs my-image-gocryptfs"
+        ;;
+    esac
+    echo
+} # end of USAGE
+#
+ask_if_check_converted_img() {
+  local TMP=`mktemp /tmp/ocs_chk.XXXXXX`
+  local sc_opt
+  trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+  # Question about checking the image after conversion
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+  "$msg_nchc_clonezilla" --menu "$msg_choose_if_checking_image_restorable" \
+  0 0 0 $DIA_ESC \
+  " "    "$msg_check_converted_img_restorable" \
+  "-sc"  "$msg_skip_check_converted_img_restorable" \
+  2> $TMP
+  sc_opt="$(cat $TMP)"
+  case "$sc_opt" in
+   -sc)  chk_img_restoreable="no";;
+     *)  chk_img_restoreable="yes";;
+  esac
+  [ -f "$TMP" ] && rm -f $TMP
+} # ask_if_check_converted_img
+
+#
+task_convert_image(){
+  local src_img="$1"
+  local dest_img="$2"
+  local rc_src=0
+  local rc_dest=0
+  local src_enc="none"
+  local src_mntpnt=""
+  local src_bindfs_mntpnt=""
+  local src_webdav_bindfs_flag=""
+  local dest_mntpnt=""
+  local dest_bindfs_mntpnt=""
+  local dest_webdav_bindfs_flag=""
+  local ocsroot_orig_copy=""
+  local target_dir_orig_copy=""
+
+  # Detect source encryption
+  if is_ecryptfs_img "$ocsroot/$src_img"; then
+    src_enc="ecryptfs"
+  elif is_gocryptfs_img "$ocsroot/$src_img"; then
+    src_enc="gocryptfs"
+  fi
+
+  # Prepare source (Mount if encrypted)
+  if [ "$src_enc" != "none" ]; then
+    echo "Mounting source image $src_img ($src_enc)..."
+    ocs_sr_type="restore"
+    target_dir="$src_img"
+    if [ "$src_enc" = "ecryptfs" ]; then
+      prepare_ecryptfs_mount_point_if_necessary
+      rc_src="$?"
+    elif [ "$src_enc" = "gocryptfs" ]; then
+      prepare_gocryptfs_mount_point_if_necessary
+      rc_src="$?"
+    fi
+    if [ "$rc_src" -ne 0 ]; then
+      echo "Failed to mount source image $src_img."
+      return 1
+    fi
+    src_mntpnt="$ecrypt_mntpnt"
+    src_bindfs_mntpnt="$bindfs_mntpnt"
+    src_webdav_bindfs_flag="$webdav_bindfs_flag"
+    
+    # After mounting, ocsroot and target_dir are changed to mount point.
+    # We need to restore them for destination mounting.
+    ocsroot_orig_copy="$ocsroot_orig"
+    target_dir_orig_copy="$target_dir_orig"
+    ocsroot="$ocsroot_orig"
+    target_dir="$dest_img"
+    # Unset passwords for destination so it asks again if needed if it's the same type as source
+    if [ "$enc_type_dest" = "ecryptfs" ]; then
+      passwd_ecryptfs=""
+      passwd_file_ecryptfs=""
+    elif [ "$enc_type_dest" = "gocryptfs" ]; then
+      passwd_gocryptfs=""
+      passwd_file_gocryptfs=""
+    fi
+
+  else
+    src_mntpnt="$ocsroot/$src_img"
+    ocsroot_orig_copy="$ocsroot"
+    target_dir_orig_copy="$src_img"
+  fi
+
+  # Prepare destination (Mount if encrypted)
+  mkdir -p "$ocsroot/$dest_img"
+  if [ "$enc_type_dest" != "none" ]; then
+    echo "Mounting destination image $dest_img ($enc_type_dest)..."
+    ocs_sr_type="save"
+    target_dir="$dest_img"
+    if [ "$enc_type_dest" = "ecryptfs" ]; then
+      encrypt_ocs_img="yes"
+      prepare_ecryptfs_mount_point_if_necessary
+      rc_dest="$?"
+    elif [ "$enc_type_dest" = "gocryptfs" ]; then
+      gocrypt_ocs_img="yes"
+      prepare_gocryptfs_mount_point_if_necessary
+      rc_dest="$?"
+    fi
+    if [ "$rc_dest" -ne 0 ]; then
+      echo "Failed to mount destination image $dest_img."
+      # Cleanup source if it was mounted
+      if [ "$src_enc" = "ecryptfs" ]; then
+        ecrypt_mntpnt="$src_mntpnt"
+        bindfs_mntpnt="$src_bindfs_mntpnt"
+        webdav_bindfs_flag="$src_webdav_bindfs_flag"
+        umount_ecryptfs_mount_point_if_necessary
+      elif [ "$src_enc" = "gocryptfs" ]; then
+        ecrypt_mntpnt="$src_mntpnt"
+        bindfs_mntpnt="$src_bindfs_mntpnt"
+        webdav_bindfs_flag="$src_webdav_bindfs_flag"
+        umount_gocryptfs_mount_point_if_necessary
+      fi
+      return 1
+    fi
+    dest_mntpnt="$ecrypt_mntpnt"
+    dest_bindfs_mntpnt="$bindfs_mntpnt"
+    dest_webdav_bindfs_flag="$webdav_bindfs_flag"
+  else
+    dest_mntpnt="$ocsroot/$dest_img"
+  fi
+
+  # Rsync
+  echo "Copying files from source to destination..."
+  rm_target_image_if_exist "$dest_mntpnt"
+  # Exclude encryption info files from source as we will create new ones for destination
+  rsync -avP --exclude="ecryptfs.info" --exclude="gocryptfs.info" "$src_mntpnt/" "$dest_mntpnt/"
+  rc_=$?
+
+  if [ "$rc_" -eq 0 ]; then
+    if [ "$chk_img_restoreable" = "yes" ]; then
+      local nogui_opt_
+      if [ "$nogui" = "on" ]; then
+        nogui_opt_="-nogui"
+      fi
+      echo $msg_delimiter_star_line
+      echo "Checking the converted image \"$dest_img\"..."
+      # Since destination is still mounted (if it was encrypted), ocsroot and target_dir
+      # are pointing to the decrypted mount point in /tmp.
+      # If it was NOT encrypted, ocsroot and target_dir are the original ones.
+      ocs-chkimg -or "$ocsroot" -b $nogui_opt_ "$target_dir"
+      rc_ocs_chk="$?"
+    fi
+  fi
+
+  # Cleanup and finalize
+  if [ "$enc_type_dest" = "ecryptfs" ]; then
+    get_ecryptfs_info
+    umount_ecryptfs_mount_point_if_necessary
+    put_ecryptefs_tag_file_in_img
+  elif [ "$enc_type_dest" = "gocryptfs" ]; then
+    get_gocryptfs_info
+    umount_gocryptfs_mount_point_if_necessary
+    put_gocryptfs_tag_file_in_img
+  fi
+
+  if [ "$src_enc" = "ecryptfs" ]; then
+    # Restore variables for source cleanup
+    ecrypt_mntpnt="$src_mntpnt"
+    bindfs_mntpnt="$src_bindfs_mntpnt"
+    webdav_bindfs_flag="$src_webdav_bindfs_flag"
+    umount_ecryptfs_mount_point_if_necessary
+  elif [ "$src_enc" = "gocryptfs" ]; then
+    ecrypt_mntpnt="$src_mntpnt"
+    bindfs_mntpnt="$src_bindfs_mntpnt"
+    webdav_bindfs_flag="$src_webdav_bindfs_flag"
+    umount_gocryptfs_mount_point_if_necessary
+  fi
+
+  # Restore original ocsroot and target_dir for the main program
+  ocsroot="$ocsroot_orig_copy"
+  target_dir="$dest_img"
+
+  return $rc_
+} # end of task_convert_image
+#
+task_remove_src_img() {
+  if [ -n "$ocsroot" -a \
+       -n "$ocs_src_img_name" -a \
+       -d "$ocsroot/$ocs_src_img_name" ]; then
+    # Do not use "rm -rf" here, use 2-step removing to avoid accidents.
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Removing the source image \"$ocs_src_img_name\"..."
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    rm -fv $ocsroot/$ocs_src_img_name/*
+    rmdir -v $ocsroot/$ocs_src_img_name
+  fi
+} # end of task_remove_src_img
+
+####################
+### Main program ###
+####################
+
+#
+while [ $# -gt 0 ]; do
+ case "$1" in
+   -b|--batch) ocs_batch_mode="on"; shift;;
+   -d|--delete-src-img) ocs_rm_src_img="yes"; shift;;
+   -t|--enc-type)
+           shift;
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             enc_type_dest="$1"
+             shift;
+           fi
+           [ -z "$enc_type_dest" ] && USAGE && exit 1
+           ;;
+   -or|--ocsroot)
+           # overwrite the ocsroot in drbl.conf
+           shift; 
+           if [ -z "$(echo $1 |grep ^-.)" ]; then
+             # skip the -xx option, in case 
+             ocsroot="$1"
+             shift;
+           fi
+           [ -z "$ocsroot" ] && USAGE && exit 1
+           ;;
+   -nogui|--nogui)
+           # -nogui is for backward compatable, better to use --nogui
+           nogui="on"
+	   shift;;
+   -sc|--skip-check-restorable)
+           # Flag to check if the image is restorable
+           chk_img_restoreable="no"
+	   shift;;
+   -v|--verbose) verbose="yes"; shift;;
+   -*)     echo "${0}: ${1}: invalid option" >&2
+           USAGE >& 2
+           exit 2 ;;
+   *)      break ;;
+ esac
+done
+
+#
+if [ -z "$*" ]; then
+  mode="interactive"
+else
+  ocs_src_img_name="$1"
+  shift
+  ocs_dest_img_name="$1"
+fi
+
+force_TERM_as_linux_if_necessary
+
+#
+check_if_root
+ask_and_load_lang_set
+
+# check DIA
+check_DIA_set_ESC $DIA
+#
+[ -z "$IMG_CLONE_CMP" ] && IMG_CLONE_CMP="$IMG_CLONE_CMP_def"
+
+# imagedir is a variable which ask_user related function need
+imagedir="$ocsroot"
+[ -z "$ocs_src_img_name" ] && ocs_src_img_name="ask_user"
+[ -z "$ocs_dest_img_name" ] && ocs_dest_img_name="ask_user"
+
+# Prepare the image to be converted
+if [ "$ocs_src_img_name" = "ask_user" ]; then
+  case "$ocs" in
+    ocs-decrypt-img) list_opt="-o enc";;
+    ocs-encrypt-img) list_opt="-o nonenc";;
+    *)               list_opt="";;
+  esac
+  # List images.
+  get_target_dir_name_when_converting_img $list_opt
+  ocs_src_img_name="$target_dir"
+fi
+
+[ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+echo "$msg_the_image_to_be_convert: $ocs_src_img_name"
+[ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+if [ "$ocs_dest_img_name" = "ask_user" ]; then
+  get_target_dir_name_when_saving  ${ocs_src_img_name}-${append_name} # get $target_dir
+  ocs_dest_img_name="$target_dir"
+fi
+
+if [ "$mode" = "interactive" ]; then
+  ask_if_check_converted_img
+else
+  if [ -z "$chk_img_restoreable" ]; then
+    chk_img_restoreable="$chk_img_restoreable_def"
+  fi
+fi
+
+#
+check_input_target_image "$ocsroot/$ocs_src_img_name"
+
+# Check if it's already an unencrypted image or not
+case "$ocs" in
+  ocs-decrypt-img)
+    if ! is_ecryptfs_img "$ocsroot/$ocs_src_img_name" && ! is_gocryptfs_img "$ocsroot/$ocs_src_img_name"; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$msg_is_unencrypted_image_already: $ocs_src_img_name"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      exit 1
+    fi
+    ;;
+  ocs-encrypt-img)
+    if is_ecryptfs_img "$ocsroot/$ocs_src_img_name" || is_gocryptfs_img "$ocsroot/$ocs_src_img_name"; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "$msg_is_encrypted_image_already: $ocs_src_img_name"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!"
+      exit 1
+    fi
+    ;;
+esac
+
+############
+### Main ###
+############
+rc_ocs_chk=0
+task_convert_image "$ocs_src_img_name" "$ocs_dest_img_name"
+rc="$?"
+
+#
+if [ "$rc" -ne 0 ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  if [ "$enc_type_dest" = "none" ]; then
+    echo "$msg_failed_to_cnvt_image_to_unencrypted: $ocs_dest_img_name"
+  else
+    echo "$msg_failed_to_cnvt_image_to_encrypted: $ocs_dest_img_name"
+  fi
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+fi
+
+#
+if [ "$mode" = "interactive" ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  if is_ecryptfs_img "$ocsroot/$ocs_src_img_name" || is_gocryptfs_img "$ocsroot/$ocs_src_img_name"; then
+    msg_rem="$msg_remove_original_encrypted_img"
+    msg_rem_again="$msg_remove_original_encrypted_img_ask_again"
+  else
+    msg_rem="$msg_remove_original_unencrypted_img"
+    msg_rem_again="$msg_remove_original_unencrypted_img_ask_again"
+  fi
+  echo "$msg_rem: $ocs_src_img_name?"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n "[y/N] "
+  read ocs_remove_answer1
+  case "$ocs_remove_answer1" in 
+    y|Y|[yY][eE][sS])
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "$msg_rem_again: $ocs_src_img_name ?"
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo -n "[y/N] "
+    read ocs_remove_answer2
+    case "$ocs_remove_answer2" in 
+       y|Y|[yY][eE][sS]) ocs_rm_src_img="yes";;
+    esac
+    ;;
+  esac
+fi
+if [ "$ocs_rm_src_img" = "yes" ]; then
+  task_remove_src_img
+fi
+
+#
+rc_t="$((rc + rc_ocs_chk))"
+
+if [ "$rc_t" -eq 0 ]; then
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+  if [ "$enc_type_dest" = "none" ]; then
+    echo "$msg_cnvt_image_to_unencrypted_successfully: $ocs_dest_img_name"
+  else
+    echo "$msg_cnvt_image_to_encrypted_successfully: $ocs_dest_img_name"
+  fi
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+else
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  if [ "$enc_type_dest" = "none" ]; then
+    echo "$msg_failed_to_cnvt_image_to_unencrypted: $ocs_dest_img_name"
+  else
+    echo "$msg_failed_to_cnvt_image_to_encrypted: $ocs_dest_img_name"
+  fi
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+fi
+
+exit $rc_t
