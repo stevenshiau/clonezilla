@@ -86,7 +86,7 @@ USAGE() {
     echo "-b, --branch [s|stable|t|testing|u|unstable|e|experimental]  Sepcify the DRBL branch to be used in Live CD. Default is stable."
     echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (debootstrap or mmdebstrap). If not specified, $bootstrap_default will be used."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
-    echo "-d, --debian-dist [stable|testing|unstable|jessie|strech|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
+    echo "-d, --debian-dist [trixie|forky|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
     echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 586, 686 or amd64. If it's not assigned, $cpu_flavor_default will be used."
     echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
     echo "-n, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
@@ -862,24 +862,10 @@ case "$drbl_branch" in
      LIVE_REPOSITORY_SECTIONS_drbl="stable"
      ;;
 esac
-case "$drbl_live_branch" in
-  t|testing)
-     echo "Using DRBL Live testing branch..."
-     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-testing"
-     ;;
-  u|unstable)
-     echo "Using DRBL Live unstable branch..."
-     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-unstable"
-     ;;
-  e|experimental)
-     echo "Using DRBL Live experimental branch..."
-     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-experimental"
-     ;;
-  *)
-     echo "Using DRBL Live stable branch..."
-     LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-stable"
-     ;;
-esac
+
+# Append DRBL Live Ubuntu branch to LIVE_REPOSITORY_SECTIONS_drbl
+echo "Using DRBL Live Debian $drbl_live_branch branch..."
+LIVE_REPOSITORY_SECTIONS_drbl="$LIVE_REPOSITORY_SECTIONS_drbl live-${drbl_live_branch}"
 
 if [ -z "$pkg_list" ]; then
   nametag="live"
@@ -895,8 +881,8 @@ if [ "$debian_dist" = "etch" ]; then
   pkgs="$(echo $pkgs | sed -e "s/grandr//g" -e "s/hfsprogs//g")"  
 fi
 
-if [ "$debian_dist" = "squeeze" -o \
-     "$debian_dist" = "wheezy" -o \
+if [ "$debian_dist" = "bookworm" -o \
+     "$debian_dist" = "trixie" -o \
      "$debian_dist" = "sid" ]; then
   # From around Oct/2009, the dummy package name "grub" is actually grub-pc, therefore we force to use grub-legacy and assume that if grub2 boot loader is used in the restored GNU/Linux, grub2 is available in the restored GNU/Linux so therefore we can use chroot to run it.
   # 2011/Dec/03 Since most of GNU/Linux distributions now use grub2, no more force to use grub-legacy, and we have backup plan by putting grub1 deb package in the live system. 
