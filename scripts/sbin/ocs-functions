@@ -4540,7 +4540,46 @@ get_disk_or_part_hardware_info() {
     # Partition 
     
     # First check if swap/extended one. If so, skip it.
-    part_type="$(jq -r ".[] | select(.name == \"$p\") | .type, .fstype, .parttype" $hwinfo_json_f)"
+    #
+    # Ventoy utilizes Linux's Device Mapper (dm) subsystem to create a virtual mapped device
+    # based on the physical USB partition. Since lsblk scans and reports all block devices
+    # on the system, it sees and outputs both the raw physical partition and the virtual mapped device.
+    # The output of ocs-blk-dev-info:
+    #     "name": "sde1",
+    #     "type": "part",
+    #     "size": "32G",
+    #     "model": "",
+    #     "fstype": "exfat",
+    #     "serial": "",
+    #     "label": "Ventoy",
+    #     "parttype": "0x7",
+    #     "id_path_tag": "pci-0000_02_03_0-usb-0_1_1_0-scsi-0_0_0_0"
+    #   },
+    #   {
+    #     "name": "sde1",
+    #     "type": "dm",
+    #     "size": "32G",
+    #     "model": "",
+    #     "fstype": "exfat",
+    #     "serial": "",
+    #     "label": "Ventoy",
+    #     "parttype": "",
+    #     "id_path_tag": "pci-0000_02_03_0-usb-0_1_1_0-scsi-0_0_0_0"
+    #   },
+    # If we run, e.g.,
+    # jq -r '.[] | select(.name == "sde1") | .type, .fstype, .parttype' /tmp/ocs-blkinfo.x5cDTB
+    # part
+    # exfat <-- For partition
+    # 0x7
+    # dm
+    # exfat <-- For dm
+    # Hence we have filter the physical partition and ignore the virtual dm device, i.e.,
+    # jq -r '.[] | select(.name == "sde1" and .type == "part") | .type, .fstype, .parttype' /tmp/ocs-blkinfo.x5cDTB
+    # part
+    # exfat
+    # 0x7
+
+    part_type="$(jq -r ".[] | select(.name == \"$p\" and .type == \"part\") | .type, .fstype, .parttype" $hwinfo_json_f)"
     rc=$?
     # The return "8" means return "continue" (8 characters). 
     # Here this function is extracted from a loop.
@@ -4554,12 +4593,12 @@ get_disk_or_part_hardware_info() {
     fi
 
     # Size
-    dsize="$(jq -r ".[] | select(.name == \"$p\") | .size" $hwinfo_json_f)"
+    dsize="$(jq -r ".[] | select(.name == \"$p\" and .type == \"part\") | .size" $hwinfo_json_f)"
     # If empty, set it to "No_size"
     dsize="${dsize:-No_size}"
 
     # File system
-    part_fs="$(jq -r ".[] | select(.name == \"$p\") | .fstype" $hwinfo_json_f)"
+    part_fs="$(jq -r ".[] | select(.name == \"$p\" and .type == \"part\") | .fstype" $hwinfo_json_f)"
     # If empty, set it to "No_file_system"
     part_fs="${part_fs:-No_file_system}"
 
@@ -4570,7 +4609,7 @@ get_disk_or_part_hardware_info() {
     dmodel="${dmodel:-No_disk_model}"
 
     # Volume label
-    part_lb="$(jq -r ".[] | select(.name == \"$p\") | .label" $hwinfo_json_f)"
+    part_lb="$(jq -r ".[] | select(.name == \"$p\" and .type == \"part\") | .label" $hwinfo_json_f)"
     # If empty, set it to "No_label"
     part_lb="${part_lb:-No_label}"
 
@@ -4880,7 +4919,7 @@ get_input_dev_name() {
     for p in $(reduce_multipath_dev $dev_list); do
        DEV_MODEL=""
        echo -n "."
-       FILE="$(jq -r ".[] | select(.name == \"$p\") | .type, .fstype, .parttype" $blk_info_f | tr [:upper:] [:lower:])"
+       FILE="$(jq -r ".[] | select(.name == \"$p\" and .type == \"part\") | .type, .fstype, .parttype" $blk_info_f | tr [:upper:] [:lower:])"
        rc=$?
        if [ "$rc" = "0" ]; then
          [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue
