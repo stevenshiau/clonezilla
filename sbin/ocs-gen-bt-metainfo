@@ -115,6 +115,16 @@ create_LVM_torrent_file_from_disk() {
      fi
    done
    [ "$is_in_chosen_partition" = "no" ] && continue
+   # --- THIN PROVISIONING ---
+   # Skip thin pool data container
+   lvname="$(echo "$lv" | awk -F"/" '{print $4}')"
+   if [ -f "$img_d_/lvm_$volg.conf" ]; then
+     if grep -A 50 -E "^[[:space:]]+$lvname \{" "$img_d_/lvm_$volg.conf" | grep -q 'type = "thin-pool"'; then
+       echo "Device $lv is a thin pool container. Skipping."
+       continue
+     fi
+   fi
+   # --- THIN PROVISIONING ---
    fs_="$(LC_ALL=C ocs-get-dev-info ${lv} fs)"
    # Skip swap
    case "$fs_" in 

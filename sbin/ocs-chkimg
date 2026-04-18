@@ -351,6 +351,17 @@ task_logv_check() {
 	# then skip the rest.
         continue;; 
    esac
+   # --- THIN PROVISIONING ---
+   # Skip thin pool data container
+   volg="$(echo "$lv" | awk -F"/" '{print $3}')"
+   lvname="$(echo "$lv" | awk -F"/" '{print $4}')"
+   if [ -f "$target_dir_fullpath/lvm_$volg.conf" ]; then
+     if grep -A 50 -E "^[[:space:]]+$lvname \{" "$target_dir_fullpath/lvm_$volg.conf" | grep -q 'type = "thin-pool"'; then
+       echo "Device $lv is a thin pool container. Skipping." | tee --append $OCS_LOGFILE
+       continue
+     fi
+   fi
+   # --- THIN PROVISIONING ---
    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
    echo "Checking the device LV $fn in the image \"$(basename $target_dir_fullpath)\"..."
    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL

@@ -7142,6 +7142,13 @@ save_logv() {
      fi
      # only keep LOGV is in the chosen vg
      if [ -n "$(LC_ALL=C echo $LOGV | grep -E "/dev/$vg/" 2>/dev/null)" ]; then
+      # --- THIN PROVISIONING ---
+      # Skip thin pool data container (It should not be dumped via dd or partclone.dd)
+      if [ -n "$(LC_ALL=C lvs --noheadings -o segtype $LOGV 2>/dev/null | grep -Ew 'thin-pool')" ]; then
+        echo "Device $LOGV is a thin pool container. Skipping it in $LOGV_PARSE_CONF." | tee --append $OCS_LOGFILE
+        break
+      fi
+      # --- THIN PROVISIONING ---
       file_system="$(LC_ALL=C file -Ls $LOGV | awk -F":" '{print $2}')"
       echo "$LOGV $file_system" | tee -a $LOGV_PARSE_CONF
       break
