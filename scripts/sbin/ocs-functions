@@ -7047,7 +7047,11 @@ do_d2d_network_restore() {
     # For part clone over net, the source and target part maybe different,
     # so we have to get from the info file
     . $orig_ocsroot/target_type.ocs_onthefly
-    part_fs="$source_part_fs" ;;
+    # If source_part_fs is a list, we try to get from dev-fs.list first
+    if [ "$(echo $source_part_fs | wc -w)" -gt 1 ]; then
+      part_fs="$(grep -Ew "^/dev/$part" $tgt_pt_info | awk -F" " '{print $2}')"
+    fi
+    [ -z "$part_fs" ] && part_fs="$source_part_fs" ;;
   esac
   if [ -z "$part_fs" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -10518,7 +10522,19 @@ task_restoreparts() {
 	case $ocs_sr_type in
         "ld2d_restoredisk")
           # Local disk to local disk only allows same partition name clone, e.g., sda1 -> sdb1
-	  lsrc_dev="$(echo $partition | replace_disk_name_stdin $target_hd $source_hd)" ;;
+          # If there are multiple disks, we need to find the right source disk for this partition
+          local current_target_hd="$(get_diskname $partition)"
+          local idx=1
+          local found_idx=0
+          for thd in $target_hd; do
+            if [ "$thd" = "$current_target_hd" ]; then
+              found_idx=$idx
+              break
+            fi
+            idx=$((idx + 1))
+          done
+          local current_source_hd="$(echo $source_hd | awk -v i=$found_idx '{print $i}')"
+	  lsrc_dev="$(echo $partition | replace_disk_name_stdin $current_target_hd $current_source_hd)" ;;
         "ld2d_restoreparts")
           # Local part to local part only allows differents partition name clone, e.g., sda2 -> sdb1
 	  # source_part is a global variable from ocs-sr.
