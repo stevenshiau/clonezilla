@@ -48,6 +48,10 @@ USAGE() {
     echo "-g, --log-dir DIR        Use DIR as the log dir. Default value is \"$btlog_dir\""
     echo "-m, --mode img|raw-dev   Run seeding in image or raw-dev format."
     echo "-u, --max_upload NUM     Max upload connections number. If not assigned, $ezio_seed_max_upload will be used."
+    echo "--cache-size NUM         ezio daemon cache size (MB). If not assigned, $ezio_cache_size will be used."
+    echo "--aio-threads NUM        ezio daemon aio threads number. If not assigned, $ezio_aio_threads will be used."
+    echo "--slow-start yes|no      Enable ezio session-wide slow-start upload ramp. If not assigned, $ezio_slow_start will be used."
+    echo "--slow-start-period SECS ezio slow-start step period (sec). If not assigned, $ezio_slow_start_period will be used."
     echo
     echo "Ex:"
     echo "To start the seeder in source machine for /dev/sda1 with sda1.torrent, /dev/sda2 with sda2.torrent, use"
@@ -103,6 +107,42 @@ while [ $# -gt 0 ]; do
          fi
          [ -z "$ezio_seed_max_upload" ] && USAGE && exit 1
          ;;
+    --cache-size)
+         shift;
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case
+           ezio_cache_size="$1"
+           shift;
+         fi
+         [ -z "$ezio_cache_size" ] && USAGE && exit 1
+         ;;
+    --aio-threads)
+         shift;
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case
+           ezio_aio_threads="$1"
+           shift;
+         fi
+         [ -z "$ezio_aio_threads" ] && USAGE && exit 1
+         ;;
+    --slow-start)
+         shift;
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case
+           ezio_slow_start="$1"
+           shift;
+         fi
+         [ -z "$ezio_slow_start" ] && USAGE && exit 1
+         ;;
+    --slow-start-period)
+         shift;
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case
+           ezio_slow_start_period="$1"
+           shift;
+         fi
+         [ -z "$ezio_slow_start_period" ] && USAGE && exit 1
+         ;;
     -*)  echo "${0}: ${1}: invalid option in program $ocs_file." >&2
          USAGE >& 2
          exit 2 ;;
@@ -140,6 +180,14 @@ rm -f $ezio_pid_log
 case "$ezio_mode" in
   img) ezio_daemon_opt="-F";
 esac
+get_ezio_cache_size
+get_ezio_aio_threads
+ezio_daemon_opt="$ezio_daemon_opt --cache-size $ezio_cache_size --aio-threads $ezio_aio_threads"
+# slow-start: seeder only; --slow-start is a boolean switch, period is optional.
+if [ "$ezio_slow_start" = "yes" ]; then
+  ezio_daemon_opt="$ezio_daemon_opt --slow-start"
+  [ -n "$ezio_slow_start_period" ] && ezio_daemon_opt="$ezio_daemon_opt --slow-start-period $ezio_slow_start_period"
+fi
 ezio $ezio_daemon_opt >$ocs_log_dir/ezio-seeder.log 2>$ocs_log_dir/ezio-seeder.err &
 ezio_pid="$!"
 echo "$ezio_pid" > $ezio_pid_log
