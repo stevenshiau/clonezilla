@@ -28,6 +28,8 @@ USAGE() {
     echo "-c, --max_connect NUM    Max total connections number. If not assigned, $ezio_seed_max_connect will be used."
     echo "-u, --max_upload NUM     Max upload connections number. If not assigned, $ezio_seed_max_upload will be used."
     echo "-w, --wait SECS        The interval to keep uploading and waiting for other peer (sec). If not assigned, $ezio_upload_timeout will be used."
+    echo "--cache-size NUM         ezio daemon cache size (MB). If not assigned, $ezio_cache_size will be used."
+    echo "--aio-threads NUM        ezio daemon aio threads number. If not assigned, $ezio_aio_threads will be used."
     echo
     echo "Ex:"
     echo "To start the leecher in client machine for /dev/sda1 with sda1.torrent, /dev/sda2 with sda2.torrent, use"
@@ -71,6 +73,24 @@ while [ $# -gt 0 ]; do
          fi
          [ -z "$ezio_upload_timeout" ] && USAGE && exit 1
          ;;
+    --cache-size)
+         shift;
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case
+           ezio_cache_size="$1"
+           shift;
+         fi
+         [ -z "$ezio_cache_size" ] && USAGE && exit 1
+         ;;
+    --aio-threads)
+         shift;
+         if [ -z "$(echo $1 |grep ^-.)" ]; then
+           # skip the -xx option, in case
+           ezio_aio_threads="$1"
+           shift;
+         fi
+         [ -z "$ezio_aio_threads" ] && USAGE && exit 1
+         ;;
     -*)  echo "${0}: ${1}: invalid option in program $ocs_file." >&2
          USAGE >& 2
          exit 2 ;;
@@ -103,7 +123,10 @@ fi
 
 pkill -f -15 "^ezio"
 pkill -f -15 "^ezio-static"
-ezio >$ocs_log_dir/ezio-leecher.log 2> $ocs_log_dir/ezio-leecher.err &
+get_ezio_cache_size
+get_ezio_aio_threads
+ezio_daemon_opt="--cache-size $ezio_cache_size --aio-threads $ezio_aio_threads"
+ezio $ezio_daemon_opt >$ocs_log_dir/ezio-leecher.log 2> $ocs_log_dir/ezio-leecher.err &
 countdown 10
 echo $msg_delimiter_star_line
 # Parse the inputted parameters.

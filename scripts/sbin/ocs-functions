@@ -6943,6 +6943,28 @@ get_ezio_prog(){
   fi
 } # end of get_ezio_prog
 #
+get_ezio_cache_size(){
+  # ezio_cache_size is a global variable (MB). If not assigned, use 1/4 of
+  # the system RAM, ceiling to MB, as the default.
+  local mem_total_kb
+  if [ -z "$ezio_cache_size" ]; then
+    mem_total_kb="$(LC_ALL=C grep -E "^MemTotal:" /proc/meminfo | awk '{print $2}')"
+    # 1/4 RAM, kB -> MB ceiling: ceil(kB/4/1024) = (kB + 4095) / 4096
+    ezio_cache_size="$(( (mem_total_kb + 4095) / 4096 ))"
+  fi
+} # end of get_ezio_cache_size
+#
+get_ezio_aio_threads(){
+  # ezio_aio_threads is a global variable. If not assigned, use the CPU logical
+  # core number x2 as the default.
+  local cpu_no
+  if [ -z "$ezio_aio_threads" ]; then
+    cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)"
+    [ "$cpu_no" -lt 1 ] && cpu_no=1
+    ezio_aio_threads="$(( cpu_no * 2 ))"
+  fi
+} # end of get_ezio_aio_threads
+#
 collect_bittorrent_restore_dev() {
   # This function only collects partition/LV as "all_bt_part_lv". 
   # Later ocs-btsrv will be used to deploy all the devices.
