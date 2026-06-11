@@ -899,8 +899,16 @@ check_source_and_target_type() {
     esac
   fi
   if [ -n "$tgt_dev" ]; then
+    # We should set ocs_sr_type to "restore" so that check_input_param 
+    # won't check the file system on the bare block device of target disk.
+    # Otherwise if there is a file system on the target disk, it will be 
+    # treated as a "partition" in Clonezilla, and it will be mixed with 
+    # other clean target disks.
+    local ocs_sr_type_bak="$ocs_sr_type"
+    ocs_sr_type="restore"
     check_input_param $tgt_dev
     ret=$?
+    ocs_sr_type="$ocs_sr_type_bak"
     case "$ret" in
        3) target_type="disk" ;;
        5) target_type="partition" ;;
