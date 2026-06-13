@@ -1,13 +1,10 @@
 #!/bin/bash
-
-## README ##
-# check-initrd-module.sh
-# 判斷指定的 initrd (or initramfs) 檔案是否包含了特定模組
-# 範例: 
-# ** 檢查 ext4 ,btrfs ,virtio_blk ,dm_mod 是否被包入 /boot/initrd.img 中
-# $ ./check-initrd-module.sh -i /boot/initrd.img -c ext4 -c btrfs -c virtio_blk -c dm_mod
-
-
+# License: GPL
+# Author: Ceasar Sun <ceasar _at_ clonezilla org>
+# Determine whether the specified initrd (or initramfs) file contains specific modules
+# Example:
+# ** Check whether ext4, btrfs, virtio_blk, dm_mod are included in /boot/initrd.img
+# $ ocs-check-initrd-module -i /boot/initrd.img -c ext4 -c btrfs -c virtio_blk -c dm_mod
 
 INITRD_FILE=""
 MODULES=()
@@ -61,11 +58,11 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 嘗試從 initrd 的真實路徑解析出 kernel version (支援 soft-link)
+# Attempt to parse the kernel version from the real path of the initrd (supports symbolic links)
 REAL_PATH=$(readlink -f "$INITRD_FILE" 2>/dev/null || realpath "$INITRD_FILE" 2>/dev/null)
 KVER=$(echo "$REAL_PATH" | grep -oP '(?<=initrd\.img-|initramfs-).*' | sed 's/\.img$//')
 
-# 如果無法解析出版本號，退回使用目前系統正在運行的核心版本
+# If the version number cannot be parsed, fall back to using the currently running system kernel version
 if [ -z "$KVER" ]; then
     KVER=$(uname -r)
 fi
@@ -80,17 +77,17 @@ for mod in "${MODULES[@]}"; do
     IS_BUILTIN=0
     IS_KO=0
 
-    # 1. 檢查是否為 built-in
+    # 1. Check if it is built-in
     if [ -f "$BUILTIN_FILE" ] && grep -qE "/(${mod}|${mod_underscore}|${mod_dash})\.ko$" "$BUILTIN_FILE"; then
         IS_BUILTIN=1
     fi
     
-    # 2. 檢查是否包含在 initrd 中
+    # 2. Check if it is included in the initrd
     if echo "$INITRD_CONTENTS" | grep -qE "/(${mod}|${mod_underscore}|${mod_dash})\.ko(\.xz|\.zst|\.gz|\.bz2)?$"; then
         IS_KO=1
     fi
 
-    # 輸出結果
+    # Output results
     if [ $IS_BUILTIN -eq 1 ]; then
         echo "$mod : yes : built-in"
     elif [ $IS_KO -eq 1 ]; then
