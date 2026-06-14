@@ -67,6 +67,15 @@ fi
 if [ -z "$fb_term" ]; then
   get_fb_term
 fi
+if [ "$(LC_ALL=C uname -m)" = "aarch64" ] && [ "$fb_term" = "jfbterm" ]; then
+  if type fbterm &>/dev/null; then
+    fb_term="fbterm"
+  elif type bterm &>/dev/null; then
+    fb_term="bterm"
+  else
+    fb_term=""
+  fi
+fi
 [ "$fb_term" = "bterm" -a ! -e "$uni_font" ] && exit 1
 
 export LANG="en_US.UTF-8"
@@ -107,11 +116,11 @@ if [ -z "$ocs_lang" -o -z "$live_keyboard_layouts" ]; then
   # (1) If bterm and uni fonts or fbterm/jfbterm are available
   # (2) If it's not in serial console
   # (3) frambebuffer device exists
-  # (4) CPU arch is x86/x86-64 since jfbterm does not work on aarch64.
+  # (4) CPU arch is x86/x86-64 or aarch64 (fbterm/bterm only, since jfbterm does not work on aarch64).
   if [ -n "$fb_term" ] && \
      [ -z "$(grep -E "console=.*ttyS.*" /proc/cmdline)" ] && \
      ([ -e /dev/fb/0 ] || [ -e /dev/fb0 ]) && \
-     [ -n "$(LC_ALL=C uname -m | grep -iE "(x86_64|i[3-6]86)")" ]; then 
+     [ -n "$(LC_ALL=C uname -m | grep -iE "(x86_64|i[3-6]86|aarch64)")" ]; then 
      case "$fb_term" in
        "bterm")
           export TERM=bterm
