@@ -39,6 +39,9 @@ d2d_psuedo_img="d2d-pseudo"
 enable_dio="no"
 # Put Clonezilla related log files to Clonezilla live USB drive or not.
 put_log_usb=""
+# Default not to use reverse connection
+reverse_connection="no"
+export reverse_connection
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -198,10 +201,17 @@ prepare_network_clone_dev_info() {
 	done
 	echo "source_part_fs=\"$source_part_fs\"" >> $hd_src_tmp/target_type.ocs_onthefly
     fi
-    case $ONTHEFLY_NET_PIPE in
-      netcat) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &" ;;
-      nuttcp) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) &" ;;
-    esac
+    if [ "$reverse_connection" = "yes" ]; then
+      case $ONTHEFLY_NET_PIPE in
+        netcat) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT &" ;;
+        nuttcp) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log &" ;;
+      esac
+    else
+      case $ONTHEFLY_NET_PIPE in
+        netcat) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &" ;;
+        nuttcp) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) &" ;;
+      esac
+    fi
     echo "Running: $run_cmd"
     eval $run_cmd
     rc=$?
@@ -224,10 +234,17 @@ prepare_network_clone_dev_info() {
       exit 1
     fi
     # wait for client to download it
-    case "$ONTHEFLY_NET_PIPE" in
-      netcat) run_cmd="cat $hd_src_tmp/${d2d_psuedo_img}.tgz | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &" ;;
-      nuttcp) run_cmd="cat $hd_src_tmp/${d2d_psuedo_img}.tgz | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) &" ;;
-    esac
+    if [ "$reverse_connection" = "yes" ]; then
+      case "$ONTHEFLY_NET_PIPE" in
+        netcat) run_cmd="cat $hd_src_tmp/${d2d_psuedo_img}.tgz | $NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT &" ;;
+        nuttcp) run_cmd="cat $hd_src_tmp/${d2d_psuedo_img}.tgz | $NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log &" ;;
+      esac
+    else
+      case "$ONTHEFLY_NET_PIPE" in
+        netcat) run_cmd="cat $hd_src_tmp/${d2d_psuedo_img}.tgz | $NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT &" ;;
+        nuttcp) run_cmd="cat $hd_src_tmp/${d2d_psuedo_img}.tgz | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) &" ;;
+      esac
+    fi
     echo "Running: $run_cmd"
     eval $run_cmd
     rc=$?
@@ -243,10 +260,17 @@ prepare_network_clone_dev_info() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_this_is_for_target_machine" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    case $ONTHEFLY_NET_PIPE in
-      netcat) run_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT > $hd_tgt_tmp/target_type.ocs_onthefly" ;;
-      nuttcp) run_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log > $hd_tgt_tmp/target_type.ocs_onthefly" ;;
-    esac
+    if [ "$reverse_connection" = "yes" ]; then
+      case $ONTHEFLY_NET_PIPE in
+        netcat) run_cmd="$NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT > $hd_tgt_tmp/target_type.ocs_onthefly" ;;
+        nuttcp) run_cmd="$NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) 2>>$ocs_nuttcp_log > $hd_tgt_tmp/target_type.ocs_onthefly" ;;
+      esac
+    else
+      case $ONTHEFLY_NET_PIPE in
+        netcat) run_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT > $hd_tgt_tmp/target_type.ocs_onthefly" ;;
+        nuttcp) run_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log > $hd_tgt_tmp/target_type.ocs_onthefly" ;;
+      esac
+    fi
     echo "Running: $run_cmd"
     eval $run_cmd
     rc=$?
@@ -271,10 +295,17 @@ prepare_network_clone_dev_info() {
       exit 1
     fi
     # Get the pt and mbr... from server
-    case "$ONTHEFLY_NET_PIPE" in
-      netcat) run_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT > $hd_tgt_tmp/${d2d_psuedo_img}.tgz" ;;
-      nuttcp) run_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log > $hd_tgt_tmp/${d2d_psuedo_img}.tgz" ;;
-    esac
+    if [ "$reverse_connection" = "yes" ]; then
+      case "$ONTHEFLY_NET_PIPE" in
+        netcat) run_cmd="$NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT > $hd_tgt_tmp/${d2d_psuedo_img}.tgz" ;;
+        nuttcp) run_cmd="$NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) 2>>$ocs_nuttcp_log > $hd_tgt_tmp/${d2d_psuedo_img}.tgz" ;;
+      esac
+    else
+      case "$ONTHEFLY_NET_PIPE" in
+        netcat) run_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT > $hd_tgt_tmp/${d2d_psuedo_img}.tgz" ;;
+        nuttcp) run_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log > $hd_tgt_tmp/${d2d_psuedo_img}.tgz" ;;
+      esac
+    fi
     echo "Running: $run_cmd"
     eval $run_cmd
     rc=$?
@@ -532,6 +563,7 @@ USAGE() {
     echo "-t2, --no-restore-ebr    Do NOT restore the EBR (Extended Boot Record) when restoring image. Default is to restore"
     echo "-v, --verbose            Prints verbose information"
     echo "-np --net-pipe  PROGRAM  Use PROGRAM as network pipe program. Available: netcat, nuttcp. Default is $netpipe_default"
+    echo "-rv, --reverse-connection  Reverse the connection initiation in network clone (Destination machine listens, Source machine connects)."
     echo "-x, --interactive        Interactive mode."
     echo "-bm, --beginner-mode     Run in beginner mode. This is a short way for \"-um beginner\"."
     echo "-em, --expert-mode       Run in expert mode. This is a short way for \"-um expert\"."
@@ -545,6 +577,12 @@ USAGE() {
     echo "   $ocs -a -f sda"
     echo "   Then in machine B, boot it into DRBL client mode or boot on Clonezilla live, too. Then run"
     echo "   $ocs -s 192.168.100.1 -d sda"
+    echo "3. To clone sda (in machine A) to sda (in machine B with IP 192.168.100.2) via network"
+    echo "   using Reverse Connection (when machine A is behind a strict NAT/CGNAT),"
+    echo "   First, in machine B (the target/destination machine), run:"
+    echo "   $ocs -rv -d sda"
+    echo "   Then, in machine A (the source machine), run:"
+    echo "   $ocs -a -rv -s 192.168.100.2 -f sda"
     echo
 }
 #
@@ -968,7 +1006,6 @@ parse_ocs_onthefly_cmd_options() {
       -m|--no-boot-loader-clone) shift; CLONE_BOOT_LOADER="no" ;;
       -s|--source-IP)
               shift
-  	      STATUS="clone_client"
               if [ -z "$(echo $1 |grep ^-.)" ]; then
                 # skip the -xx option, in case 
                 SOURCE_IP=$1
@@ -1072,6 +1109,7 @@ parse_ocs_onthefly_cmd_options() {
       -lo|--local-clone-only)  shift; show_local_menu_in_ocs_onthefly="yes";;
       -kn|--keep-netpipe) shift; keep_netpipe="yes";;
       -edio|--enable-direct-io) shift; enable_dio="yes";;
+      -rv|--reverse-connection) shift; reverse_connection="yes"; export reverse_connection;;
       -v|--verbose) shift; verbose="on";;
       -*)     echo "${0}: ${1}: invalid option" >&2
               USAGE >& 2
@@ -1081,6 +1119,19 @@ parse_ocs_onthefly_cmd_options() {
   done
 
   [ -z "$ONTHEFLY_NET_PIPE" ] && ONTHEFLY_NET_PIPE="$ONTHEFLY_NET_PIPE_DEFAULT"
+
+  if [ "$reverse_connection" = "yes" ]; then
+    if [ -z "$STATUS" ]; then
+      STATUS="clone_client"
+    fi
+    if [ "$STATUS" = "clone_client" -a -z "$SOURCE_IP" ]; then
+      SOURCE_IP="LISTENER"
+    fi
+  else
+    if [ -n "$SOURCE_IP" -a -z "$STATUS" ]; then
+      STATUS="clone_client"
+    fi
+  fi
 } # End of parse_ocs_onthefly_cmd_options
 # 
 remove_src_dest_etc_opt() {
@@ -1651,19 +1702,35 @@ restore_lvm2_udevd_rules
 
 if [ "$STATUS" = "clone_server" ]; then
   echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
-  echo -n "Waiting for the target machine to connect... " | tee --append ${OCS_LOGFILE}
-  case "$ONTHEFLY_NET_PIPE" in
-    netcat) $NC_CMD -l $NC_LOCAL_PORT_OPT $JOB_NOTIFY_PORT | tee --append ${OCS_LOGFILE};;
-    nuttcp) $NC_CMD -1 -s --nofork -P $JOB_NOTIFY_PORT -p $((JOB_NOTIFY_PORT + 1)) | tee --append ${OCS_LOGFILE};;
-  esac
+  if [ "$reverse_connection" = "yes" ]; then
+    echo -n "Connecting to the target machine to get notify status... " | tee --append ${OCS_LOGFILE}
+    case "$ONTHEFLY_NET_PIPE" in
+      netcat) $NC_CMD $SOURCE_IP $JOB_NOTIFY_PORT | tee --append ${OCS_LOGFILE};;
+      nuttcp) $NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $JOB_NOTIFY_PORT -p $((JOB_NOTIFY_PORT + 1)) $SOURCE_IP >>$ocs_nuttcp_log;;
+    esac
+  else
+    echo -n "Waiting for the target machine to connect... " | tee --append ${OCS_LOGFILE}
+    case "$ONTHEFLY_NET_PIPE" in
+      netcat) $NC_CMD -l $NC_LOCAL_PORT_OPT $JOB_NOTIFY_PORT | tee --append ${OCS_LOGFILE};;
+      nuttcp) $NC_CMD -1 -s --nofork -P $JOB_NOTIFY_PORT -p $((JOB_NOTIFY_PORT + 1)) | tee --append ${OCS_LOGFILE};;
+    esac
+  fi
 elif [ "$STATUS" = "clone_client" ]; then
   echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
-  echo -n "Notifying the source machine that my job is done... " | tee --append ${OCS_LOGFILE}
-  case "$ONTHEFLY_NET_PIPE" in
-    netcat) echo 'done!' | $NC_CMD $NC_QUIT_OPT $SOURCE_IP $JOB_NOTIFY_PORT;;
-    nuttcp) echo 'done!' | $NC_CMD -t -s -P $JOB_NOTIFY_PORT -p $((JOB_NOTIFY_PORT + 1)) $SOURCE_IP >>$ocs_nuttcp_log;;
-  esac
-  echo 'done!' | tee --append ${OCS_LOGFILE}
+  if [ "$reverse_connection" = "yes" ]; then
+    echo -n "Waiting for the source machine to query job notification... " | tee --append ${OCS_LOGFILE}
+    case "$ONTHEFLY_NET_PIPE" in
+      netcat) echo 'done!' | $NC_CMD -l $NC_LOCAL_PORT_OPT $JOB_NOTIFY_PORT | tee --append ${OCS_LOGFILE};;
+      nuttcp) echo 'done!' | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $JOB_NOTIFY_PORT -p $((JOB_NOTIFY_PORT + 1)) | tee --append ${OCS_LOGFILE};;
+    esac
+  else
+    echo -n "Notifying the source machine that my job is done... " | tee --append ${OCS_LOGFILE}
+    case "$ONTHEFLY_NET_PIPE" in
+      netcat) echo 'done!' | $NC_CMD $NC_QUIT_OPT $SOURCE_IP $JOB_NOTIFY_PORT;;
+      nuttcp) echo 'done!' | $NC_CMD -t -s -P $JOB_NOTIFY_PORT -p $((JOB_NOTIFY_PORT + 1)) $SOURCE_IP >>$ocs_nuttcp_log;;
+    esac
+    echo 'done!' | tee --append ${OCS_LOGFILE}
+  fi
 fi
 
 echo "Now syncing - flush filesystem buffers..." | tee --append ${OCS_LOGFILE}

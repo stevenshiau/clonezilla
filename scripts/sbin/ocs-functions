@@ -16104,10 +16104,17 @@ onthefly_receive_partition_from_server_then_write() {
   echo "$msg_delimiter_star_line"
   echo "Restoring $tgt_p from $SOURCE_IP:$NC_PORT..."
   clean_filesystem_header_in_dev $tgt_p
-  case "$ONTHEFLY_NET_PIPE" in
-    netcat) netpipe_cli_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT" ;;
-    nuttcp) netpipe_cli_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log" ;;
-  esac
+  if [ "$reverse_connection" = "yes" ]; then
+    case "$ONTHEFLY_NET_PIPE" in
+      netcat) netpipe_cli_cmd="$NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT" ;;
+      nuttcp) netpipe_cli_cmd="$NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1))" ;;
+    esac
+  else
+    case "$ONTHEFLY_NET_PIPE" in
+      netcat) netpipe_cli_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT" ;;
+      nuttcp) netpipe_cli_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log" ;;
+    esac
+  fi
   echo "$msg_delimiter_star_line"
   if [ "$USE_NTFSCLONE_IN_OCS_ONTHEFLY" = "yes" ] && [ "$pt_fs" = "ntfs" ]; then
     echo "Using ntfsclone to clone..." | tee --append $OCS_LOGFILE 
@@ -16177,10 +16184,17 @@ feed_dev_in_onthefly_server() {
   local ret
   local cmd_partclone netpipe_srv_cmd
   echo "Feeding partition $src_p in listen mode with port $NC_PORT..." | tee --append $OCS_LOGFILE
-  case "$ONTHEFLY_NET_PIPE" in
-    netcat) netpipe_srv_cmd="$NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT" ;;
-    nuttcp) netpipe_srv_cmd="$NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1))" ;;
-  esac
+  if [ "$reverse_connection" = "yes" ]; then
+    case "$ONTHEFLY_NET_PIPE" in
+      netcat) netpipe_srv_cmd="$NC_CMD $NC_CLIENT_EXTRA_OPT $SOURCE_IP $NC_PORT" ;;
+      nuttcp) netpipe_srv_cmd="$NC_CMD -r -s $NUTTCP_CLI_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) $SOURCE_IP 2>>$ocs_nuttcp_log" ;;
+    esac
+  else
+    case "$ONTHEFLY_NET_PIPE" in
+      netcat) netpipe_srv_cmd="$NC_CMD -l $NC_LOCAL_PORT_OPT $NC_PORT" ;;
+      nuttcp) netpipe_srv_cmd="$NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1))" ;;
+    esac
+  fi
   if [ "$USE_NTFSCLONE_IN_OCS_ONTHEFLY" = "yes" ] && [ "$pt_fs" = "ntfs" ]; then
     echo "Using ntfsclone to clone..." | tee --append $OCS_LOGFILE
     check_ntfs_partition_integrity $src_p
