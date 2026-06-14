@@ -16193,17 +16193,27 @@ eval_with_retry() {
   local cmd_to_run="$1"
   local rc_eval
   local retry_cnt=0
-  local max_retries=30
+  local max_retries="$reverse_connection_timeout"
+  if [ "$reverse_connection" = "yes" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo -n "Waiting for destination to listen on port $NC_PORT." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  else
+    echo "Running: $cmd_to_run" | tee --append ${OCS_LOGFILE}
+  fi
   while [ "$retry_cnt" -lt "$max_retries" ]; do
-    eval "$cmd_to_run"
+    if [ "$reverse_connection" = "yes" ]; then
+      eval "$cmd_to_run" 2>/dev/null
+    else
+      eval "$cmd_to_run"
+    fi
     rc_eval=$?
     if [ "$rc_eval" -eq 0 ]; then
+      if [ "$reverse_connection" = "yes" ]; then echo " Connected!" | tee --append ${OCS_LOGFILE}; fi
       break
     fi
     if [ "$reverse_connection" = "yes" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Connection/Transfer failed. Port may not be ready yet. Retrying in 1 second... ($((retry_cnt+1))/$max_retries)" | tee --append ${OCS_LOGFILE}
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo -n "." | tee --append ${OCS_LOGFILE}
       sleep 1
       retry_cnt=$((retry_cnt+1))
     else
@@ -16238,7 +16248,6 @@ feed_dev_in_onthefly_server() {
     echo "Using ntfsclone to clone..." | tee --append $OCS_LOGFILE
     check_ntfs_partition_integrity $src_p
     cmd_pipeline="ntfsclone --save-image --output - $src_p 2>/dev/null | \$net_filter_comp | \$netpipe_srv_cmd $bg_opt"
-    echo "Running: $cmd_pipeline" | tee --append ${OCS_LOGFILE}
     eval_with_retry "$cmd_pipeline"
     ret=$?
   elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
@@ -16253,7 +16262,6 @@ feed_dev_in_onthefly_server() {
       cmd_partclone="partclone.${pt_fs} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
       $net_filter_comp | $netpipe_srv_cmd $bg_opt"
     fi
-    echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
     LC_ALL=C eval_with_retry "( ( ${cmd_partclone} ) && exit \${PIPESTATUS[0]} )"
     ret=$?
     # Since we run partclone in the background, it's useless to cat the log now.
@@ -16261,7 +16269,6 @@ feed_dev_in_onthefly_server() {
   elif `is_partimage_support_fs $pt_fs`; then
     echo "Using partimage to clone..."  
     cmd_pipeline="partimage \$DEFAULT_STDOUT_PARTIMAGE_SAVE_OPT save \$src_p stdout 2> /dev/null | \$net_filter_comp | \$netpipe_srv_cmd $bg_opt"
-    echo "Running: $cmd_pipeline" | tee --append ${OCS_LOGFILE}
     eval_with_retry "$cmd_pipeline"
     ret=$?
   else
@@ -16280,7 +16287,6 @@ feed_dev_in_onthefly_server() {
       echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
       cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
       $net_filter_comp | $netpipe_srv_cmd $bg_opt"
-      echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
       LC_ALL=C eval_with_retry "( ( ${cmd_partclone} ) && exit \${PIPESTATUS[0]} )"
       ret=$?
       # Since we run partclone in the background, it's useless to cat the log now.

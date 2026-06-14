@@ -42,6 +42,9 @@ put_log_usb=""
 # Default not to use reverse connection
 reverse_connection="no"
 export reverse_connection
+# Default timeout in seconds for reverse connection retries
+reverse_connection_timeout="300"
+export reverse_connection_timeout
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -213,18 +216,27 @@ prepare_network_clone_dev_info() {
       esac
     fi
     local retry_cnt=0
-    local max_retries=30
+    local max_retries="$reverse_connection_timeout"
+    if [ "$reverse_connection" = "yes" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo -n "Waiting for destination to listen on port $NC_PORT." | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    else
+      echo "Running: $run_cmd" | tee --append ${OCS_LOGFILE}
+    fi
     while [ "$retry_cnt" -lt "$max_retries" ]; do
-      echo "Running: $run_cmd"
-      eval $run_cmd
+      if [ "$reverse_connection" = "yes" ]; then
+        eval "$run_cmd" 2>/dev/null
+      else
+        eval "$run_cmd"
+      fi
       rc=$?
       if [ "$rc" -eq 0 ]; then
+        if [ "$reverse_connection" = "yes" ]; then echo " Connected!" | tee --append ${OCS_LOGFILE}; fi
         break
       fi
       if [ "$reverse_connection" = "yes" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "Connection to $SOURCE_IP:$NC_PORT failed. Port may not be ready yet. Retrying in 1 second... ($((retry_cnt+1))/$max_retries)" | tee --append ${OCS_LOGFILE}
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "." | tee --append ${OCS_LOGFILE}
         sleep 1
         retry_cnt=$((retry_cnt+1))
       else
@@ -262,18 +274,27 @@ prepare_network_clone_dev_info() {
       esac
     fi
     local retry_cnt=0
-    local max_retries=30
+    local max_retries="$reverse_connection_timeout"
+    if [ "$reverse_connection" = "yes" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo -n "Waiting for destination to listen on port $NC_PORT." | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    else
+      echo "Running: $run_cmd" | tee --append ${OCS_LOGFILE}
+    fi
     while [ "$retry_cnt" -lt "$max_retries" ]; do
-      echo "Running: $run_cmd"
-      eval $run_cmd
+      if [ "$reverse_connection" = "yes" ]; then
+        eval "$run_cmd" 2>/dev/null
+      else
+        eval "$run_cmd"
+      fi
       rc=$?
       if [ "$rc" -eq 0 ]; then
+        if [ "$reverse_connection" = "yes" ]; then echo " Connected!" | tee --append ${OCS_LOGFILE}; fi
         break
       fi
       if [ "$reverse_connection" = "yes" ]; then
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "Connection to $SOURCE_IP:$NC_PORT failed. Port may not be ready yet. Retrying in 1 second... ($((retry_cnt+1))/$max_retries)" | tee --append ${OCS_LOGFILE}
-        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo -n "." | tee --append ${OCS_LOGFILE}
         sleep 1
         retry_cnt=$((retry_cnt+1))
       else
