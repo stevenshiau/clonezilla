@@ -13034,7 +13034,7 @@ is_partition() {
   # 2. Heuristic: A "whole" device with a filesystem is treated as a partition.
   if [[ "$t_mode" == "restore" ]]; then
     # In restore t_mode, check the metadata from the image.
-    if grep -qEw "^/dev/$dev_name[[:space:]]" "$ocsroot/$target_dir/dev-fs.list"; then
+    if grep -qEw "^/dev/$dev_name[[:space:]]" "$ocsroot/$target_dir/dev-fs.list" 2>/dev/null; then
       return 0
     fi
   else # "save" t_mode
@@ -16189,6 +16189,30 @@ onthefly_receive_partition_from_server_then_write() {
   return $ret
 } # end of onthefly_receive_partition_from_server_then_write
 #
+eval_with_retry() {
+  local cmd_to_run="$1"
+  local rc_eval
+  local retry_cnt=0
+  local max_retries=30
+  while [ "$retry_cnt" -lt "$max_retries" ]; do
+    eval "$cmd_to_run"
+    rc_eval=$?
+    if [ "$rc_eval" -eq 0 ]; then
+      break
+    fi
+    if [ "$reverse_connection" = "yes" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Connection/Transfer failed. Port may not be ready yet. Retrying in 1 second... ($((retry_cnt+1))/$max_retries)" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      sleep 1
+      retry_cnt=$((retry_cnt+1))
+    else
+      break
+    fi
+  done
+  return $rc_eval
+}
+#
 feed_dev_in_onthefly_server() {
   local pt_fs="$1"
   local src_p="$2"  # src_p is like /dev/hda1
@@ -16215,7 +16239,7 @@ feed_dev_in_onthefly_server() {
     check_ntfs_partition_integrity $src_p
     cmd_pipeline="ntfsclone --save-image --output - $src_p 2>/dev/null | \$net_filter_comp | \$netpipe_srv_cmd $bg_opt"
     echo "Running: $cmd_pipeline" | tee --append ${OCS_LOGFILE}
-    eval "$cmd_pipeline"
+    eval_with_retry "$cmd_pipeline"
     ret=$?
   elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && `is_partclone_support_fs $pt_fs`; then
     # Ex: partclone.reiserfs -c -s /dev/hda3 -o -
@@ -16230,7 +16254,7 @@ feed_dev_in_onthefly_server() {
       $net_filter_comp | $netpipe_srv_cmd $bg_opt"
     fi
     echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
-    LC_ALL=C eval "((${cmd_partclone}) && exit \${PIPESTATUS[0]})"
+    eval_with_retry "LC_ALL=C ((${cmd_partclone}) && exit \${PIPESTATUS[0]})"
     ret=$?
     # Since we run partclone in the background, it's useless to cat the log now.
     # cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
@@ -16238,7 +16262,7 @@ feed_dev_in_onthefly_server() {
     echo "Using partimage to clone..."  
     cmd_pipeline="partimage \$DEFAULT_STDOUT_PARTIMAGE_SAVE_OPT save \$src_p stdout 2> /dev/null | \$net_filter_comp | \$netpipe_srv_cmd $bg_opt"
     echo "Running: $cmd_pipeline" | tee --append ${OCS_LOGFILE}
-    eval "$cmd_pipeline"
+    eval_with_retry "$cmd_pipeline"
     ret=$?
   else
     case "$S2S_CLONE_PROG_IN_OCS_ONTHEFLY" in 
@@ -16246,7 +16270,7 @@ feed_dev_in_onthefly_server() {
       echo "Filesystem in $src_p is not well supported. Use dd to clone..." | tee --append $OCS_LOGFILE
       cmd_pipeline="LC_ALL=C dd bs=1M if=\$src_p | \$net_filter_comp | \$netpipe_srv_cmd $bg_opt"
       echo "Running: $cmd_pipeline" | tee --append ${OCS_LOGFILE}
-      eval "$cmd_pipeline"
+      eval_with_retry "$cmd_pipeline"
       ret=$?
       ;;
      partclone)
@@ -16257,7 +16281,7 @@ feed_dev_in_onthefly_server() {
       cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
       $net_filter_comp | $netpipe_srv_cmd $bg_opt"
       echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
-      LC_ALL=C eval "((${cmd_partclone}) && exit \${PIPESTATUS[0]})"
+      eval_with_retry "LC_ALL=C ((${cmd_partclone}) && exit \${PIPESTATUS[0]})"
       ret=$?
       # Since we run partclone in the background, it's useless to cat the log now.
       #cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}

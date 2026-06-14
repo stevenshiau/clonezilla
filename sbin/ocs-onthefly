@@ -212,9 +212,25 @@ prepare_network_clone_dev_info() {
         nuttcp) run_cmd="cat $hd_src_tmp/target_type.ocs_onthefly | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) &" ;;
       esac
     fi
-    echo "Running: $run_cmd"
-    eval $run_cmd
-    rc=$?
+    local retry_cnt=0
+    local max_retries=30
+    while [ "$retry_cnt" -lt "$max_retries" ]; do
+      echo "Running: $run_cmd"
+      eval $run_cmd
+      rc=$?
+      if [ "$rc" -eq 0 ]; then
+        break
+      fi
+      if [ "$reverse_connection" = "yes" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Connection to $SOURCE_IP:$NC_PORT failed. Port may not be ready yet. Retrying in 1 second... ($((retry_cnt+1))/$max_retries)" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        sleep 1
+        retry_cnt=$((retry_cnt+1))
+      else
+        break
+      fi
+    done
     if [ "$rc" -ne 0 ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "Failed to run command: $run_cmd"
@@ -245,9 +261,25 @@ prepare_network_clone_dev_info() {
         nuttcp) run_cmd="cat $hd_src_tmp/${d2d_psuedo_img}.tgz | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $NC_PORT -p $((NC_PORT + 1)) &" ;;
       esac
     fi
-    echo "Running: $run_cmd"
-    eval $run_cmd
-    rc=$?
+    local retry_cnt=0
+    local max_retries=30
+    while [ "$retry_cnt" -lt "$max_retries" ]; do
+      echo "Running: $run_cmd"
+      eval $run_cmd
+      rc=$?
+      if [ "$rc" -eq 0 ]; then
+        break
+      fi
+      if [ "$reverse_connection" = "yes" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "Connection to $SOURCE_IP:$NC_PORT failed. Port may not be ready yet. Retrying in 1 second... ($((retry_cnt+1))/$max_retries)" | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        sleep 1
+        retry_cnt=$((retry_cnt+1))
+      else
+        break
+      fi
+    done
     if [ "$rc" -ne 0 ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "Failed to run command: $run_cmd"
