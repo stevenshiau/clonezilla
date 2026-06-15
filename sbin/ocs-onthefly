@@ -814,11 +814,13 @@ get_onthefly_input_param() {
     disk_to_remote_disk) 
                         STATUS="clone_server"
                         network_config_if_necessary
+                        ask_ocs_onthefly_conn_mode_for_source
                         ask_disk_to_remote_disk;;
     part_to_local_part) ask_part_to_local_part;;
     part_to_remote_part) 
                         STATUS="clone_server"
                         network_config_if_necessary
+                        ask_ocs_onthefly_conn_mode_for_source
                         ask_part_to_remote_part;;
     exit) exit 0;;
   esac
@@ -1007,6 +1009,11 @@ set_ocs_onthefly_extra_param() {
   # Parse them
   ocs_onthefly_all_opts="$(cat $OCS_PARAM_TMP)"
   ocs_onthefly_all_opts="$(echo $ocs_onthefly_all_opts)"  # make it one line
+  
+  if [ "$reverse_connection" = "yes" ]; then
+    ocs_onthefly_all_opts="$ocs_onthefly_all_opts -rv"
+  fi
+
   parse_ocs_onthefly_cmd_options $ocs_onthefly_all_opts
   [ -f "$OCS_PARAM_TMP" ] && rm -f $OCS_PARAM_TMP
 } # end of set_ocs_onthefly_extra_param
@@ -1372,6 +1379,64 @@ part_to_remote_part_dia_des() {
   part_to_remote_part_msg_1="part_to_remote_part"
   part_to_remote_part_msg_2="$(rep_whspc_w_udrsc "$msg_part_to_remote_part")"
 } # end of part_to_remote_part_dia_des
+#
+ask_ocs_onthefly_conn_mode_for_source() {
+  # Ask about connection mode for the source machine
+  local TMP="$(mktemp /tmp/ocs-server.XXXXXX)"
+  local tgt_default ask_ ans_ conn_mode
+  trap "[ -f \"$TMP\" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title "Connection Mode" \
+  --menu "Choose how this source machine should connect to the destination machine:" \
+  0 0 0 \
+  "direct"  "Listen on this machine (waiting for the destination to connect - Standard)" \
+  "reverse" "This machine actively connects to the destination machine's IP (NAT bypass)" \
+  2> $TMP
+  conn_mode="$(cat $TMP)"
+  [ -f "$TMP" ] && rm -f $TMP
+
+  if [ "$conn_mode" = "reverse" ]; then
+    reverse_connection="yes"
+    export reverse_connection
+    tgt_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
+    ask_="true"
+    while [ "$ask_" = "true" ]; do
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+      "Destination IP" --inputbox "Enter the IP address or FQDN of the destination machine:" \
+      0 0 $tgt_default $DIA_ESC \
+      2> $TMP
+      SOURCE_IP="$(cat $TMP)"
+      if [ -z "$SOURCE_IP" ]; then
+        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+        --yesno "You must input a destination IP address!\n$msg_do_u_want_to_do_it_again" 0 0
+        ans_="$?"
+        case "$ans_" in
+          0) # yes is chosen
+             ask_="true";;
+          1|255) # no is chosen
+             echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+             [ -f "$TMP" ] && rm -f $TMP
+             exit 1;;
+        esac
+      else
+        # Got the one we want
+        ask_="false"
+      fi
+    done
+    [ -f "$TMP" ] && rm -f $TMP
+    if [ -z "$SOURCE_IP" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "No destination IP was assigned!" | tee -a ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+      exit 1
+    fi
+    echo "Destination IP is: $SOURCE_IP" | tee -a ${OCS_LOGFILE}
+  else
+    reverse_connection="no"
+    export reverse_connection
+  fi
+} # end of ask_ocs_onthefly_conn_mode_for_source
 #
 ask_ocs_onthefly_srv_ip() {
   # Ask about connection mode: direct or reverse
