@@ -1374,44 +1374,63 @@ part_to_remote_part_dia_des() {
 } # end of part_to_remote_part_dia_des
 #
 ask_ocs_onthefly_srv_ip() {
-  # Ask about ocs-onthefly server
+  # Ask about connection mode: direct or reverse
   local TMP="$(mktemp /tmp/ocs-client.XXXXXX)"
-  local srv_default ask_ ans_
+  local srv_default ask_ ans_ conn_mode
   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-  srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
-  ask_="true"
-  while [ "$ask_" = "true" ]; do
-    $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
-    "Device cloning server" --inputbox "$msg_ip_address_or_FQDN_of_server: Device cloning server" \
-    0 0 $srv_default $DIA_ESC \
-    2> $TMP
-    SOURCE_IP="$(cat $TMP)"
-    if [ -z "$SOURCE_IP" ]; then
-      $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
-      --yesno "$msg_you_must_input_a_server\n$msg_do_u_want_to_do_it_again" 0 0
-      ans_="$?"
-      case "$ans_" in
-        0) # yes is chosen
-           ask_="true";;
-        1) # no is chosen
-           echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
-           [ -f "$TMP" ] && rm -f $TMP
-           exit 1;;
-      esac
-    else
-      # Got the one we want
-      ask_="false"
-    fi
-  done
+
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title "Connection Mode" \
+  --menu "Choose how this destination machine should connect to the source machine:" \
+  0 0 0 \
+  "direct"  "This machine actively connects to the source machine's IP (Standard)" \
+  "reverse" "Listen on this machine (waiting for the source to connect - NAT bypass)" \
+  2> $TMP
+  conn_mode="$(cat $TMP)"
   [ -f "$TMP" ] && rm -f $TMP
-  if [ -z "$SOURCE_IP" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "No device cloning server was assigned or found!" | tee -a ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
-    exit 1
+
+  if [ "$conn_mode" = "reverse" ]; then
+    reverse_connection="yes"
+    export reverse_connection
+    SOURCE_IP="LISTENER"
+    echo "Using reverse-connection mode. This machine will listen for incoming connection." | tee -a ${OCS_LOGFILE}
+  else
+    reverse_connection="no"
+    export reverse_connection
+    srv_default="$(LC_ALL=C route -n | grep "^0.0.0.0" | awk -F" " '{print $2}')"
+    ask_="true"
+    while [ "$ask_" = "true" ]; do
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+      "Device cloning server" --inputbox "$msg_ip_address_or_FQDN_of_server: Device cloning server" \
+      0 0 $srv_default $DIA_ESC \
+      2> $TMP
+      SOURCE_IP="$(cat $TMP)"
+      if [ -z "$SOURCE_IP" ]; then
+        $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
+        --yesno "$msg_you_must_input_a_server\n$msg_do_u_want_to_do_it_again" 0 0
+        ans_="$?"
+        case "$ans_" in
+          0) # yes is chosen
+             ask_="true";;
+          1) # no is chosen
+             echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+             [ -f "$TMP" ] && rm -f $TMP
+             exit 1;;
+        esac
+      else
+        # Got the one we want
+        ask_="false"
+      fi
+    done
+    [ -f "$TMP" ] && rm -f $TMP
+    if [ -z "$SOURCE_IP" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "No device cloning server was assigned or found!" | tee -a ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
+      exit 1
+    fi
+    echo "Device cloning server is: $SOURCE_IP" | tee -a ${OCS_LOGFILE}
   fi
-  echo "Device cloning server is: $SOURCE_IP" | tee -a ${OCS_LOGFILE}
 } # end of ask_ocs_onthefly_srv_ip
 #
 ask_ocs_onthefly_dest_dev() {
