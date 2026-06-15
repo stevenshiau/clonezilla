@@ -222,7 +222,7 @@ prepare_network_clone_dev_info() {
     local max_retries="$reverse_connection_timeout"
     if [ "$reverse_connection" = "yes" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo -n "Waiting for destination to listen on port $NC_PORT." | tee --append ${OCS_LOGFILE}
+      echo -n "$msg_waiting_for_dest_to_listen $NC_PORT." | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     else
       echo "Running: $run_cmd" | tee --append ${OCS_LOGFILE}
@@ -280,7 +280,7 @@ prepare_network_clone_dev_info() {
     local max_retries="$reverse_connection_timeout"
     if [ "$reverse_connection" = "yes" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo -n "Waiting for destination to listen on port $NC_PORT." | tee --append ${OCS_LOGFILE}
+      echo -n "$msg_waiting_for_dest_to_listen $NC_PORT." | tee --append ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     else
       echo "Running: $run_cmd" | tee --append ${OCS_LOGFILE}
@@ -1386,11 +1386,11 @@ ask_ocs_onthefly_conn_mode_for_source() {
   local tgt_default ask_ ans_ conn_mode
   trap "[ -f \"$TMP\" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
 
-  $DIA --backtitle "$msg_nchc_free_software_labs" --title "Connection Mode" \
-  --menu "Choose how this source machine should connect to the destination machine:" \
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_connection_mode" \
+  --menu "$msg_choose_conn_mode_for_source" \
   0 0 0 \
-  "direct"  "Listen on this machine (waiting for the destination to connect - Standard)" \
-  "reverse" "This machine actively connects to the destination machine's IP (NAT bypass)" \
+  "direct"  "$msg_conn_mode_direct_src" \
+  "reverse" "$msg_conn_mode_reverse_src" \
   2> $TMP
   conn_mode="$(cat $TMP)"
   [ -f "$TMP" ] && rm -f $TMP
@@ -1402,13 +1402,13 @@ ask_ocs_onthefly_conn_mode_for_source() {
     ask_="true"
     while [ "$ask_" = "true" ]; do
       $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
-      "Destination IP" --inputbox "Enter the IP address or FQDN of the destination machine:" \
+      "$msg_destination_IP" --inputbox "$msg_enter_dest_ip_or_FQDN" \
       0 0 $tgt_default $DIA_ESC \
       2> $TMP
       SOURCE_IP="$(cat $TMP)"
       if [ -z "$SOURCE_IP" ]; then
         $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_nchc_clonezilla" \
-        --yesno "You must input a destination IP address!\n$msg_do_u_want_to_do_it_again" 0 0
+        --yesno "$msg_must_input_dest_ip\n$msg_do_u_want_to_do_it_again" 0 0
         ans_="$?"
         case "$ans_" in
           0) # yes is chosen
@@ -1426,7 +1426,7 @@ ask_ocs_onthefly_conn_mode_for_source() {
     [ -f "$TMP" ] && rm -f $TMP
     if [ -z "$SOURCE_IP" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "No destination IP was assigned!" | tee -a ${OCS_LOGFILE}
+      echo "$msg_must_input_dest_ip" | tee -a ${OCS_LOGFILE}
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop!" | tee -a ${OCS_LOGFILE}
       exit 1
@@ -1444,11 +1444,11 @@ ask_ocs_onthefly_srv_ip() {
   local srv_default ask_ ans_ conn_mode
   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
 
-  $DIA --backtitle "$msg_nchc_free_software_labs" --title "Connection Mode" \
-  --menu "Choose how this destination machine should connect to the source machine:" \
+  $DIA --backtitle "$msg_nchc_free_software_labs" --title "$msg_connection_mode" \
+  --menu "$msg_choose_conn_mode_for_dest" \
   0 0 0 \
-  "direct"  "This machine actively connects to the source machine's IP (Standard)" \
-  "reverse" "Listen on this machine (waiting for the source to connect - NAT bypass)" \
+  "direct"  "$msg_conn_mode_direct_dest" \
+  "reverse" "$msg_conn_mode_reverse_dest" \
   2> $TMP
   conn_mode="$(cat $TMP)"
   [ -f "$TMP" ] && rm -f $TMP
@@ -1876,7 +1876,7 @@ restore_lvm2_udevd_rules
 if [ "$STATUS" = "clone_server" ]; then
   echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
   if [ "$reverse_connection" = "yes" ]; then
-    echo -n "Connecting to the target machine to get notify status... " | tee --append ${OCS_LOGFILE}
+    echo -n "$msg_connecting_to_get_notify_status" | tee --append ${OCS_LOGFILE}
     retry_cnt=0
     max_retries="$reverse_connection_timeout"
     run_cmd=""
@@ -1908,7 +1908,7 @@ if [ "$STATUS" = "clone_server" ]; then
 elif [ "$STATUS" = "clone_client" ]; then
   echo "$msg_delimiter_star_line" | tee --append ${OCS_LOGFILE}
   if [ "$reverse_connection" = "yes" ]; then
-    echo -n "Waiting for the source machine to query job notification... " | tee --append ${OCS_LOGFILE}
+    echo -n "$msg_waiting_for_source_query_notify" | tee --append ${OCS_LOGFILE}
     case "$ONTHEFLY_NET_PIPE" in
       netcat) echo 'done!' | $NC_CMD -l $NC_LOCAL_PORT_OPT $JOB_NOTIFY_PORT | tee --append ${OCS_LOGFILE};;
       nuttcp) echo 'done!' | $NC_CMD -1 -s --nofork $NUTTCP_SRV_EXTRA_OPT -P $JOB_NOTIFY_PORT -p $((JOB_NOTIFY_PORT + 1)) | tee --append ${OCS_LOGFILE};;
