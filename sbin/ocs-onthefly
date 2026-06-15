@@ -410,6 +410,66 @@ local_dev_clone() {
    [ -e /var/lib/clonezilla/ocs-vars ] && . /var/lib/clonezilla/ocs-vars
 } # end of local_dev_clone
 #
+show_target_machine_prompt() {
+  local my_ip_one example_target net_filter_opt use_netcat_nuttcp_opt
+  if [ "$STATUS" = "clone_server" ]; then
+    case "$source_type" in
+      partition) example_target="sda1, sda2 or..." ;;
+      disk)      example_target="sda, sdb or..." ;;
+    esac
+
+    echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
+    [ -n "$net_filter" ] && net_filter_opt="--net-filter $net_filter"
+    if [ "$ONTHEFLY_NET_PIPE" != "$ONTHEFLY_NET_PIPE_DEFAULT" ]; then
+      use_netcat_nuttcp_opt="-np $ONTHEFLY_NET_PIPE"
+    fi
+
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    if [ "$reverse_connection" = "yes" ]; then
+      echo "You can now boot the destination machine with Clonezilla live and enter command line prompt." | tee --append ${OCS_LOGFILE}
+      echo "Then you can run the following command(s) on the destination machine to start remote cloning:" | tee --append ${OCS_LOGFILE}
+      echo "sudo su -" | tee --append ${OCS_LOGFILE}
+      echo "ocs-live-netcfg ($msg_setup_network_first)" | tee --append ${OCS_LOGFILE}
+      echo "$ocs -rv $net_filter_opt $use_netcat_nuttcp_opt -d [TARGET_DEV]" | tee --append ${OCS_LOGFILE}
+      echo "TARGET_DEV example: $example_target" | tee --append ${OCS_LOGFILE}
+      case "$source_type" in
+      partition)
+        echo "$msg_if_clone_the_partition_to_hda1_in_target_machine:" | tee --append $OCS_LOGFILE
+        echo "$ocs -rv $net_filter_opt $use_netcat_nuttcp_opt -d sdc1" | tee --append $OCS_LOGFILE
+        ;;
+      disk)
+        echo "$msg_if_clone_the_disk_to_hda_in_target_machine:" | tee --append $OCS_LOGFILE
+        echo "$ocs -rv $net_filter_opt $use_netcat_nuttcp_opt -d sdc" | tee --append $OCS_LOGFILE
+        ;;
+      esac
+    else
+      if [ "$(echo $my_ip | wc -w)" -gt 1 ]; then
+        my_ip_one="$(echo $my_ip | awk -F" " '{print $1}')"
+        echo "Multiple IP addresses exist ($my_ip). Show only one as an example in the following: $my_ip_one." | tee --append ${OCS_LOGFILE}
+      else
+        my_ip_one="$my_ip"
+      fi
+      echo "$msg_now_run_this_cmd_in_target_machine:" | tee --append ${OCS_LOGFILE}
+      echo "sudo su -" | tee --append ${OCS_LOGFILE}
+      echo "ocs-live-netcfg ($msg_setup_network_first)" | tee --append ${OCS_LOGFILE}
+      echo "$ocs $net_filter_opt $use_netcat_nuttcp_opt -s $my_ip_one -d [TARGET_DEV]" | tee --append ${OCS_LOGFILE}
+      echo "TARGET_DEV example: $example_target" | tee --append ${OCS_LOGFILE}
+      case "$source_type" in
+      partition)
+        echo "$msg_if_clone_the_partition_to_hda1_in_target_machine:" | tee --append $OCS_LOGFILE
+        echo "$ocs $net_filter_opt $use_netcat_nuttcp_opt -s $my_ip_one -d sdc1" | tee --append $OCS_LOGFILE
+        ;;
+      disk)
+        echo "$msg_if_clone_the_disk_to_hda_in_target_machine:" | tee --append $OCS_LOGFILE
+        echo "$ocs $net_filter_opt $use_netcat_nuttcp_opt -s $my_ip_one -d sdc" | tee --append $OCS_LOGFILE
+        ;;
+      esac
+    fi
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
+  fi
+}
+#
 clone_over_net() {
   local fn example_target ipart part_fs size my_ip_one use_netcat_nuttcp_opt
   local restore_psuedo_img_cmd
@@ -490,39 +550,6 @@ clone_over_net() {
     esac
     # To read do_ntfs_512to4k_fix_flag and do_ntfs_4kto512_fix_flag after ocs-sr restoring job.
     [ -e /var/lib/clonezilla/ocs-vars ] && . /var/lib/clonezilla/ocs-vars
-  fi
-
-  # Show prompt on the server side
-  echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
-  [ -n "$net_filter" ] && net_filter_opt="--net-filter $net_filter"
-  if [ "$ONTHEFLY_NET_PIPE" != "$ONTHEFLY_NET_PIPE_DEFAULT" ]; then
-    use_netcat_nuttcp_opt="-np $ONTHEFLY_NET_PIPE"
-  fi
-  if [ "$STATUS" = "clone_server" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    if [ "$(echo $my_ip | wc -w)" -gt 1 ]; then
-      my_ip_one="$(echo $my_ip | awk -F" " '{print $1}')"
-      echo "Multiple IP addresses exist ($my_ip). Show only one as an example in the following: $my_ip_one." | tee --append ${OCS_LOGFILE}
-    else
-      my_ip_one="$my_ip"
-    fi
-    echo "$msg_now_run_this_cmd_in_target_machine:" | tee --append ${OCS_LOGFILE}
-    echo "sudo su -" | tee --append ${OCS_LOGFILE}
-    echo "ocs-live-netcfg ($msg_setup_network_first)" | tee --append ${OCS_LOGFILE}
-    echo "$ocs $net_filter_opt $use_netcat_nuttcp_opt -s $my_ip_one -d [TARGET_DEV]" | tee --append ${OCS_LOGFILE}
-    echo "TARGET_DEV example: $example_target" | tee --append ${OCS_LOGFILE}
-    case "$source_type" in
-    partition)
-      echo "$msg_if_clone_the_partition_to_hda1_in_target_machine:" | tee --append $OCS_LOGFILE
-      echo "$ocs $net_filter_opt $use_netcat_nuttcp_opt -s $my_ip_one -d sdc1" | tee --append $OCS_LOGFILE
-      ;;
-    disk)
-      echo "$msg_if_clone_the_disk_to_hda_in_target_machine:" | tee --append $OCS_LOGFILE
-      echo "$ocs $net_filter_opt $use_netcat_nuttcp_opt -s $my_ip_one -d sdc" | tee --append $OCS_LOGFILE
-      ;;
-    esac
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    echo "$msg_delimiter_star_line" | tee --append $OCS_LOGFILE
   fi
 } # end of clone_over_net
 #
@@ -1714,7 +1741,10 @@ elif [ "$STATUS" = "clone_client" ]; then
 fi
 
 case "$mode" in
-  network) prepare_network_clone_dev_info ;;
+  network)
+    show_target_machine_prompt
+    prepare_network_clone_dev_info
+    ;;
 esac
 
 if [ "$verbose" = "on" ]; then
