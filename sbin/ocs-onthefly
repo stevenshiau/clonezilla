@@ -45,6 +45,9 @@ export reverse_connection
 # Default timeout in seconds for reverse connection retries (0 means wait forever)
 reverse_connection_timeout="0"
 export reverse_connection_timeout
+# Default interval in seconds between connection retries
+reverse_connection_retry_interval="2"
+export reverse_connection_retry_interval
 
 # Load DRBL setting and functions
 DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
@@ -237,8 +240,8 @@ prepare_network_clone_dev_info() {
       fi
       if [ "$reverse_connection" = "yes" ]; then
         echo -n "." | tee --append ${OCS_LOGFILE}
-        sleep 1
-        retry_cnt=$((retry_cnt+1))
+        sleep "$reverse_connection_retry_interval"
+        retry_cnt=$((retry_cnt + reverse_connection_retry_interval))
       else
         break
       fi
@@ -295,8 +298,8 @@ prepare_network_clone_dev_info() {
       fi
       if [ "$reverse_connection" = "yes" ]; then
         echo -n "." | tee --append ${OCS_LOGFILE}
-        sleep 1
-        retry_cnt=$((retry_cnt+1))
+        sleep "$reverse_connection_retry_interval"
+        retry_cnt=$((retry_cnt + reverse_connection_retry_interval))
       else
         break
       fi
@@ -1778,8 +1781,8 @@ if [ "$STATUS" = "clone_server" ]; then
         break
       fi
       echo -n "." | tee --append ${OCS_LOGFILE}
-      sleep 1
-      retry_cnt=$((retry_cnt+1))
+      sleep "$reverse_connection_retry_interval"
+      retry_cnt=$((retry_cnt + reverse_connection_retry_interval))
     done
   else
     echo -n "Waiting for the target machine to connect... " | tee --append ${OCS_LOGFILE}
