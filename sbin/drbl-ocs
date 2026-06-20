@@ -166,6 +166,21 @@ prepare_pxecfg_for_pxe_ocs_live_if_required() {
         remove_opt_in_grub_efi_cfg_block "clonezilla-live-client" $i
       done
     fi
+
+    # Add supplementary boot parameters from $supp_boot_param_ocs_live_extra
+    if [ -n "$supp_boot_param_ocs_live_extra" ]; then
+      for iparam in $supp_boot_param_ocs_live_extra; do
+        key="$(echo "$iparam" | awk -F= '{print $1}')"
+        val="$(echo "$iparam" | awk -F= '{print $2}')"
+        if [ -n "$val" ]; then
+          add_opt_in_pxelinux_cfg_block -n Clonezilla-live "$key" "$val"
+          add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" "$key" "$val"
+        else
+          add_opt_in_pxelinux_cfg_block -n Clonezilla-live "$key"
+          add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" "$key"
+        fi
+      done
+    fi
   fi
 } # end of prepare_pxecfg_for_pxe_ocs_live_if_required
 
