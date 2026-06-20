@@ -169,6 +169,42 @@ prepare_pxecfg_for_pxe_ocs_live_if_required() {
 
     # Add supplementary boot parameters from $supp_boot_param_ocs_live_extra
     if [ -n "$supp_boot_param_ocs_live_extra" ]; then
+      add_standalone_opt_in_pxelinux_cfg_block() {
+        local label="$1"
+        local key="$2"
+        local lines begin_line end_line tag_found sub_menu_label_cmd
+        
+        lines="$(get_pxecfg_image_block "$label" "$PXE_CONF")"
+        begin_line="$(echo $lines | awk -F" " '{print $1}')"
+        end_line="$(echo $lines | awk -F" " '{print $2}')"
+        if [ -n "$begin_line" -a -n "$end_line" ]; then
+          tag_found="$(LC_ALL=C head -n "$end_line" "$PXE_CONF" | tail -n $(($end_line-$begin_line)) | grep -Eiw "^[[:space:]]*append[[:space:]]*.*[[:space:]]+$key([[:space:]]+|$)")"
+          if [ -z "$tag_found" ]; then
+            sub_menu_label_cmd="if ($begin_line..$end_line) {s|(^[[:space:]]*append[[:space:]]+.*)|\$1 $key|i}"
+            LC_ALL=C perl -pi -e "$sub_menu_label_cmd" "$PXE_CONF"
+          fi
+        fi
+      }
+
+      add_standalone_opt_in_grub_efi_cfg_block() {
+        local entry_id="$1"
+        local key="$2"
+        local lines begin_line end_line tag_found sub_menu_entry_cmd
+        
+        if [ -n "$GRUB_CONF" -a -e "$GRUB_CONF" ]; then
+          lines="$(get_grub_efi_image_block "--id $entry_id" "$GRUB_CONF")"
+          begin_line="$(echo $lines | awk -F" " '{print $1}')"
+          end_line="$(echo $lines | awk -F" " '{print $2}')"
+          if [ -n "$begin_line" -a -n "$end_line" ]; then
+            tag_found="$(LC_ALL=C head -n "$end_line" "$GRUB_CONF" | tail -n $(($end_line-$begin_line)) | grep -Eiw "^[[:space:]]*$linux_cmd[[:space:]]*.*[[:space:]]+$key([[:space:]]+|$)")"
+            if [ -z "$tag_found" ]; then
+              sub_menu_entry_cmd="if ($begin_line..$end_line) {s|(^[[:space:]]*\\\$linux_cmd[[:space:]]+.*)|\$1 $key|i}"
+              LC_ALL=C perl -pi -e "$sub_menu_entry_cmd" "$GRUB_CONF"
+            fi
+          fi
+        fi
+      }
+
       for iparam in $supp_boot_param_ocs_live_extra; do
         key="$(echo "$iparam" | awk -F= '{print $1}')"
         val="$(echo "$iparam" | awk -F= '{print $2}')"
@@ -176,8 +212,8 @@ prepare_pxecfg_for_pxe_ocs_live_if_required() {
           add_opt_in_pxelinux_cfg_block -n Clonezilla-live "$key" "$val"
           add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" "$key" "$val"
         else
-          add_opt_in_pxelinux_cfg_block -n Clonezilla-live "$key"
-          add_opt_in_grub_efi_cfg_block -n "clonezilla-live-client" "$key"
+          add_standalone_opt_in_pxelinux_cfg_block Clonezilla-live "$key"
+          add_standalone_opt_in_grub_efi_cfg_block "clonezilla-live-client" "$key"
         fi
       done
     fi
