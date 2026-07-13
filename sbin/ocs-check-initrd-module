@@ -1,0 +1,98 @@
+#!/bin/bash
+# License: GPL
+# Author: Ceasar Sun <ceasar _at_ clonezilla org>
+# Determine whether the specified initrd (or initramfs) file contains specific modules
+# Example:
+# ** Check whether ext4, btrfs, virtio_blk, dm_mod are included in /boot/initrd.img
+# $ ocs-check-initrd-module -i /boot/initrd.img -c ext4 -c btrfs -c virtio_blk -c dm_mod
+
+INITRD_FILE=""
+MODULES=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -i)
+      INITRD_FILE="$2"
+      shift 2
+      ;;
+    -c)
+      MODULES+=("$2")
+      shift 2
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "$INITRD_FILE" ]; then
+    echo "Usage: $0 -i [initrd-filename] -c [module-name-1] -c [module-name-2] ..."
+    exit 1
+fi
+
+if [ ${#MODULES[@]} -eq 0 ]; then
+    echo "Usage: $0 -i [initrd-filename] -c [module-name-1] -c [module-name-2] ..."
+    exit 1
+fi
+
+if [ ! -f "$INITRD_FILE" ]; then
+    echo "File not found: $INITRD_FILE"
+    exit 1
+fi
+
+if command -v lsinitramfs >/dev/null 2>&1; then
+    LIST_CMD="lsinitramfs"
+elif command -v lsinitrd >/dev/null 2>&1; then
+    LIST_CMD="lsinitrd"
+else
+    echo "Neither lsinitramfs nor lsinitrd found."
+    exit 1
+fi
+
+# Get the contents once
+INITRD_CONTENTS=$($LIST_CMD "$INITRD_FILE" 2>/dev/null)
+
+if [ $? -ne 0 ]; then
+    echo "Failed to read initrd file: $INITRD_FILE"
+    exit 1
+fi
+
+# Attempt to parse the kernel version from the real path of the initrd (supports symbolic links)
+REAL_PATH=$(readlink -f "$INITRD_FILE" 2>/dev/null || realpath "$INITRD_FILE" 2>/dev/null)
+KVER=$(echo "$REAL_PATH" | grep -oP '(?<=initrd\.img-|initramfs-).*' | sed 's/\.img$//')
+
+# If the version number cannot be parsed, fall back to using the currently running system kernel version
+if [ -z "$KVER" ]; then
+    KVER=$(uname -r)
+fi
+
+BUILTIN_FILE="/lib/modules/$KVER/modules.builtin"
+
+for mod in "${MODULES[@]}"; do
+    # Kernel modules can use - or _ interchangeably in filenames
+    mod_underscore="${mod//-/_}"
+    mod_dash="${mod//_/-}"
+    
+    IS_BUILTIN=0
+    IS_KO=0
+
+    # 1. Check if it is built-in
+    if [ -f "$BUILTIN_FILE" ] && grep -qE "/(${mod}|${mod_underscore}|${mod_dash})\.ko$" "$BUILTIN_FILE"; then
+        IS_BUILTIN=1
+    fi
+    
+    # 2. Check if it is included in the initrd
+    if echo "$INITRD_CONTENTS" | grep -qE "/(${mod}|${mod_underscore}|${mod_dash})\.ko(\.xz|\.zst|\.gz|\.bz2)?$"; then
+        IS_KO=1
+    fi
+
+    # Output results
+    if [ $IS_BUILTIN -eq 1 ]; then
+        echo "$mod : yes : built-in"
+    elif [ $IS_KO -eq 1 ]; then
+        echo "$mod : yes : ko"
+    else
+        echo "$mod : no"
+    fi
+done

@@ -1,0 +1,253 @@
+#!/bin/bash
+# License: GPL
+# Author: Ceasar Sun <ceasar _at_ clonezilla org>
+# Program to convert Clonezilla live iso to qcow2 virtual disk file.
+
+# Colors for diff and output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+usage() {
+    echo "Usage: $0 -i \${input}.iso -o \${output}.qcow2 [--output-iso] -kb key1=val1 key2=val2 ..."
+    echo "# Repack and keep the pre-iso file:"
+    echo "$0 -i clonezilla-live-3.3.2-28-amd64.iso -o ocs-live-3.3.2-28-amd64-4cloud.qcow2 \
+ --output-iso \
+ -kb locales=en_US.UTF-8 keyboard-layouts=us ocs_daemonon=\"ssh\" ocs_prerun01=\"dhclient -v\" \
+ toram=live,syslinux,EFI,boot,.disk,utils hostname=ocs-lite4cloud"
+    exit 1
+}
+
+# Parse arguments
+INPUT_ISO=""
+OUTPUT_QCOW2=""
+OUTPUT_ISO_FLAG=false
+KB_PARAMS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -i) INPUT_ISO="$2"; shift 2 ;;
+        -o) OUTPUT_QCOW2="$2"; shift 2 ;;
+        --output-iso) OUTPUT_ISO_FLAG=true; shift ;;
+        -kb) 
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do 
+                KB_PARAMS+=("$1")
+                shift
+            done 
+            ;;
+        *) usage ;;
+    esac
+done
+
+if [[ -z "$INPUT_ISO" || -z "$OUTPUT_QCOW2" ]]; then
+    usage
+fi
+
+if [[ ! -f "$INPUT_ISO" ]]; then
+    echo -e "${RED}Error: Input ISO '$INPUT_ISO' not found.${NC}"
+    exit 1
+fi
+
+WORKDIR=$(mktemp -d)
+EXTRACT_DIR="$WORKDIR/extracted"
+mkdir -p "$EXTRACT_DIR"
+
+echo -e "${BLUE}Extracting ISO...${NC}"
+xorriso -osirrox on -indev "$INPUT_ISO" -extract / "$EXTRACT_DIR" > /dev/null 2>&1
+
+# Ensure extracted files are writable
+chmod -R u+w "$EXTRACT_DIR"
+
+# Function to modify boot parameters in a line
+modify_params() {
+    local line="$1"
+    local params=("${@:2}")
+    
+    for p in "${params[@]}"; do
+        key="${p%%=*}"
+        value="${p#*=}"
+        
+        if [[ "$line" =~ "$key=" ]]; then
+            # Replace existing param. Handle cases where value might be empty or have spaces
+            # We use a placeholder to handle spaces in value if needed, but for kernel params
+            # they are usually key=value or "key=value with spaces"
+            # Here we assume key=value format
+            line=$(echo "$line" | sed -E "s|$key=[^ ]*|$key=$value|g")
+        else
+            # Add new param
+            line="$line $p"
+        fi
+    done
+    echo "$line"
+}
+
+# Files to modify
+FILES=("$EXTRACT_DIR/syslinux/syslinux.cfg" "$EXTRACT_DIR/syslinux/isolinux.cfg" "$EXTRACT_DIR/boot/grub/grub.cfg")
+
+for cfg in "${FILES[@]}"; do
+    if [[ ! -f "$cfg" ]]; then
+        echo -e "${RED}Warning: $cfg not found, skipping.${NC}"
+        continue
+    fi
+    
+    echo -e "${BLUE}Processing $cfg...${NC}"
+    cp "$cfg" "$cfg-bak"
+    
+    # Write parameters to a temporary file to handle spaces correctly
+    printf "%s\n" "${KB_PARAMS[@]}" > "$WORKDIR/kb_params.txt"
+
+    if [[ "$cfg" == *"syslinux.cfg" || "$cfg" == *"isolinux.cfg" ]]; then
+        # Modify syslinux/isolinux
+        awk -v param_file="$WORKDIR/kb_params.txt" '
+        BEGIN {
+            while ((getline < param_file) > 0) {
+                params[++n] = $0
+            }
+        }
+        function modify(line) {
+            for (i=1; i<=n; i++) {
+                split(params[i], kv, "=")
+                key = kv[1]
+                val = substr(params[i], length(key) + 2)
+                
+                # Quote value if it contains spaces and is not already quoted
+                if (val ~ / / && val !~ /^".*"$/) {
+                    val = "\"" val "\""
+                }
+                
+                if (line ~ " "key"=") {
+                    # Replace existing
+                    start = index(line, " "key"=")
+                    before = substr(line, 1, start)
+                    after = substr(line, start + 1)
+                    # Find end of param (space or end of line)
+                    # But wait, if it was quoted, we need to find the matching quote
+                    # For simplicity, we assume existing params are not quoted or we replace them entirely
+                    space_pos = index(after, " ")
+                    if (space_pos == 0) {
+                        line = before key "=" val
+                    } else {
+                        line = before key "=" val substr(after, space_pos)
+                    }
+                } else {
+                    # Add new param
+                    line = line " " key "=" val
+                }
+            }
+            return line
+        }
+        
+        $1 == "label" && $2 == "Clonezilla" && $3 == "live" && NF == 3 {
+            in_block = 1
+            $0 = "label Clonezilla live cloud preset"
+        }
+        in_block && $1 == "MENU" && $2 == "LABEL" {
+            $0 = "  MENU LABEL Clonezilla live  cloud preset (To RAM ,VGA 800x600)"
+        }
+        in_block && $1 == "append" {
+            $0 = modify($0)
+        }
+        # Reset in_block on next label or menu begin/end
+        in_block && $1 == "label" && $0 !~ "Clonezilla live cloud preset" { in_block = 0 }
+        in_block && $1 == "MENU" && ($2 == "BEGIN" || $2 == "END") { in_block = 0 }
+        
+        { print }
+        ' "$cfg-bak" > "$cfg"
+        
+    elif [[ "$cfg" == *"grub.cfg" ]]; then
+        # Modify grub.cfg
+        awk -v param_file="$WORKDIR/kb_params.txt" '
+        BEGIN {
+            while ((getline < param_file) > 0) {
+                params[++n] = $0
+            }
+        }
+        function modify(line) {
+            for (i=1; i<=n; i++) {
+                split(params[i], kv, "=")
+                key = kv[1]
+                val = substr(params[i], length(key) + 2)
+                
+                # Quote value if it contains spaces and is not already quoted
+                if (val ~ / / && val !~ /^".*"$/) {
+                    val = "\"" val "\""
+                }
+                
+                if (line ~ " "key"=") {
+                    start = index(line, " "key"=")
+                    before = substr(line, 1, start)
+                    after = substr(line, start + 1)
+                    space_pos = index(after, " ")
+                    if (space_pos == 0) {
+                        line = before key "=" val
+                    } else {
+                        line = before key "=" val substr(after, space_pos)
+                    }
+                } else {
+                    line = line " " key "=" val
+                }
+            }
+            return line
+        }
+        
+        $1 == "menuentry" && $0 ~ "--id live-default" {
+            in_block = 1
+            sub("--id live-default", "--id live-default-cloud-preset")
+            sub("\"Clonezilla live \\(VGA 800x600\\)\"", "\"Clonezilla live cloud preset (VGA 800x600)\"")
+        }
+        in_block && $1 ~ /^\$linux_cmd/ {
+            $0 = modify($0)
+        }
+        in_block && $0 ~ /^}/ {
+            in_block = 0
+        }
+        
+        { print }
+        ' "$cfg-bak" > "$cfg"
+    fi
+    
+    # Show diff
+    echo -e "${BLUE}Diff for $cfg:${NC}"
+    diff --color=always -u "$cfg-bak" "$cfg"
+done
+
+# Rebuild ISO
+echo -e "${BLUE}Rebuilding ISO...${NC}"
+TMP_ISO="$WORKDIR/modified.iso"
+
+# Extract MBR from original ISO
+dd if="$INPUT_ISO" of="$WORKDIR/mbr.bin" bs=446 count=1 status=none
+
+# Use xorriso to rebuild, mimicking the original as much as possible
+# We use the parameters we found earlier
+xorriso -as mkisofs \
+    -V "Clonezilla-Live" \
+    -isohybrid-mbr "$WORKDIR/mbr.bin" \
+    -c "/syslinux/boot.cat" \
+    -b "/syslinux/isolinux.bin" \
+    -no-emul-boot \
+    -boot-load-size 4 \
+    -boot-info-table \
+    -eltorito-alt-boot \
+    -e "/boot/grub/efi.img" \
+    -no-emul-boot \
+    -boot-load-size 6656 \
+    -o "$TMP_ISO" \
+    "$EXTRACT_DIR" > /dev/null 2>&1
+
+# Convert to qcow2
+echo -e "${BLUE}Converting to qcow2...${NC}"
+qemu-img convert -f raw -O qcow2 "$TMP_ISO" "$OUTPUT_QCOW2"
+
+# Handle --output-iso
+if $OUTPUT_ISO_FLAG; then
+    NEW_ISO_NAME="${INPUT_ISO%.iso}-new.iso"
+    cp "$TMP_ISO" "$NEW_ISO_NAME"
+    echo -e "${GREEN}Modified ISO saved as: $NEW_ISO_NAME${NC}"
+fi
+
+# Cleanup
+rm -rf "$WORKDIR"
+echo -e "${GREEN}Done! Output saved to: $OUTPUT_QCOW2${NC}"
