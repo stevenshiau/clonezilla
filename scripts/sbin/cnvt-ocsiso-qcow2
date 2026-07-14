@@ -1,0 +1,491 @@
+#!/bin/bash
+set -e
+
+VERSION="0.2.3"
+
+# Colors for diff and output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") v${VERSION} -i <input.iso> -o <output.qcow2> [OPTIONS]
+
+Convert a Clonezilla Live ISO into a bootable virtual hard disk (qcow2).
+Disk size is calculated automatically from the ISO content.
+
+Options:
+  -i <input.iso>          Path to the input Clonezilla Live ISO image (required)
+  -o <output.qcow2>       Path of the output qcow2 disk image (required)
+  --redirect-boot-only    Generate a minimal boot-redirect disk:
+                            - UEFI menu: "uEFI firmware setup" (default) + "Boot from Local Disk"
+                            - BIOS menu: "Boot from Local Disk" (default)
+                            Incompatible with -kb; -kb parameters are silently ignored.
+  -kb <key=val> ...       Inject one or more kernel boot parameters into the Clonezilla
+                          live boot menu entry. Multiple key=value pairs accepted.
+  -h, --help              Show this help message and exit
+
+Examples:
+  # Clonezilla Live VHD with custom kernel parameters:
+  $(basename "$0") \\
+      -i  clonezilla-live-3.3.3-8-amd64.iso \\
+      -o  ocs-live-3.3.3-8-amd64-4cloud.qcow2 \\
+      -kb locales=en_US.UTF-8 keyboard-layouts=us \\
+          ocs_daemonon="ssh" ocs_prerun01="dhclient -v" \\
+          toram=live,syslinux,EFI,boot,.disk,utils
+
+  # Minimal boot-redirect VHD (no Clonezilla live OS included):
+  $(basename "$0") \\
+      --redirect-boot-only \\
+      -i clonezilla-live-3.3.3-8-amd64.iso \\
+      -o redirect-boot.qcow2
+EOF
+    exit 1
+}
+
+# Parse arguments
+INPUT_ISO=""
+OUTPUT_QCOW2=""
+OUTPUT_ISO_FLAG=false
+REDIRECT_BOOT_ONLY=false
+KB_PARAMS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -i) INPUT_ISO="$2"; shift 2 ;;
+        -o) OUTPUT_QCOW2="$2"; shift 2 ;;
+        --redirect-boot-only) REDIRECT_BOOT_ONLY=true; shift ;;
+        -h|--help) usage ;;
+        -kb) 
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do 
+                KB_PARAMS+=("$1")
+                shift
+            done 
+            ;;
+        *) usage ;;
+    esac
+done
+
+if [[ "$REDIRECT_BOOT_ONLY" == "true" && ${#KB_PARAMS[@]} -gt 0 ]]; then
+    echo -e "${RED}Warning: --redirect-boot-only specified. Ignoring -kb parameters.${NC}" >&2
+    KB_PARAMS=()
+fi
+
+if [[ -z "$INPUT_ISO" || -z "$OUTPUT_QCOW2" ]]; then
+    usage
+fi
+
+if [[ ! -f "$INPUT_ISO" ]]; then
+    echo -e "${RED}Error: Input ISO '$INPUT_ISO' not found.${NC}"
+    exit 1
+fi
+
+# Check dependencies
+dependencies=(xorriso 7z parted mkfs.vfat mcopy qemu-img numfmt)
+missing=()
+for cmd in "${dependencies[@]}"; do
+    if ! command -v "$cmd" &>/dev/null; then
+        missing+=("$cmd")
+    fi
+done
+
+if [ ${#missing[@]} -ne 0 ]; then
+    echo -e "${RED}Error: Missing required tools: ${missing[*]}${NC}" >&2
+    echo "Please install them before running this script." >&2
+    exit 1
+fi
+
+WORKDIR=$(mktemp -d)
+EXTRACT_DIR="$WORKDIR/extracted"
+mkdir -p "$EXTRACT_DIR"
+
+if [[ "$REDIRECT_BOOT_ONLY" == "true" ]]; then
+    # Redirect-only mode: selectively extract only the directories needed for booting
+    echo -e "${BLUE}Extracting essential boot directories from ISO (redirect-only mode)...${NC}"
+    if ! 7z x "$INPUT_ISO" boot/ EFI/ syslinux/ utils/ -o"$EXTRACT_DIR" -y > /dev/null; then
+        echo -e "${RED}Error: Failed to extract boot directories from $INPUT_ISO${NC}" >&2
+        exit 1
+    fi
+else
+    echo -e "${BLUE}Extracting ISO...${NC}"
+    xorriso -osirrox on -indev "$INPUT_ISO" -extract / "$EXTRACT_DIR" > /dev/null 2>&1
+fi
+
+# Ensure extracted files are writable
+chmod -R u+w "$EXTRACT_DIR"
+
+# Function to modify boot parameters in a line
+modify_params() {
+    local line="$1"
+    local params=("${@:2}")
+    
+    for p in "${params[@]}"; do
+        key="${p%%=*}"
+        value="${p#*=}"
+        
+        if [[ "$line" =~ "$key=" ]]; then
+            # Replace existing param. Handle cases where value might be empty or have spaces
+            # We use a placeholder to handle spaces in value if needed, but for kernel params
+            # they are usually key=value or "key=value with spaces"
+            # Here we assume key=value format
+            line=$(echo "$line" | sed -E "s|$key=[^ ]*|$key=$value|g")
+        else
+            # Add new param
+            line="$line $p"
+        fi
+    done
+    echo "$line"
+}
+
+# Files to modify
+FILES=("$EXTRACT_DIR/syslinux/syslinux.cfg" "$EXTRACT_DIR/syslinux/isolinux.cfg" "$EXTRACT_DIR/boot/grub/grub.cfg")
+
+for cfg in "${FILES[@]}"; do
+    if [[ ! -f "$cfg" ]]; then
+        echo -e "${RED}Warning: $cfg not found, skipping.${NC}"
+        continue
+    fi
+    
+    echo -e "${BLUE}Processing $cfg...${NC}"
+    cp "$cfg" "$cfg-bak"
+    
+    if [[ "$REDIRECT_BOOT_ONLY" == "true" ]]; then
+        if [[ "$cfg" == *"syslinux.cfg" || "$cfg" == *"isolinux.cfg" ]]; then
+            cat > "$cfg" <<EOF
+default menu.c32
+timeout 300
+prompt 0
+
+menu title Boot Menu
+
+label local
+  menu label Boot from Local Disk
+  menu default
+  kernel chain.c32
+  append hd1
+
+label info
+  menu label Show Convert Info
+  text help
+  Converted by cnvt-ocsiso-qcow2 v${VERSION}
+  Timestamp : $(date '+%Y-%m-%d %H:%M:%S %Z')
+  Source ISO: $(basename "$INPUT_ISO")
+  Output    : $(basename "$OUTPUT_QCOW2")
+  Mode      : --redirect-boot-only
+  endtext
+EOF
+        elif [[ "$cfg" == *"grub.cfg" ]]; then
+            cat > "$cfg" <<EOF
+set default=0
+set timeout=30
+
+menuentry 'uEFI firmware setup' {
+    fwsetup
+}
+
+menuentry "Local operating system (if available)" --id local-disk {
+  echo "Booting first local disk..."
+  # Generate boot menu automatically
+  configfile /boot/grub/boot-local-efi.cfg
+  # If not chainloaded, definitely no uEFI boot loader was found.
+  echo "No uEFI boot loader was found!"
+  sleep 15
+}
+
+menuentry "Show Convert Info" --id show-convert-info {
+  echo "----------------------------------------------"
+  echo "  Converted by cnvt-ocsiso-qcow2 v${VERSION}"
+  echo "  Timestamp : $(date '+%Y-%m-%d %H:%M:%S %Z')"
+  echo "  Source ISO: $(basename "$INPUT_ISO")"
+  echo "  Output    : $(basename "$OUTPUT_QCOW2")"
+  echo "  Mode      : --redirect-boot-only"
+  echo "----------------------------------------------"
+  sleep --verbose --interruptible 30
+}
+EOF
+        fi
+    else
+        # Write parameters to a temporary file to handle spaces correctly
+        printf "%s\n" "${KB_PARAMS[@]}" > "$WORKDIR/kb_params.txt"
+
+        if [[ "$cfg" == *"syslinux.cfg" || "$cfg" == *"isolinux.cfg" ]]; then
+            # Modify syslinux/isolinux and enforce 30s timeout
+            awk -v param_file="$WORKDIR/kb_params.txt" '
+            BEGIN {
+                while ((getline < param_file) > 0) {
+                    params[++n] = $0
+                }
+            }
+            function modify(line) {
+                for (i=1; i<=n; i++) {
+                    split(params[i], kv, "=")
+                    key = kv[1]
+                    val = substr(params[i], length(key) + 2)
+                    
+                    # Quote value if it contains spaces and is not already quoted
+                    if (val ~ / / && val !~ /^".*"$/) {
+                        val = "\"" val "\""
+                    }
+                    
+                    if (line ~ " "key"=") {
+                        start = index(line, " "key"=")
+                        before = substr(line, 1, start)
+                        after = substr(line, start + 1)
+                        space_pos = index(after, " ")
+                        if (space_pos == 0) {
+                            line = before key "=" val
+                        } else {
+                            line = before key "=" val substr(after, space_pos)
+                        }
+                    } else {
+                        line = line " " key "=" val
+                    }
+                }
+                return line
+            }
+            
+            $1 == "timeout" {
+                $0 = "timeout 300"
+            }
+            $1 == "label" && $2 == "Clonezilla" && $3 == "live" && NF == 3 {
+                in_block = 1
+                $0 = "label Clonezilla live cloud preset"
+            }
+            in_block && $1 == "MENU" && $2 == "LABEL" {
+                $0 = "  MENU LABEL Clonezilla live  cloud preset (To RAM ,VGA 800x600)"
+            }
+            in_block && $1 == "append" {
+                $0 = modify($0)
+            }
+            # Reset in_block on next label or menu begin/end
+            in_block && $1 == "label" && $0 !~ "Clonezilla live cloud preset" { in_block = 0 }
+            in_block && $1 == "MENU" && ($2 == "BEGIN" || $2 == "END") { in_block = 0 }
+            
+            { print }
+            ' "$cfg-bak" > "$cfg"
+            # Append Show Convert Info label
+            {
+                printf '\nlabel info\n'
+                printf '  menu label Show Convert Info\n'
+                printf '  text help\n'
+                printf '  Converted by cnvt-ocsiso-qcow2 v%s\n' "${VERSION}"
+                printf '  Timestamp : %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+                printf '  Source ISO: %s\n' "$(basename "$INPUT_ISO")"
+                printf '  Output    : %s\n' "$(basename "$OUTPUT_QCOW2")"
+                printf '  -kb params: %s\n' "${KB_PARAMS[*]}"
+                printf '  endtext\n'
+            } >> "$cfg"
+            
+        elif [[ "$cfg" == *"grub.cfg" ]]; then
+            # Modify grub.cfg and enforce 30s timeout
+            awk -v param_file="$WORKDIR/kb_params.txt" '
+            BEGIN {
+                while ((getline < param_file) > 0) {
+                    params[++n] = $0
+                }
+            }
+            function modify(line) {
+                for (i=1; i<=n; i++) {
+                    split(params[i], kv, "=")
+                    key = kv[1]
+                    val = substr(params[i], length(key) + 2)
+                    
+                    # Quote value if it contains spaces and is not already quoted
+                    if (val ~ / / && val !~ /^".*"$/) {
+                        val = "\"" val "\""
+                    }
+                    
+                    if (line ~ " "key"=") {
+                        start = index(line, " "key"=")
+                        before = substr(line, 1, start)
+                        after = substr(line, start + 1)
+                        space_pos = index(after, " ")
+                        if (space_pos == 0) {
+                            line = before key "=" val
+                        } else {
+                            line = before key "=" val substr(after, space_pos)
+                        }
+                    } else {
+                        line = line " " key "=" val
+                    }
+                }
+                return line
+            }
+            
+            $0 ~ /^[ \t]*set timeout=/ {
+                sub(/timeout=[0-9]+/, "timeout=30")
+            }
+            $1 == "menuentry" && $0 ~ "--id live-default" {
+                in_block = 1
+                sub("--id live-default", "--id live-default-cloud-preset")
+                sub("\"Clonezilla live \\(VGA 800x600\\)\"", "\"Clonezilla live cloud preset (VGA 800x600)\"")
+            }
+            in_block && $1 ~ /^\$linux_cmd/ {
+                $0 = modify($0)
+            }
+            in_block && $0 ~ /^}/ {
+                in_block = 0
+            }
+            
+            { print }
+            ' "$cfg-bak" > "$cfg"
+            # Append Show Convert Info menuentry
+            {
+                printf '\nmenuentry "Show Convert Info" --id show-convert-info {\n'
+                printf '  echo "----------------------------------------------"\n'
+                printf '  echo "  Converted by cnvt-ocsiso-qcow2 v%s"\n' "${VERSION}"
+                printf '  echo "  Timestamp : %s"\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+                printf '  echo "  Source ISO: %s"\n' "$(basename "$INPUT_ISO")"
+                printf '  echo "  Output    : %s"\n' "$(basename "$OUTPUT_QCOW2")"
+                printf '  echo "  -kb params: %s"\n' "${KB_PARAMS[*]}"
+                printf '  echo "----------------------------------------------"\n'
+                printf '  sleep --verbose --interruptible 30\n'
+                printf '}\n'
+            } >> "$cfg"
+        fi
+    fi
+    
+    # Show diff (diff exits with 1 when differences found; suppress to avoid set -e termination)
+    echo -e "${BLUE}Diff for $cfg:${NC}"
+    diff --color=always -u "$cfg-bak" "$cfg" || true
+done
+
+# ----------------------------------------------------
+# 1. Auto-calculate required virtual disk size
+# ----------------------------------------------------
+echo -e "${BLUE}Calculating required disk size...${NC}"
+TOTAL_BYTES=$(du -sb "$EXTRACT_DIR" | cut -f1)
+# Add 15% headroom plus 50 MB (52428800 bytes) for partition alignment,
+# FAT metadata (FAT tables), and boot loader files
+VOLUME_SIZE_BYTES=$(( TOTAL_BYTES + (TOTAL_BYTES * 15 / 100) + 52428800 ))
+# Round up to the nearest 1 MiB boundary for partition alignment
+VOLUME_SIZE_BYTES=$(( (VOLUME_SIZE_BYTES + 1048575) / 1048576 * 1048576 ))
+
+echo -e "Required disk space: $(numfmt --to=iec --format="%.2f" $VOLUME_SIZE_BYTES)"
+
+# ----------------------------------------------------
+# 2. Create blank disk image and partition table
+# ----------------------------------------------------
+echo -e "${BLUE}Creating and partitioning raw disk image...${NC}"
+RAW_DISK="$WORKDIR/disk.raw"
+truncate -s "$VOLUME_SIZE_BYTES" "$RAW_DISK"
+
+# Create MBR (msdos) partition table with a FAT32 primary partition
+# starting at 1 MiB offset, and set the boot flag
+parted -s "$RAW_DISK" mklabel msdos
+parted -s "$RAW_DISK" mkpart primary fat32 1MiB 100%
+parted -s "$RAW_DISK" set 1 boot on
+
+# Retrieve the exact byte size of the created partition
+PART_SIZE_BYTES=$(parted -s "$RAW_DISK" unit b print | awk '$1 == "1" {print $4}' | tr -d 'B')
+if [[ -z "$PART_SIZE_BYTES" ]]; then
+    echo -e "${RED}Error: Failed to determine partition size from parted output.${NC}" >&2
+    exit 1
+fi
+
+# ----------------------------------------------------
+# 3. Create and format the partition image
+# ----------------------------------------------------
+echo -e "${BLUE}Formatting partition image...${NC}"
+PART_IMG="$WORKDIR/part.img"
+truncate -s "$PART_SIZE_BYTES" "$PART_IMG"
+mkfs.vfat -F 32 "$PART_IMG" >/dev/null
+
+# ----------------------------------------------------
+# 4. Install Syslinux boot sector into the partition image
+# ----------------------------------------------------
+echo -e "${BLUE}Installing Syslinux boot sector into partition image...${NC}"
+# Prefer the syslinux binary extracted from the Clonezilla ISO
+SYSLINUX_BIN=""
+if [[ "$(uname -m)" == "x86_64" ]]; then
+    SYSLINUX_BIN="$EXTRACT_DIR/utils/linux/x64/syslinux"
+else
+    SYSLINUX_BIN="$EXTRACT_DIR/utils/linux/x86/syslinux"
+fi
+
+if [[ -f "$SYSLINUX_BIN" ]]; then
+    chmod +x "$SYSLINUX_BIN"
+fi
+
+# Fall back to the system-installed syslinux if the extracted binary is not runnable on the host
+if [[ ! -x "$SYSLINUX_BIN" ]] || ! "$SYSLINUX_BIN" --version &>/dev/null; then
+    if command -v syslinux &>/dev/null; then
+        echo -e "Warning: Extracted syslinux not executable on host. Using system syslinux..."
+        SYSLINUX_BIN="syslinux"
+    else
+        echo -e "${RED}Error: Syslinux tool is not executable and system syslinux is missing.${NC}" >&2
+        exit 1
+    fi
+fi
+
+# Write ldlinux.sys into the root of the partition image
+"$SYSLINUX_BIN" -i "$PART_IMG"
+
+# ----------------------------------------------------
+# 5. Copy all files into the partition image
+# ----------------------------------------------------
+# ----------------------------------------------------
+# 5a. Write the repack command record: repack-command-qcow2.txt
+# ----------------------------------------------------
+echo -e "${BLUE}Saving repack command record...${NC}"
+REPACK_CMD_FILE="$WORKDIR/repack-command-qcow2.txt"
+cat > "$REPACK_CMD_FILE" <<EOF
+# Generated by: $(basename "$0")
+# Timestamp   : $(date '+%Y-%m-%d %H:%M:%S %Z')
+# Source ISO  : $(realpath "$INPUT_ISO")
+
+$(basename "$0") \\
+    -i $(realpath "$INPUT_ISO") \\
+    -o $(realpath "$OUTPUT_QCOW2") \\
+EOF
+
+if [[ "$REDIRECT_BOOT_ONLY" == "true" ]]; then
+    echo "    --redirect-boot-only" >> "$REPACK_CMD_FILE"
+elif [[ ${#KB_PARAMS[@]} -gt 0 ]]; then
+    {
+        printf '    -kb'
+        for p in "${KB_PARAMS[@]}"; do printf ' %s' "$p"; done
+        printf '\n'
+    } >> "$REPACK_CMD_FILE"
+fi
+
+echo -e "${BLUE}Copying files to partition image using mtools...${NC}"
+export MTOOLS_SKIP_CHECK=1
+# Recursively copy all extracted files into the FAT partition image
+mcopy -i "$PART_IMG" -s "$EXTRACT_DIR"/* ::/
+# Write the repack command record to the partition root
+mcopy -i "$PART_IMG" "$REPACK_CMD_FILE" ::/repack-command-qcow2.txt
+
+# ----------------------------------------------------
+# 6. Assemble disk: write MBR bootstrap code and partition data
+# ----------------------------------------------------
+echo -e "${BLUE}Assembling raw disk with bootloader and partition...${NC}"
+MBR_BIN="$EXTRACT_DIR/utils/mbr/mbr.bin"
+if [[ -f "$MBR_BIN" ]]; then
+    dd if="$MBR_BIN" of="$RAW_DISK" bs=440 count=1 conv=notrunc status=none
+else
+    echo -e "${RED}Warning: MBR bootstrap code $MBR_BIN not found. Boot may fail on BIOS.${NC}" >&2
+fi
+
+# Write the partition image at a 1 MiB offset into the raw disk
+dd if="$PART_IMG" of="$RAW_DISK" bs=1M seek=1 conv=notrunc status=none
+
+# ----------------------------------------------------
+# 7. Convert raw image to qcow2 format
+# ----------------------------------------------------
+echo -e "${BLUE}Converting raw image to qcow2 format...${NC}"
+# Ensure the output directory exists before writing
+OUTPUT_DIR=$(dirname "$OUTPUT_QCOW2")
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_QCOW2_ABS=$(realpath "$OUTPUT_QCOW2")
+
+qemu-img convert -f raw -O qcow2 "$RAW_DISK" "$OUTPUT_QCOW2_ABS"
+
+# ----------------------------------------------------
+# 8. Clean up working directory and finish
+# ----------------------------------------------------
+rm -rf "$WORKDIR"
+echo -e "${GREEN}Successfully generated bootable virtual hard disk at: $OUTPUT_QCOW2_ABS${NC}"
