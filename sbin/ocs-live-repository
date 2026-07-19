@@ -109,13 +109,42 @@ get_ocsroot_src_from_ocs_repository_if_assigned() {
 }
 #
 do_uri_mount_local_dev() {
-  local rc
+  local rc resolved_part tag val canonical_part
   target_part="$(drbl-uriparse "$ocs_repository" path)"
   # If it's LABEL=<label>, UUID=<uuid>, PARTLABEL=<label>, PARTUUID=<uuid>    
   # The input format is like: ocs_repository="dev:///UUID=XYZ"
   # we have to remove the leading "/"
   target_part="$(echo $target_part | sed -r -e "s@^/(LABEL|UUID|PARTLABEL|PARTUUID|OCS_LIVE_USB)@\1@")"
   # TODO: Browse
+
+  resolved_part="$target_part"
+  if [[ "$target_part" =~ ^(UUID|LABEL|PARTUUID|PARTLABEL)= ]]; then
+    tag="${BASH_REMATCH[1]}"
+    val="${target_part#*=}"
+    case "$(echo "$tag" | tr '[:upper:]' '[:lower:]')" in
+      uuid)      resolved_part="/dev/disk/by-uuid/$val" ;;
+      label)     resolved_part="/dev/disk/by-label/$val" ;;
+      partuuid)  resolved_part="/dev/disk/by-partuuid/$val" ;;
+      partlabel) resolved_part="/dev/disk/by-partlabel/$val" ;;
+    esac
+  fi
+  canonical_part="$(readlink -f "$resolved_part")"
+
+  if [ -b "$canonical_part" ] && cryptsetup isLuks "$canonical_part" &>/dev/null; then
+    echo "LUKS/LUKS2 device detected: $canonical_part"
+    echo "Opening LUKS partition..."
+    cryptsetup close ocs_reporoot_luks &>/dev/null
+    cryptsetup luksOpen "$canonical_part" ocs_reporoot_luks
+    if [ $? -eq 0 ]; then
+      target_part="/dev/mapper/ocs_reporoot_luks"
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Failed to unlock LUKS partition $canonical_part!"
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      exit 1
+    fi
+  fi
+
   prepare_mnt_point_ocsroot
   case $target_part in
     OCS_LIVE_USB)

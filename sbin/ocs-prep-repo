@@ -169,6 +169,53 @@ do_mount_local_dev() {
            done
            [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
 	   ;;
+     crypto_LUKS|crypto_luks|luks|LUKS|luks2|LUKS2)
+           ask_="true"
+           while [ "$ask_" = "true" ]; do
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+             echo "Opening LUKS partition /dev/$target_part..."
+             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+             cryptsetup close ocs_reporoot_luks &>/dev/null
+             cryptsetup luksOpen /dev/$target_part ocs_reporoot_luks
+             rc=$?
+             if [ "$rc" -eq 0 ]; then
+               mapped_part_fs="$(LANG=C ocs-get-dev-info /dev/mapper/ocs_reporoot_luks filesystem)"
+               echo "Decrypted filesystem inside /dev/mapper/ocs_reporoot_luks: $mapped_part_fs"
+               case "$mapped_part_fs" in
+                 ntfs)
+                   ntfs-3g /dev/mapper/ocs_reporoot_luks $ocsroot -o $ocsroot_def_mnt_opt
+                   rc=$?
+                   ;;
+                 hfsplus)
+                   LC_ALL=C mount -t hfsplus -o force,$ocsroot_def_mnt_opt /dev/mapper/ocs_reporoot_luks $ocsroot
+                   rc=$?
+                   ;;
+                 *)
+                   LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt /dev/mapper/ocs_reporoot_luks $ocsroot
+                   rc=$?
+                   ;;
+               esac
+             fi
+             if [ "$rc" -ne 0 ]; then
+               echo $msg_delimiter_star_line
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+               echo "$msg_unable_to_mnt_ocsroot. $msg_do_u_want_to_do_it_again"
+               [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+               echo -n "[Y/n] "
+               read run_again_ans
+               case "$run_again_ans" in
+                 n|N|[nN][oO]) ask_="false" ;;
+                            *) ask_="true" 
+                               umount $ocsroot 2>/dev/null
+                               cryptsetup close ocs_reporoot_luks 2>/dev/null
+                               ;;
+               esac
+             else
+               ask_="false"
+             fi
+           done
+           [ "$chk_ocsroot_mountpont" = "yes" ] && check_if_ocsroot_a_mountpoint
+           ;;
      hfsplus) 
            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
            echo "$msg_warning_mount_hfsplus_writable"
