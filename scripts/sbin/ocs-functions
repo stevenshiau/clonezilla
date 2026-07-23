@@ -4584,7 +4584,7 @@ get_disk_or_part_hardware_info() {
     # exfat
     # 0x7
 
-    part_type="$(jq -r ".[] | select(.name == \"$p\" and .type == \"part\") | .type, .fstype, .parttype" $hwinfo_json_f)"
+    part_type="$(jq -r "[ .[] | select(.name == \"$p\") ] | (if length > 1 then (map(select(.type == \"part\"))[0] // .[0]) else .[0] end) | .type, .fstype, .parttype" $hwinfo_json_f)"
     rc=$?
     # The return "8" means return "continue" (8 characters). 
     # Here this function is extracted from a loop.
@@ -4598,12 +4598,12 @@ get_disk_or_part_hardware_info() {
     fi
 
     # Size
-    dsize="$(jq -r ".[] | select(.name == \"$p\" and .type == \"part\") | .size" $hwinfo_json_f)"
+    dsize="$(jq -r "[ .[] | select(.name == \"$p\") ] | (if length > 1 then (map(select(.type == \"part\"))[0] // .[0]) else .[0] end) | .size" $hwinfo_json_f)"
     # If empty, set it to "No_size"
     dsize="${dsize:-No_size}"
 
     # File system
-    part_fs="$(jq -r ".[] | select(.name == \"$p\" and .type == \"part\") | .fstype" $hwinfo_json_f)"
+    part_fs="$(jq -r "[ .[] | select(.name == \"$p\") ] | (if length > 1 then (map(select(.type == \"part\"))[0] // .[0]) else .[0] end) | .fstype" $hwinfo_json_f)"
     # If empty, set it to "No_file_system"
     part_fs="${part_fs:-No_file_system}"
 
@@ -4614,7 +4614,7 @@ get_disk_or_part_hardware_info() {
     dmodel="${dmodel:-No_disk_model}"
 
     # Volume label
-    part_lb="$(jq -r ".[] | select(.name == \"$p\" and .type == \"part\") | .label" $hwinfo_json_f)"
+    part_lb="$(jq -r "[ .[] | select(.name == \"$p\") ] | (if length > 1 then (map(select(.type == \"part\"))[0] // .[0]) else .[0] end) | .label" $hwinfo_json_f)"
     # If empty, set it to "No_label"
     part_lb="${part_lb:-No_label}"
 
@@ -4953,7 +4953,7 @@ get_input_dev_name() {
     for p in $(reduce_multipath_dev $dev_list); do
        DEV_MODEL=""
        echo -n "."
-       FILE="$(jq -r ".[] | select(.name == \"$p\" and .type == \"part\") | .type, .fstype, .parttype" $blk_info_f | tr [:upper:] [:lower:])"
+       FILE="$(jq -r "[ .[] | select(.name == \"$p\") ] | (if length > 1 then (map(select(.type == \"part\"))[0] // .[0]) else .[0] end) | .type, .fstype, .parttype" $blk_info_f | tr [:upper:] [:lower:])"
        rc=$?
        if [ "$rc" = "0" ]; then
          [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue

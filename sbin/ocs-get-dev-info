@@ -56,12 +56,7 @@ get_fs_from_blkid() {
   local TYPE
   TYPE=$(LC_ALL=C blkid -o export -- "$part_" 2>/dev/null | grep -E '^TYPE=' | cut -d'=' -f2)
 
-  if [[ -n "$TYPE" ]] || _is_whole_disk "$part_"; then
-    echo "$TYPE"
-    return
-  fi
-
-  # Partition-Specific Checks
+  # Partition-Specific Checks/Modifications
   if [[ "$TYPE" == "vfat" ]] && [[ "$(file -Ls "$part_" 2>/dev/null)" == *"FAT (12 bit)"* ]]; then
     TYPE="fat12"
   elif [[ "$TYPE" =~ (isw_raid_member|linux_raid_member) ]]; then
@@ -87,6 +82,7 @@ get_fs_from_blkid() {
   elif [[ "$TYPE" == "apfs" ]]; then
     if fsapfsinfo "$part_" 2>/dev/null | grep -q "unable to initialize encryption context"; then TYPE="apfs_encrypted"; fi
   fi
+
   echo "$TYPE"
 }
 
@@ -100,7 +96,7 @@ _gather_all_info() {
   # 1. Use jq to get info from lsblk.
   assignments=$(lsblk -p --json -o NAME,SIZE,TYPE,FSTYPE,UUID,PARTUUID,PTUUID,PARTLABEL,LABEL,MODEL,PARTTYPE "$device" 2>/dev/null |
     jq -r '
-      .blockdevices[] | select(.name == "'"$device"'") |
+      .. | objects | select(.name == "'"$device"'") |
       "info_size=\((.size // "") | @sh); " +
       "info_type=\((.type // "") | @sh); " +
       "info_fstype=\((.fstype // "") | @sh); " +
