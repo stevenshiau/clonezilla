@@ -1789,9 +1789,8 @@ CLIENT_END
     # Not matter if clients use netboot or not, we start the required services and prepare the PXE and uEFI network boot
     systemctl stop dnsmasq
 
-    if [ "$ocs_uefi_http_boot" = "yes" ]; then
-      if [ -n "$cast_srv_ip" ]; then
-        cat <<-DNSMQSQ_END >> $dnsmasq_cfg
+    if [ -n "$cast_srv_ip" ]; then
+      cat <<-DNSMQSQ_END >> $dnsmasq_cfg
 
 # HTTPBoot support
 dhcp-match=set:efi-http64,option:client-arch,16
@@ -1807,22 +1806,21 @@ dhcp-option-force=tag:efi-httparm,60,"HTTPClient"
 dhcp-boot=tag:efi-httparm,"http://${cast_srv_ip}/tftpboot/nbi_img/bootaa64.efi"
 DNSMQSQ_END
 
-        if [ "$ocs_litesrv_netmode" = "use-existing-dhcpd" ]; then
-          cat <<-DNSMQSQ_END >> $dnsmasq_cfg
+      if [ "$ocs_litesrv_netmode" = "use-existing-dhcpd" ]; then
+        cat <<-DNSMQSQ_END >> $dnsmasq_cfg
 
 # Proxy DHCP menu triggers for HTTP Boot architectures
 pxe-service=16,"HTTP Boot x64",unused
 pxe-service=15,"HTTP Boot x86",unused
 pxe-service=19,"HTTP Boot ARM64",unused
 DNSMQSQ_END
-        fi
       fi
     fi
 
     systemctl start dnsmasq
     start_nat_service
     gen_ocs_live_netboot_conf
-    if [ "$ocs_uefi_http_boot" = "yes" ]; then
+    if [ ! -h /var/www/html/tftpboot ]; then
       ln -fsv /tftpboot /var/www/html/tftpboot
     fi
     # Put filesystem.squashfs in http service root.
@@ -1911,7 +1909,6 @@ task_stop_feed_img_for_cast() {
   fi
   systemctl stop dnsmasq
   systemctl stop lighttpd
-  rm -f /var/www/html/tftpboot
   rm -f $(dirname $GRUB_EFINB_DIR)/grub.cfg
   stop_nat_service
   stop_ocs_service -m $ocs no
