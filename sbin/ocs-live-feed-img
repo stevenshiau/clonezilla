@@ -819,10 +819,25 @@ gen_ocs_live_netboot_conf() {
   # Switch the menu title to Clonezilla
   perl -pi -e "s|^MENU TITLE.*|MENU TITLE Clonezilla \(https://clonezilla.org\)|g" $PXELINUX_DIR/default
 
-  # For UEFI HTTP Boot client, link grub.cfg in the parent directory where boot*.efi lies,
+  # For UEFI HTTP Boot client, copy grub.cfg to the parent directory and modify it for HTTP Boot,
   # so UEFI HTTP Boot firmware client can automatically pull grub.cfg via HTTP.
-  if [ ! -h "$(dirname $GRUB_EFINB_DIR)/grub.cfg" ]; then
-    ln -fsv grub/grub.cfg $(dirname $GRUB_EFINB_DIR)/grub.cfg
+  if [ "$ocs_uefi_http_boot" = "yes" ]; then
+    rm -f $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    cp -af $GRUB_EFINB_DIR/grub.cfg $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    
+    # 1. First remove ($tftpd_opt) from all commands (linux, initrd, background_image, prefix etc.)
+    perl -pi -e 's|\(\$tftpd_opt\)||g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    
+    # 2. Comment out standard variable definitions to prevent them from overriding our HTTPBoot variables
+    perl -pi -e 's|^[[:space:]]*(set tftpd_opt=.*)|# $1|g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    perl -pi -e 's|^[[:space:]]*(set tftp_path=.*)|# $1|g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    perl -pi -e 's|^[[:space:]]*(set grub_prefix_path=.*)|# $1|g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    
+    # 3. Insert global prefix and root setting at the top of the file (before any module insmod runs)
+    perl -pi -e 's|(# Created by gen-grub-efi-nb-menu.*)|$1\nset tftpd_opt="http,'$cast_srv_ip'"\nset tftp_path="/tftpboot/nbi_img"\nset grub_prefix_path="/tftpboot/nbi_img/grub"\nset root=\(\$tftpd_opt\)\nset prefix=\(\$tftpd_opt\)\$grub_prefix_path|g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    
+    # 4. Add insmod png at the top to ensure gfx background works over HTTP
+    perl -pi -e 's|^set default=|insmod png\nset default=|g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
   fi
 } # end of gen_ocs_live_netboot_conf
 #
