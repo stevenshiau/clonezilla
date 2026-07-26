@@ -819,10 +819,23 @@ gen_ocs_live_netboot_conf() {
   # Switch the menu title to Clonezilla
   perl -pi -e "s|^MENU TITLE.*|MENU TITLE Clonezilla \(https://clonezilla.org\)|g" $PXELINUX_DIR/default
 
-  # For UEFI HTTP Boot client, link grub.cfg in the parent directory where boot*.efi lies,
+  # For UEFI HTTP Boot client, copy grub.cfg to the parent directory and modify it for HTTP Boot,
   # so UEFI HTTP Boot firmware client can automatically pull grub.cfg via HTTP.
-  if [ ! -h "$(dirname $GRUB_EFINB_DIR)/grub.cfg" ]; then
-    ln -fsv grub/grub.cfg $(dirname $GRUB_EFINB_DIR)/grub.cfg
+  if [ "$ocs_uefi_http_boot" = "yes" ]; then
+    rm -f $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    cp -af $GRUB_EFINB_DIR/grub.cfg $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    
+    # 1. Modify variables for HTTP Boot
+    perl -pi -e 's|^[[:space:]]*set tftpd_opt=.*|set tftpd_opt="http,'$cast_srv_ip'"|g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    perl -pi -e 's|^[[:space:]]*set tftp_path=.*|set tftp_path="/tftpboot/nbi_img"|g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    perl -pi -e 's|^[[:space:]]*set grub_prefix_path=.*|set grub_prefix_path="/tftpboot/nbi_img/grub"|g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    
+    # 2. Force root device to HTTP and remove parenthesis from boot commands
+    perl -pi -e 's|^[[:space:]]*set root=.*|set root=http,'$cast_srv_ip'|g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    perl -pi -e 's|\(\$tftpd_opt\)||g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
+    
+    # 3. Add insmod png at the top to ensure gfx background works over HTTP
+    perl -pi -e 's|^set default=|insmod png\nset default=|g' $(dirname $GRUB_EFINB_DIR)/grub.cfg
   fi
 } # end of gen_ocs_live_netboot_conf
 #
