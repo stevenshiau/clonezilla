@@ -1804,6 +1804,9 @@ CLIENT_END
     if [ -n "$cast_srv_ip" ]; then
       cat <<-DNSMQSQ_END >> $dnsmasq_cfg
 
+# Proxy DHCP menu triggers and vendor mapping for HTTP Boot architectures
+dhcp-pxe-vendor=PXEClient,HTTPClient
+
 # HTTPBoot support
 dhcp-match=set:efi-http64,option:client-arch,16
 dhcp-option-force=tag:efi-http64,60,"HTTPClient"
@@ -1817,16 +1820,6 @@ dhcp-match=set:efi-httparm,option:client-arch,19
 dhcp-option-force=tag:efi-httparm,60,"HTTPClient"
 dhcp-boot=tag:efi-httparm,"http://${cast_srv_ip}/tftpboot/nbi_img/bootaa64.efi"
 DNSMQSQ_END
-
-      if [ "$ocs_litesrv_netmode" = "use-existing-dhcpd" ]; then
-        cat <<-DNSMQSQ_END >> $dnsmasq_cfg
-
-# Proxy DHCP menu triggers for HTTP Boot architectures
-pxe-service=16,"HTTP Boot x64",unused
-pxe-service=15,"HTTP Boot x86",unused
-pxe-service=19,"HTTP Boot ARM64",unused
-DNSMQSQ_END
-      fi
     fi
 
     systemctl start dnsmasq
