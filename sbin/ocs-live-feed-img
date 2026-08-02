@@ -651,20 +651,11 @@ gen_ocs_live_netboot_conf() {
   grub_menu_to_reveal="clonezilla-live-client local-disk"
   generate-pxe-menu
 
-  # A workaround to fix the dnsmasq issue for uEFI network boot clients (actually grub should be patched)
-  # i.e., we have to assign the tftp server IP address in grub network boot loader.
-  # This is only necessary when dnsmasq is used to relay the DHCP request from clients to existing DHCP service
-  # Now this only works for non-secure-boot clients.
-  # Ref: http://lists.thekelleys.org.uk/pipermail/dnsmasq-discuss/2017q1/011124.html
-  #      https://lists.gnu.org/archive/html/grub-devel/2016-04/msg00051.html
-  if [ "$secure_boot_client" = "no" ]; then
-    case "$ocs_litesrv_netmode" in
-      "use-existing-dhcpd") drbl-gen-grub-efi-nb -t $cast_srv_ip ;;
-    esac
-  else
-    # Secure boot for clients is enabled, so force to use the signed shim and grub.
-    drbl-gen-grub-efi-nb -s
-  fi
+  # Prepare uEFI netboot files.
+  case "$ocs_litesrv_netmode" in
+    "use-existing-dhcpd") drbl-gen-grub-efi-nb -t $cast_srv_ip ;;
+                       *) drbl-gen-grub-efi-nb ;;
+  esac
 
   # Add Clonezilla live in the boot menu and for netboot. Actually we will use http service instead of tftpd. However, just run drbl-sl to make things easier. Hence both files for netboot using tftpd and httpd will be ready.
   if [ "$squashfs_fmode" -ge 4 ]; then
@@ -1784,6 +1775,9 @@ CLIENT_END
     gen_ocs_live_netboot_conf
     if [ ! -h /var/www/html/tftpboot ]; then
       ln -fsv /tftpboot /var/www/html/tftpboot
+    fi
+    if [ ! -h /var/www/html/grub ]; then
+      ln -fsv /tftpboot/nbi_img/grub /var/www/html/grub
     fi
     # Put filesystem.squashfs in http service root.
     if [ "$squashfs_fmode" -ge 4 ]; then
