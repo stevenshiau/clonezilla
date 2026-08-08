@@ -51,6 +51,58 @@ get_console_dims() {
   fi
 }
 
+# Function to adjust fontconfig based on font size for fbterm/CJK
+adjust_fontconfig_for_fbterm() {
+  local fontsize_="$1"
+  local fontheight_=""
+  fontheight_="$(echo "$fontsize_" | cut -d'x' -f2)"
+
+  if [ -n "$fontheight_" ]; then
+    if [ "$fontheight_" -gt 16 ]; then
+      echo "Large console font height ($fontheight_) detected. Adjusting fontconfig to use scalable fonts for fbterm CJK..."
+      # Disable forcing of bitmap fonts
+      if [ -e "/etc/fonts/conf.d/70-force-bitmaps.conf" ]; then
+        rm -f /etc/fonts/conf.d/70-force-bitmaps.conf
+      fi
+      # Disable bitmap fonts entirely in Fontconfig so fallback uses TrueType (scalable) Unifont
+      if [ -e "/etc/fonts/conf.avail/70-no-bitmaps.conf" ]; then
+        ln -sf /etc/fonts/conf.avail/70-no-bitmaps.conf /etc/fonts/conf.d/70-no-bitmaps.conf
+      else
+        # If the file does not exist, create our own custom no-bitmaps configuration
+        cat <<-FNT_END >/etc/fonts/conf.d/70-no-bitmaps.conf
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <selectfont>
+    <rejectfont>
+      <pattern>
+        <patelt name="scalable"><bool>false</bool></patelt>
+      </pattern>
+    </rejectfont>
+  </selectfont>
+</fontconfig>
+FNT_END
+      fi
+      if command -v fc-cache >/dev/null 2>&1; then
+        fc-cache -f
+      fi
+    else
+      echo "Normal console font height ($fontheight_) detected. Restoring default fontconfig with bitmap fonts enabled..."
+      # Remove no-bitmaps configuration
+      if [ -e "/etc/fonts/conf.d/70-no-bitmaps.conf" ]; then
+        rm -f /etc/fonts/conf.d/70-no-bitmaps.conf
+      fi
+      # Enable forcing of bitmap fonts
+      if [ -e "/etc/fonts/conf.avail/70-force-bitmaps.conf" ]; then
+        ln -sf /etc/fonts/conf.avail/70-force-bitmaps.conf /etc/fonts/conf.d/70-force-bitmaps.conf
+      fi
+      if command -v fc-cache >/dev/null 2>&1; then
+        fc-cache -f
+      fi
+    fi
+  fi
+}
+
 # Function to select font based on resolution and console dimensions
 select_font() {
   local width=$1
@@ -108,6 +160,9 @@ update_and_set_console_setup() {
       echo "Failed to apply font settings with setupcon" >&2
       exit 1
   fi
+
+  # Adjust Fontconfig for fbterm/CJK based on font size
+  adjust_fontconfig_for_fbterm "$fontsize_"
 } # end of update_and_set_console_setup
 
 ####################
