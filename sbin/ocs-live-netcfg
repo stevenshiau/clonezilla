@@ -52,7 +52,14 @@ USAGE() {
 cfg_by_dhcp(){
   local dhclient_verbose_opt
   # Before using dhclient, we create /etc/resolv.conf to suppress the warning! Since /etc/resolv.conf is removed when Debian Live is created by live package.
-  touch /etc/resolv.conf
+  # Ubuntu Bionic updates resolv.conf in /run/systemd/resolve folder, and expects /etc/resolv.conf to be a symlink.
+  # Details: https://bugs.launchpad.net/cloud-init/+bug/1750884
+  if [ -f /usr/bin/systemd-resolve ]; then
+     rm /etc/resolv.conf
+     ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+  else
+    touch /etc/resolv.conf
+  fi
   echo "$msg_send_dhcp_request_from $DV"
   # Test if "-v" is supported by dhclient
   # For version 4,
