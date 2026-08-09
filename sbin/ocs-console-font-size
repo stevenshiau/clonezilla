@@ -28,12 +28,18 @@ USAGE() {
 }
 # Function to get screen resolution
 get_resolution() {
-  if [ -f /sys/class/graphics/fb0/modes ]; then
-      resolution=$(cat /sys/class/graphics/fb0/modes | head -n1 | cut -d: -f2 | cut -d'p' -f1)
-      echo "$resolution"
-  elif command -v fbset >/dev/null 2>&1; then
-      resolution=$(fbset -s | grep 'mode "' | cut -d'"' -f2)
-      echo "$resolution"
+  local res=""
+  if [ -f /sys/class/graphics/fb0/mode ]; then
+      res=$(cat /sys/class/graphics/fb0/mode | head -n1 | cut -d: -f2 | cut -d'p' -f1 | cut -d'-' -f1)
+  fi
+  if [ -z "$res" ] && [ -f /sys/class/graphics/fb0/modes ]; then
+      res=$(cat /sys/class/graphics/fb0/modes | head -n1 | cut -d: -f2 | cut -d'p' -f1 | cut -d'-' -f1)
+  fi
+  if [ -z "$res" ] && command -v fbset >/dev/null 2>&1; then
+      res=$(fbset -s | grep 'mode "' | cut -d'"' -f2)
+  fi
+  if [ -n "$res" ]; then
+      echo "$res"
   else
       echo "Unable to detect resolution" >&2
       exit 1
