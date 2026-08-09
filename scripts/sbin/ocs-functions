@@ -14151,6 +14151,58 @@ get_best_console_font_size() {
   echo "Best font size for KMS console: $console_font_size"
 } # end of get_best_console_font_size
 #
+parse_console_font_size() {
+  # Function to parse a console font size (width x height, height x width, or single height value)
+  # Returns "width height"
+  local fontsize_="$1"
+  local fontwidth_=""
+  local fontheight_=""
+
+  if [ -n "$fontsize_" ]; then
+    if echo "$fontsize_" | grep -qE '^[0-9]+x[0-9]+$'; then
+      local val1 val2
+      val1="$(echo "$fontsize_" | cut -d'x' -f1)"
+      val2="$(echo "$fontsize_" | cut -d'x' -f2)"
+      if [ "$val1" -gt "$val2" ]; then
+        fontwidth_="$val2"
+        fontheight_="$val1"
+      else
+        fontwidth_="$val1"
+        fontheight_="$val2"
+      fi
+    elif echo "$fontsize_" | grep -qE '^[0-9]+$'; then
+      fontheight_="$fontsize_"
+      case "$fontheight_" in
+        12) fontwidth_=6 ;;
+        14|16|18) fontwidth_=8 ;;
+        20) fontwidth_=10 ;;
+        24) fontwidth_=12 ;;
+        28) fontwidth_=14 ;;
+        32) fontwidth_=16 ;;
+        *) fontwidth_=$((fontheight_ / 2)) ;;
+      esac
+    fi
+  fi
+
+  echo "$fontwidth_ $fontheight_"
+} # end of parse_console_font_size
+#
+get_fbterm_font_opts() {
+  # Function to construct fbterm font options based on FONTSIZE
+  local fontsize_="$1"
+  local fontwidth_ fontheight_
+  local font_parsed_ font_opts_=""
+
+  font_parsed_="$(parse_console_font_size "$fontsize_")"
+  fontwidth_="$(echo "$font_parsed_" | awk '{print $1}')"
+  fontheight_="$(echo "$font_parsed_" | awk '{print $2}')"
+
+  if [ -n "$fontwidth_" -a -n "$fontheight_" ]; then
+    font_opts_="--font-width=$fontwidth_ --font-height=$fontheight_ --font-size=$fontheight_"
+  fi
+  echo "$font_opts_"
+} # end of get_fbterm_font_opts
+#
 gen_iso_sort_file() {
   # Suggestion from Ady <ady-sf _at_ hotmail com>
   # In older versions of Syslinux, the isolinux.bin file (ISOLINUX's 

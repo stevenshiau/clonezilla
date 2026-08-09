@@ -5,6 +5,14 @@ set -e
 
 echo "=== Running Fontconfig Toggling Logic Tests ==="
 
+export DRBL_SCRIPT_PATH="."
+# Ensure /etc/drbl/drbl-ocs.conf is mocked or exists so sourcing ocs-functions doesn't fail
+if [ ! -e "/etc/drbl/drbl-ocs.conf" ]; then
+  mkdir -p /etc/drbl
+  touch /etc/drbl/drbl-ocs.conf
+fi
+. scripts/sbin/ocs-functions
+
 # Set up temporary mock directories
 MOCK_ETC_FONTS="$(mktemp -d /tmp/mock_etc_fonts.XXXXXX)"
 mkdir -p "$MOCK_ETC_FONTS/conf.d"
@@ -21,8 +29,11 @@ ln -s "$MOCK_ETC_FONTS/conf.avail/70-force-bitmaps.conf" "$MOCK_ETC_FONTS/conf.d
 # Define the function under test, substituting the hardcoded /etc/fonts with our mock directory
 test_adjust_fontconfig_for_fbterm() {
   local fontsize_="$1"
-  local fontheight_=""
-  fontheight_="$(echo "$fontsize_" | cut -d'x' -f2)"
+  local fontwidth_ fontheight_
+  local font_parsed_
+  font_parsed_="$(parse_console_font_size "$fontsize_")"
+  fontwidth_="$(echo "$font_parsed_" | awk '{print $1}')"
+  fontheight_="$(echo "$font_parsed_" | awk '{print $2}')"
 
   if [ -n "$fontheight_" ]; then
     if [ "$fontheight_" -gt 16 ]; then
@@ -64,7 +75,7 @@ FNT_END
   fi
 }
 
-# Test Case 1: Large font (16x32)
+# Test Case 1: Large font (16x32 - width x height)
 echo "Testing with large font 16x32..."
 test_adjust_fontconfig_for_fbterm "16x32"
 
@@ -78,7 +89,35 @@ if [ ! -e "$MOCK_ETC_FONTS/conf.d/70-no-bitmaps.conf" ]; then
   exit 1
 fi
 
-# Test Case 2: Normal font (8x16)
+# Test Case 2: Large font (32x16 - height x width)
+echo "Testing with large font 32x16..."
+test_adjust_fontconfig_for_fbterm "32x16"
+
+if [ -e "$MOCK_ETC_FONTS/conf.d/70-force-bitmaps.conf" ]; then
+  echo "FAIL: 70-force-bitmaps.conf should have been removed for 32x16 font size!"
+  exit 1
+fi
+
+if [ ! -e "$MOCK_ETC_FONTS/conf.d/70-no-bitmaps.conf" ]; then
+  echo "FAIL: 70-no-bitmaps.conf should have been created/linked for 32x16 font size!"
+  exit 1
+fi
+
+# Test Case 3: Large font (32 - single value)
+echo "Testing with large font 32 (single value)..."
+test_adjust_fontconfig_for_fbterm "32"
+
+if [ -e "$MOCK_ETC_FONTS/conf.d/70-force-bitmaps.conf" ]; then
+  echo "FAIL: 70-force-bitmaps.conf should have been removed for 32 single font size!"
+  exit 1
+fi
+
+if [ ! -e "$MOCK_ETC_FONTS/conf.d/70-no-bitmaps.conf" ]; then
+  echo "FAIL: 70-no-bitmaps.conf should have been created/linked for 32 single font size!"
+  exit 1
+fi
+
+# Test Case 4: Normal font (8x16)
 echo "Testing with normal font 8x16..."
 test_adjust_fontconfig_for_fbterm "8x16"
 
