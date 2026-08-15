@@ -14,16 +14,11 @@ Usage() {
 }
 
 [ -z "$ethx" ] && Usage && exit 1
-if ! ifconfig -a 2>/dev/null | grep -i -q "\<$ethx\>"; then
+if ! LC_ALL=C ip link show dev $ethx >/dev/null 2>&1; then
    exit 1
 fi
-# Ex: eth0      Link encap:Ethernet  HWaddr 00:0C:29:81:A0:D5
-# for FC17: ether 08:00:27:d2:9b:bc  txqueuelen 1000  (Ethernet) 
+# Ex: link/ether 00:0c:29:81:a0:d5 brd ff:ff:ff:ff:ff:ff
 
-_nic_mac=$(LC_ALL=C ifconfig $ethx | grep $ethx | grep "HWaddr" | sed -e 's/^.*HWaddr \([0-9a-zA-Z\:]\+\).*$/\1/' | tr '[A-Z]' '[a-z]')
-if [ -n "$_nic_mac" ]; then 
-  echo $_nic_mac
-else
-  LC_ALL=C ifconfig $ethx | grep ether | sed -e 's/^.*ether \([0-9a-zA-Z\:]\+\).*$/\1/' | tr '[A-Z]' '[a-z]'
-fi
+_nic_mac=$(LC_ALL=C ip link show dev $ethx | awk '/link\// {print $2}' | tr '[A-Z]' '[a-z]')
+echo $_nic_mac
 exit 0

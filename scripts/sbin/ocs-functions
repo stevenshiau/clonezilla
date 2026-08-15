@@ -786,10 +786,10 @@ get_random_time() {
   # To avoid all the clients notify at almost same time, we use random sleep before send info.
   # Ref: http://www.faqs.org/docs/abs/HTML/randomvar.html
   # We need extra uniq seed number, otherwise all the clients boot at same time, same boot sqeuence, will have same Unix time, PID, PPID... then the random will be the same. 
-  # "ifconfig -a" will give the uniq value, since it contains uniq IP address and MAC address.
+  # "ip addr" will give the uniq value, since it contains uniq IP address and MAC address.
   # "$RANDOM" is bash built-in random number, Nominal range: 0 - 32767 (signed 16-bit integer).
   # NOTE: ran0: max 10 digits; ran1: max 5 digits, we want ran1 in the order 0-100, so /1000.0
-  ran0="$(ifconfig -a | cksum | cut -f1 -d" ")"
+  ran0="$(LC_ALL=C ip addr | cksum | cut -f1 -d" ")"
   ran1="$(echo "$ran0 / $RANDOM / 1000.0" | bc -l)"
   ran="$(echo | awk "{ srand($ran1); print rand() }")"
   time="$(echo "scale=0; $TIME_LIMIT * $ran / 1" |bc -l)"
@@ -12196,8 +12196,15 @@ network_config_if_necessary() {
   host_ip="$(get-all-nic-ip --all-ip-address)"
   if [ -n "$ether_dev" ]; then
     # Just for log, if multiple NICs, use the 1st one to get netmask.
-    netmask="$(LC_ALL=C ifconfig $(get-all-nic-ip -d | awk -F" " '{print $1}') | grep "Mask:" | sed -e 's/.*Mask:\(.*\)/\1/g')"
-    default_gateway="$(LC_ALL=C route -n | grep -Ew "^0.0.0.0" | awk '{ print $2 }')"
+    local _nic="$(get-all-nic-ip -d | awk -F" " '{print $1}')"
+    local _cidr="$(LC_ALL=C ip addr show dev $_nic 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f2 | head -n1)"
+    if [ -n "$_cidr" ]; then
+      local _val=$(( 0xffffffff ^ ((1 << (32 - _cidr)) - 1) ))
+      netmask="$(( (_val >> 24) & 255 )).$(( (_val >> 16) & 255 )).$(( (_val >> 8) & 255 )).$(( _val & 255 ))"
+    else
+      netmask=""
+    fi
+    default_gateway="$(LC_ALL=C ip route show default 2>/dev/null | awk '/^default via/ {print $3}')"
   fi
   if [ -f "/etc/resolv.conf" ]; then
     nameserver="$(LC_ALL=C awk '/^nameserver/{printf "%s ",$2}' /etc/resolv.conf | sed -e 's/ $//g')"

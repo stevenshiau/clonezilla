@@ -82,7 +82,7 @@ auto lo
 iface lo inet loopback
 EOF
         # turn it on now.
-        ifconfig lo up
+        LC_ALL=C ip link set lo up
       fi
       rm -f "$TMP"
       awk '/iface/{if(/'"$DV"'/){found=1}else{found=0}}
@@ -163,7 +163,11 @@ else
   NS=""
 fi
 
-CMD="ifconfig $DV $IP netmask $NM up"
+LC_ALL=C ip addr flush dev $DV
+CMD="LC_ALL=C ip addr add $IP/$NM dev $DV"
+echo "$CMD"
+$CMD
+CMD="LC_ALL=C ip link set $DV up"
 echo "$CMD"
 $CMD
 
@@ -179,7 +183,7 @@ EOF
 fi
 
 if [ -n "$DG" ]; then
-  CMD="route add default gw $DG"
+  CMD="LC_ALL=C ip route add default via $DG"
   echo "$CMD"
   $CMD
   # Add entry to /etc/sysconfig/network
@@ -204,7 +208,7 @@ auto lo
 iface lo inet loopback
 EOF
     # turn it on now.
-    ifconfig lo up
+    LC_ALL=C ip link set lo up
   fi
 
   awk '/iface/{if(/'"$DV"'/){found=1}else{found=0}}
@@ -373,7 +377,7 @@ else
   for DEVICE in $NETDEVICES; do
     if [ -z "$(gl-get-ipadd $DEVICE)" ]; then
       echo -n "$DEVICE... "
-      ifconfig $DEVICE 0.0.0.0
+      LC_ALL=C ip link set $DEVICE up
     fi
   done
   echo
