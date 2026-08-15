@@ -6401,7 +6401,15 @@ do_unicast_stdin_restore() {
       mkdir $esp_mnt/src $esp_mnt/dest
       # We have to add option for partclone.vfat: --restore_raw_file (-W)
       unicast_restore_by_partclone --restore_raw_file
-      mkfs.vfat $part_orig
+      local fat_uuid=""
+      if type blkid &>/dev/null; then
+        fat_uuid="$(LC_ALL=C blkid -s UUID -o value "$part" | tr -d '-')"
+      fi
+      if [ -n "$fat_uuid" ]; then
+        mkfs.vfat -i "$fat_uuid" $part_orig
+      else
+        mkfs.vfat $part_orig
+      fi
       mount -o loop $part $esp_mnt/src
       mount -t vfat $part_orig $esp_mnt/dest
       cp_cmd="cp -a $esp_mnt/src/. $esp_mnt/dest/"
@@ -15976,7 +15984,15 @@ local_partition_to_partiton_clone() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       esp_mnt="$(mktemp -d /tmp/esp_mnt.XXXXXX)"
       mkdir $esp_mnt/src $esp_mnt/dest
-      mkfs.vfat $tgt_p
+      local fat_uuid=""
+      if type blkid &>/dev/null; then
+        fat_uuid="$(LC_ALL=C blkid -s UUID -o value "$src_p" | tr -d '-')"
+      fi
+      if [ -n "$fat_uuid" ]; then
+        mkfs.vfat -i "$fat_uuid" $tgt_p
+      else
+        mkfs.vfat $tgt_p
+      fi
       mount -o loop $src_p $esp_mnt/src
       mount -t vfat $tgt_p $esp_mnt/dest
       cp_cmd="cp -a $esp_mnt/src/. $esp_mnt/dest/"
