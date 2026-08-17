@@ -114,6 +114,11 @@ cp -ar /live-hook-dir/gparted/gparted-live.d /etc/gparted-live/
 # (2) Prepare autologin for tty*
 cp -af /live-hook-dir/systemd/start-gparted-live.service /usr/lib/systemd/system/; chown root:root /usr/lib/systemd/system/start-gparted-live.service
 ( cd /etc/systemd/system/getty.target.wants/; ln -fs /usr/lib/systemd/system/start-gparted-live.service .)
+# (3) Work around live-config.service/start-gparted-live.service not being found/started
+# on boot despite systemd showing them as loaded - see gparted-daemon-reload.service.
+cp -af /live-hook-dir/systemd/gparted-daemon-reload.service /usr/lib/systemd/system/; chown root:root /usr/lib/systemd/system/gparted-daemon-reload.service
+mkdir -p /etc/systemd/system/basic.target.wants/
+( cd /etc/systemd/system/basic.target.wants/; ln -fs /usr/lib/systemd/system/gparted-daemon-reload.service .)
 # Disable the booting status, otherwise the messages might be shown on the dialog menu (of keyboard/language for Clonezilla/GParted live) which is annoying.
 perl -pi -e "s/^[#]ShowStatus=.*/ShowStatus=no/g" /etc/systemd/system.conf
 for i in `seq 1 6`; do
@@ -128,6 +133,10 @@ for i in `seq 0 3`; do
   cp -af /live-hook-dir/systemd/serial-console-autologin.conf /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
   chown root:root /etc/systemd/system/serial-getty\@ttyS${i}.service.d/autologin.conf
 done
+# ttyAMA0 (PL011/SBSA UART, e.g. arm64 QEMU virt & most arm64 ACPI/SPCR systems)
+mkdir /etc/systemd/system/serial-getty\@ttyAMA0.service.d/
+cp -af /live-hook-dir/systemd/serial-console-autologin.conf /etc/systemd/system/serial-getty\@ttyAMA0.service.d/autologin.conf
+chown root:root /etc/systemd/system/serial-getty\@ttyAMA0.service.d/autologin.conf
 # Put the script "start-gparted-live" to start /etc/gparted/gparted.d/
 cp -af /live-hook-dir/start-gparted-live /etc/gparted-live/
 
