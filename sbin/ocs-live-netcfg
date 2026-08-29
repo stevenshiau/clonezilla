@@ -70,8 +70,32 @@ cfg_by_dhcp(){
   # Force to make timeout as 60. Debian uses 60, but Ubuntu uses 300. Too long.
   # Thanks to Cecile, Adam (Adam.Cecile _at_ hitec lu) for reporting this.
   perl -pi -e "s/^timeout.*/timeout 60;/g" /etc/dhcp/dhclient.conf
-  dhclient $dhclient_verbose_opt $DV
-  rc="$?"
+  if type -p dhcpcd >/dev/null 2>&1; then
+    dhcpcd $DV
+    rc="$?"
+  else
+    # Disable AppArmor profile for dhclient to avoid lease renewal failures (e.g. on newer kernels with unix socket mediation)
+    # See https://github.com/stevenshiau/clonezilla/issues/188
+    local apparmor_parser_bin=""
+    for p in /usr/sbin/apparmor_parser /sbin/apparmor_parser; do
+      if [ -x "$p" ]; then
+        apparmor_parser_bin="$p"
+        break
+      fi
+    done
+    for profile in /etc/apparmor.d/sbin.dhclient /etc/apparmor.d/usr.sbin.dhclient; do
+      if [ -f "$profile" ] && [ -n "$apparmor_parser_bin" ]; then
+        local profile_name=$(basename "$profile")
+        if [ ! -e "/etc/apparmor.d/disable/$profile_name" ]; then
+          mkdir -p /etc/apparmor.d/disable
+          ln -sf "$profile" /etc/apparmor.d/disable/
+          $apparmor_parser_bin -R "$profile" 2>/dev/null
+        fi
+      fi
+    done
+    dhclient $dhclient_verbose_opt $DV
+    rc="$?"
+  fi
   if [ "$rc" != "0" ]; then
     echo "$msg_failed"
     echo -n "$msg_press_enter_to_exit "
