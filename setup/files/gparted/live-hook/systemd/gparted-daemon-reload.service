@@ -1,0 +1,23 @@
+## Workaround: on arm64 live images, systemd's in-memory unit table is stale relative to
+## the actual live rootfs by the time basic.target would normally be reached -
+## live-config.service (stock, apt-installed) and start-gparted-live.service (this hook)
+## both show as correctly "loaded" via systemctl status, yet neither is found/started
+## until a manual `systemctl daemon-reload` runs, even though their unit files are
+## genuinely present on disk the whole time. Force that reload automatically, early, so
+## nothing downstream (live-config, the gparted-live-hook autologin/start chain) silently
+## never triggers.
+
+[Unit]
+Description=Force a systemd daemon-reload early in boot (arm64 live image unit-table staleness workaround)
+DefaultDependencies=no
+ConditionKernelCommandLine=boot=live
+After=local-fs.target
+Before=basic.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/systemctl daemon-reload
+
+[Install]
+WantedBy=basic.target

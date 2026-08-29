@@ -31,7 +31,7 @@ font_pkgs="fonts-arphic-uming fonts-hanazono"
 # libpam-systemd and hence dbus are required, otherwise keyboard and mouse won't work in X after Sid >= Jan 2016. Thanks to Curtis for Gedak.
 # Ref: https://lists.debian.org/debian-user/2015/10/msg01529.html
 pkgs="console-data console-setup console-common kbd file eject user-setup \
-grub-pc fluxbox idesk man testdisk mc less lxterminal zenity \
+fluxbox idesk man testdisk mc less lxterminal zenity \
 xbase-clients feh netpbm nano bogl-bterm mdetect lxrandr sdparm hdparm \
 discover lsscsi pciutils ifupdown dhcp*-client$ cryptsetup gpart \
 smartmontools vim-tiny gdisk fsarchiver mdadm sudo \
@@ -87,7 +87,7 @@ USAGE() {
     echo "-bt, --bootstrap BOOTSTRAP  Specify the bootsrap type as BOOTSTRAP (debootstrap or mmdebstrap). If not specified, $bootstrap_default will be used."
     echo "-c, --categories CAT   Sepcify the category, e.g. 'main', 'main non-free', default is \'$categories_default\' if not specified."
     echo "-d, --debian-dist [trixie|forky|sid...]  Assign Debian dist, the default is $DEBIAN_DIST_DEF if not assigned."
-    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 586, 686 or amd64. If it's not assigned, $cpu_flavor_default will be used."
+    echo "-f, --arch-flavor ARCH  Assign the CPU architecture flavor as ARCH, e.g. 586, 686, amd64 or arm64. If it's not assigned, $cpu_flavor_default will be used."
     echo "-g, --drbl-repo-url URL  Assign the DRBL repository URL instead of default one $DRBL_REPOSITORY_URL_def."
     echo "-n, --live-kernel-pkg KERNEL_VER Assign kernel version as KERNEL_VER (KERNEL VER package must exist in repository. Ex. if KERNEL_VER is 2.6.20-1-486, then linux-image-2.6.20-1-486, squashfs-modules-2.6.20-1-486, and unionfs-modules-2.6.20-1-486 will be used."
     echo "-i, --assign-version-no NO  Assign the version no as NO instead of date."
@@ -222,28 +222,31 @@ create_gparted_live_iso(){
   fi
 
   # now we can insert the boot menu of isolinux
-  mkdir -p $ISOSYSLNX_TMP/syslinux $ISOSYSLNX_TMP/EFI/boot/ $ISOSYSLNX_TMP/boot/grub/
-  # create isolinux menu
-  # isolinux should be rw, so we have to copy it, and exclude the one in iso image.
-  # we have to overwrite isolinux.bin since vesamenu.c32 should be same version with that.
-  # Jan/19/2014 For both syslinux and isolinux (unified in one dir)
-  # For syslinux
-  cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $gparted_live_boot_bg_img $pxelinux_chain_file $ISOSYSLNX_TMP/syslinux/
-  # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
-  for i in $sys_pxelinux_v5p_required_c32; do
-    if [ -e "$pxelinux_binsrc_dir/$i" ]; then
-      # syslinux <= 5 
-      cp -af $pxelinux_binsrc_dir/$i $ISOSYSLNX_TMP/syslinux/
-    elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
-      # syslinux >= 6, different path
-      cp -af $pxelinux_binsrc_dir/bios/$i $ISOSYSLNX_TMP/syslinux/
-    fi
-  done
+  mkdir -p $ISOSYSLNX_TMP/EFI/boot/ $ISOSYSLNX_TMP/boot/grub/
+  if [ "$cpu_flavor" != "arm64" ]; then
+    mkdir -p $ISOSYSLNX_TMP/syslinux
+    # create isolinux menu
+    # isolinux should be rw, so we have to copy it, and exclude the one in iso image.
+    # we have to overwrite isolinux.bin since vesamenu.c32 should be same version with that.
+    # Jan/19/2014 For both syslinux and isolinux (unified in one dir)
+    # For syslinux
+    cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $gparted_live_boot_bg_img $pxelinux_chain_file $ISOSYSLNX_TMP/syslinux/
+    # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
+    for i in $sys_pxelinux_v5p_required_c32; do
+      if [ -e "$pxelinux_binsrc_dir/$i" ]; then
+        # syslinux <= 5
+        cp -af $pxelinux_binsrc_dir/$i $ISOSYSLNX_TMP/syslinux/
+      elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
+        # syslinux >= 6, different path
+        cp -af $pxelinux_binsrc_dir/bios/$i $ISOSYSLNX_TMP/syslinux/
+      fi
+    done
+  fi
   # 2. For EFI machine
   # Copy the EFI boot files
   if [ "$live_efi_boot_loader" = "grub" ]; then
-    if [ -e "$stage1_iso_TMP/EFI/boot/bootx64.efi" ]; then
-      # The EFI/boot/boox64.efi is copied by the above rsync command from $stage1_iso_TMP
+    if [ -e "$stage1_iso_TMP/EFI/boot/bootx64.efi" -o -e "$stage1_iso_TMP/EFI/boot/bootaa64.efi" ]; then
+      # The EFI/boot/boox64.efi (or bootaa64.efi for arm64) is copied by the above rsync command from $stage1_iso_TMP
       cp -af $stage1_iso_TMP/EFI $ISOSYSLNX_TMP
       cp -af $gparted_live_boot_bg_img $ISOSYSLNX_TMP/boot/grub/
     fi
@@ -310,26 +313,40 @@ create_gparted_live_iso(){
     get_live_boot_param $stage1_iso_TMP/isolinux
   fi
 
+  if [ "$cpu_flavor" = "arm64" ]; then
+    # get_live_boot_param only extracts a fixed whitelist (boot=, union=,
+    # username=, hostname=, config/live-config, components) from the stage1
+    # image, so the console= we set via --bootappend-live earlier never
+    # survives into $boot_param. Without it, ACPI SPCR auto-registers
+    # ttyAMA0 as /dev/console on arm64/UEFI, which then races the live-config
+    # wizard for input on the same device. Append it explicitly here instead.
+    boot_param="$boot_param console=ttyAMA0,115200n8 console=tty1"
+  fi
+
   # generate the menu
-  # For isolinux
-  ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/syslinux/
-  # For syslinux
-  ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" syslinux $ISOSYSLNX_TMP/syslinux/
+  if [ "$cpu_flavor" != "arm64" ]; then
+    # For isolinux
+    ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" isolinux $ISOSYSLNX_TMP/syslinux/
+    # For syslinux
+    ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" syslinux $ISOSYSLNX_TMP/syslinux/
+  fi
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
-    if [ -e "$ISOSYSLNX_TMP/EFI/boot/bootx64.efi" ]; then
+    if [ -e "$ISOSYSLNX_TMP/EFI/boot/bootx64.efi" -o -e "$ISOSYSLNX_TMP/EFI/boot/bootaa64.efi" ]; then
       ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for EFI machine" grub2-efi $ISOSYSLNX_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
     ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for EFI machine" syslinux $ISOSYSLNX_TMP/boot/grub/
   fi
-  
-  # With syslinux-related files, we can put the iso file on USB stick and make ti bootable, too.
-  echo "Preparing syslinux.exe, syslinux, makeboot.bat and makeboot.sh... "
-  if [ -z "$isolinux_ver" ]; then
-    isolinux_ver="$(LC_ALL=C strings $ISOSYSLNX_TMP/syslinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+
+  if [ "$cpu_flavor" != "arm64" ]; then
+    # With syslinux-related files, we can put the iso file on USB stick and make ti bootable, too.
+    echo "Preparing syslinux.exe, syslinux, makeboot.bat and makeboot.sh... "
+    if [ -z "$isolinux_ver" ]; then
+      isolinux_ver="$(LC_ALL=C strings $ISOSYSLNX_TMP/syslinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+    fi
+    put_syslinux_makeboot_for_usb_flash $ISOSYSLNX_TMP/ $isolinux_ver
   fi
-  put_syslinux_makeboot_for_usb_flash $ISOSYSLNX_TMP/ $isolinux_ver
 
   utils_files_dir_graft_point=""
   if [ -d "$ISOSYSLNX_TMP/utils" ]; then
@@ -337,10 +354,13 @@ create_gparted_live_iso(){
   fi
 
   # $sys_files_dir maybe /casper, /live or /isolinux. If it is isolinux, we can not list them twice otherwise mkisofs will go wrong.
-  if [ "$sys_files_dir" != "isolinux" ]; then
+  # arm64 has no syslinux/isolinux dir at all (no BIOS boot), so only graft $sys_files_dir.
+  if [ "$cpu_flavor" = "arm64" ]; then
+    sys_files_dir_graft_point="/$sys_files_dir/=$ISOSYSLNX_TMP/$sys_files_dir/"
+  elif [ "$sys_files_dir" != "isolinux" ]; then
     sys_files_dir_graft_point="/syslinux/=$ISOSYSLNX_TMP/syslinux/ /$sys_files_dir/=$ISOSYSLNX_TMP/$sys_files_dir/"
   else
-    sys_files_dir_graft_point="/syslinux/=$ISOSYSLNX_TMP/syslinux/" 
+    sys_files_dir_graft_point="/syslinux/=$ISOSYSLNX_TMP/syslinux/"
   fi
 
   # Remove the existing iso
@@ -353,8 +373,13 @@ create_gparted_live_iso(){
   # Build the EFI boot image. This is especially for iso file. Not for USB stick.
   efi_img_graft_opt="/.disk/=$ISOSYSLNX_TMP/.disk /boot/=$ISOSYSLNX_TMP/boot/ "
 
-  # Prepare the sort file for xorriso.
-  gen_iso_sort_file $ISOSYSLNX_TMP/syslinux/iso_sort.txt
+  # Prepare the sort file for xorriso. This, like the whole syslinux/isolinux dir, only
+  # applies to BIOS-bootable (non-arm64) media.
+  xorriso_syslinux_related_opt=""
+  if [ "$cpu_flavor" != "arm64" ]; then
+    gen_iso_sort_file $ISOSYSLNX_TMP/syslinux/iso_sort.txt
+    xorriso_syslinux_related_opt="-b syslinux/isolinux.bin -c syslinux/boot.cat -sort $ISOSYSLNX_TMP/syslinux/iso_sort.txt"
+  fi
 
   # Create b3sum checksum in dir $ISOSYSLNX_TMP
   # //NOTE// Use subshell to keep the work dir
@@ -372,11 +397,10 @@ create_gparted_live_iso(){
    -A "GParted Live CD" \
    -publisher "GParted https://gparted.org" \
    -V "GParted-live" \
-   -b syslinux/isolinux.bin -c syslinux/boot.cat \
+   $xorriso_syslinux_related_opt \
    -no-emul-boot -boot-load-size 4 -boot-info-table \
    -eltorito-alt-boot --efi-boot boot/grub/efi.img \
    -isohybrid-gpt-basdat -isohybrid-apm-hfsplus \
-   -sort $ISOSYSLNX_TMP/syslinux/iso_sort.txt \
    $mkiso_exclude_opt \
    -graft-points \
    $sys_files_dir_graft_point \
@@ -471,20 +495,22 @@ create_gparted_live_zip() {
   rm -rf $USB_TMP/boot/grub/{live-theme,loopback.cfg,grub.cfg,splash.png}
   echo "done!"
 
-  cp -af /usr/share/doc/drbl/GPL $USB_TMP/
-  # Jan/19/2014 For both syslinux and isolinux (unified in one dir)
-  # For syslinux
-  cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $gparted_live_boot_bg_img $pxelinux_chain_file $USB_TMP/syslinux/
-  # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
-  for i in $sys_pxelinux_v5p_required_c32; do
-    if [ -e "$pxelinux_binsrc_dir/$i" ]; then
-      # syslinux <= 5 
-      cp -af $pxelinux_binsrc_dir/$i $USB_TMP/syslinux/
-    elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
-      # syslinux >= 6, different path
-      cp -af $pxelinux_binsrc_dir/bios/$i $USB_TMP/syslinux/
-    fi
-  done
+  cp -af $DRBL_SCRIPT_PATH/doc/GPL $USB_TMP/
+  if [ "$cpu_flavor" != "arm64" ]; then
+    # Jan/19/2014 For both syslinux and isolinux (unified in one dir)
+    # For syslinux
+    cp -af $isolinux_file $pxelinux_simple_vesamenu $pxelinux_simple_menu $pxelinux_memdisk_file $gparted_live_boot_bg_img $pxelinux_chain_file $USB_TMP/syslinux/
+    # For Syslinux 5, new .c32 are required: ldlinux.c32, libcom32.c32, libutil.c32
+    for i in $sys_pxelinux_v5p_required_c32; do
+      if [ -e "$pxelinux_binsrc_dir/$i" ]; then
+        # syslinux <= 5
+        cp -af $pxelinux_binsrc_dir/$i $USB_TMP/syslinux/
+      elif [ -e "$pxelinux_binsrc_dir/bios/$i" ]; then
+        # syslinux >= 6, different path
+        cp -af $pxelinux_binsrc_dir/bios/$i $USB_TMP/syslinux/
+      fi
+    done
+  fi
   # 2. For EFI machine
   # Copy the EFI boot files
   if [ "$live_efi_boot_loader" = "grub" ]; then
@@ -541,26 +567,36 @@ create_gparted_live_zip() {
     # From iso file (debian-live-for-ocs.iso)
     get_live_boot_param $stage1_iso_TMP/isolinux
   fi
+
+  if [ "$cpu_flavor" = "arm64" ]; then
+    # See matching comment in create_gparted_live_iso().
+    boot_param="$boot_param console=ttyAMA0,115200n8 console=tty1"
+  fi
+
   # generate the menu
-  # For syslinux
-  ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
-  # For isolinux
-  ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
+  if [ "$cpu_flavor" != "arm64" ]; then
+    # For syslinux
+    ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" syslinux $USB_TMP/syslinux/
+    # For isolinux
+    ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for BIOS machine" isolinux $USB_TMP/syslinux/
+  fi
   # For EFI, grub2 efi or syslinux efi
   if [ "$live_efi_boot_loader" = "grub" ]; then
-    if [ -e "$USB_TMP/EFI/boot/bootx64.efi" ]; then
+    if [ -e "$USB_TMP/EFI/boot/bootx64.efi" -o -e "$USB_TMP/EFI/boot/bootaa64.efi" ]; then
       ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for EFI machine" grub2-efi $USB_TMP/boot/grub/
     fi
   elif [ "$live_efi_boot_loader" = "syslinux" ]; then
     ocs-live-boot-menu -s -d -l $lang_answer --title "GParted Live" -f $vga_mode_gparted_live -n "$version_no" -k /$sys_files_dir/$krnfile -i /$sys_files_dir/$irdfile -m $gparted_live_boot_bg_img --boot-param "$boot_param $live_extra_boot_param noswap" -r "* Boot menu for EFI machine" syslinux $USB_TMP/boot/grub/
   fi
 
-  echo "Preparing syslinux.exe, syslinux, makeboot.bat and makeboot.sh... "
-  # Since we can not judge the version from any files in $USB_TMP/syslinux, we use $USB_TMP/syslinux/isolinux.bin.
-  if [ -z "$isolinux_ver" ]; then
-    isolinux_ver="$(LC_ALL=C strings $USB_TMP/syslinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+  if [ "$cpu_flavor" != "arm64" ]; then
+    echo "Preparing syslinux.exe, syslinux, makeboot.bat and makeboot.sh... "
+    # Since we can not judge the version from any files in $USB_TMP/syslinux, we use $USB_TMP/syslinux/isolinux.bin.
+    if [ -z "$isolinux_ver" ]; then
+      isolinux_ver="$(LC_ALL=C strings $USB_TMP/syslinux/isolinux.bin | grep "^ISOLINUX" | awk -F" " '{print $2}')"
+    fi
+    put_syslinux_makeboot_for_usb_flash $USB_TMP $isolinux_ver
   fi
-  put_syslinux_makeboot_for_usb_flash $USB_TMP $isolinux_ver
   # just store it. since big files, like squash flie and opt_drbl.tgz are compressed, it's not necessary to compress it again.
   [ -e "$WD/$real_target_zip" ] && rm -f $WD/$real_target_zip
   # Before packing it, make sure all the mode is writable
@@ -885,15 +921,23 @@ if [ "$debian_dist" = "bookworm" -o \
      "$debian_dist" = "trixie" -o \
      "$debian_dist" = "sid" ]; then
   # From around Oct/2009, the dummy package name "grub" is actually grub-pc, therefore we force to use grub-legacy and assume that if grub2 boot loader is used in the restored GNU/Linux, grub2 is available in the restored GNU/Linux so therefore we can use chroot to run it.
-  # 2011/Dec/03 Since most of GNU/Linux distributions now use grub2, no more force to use grub-legacy, and we have backup plan by putting grub1 deb package in the live system. 
+  # 2011/Dec/03 Since most of GNU/Linux distributions now use grub2, no more force to use grub-legacy, and we have backup plan by putting grub1 deb package in the live system.
   # pkgs="$(LC_ALL=C echo $pkgs | sed -r -e "s/grub[[:space:]]+/grub-legacy /")"
   # Since with squeeze or sid, we can use uvesafb to replace vesafb, we need v86d. Check https://bugs.launchpad.net/ubuntu/+source/v86d/+bug/189621 for more details.
-  pkgs="$pkgs v86d"
+  # v86d/uvesafb only exist to run the real-mode x86 VESA BIOS from userspace; there is
+  # no BIOS/VESA on arm64 (or the package) at all, so only add it for x86 flavours.
+  if [ "$cpu_flavor" != "arm64" ]; then
+    pkgs="$pkgs v86d"
+  fi
 fi
-# Adding libc6-i386 for AMD64 arch. This will allow 32-bit program to run on AMD64 arch.
-if [ "$cpu_flavor" = "amd64" ]; then
-  pkgs="$pkgs libc6-i386"
-fi
+# grub-pc is the BIOS bootloader, only available (and needed) for i386/amd64.
+# arm64 is EFI-only and uses grub-efi-arm64 instead.
+case "$cpu_flavor" in
+  686*|586*|486*) pkgs="$pkgs grub-pc" ;;
+  # Adding libc6-i386 for AMD64 arch. This will allow 32-bit program to run on AMD64 arch.
+  amd64)          pkgs="$pkgs grub-pc libc6-i386" ;;
+  arm64)          pkgs="$pkgs grub-efi-arm64" ;;
+esac
 
 # if version_no is not assigned, use date (Ex. 20070409)
 [ -z "$version_no" ] && version_no="$(date +%Y%m%d)"
@@ -978,7 +1022,18 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   $pref lb config --initramfs live-boot
   # Refer to /usr/share/live/build/functions/defaults.sh for the original boot append parameters.
   # Don't be confused. It won't be appended. Therefore we have to put all required ones.
-  $pref lb config --bootappend-live "boot=live union=overlay config username=user"
+  if [ "$cpu_flavor" = "arm64" ]; then
+    # arm64/UEFI has ACPI SPCR, so the kernel auto-registers the serial port
+    # (ttyAMA0) as /dev/console with no explicit console= needed. That makes
+    # systemd's getty-generator spawn a plain serial-getty on ttyAMA0, which
+    # then races the live-config wizard (also bound to /dev/console) for
+    # input on the same device. Pin /dev/console to tty1 explicitly, same as
+    # amd64 gets implicitly (no SPCR there), while still keeping ttyAMA0
+    # registered as a secondary console for kernel messages/serial access.
+    $pref lb config --bootappend-live "boot=live union=overlay config username=user console=ttyAMA0,115200n8 console=tty1"
+  else
+    $pref lb config --bootappend-live "boot=live union=overlay config username=user"
+  fi
   # Enable cache-indices, by doing this, "apt-get upgrade" won't be run in lb chroot_sources after hook since we might assign older package version when building.
   # This is important especially when there is newer live-boot in Sid. E.g. on 2014/Apr/1 live-boot 4.0 alpha is aviailable, but we still want to keep using 3.0.1-1.drbl4. If --cache-indices is set true, live-boot is upgraded, and 4.0 is installed on the system after filesystem.squashfs is created. Then the initrd.img is re-created again, with live-boot 4.x in initrd.img. It will be inconsistent with what we want.
   $pref lb config --cache-indices true
@@ -987,7 +1042,14 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   $pref lb config --apt-source-archives true
   $pref lb config --tasksel none
 
-  if [ "$debian_dist" = "lenny" ]; then
+  if [ "$cpu_flavor" = "arm64" ]; then
+    # arm64 has no BIOS, so there is no MBR/isohybrid boot code to include.
+    # UEFI-only via grub-efi, and disable secure boot to avoid needing signed
+    # shim/grub packages.
+    $pref lb config --bootloaders grub-efi
+    $pref lb config --binary-images iso
+    $pref lb config --uefi-secure-boot disable
+  elif [ "$debian_dist" = "lenny" ]; then
     # Force to use iso instead of iso-hybrid. Since the syslinux in lenny comes without isohybrid program.
     $pref lb config --binary-images iso
   else
@@ -997,7 +1059,17 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   fi
 
   # This decide_MKSQUASHFS_OPTIONS function will output "export MKSQUASHFS_OPTIONS"
-  decide_MKSQUASHFS_OPTIONS
+  if [ "$cpu_flavor" = "arm64" ]; then
+    # With no argument, decide_MKSQUASHFS_OPTIONS falls back to the *build
+    # host's* `uname -m`, which on an x86_64 host applies an x86-only BCJ
+    # filter (-Xbcj x86) regardless of target arch. That corrupts the
+    # squashfs when cross-building arm64 on an x86_64 host (via
+    # qemu-user-static), since the arm64 kernel's plain-xz decompressor
+    # can't reverse an x86 BCJ transform. Pass the target arch explicitly.
+    decide_MKSQUASHFS_OPTIONS arm64
+  else
+    decide_MKSQUASHFS_OPTIONS
+  fi
 
   # Options for kernel package version name and flavor, take "linux-image-5.4.0-4-amd64" as an example
   # "linux-image-5.4.0-4" is assigned by "--linux-packages"
@@ -1008,6 +1080,7 @@ if [ "$use_existing_stage1_iso" = "no" ]; then
   case "$cpu_flavor" in
     686*|586*|486*) os_arch="i386";;
     amd64) os_arch="amd64";;
+    arm64) os_arch="arm64";;
   esac
   $pref lb config --architectures $os_arch
 
@@ -1128,9 +1201,10 @@ mount -o loop $stage1_target_iso $stage1_iso_TMP
 
 # Check if EFI boot could be supported.
 if [ ! -e "$stage1_iso_TMP/EFI/boot/bootx64.efi" -a \
-     ! -e "$stage1_iso_TMP/EFI/boot/bootia32.efi" ]; then
+     ! -e "$stage1_iso_TMP/EFI/boot/bootia32.efi" -a \
+     ! -e "$stage1_iso_TMP/EFI/boot/bootaa64.efi" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-  echo "Both /EFI/boot/bootx64.efi and /EFI/boot/bootia32.efi were not found in template Clonezilla live!"
+  echo "None of /EFI/boot/bootx64.efi, /EFI/boot/bootia32.efi or /EFI/boot/bootaa64.efi were found in template Clonezilla live!"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   echo "$msg_program_stop"
   exit 1
