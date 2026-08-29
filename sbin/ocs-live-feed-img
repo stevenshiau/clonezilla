@@ -79,7 +79,6 @@ USAGE() {
     echo " -cb3, --check-b3sum  Check the BLAKE3 checksum for the image. To use this option, you must enable -cb3|--gen-b3sum option when the image is saved. Note! It might take a lot of time to check if the image size is large."
     echo " -cbm, --client-boot-mode MODE     Assign the client boot mode: netboot, local-boot-media, or both"
     echo " -lscm, --lite-srv-client-mode MODE  Assign lite server client mode: massive-deployment or interactive-client"
-    echo " -uhb, --uefi-http-boot   Enable UEFI HTTPBoot in lite server DHCP service"
     echo " -mdst, --massive-deploy-source-type MODE  Assign massive deployment source type: from-image or from-device"
     echo " -mdst-img, --massive-deploy-source-type-img IMAGE  Assign massive deployment source image name. You have to make sure the file system in the source device is not modified, and the image dir already exists."
     echo " -cdt, --cast-dev-type MODE Assign source device type: disk-2-mdisks or part-2-mparts" 
@@ -484,10 +483,6 @@ parse_ocs_live_feed_img_cmd_options_with_dash() {
             # OCS_OPT is for ocs-sr, not for ocs-live-feed-img
             # XXXXXX OCS_OPT="$OCS_OPT -lscm $client_boot_mode"
             ;;
-      -uhb|--uefi-http-boot)
-            ocs_uefi_http_boot="yes"
-            export ocs_uefi_http_boot
-            shift; n_shift=$((n_shift+1));;
       -mdst|--massive-deploy-source-type)
             shift; n_shift=$((n_shift+1))
             # skip the -xx option, in case 
@@ -656,20 +651,11 @@ gen_ocs_live_netboot_conf() {
   grub_menu_to_reveal="clonezilla-live-client local-disk"
   generate-pxe-menu
 
-  # A workaround to fix the dnsmasq issue for uEFI network boot clients (actually grub should be patched)
-  # i.e., we have to assign the tftp server IP address in grub network boot loader.
-  # This is only necessary when dnsmasq is used to relay the DHCP request from clients to existing DHCP service
-  # Now this only works for non-secure-boot clients.
-  # Ref: http://lists.thekelleys.org.uk/pipermail/dnsmasq-discuss/2017q1/011124.html
-  #      https://lists.gnu.org/archive/html/grub-devel/2016-04/msg00051.html
-  if [ "$secure_boot_client" = "no" ]; then
-    case "$ocs_litesrv_netmode" in
-      "use-existing-dhcpd") drbl-gen-grub-efi-nb -t $cast_srv_ip ;;
-    esac
-  else
-    # Secure boot for clients is enabled, so force to use the signed shim and grub.
-    drbl-gen-grub-efi-nb -s
-  fi
+  # Prepare uEFI netboot files.
+  case "$ocs_litesrv_netmode" in
+    "use-existing-dhcpd") drbl-gen-grub-efi-nb -t $cast_srv_ip ;;
+                       *) drbl-gen-grub-efi-nb ;;
+  esac
 
   # Add Clonezilla live in the boot menu and for netboot. Actually we will use http service instead of tftpd. However, just run drbl-sl to make things easier. Hence both files for netboot using tftpd and httpd will be ready.
   if [ "$squashfs_fmode" -ge 4 ]; then
@@ -814,12 +800,11 @@ gen_ocs_live_netboot_conf() {
   cp -a $DRBL_SCRIPT_PATH/image/ocswp-grub2.png $pxecfg_pd/drblwp.png
   # Switch the menu title to Clonezilla
   perl -pi -e "s|^MENU TITLE.*|MENU TITLE Clonezilla \(https://clonezilla.org\)|g" $PXELINUX_DIR/default
+  # For UEFI boot, there is no menu title so we do not switch anything.
 
-  # If UEFI HTTP Boot is enabled, link grub.cfg in the parent directory where boot*.efi lies,
+  # For UEFI HTTP Boot, link grub.cfg in the parent directory where boot*.efi lies,
   # so UEFI HTTP Boot firmware client can automatically pull grub.cfg via HTTP.
-  if [ "$ocs_uefi_http_boot" = "yes" ]; then
-    ln -fsv grub/grub.cfg $(dirname $GRUB_EFINB_DIR)/grub.cfg
-  fi
+  ln -fsv grub/grub.cfg $(dirname $GRUB_EFINB_DIR)/grub.cfg
 } # end of gen_ocs_live_netboot_conf
 #
 start_nat_service() {
@@ -890,21 +875,6 @@ configure_net_and_dhcp_mode(){
   fi
   if [ -n "$client_boot_mode" ]; then
     OCS_OPT_PRE="$OCS_OPT_PRE -cbm $client_boot_mode"
-  fi
-
-  # If secure boot is enabled for clients, then set ocs_litesrv_netmode as start-new-dhcpd
-  # This limit can be lifted in the future when shim and grub honor the proxy mode of dnsmasq.
-  # Ref: https://lists.gnu.org/archive/html/grub-devel/2016-04/msg00051.html
-  #      http://lists.thekelleys.org.uk/pipermail/dnsmasq-discuss/2017q1/011347.html
-  if [ "$secure_boot_client" = "yes" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING | tee --append ${OCS_LOGFILE}
-    echo "$msg_secure_boot_for_clients_is_enabled" | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL | tee --append ${OCS_LOGFILE}
-    ocs_litesrv_netmode="start-new-dhcpd"
-    if [ "$ocs_batch_mode" != "on" ]; then
-      echo -n "$msg_press_enter_to_continue..."
-      read
-    fi
   fi
   # 
   if [ -z "$ocs_litesrv_netmode" ]; then
@@ -1767,6 +1737,7 @@ CLIENT_END
   fi
   
   # Prepare the config for clients
+  lighty-enable-mod accesslog
   if ! systemctl status lighttpd >/dev/null 2>&1; then
     pid1_prog="$(LC_ALL=C ps -p 1 -o comm=)"
     # In Singularity container, there is an issue to use systemctl
@@ -1784,42 +1755,14 @@ CLIENT_END
     squashfs_fmode="$(LC_ALL=C stat -c %a $LIVE_MEDIA/live/filesystem.squashfs | cut -c 3)"
     # Not matter if clients use netboot or not, we start the required services and prepare the PXE and uEFI network boot
     systemctl stop dnsmasq
-
-    if [ "$ocs_uefi_http_boot" = "yes" ]; then
-      if [ -n "$cast_srv_ip" ]; then
-        cat <<-DNSMQSQ_END >> $dnsmasq_cfg
-
-# HTTPBoot support
-dhcp-match=set:efi-http64,option:client-arch,16
-dhcp-option-force=tag:efi-http64,60,"HTTPClient"
-dhcp-boot=tag:efi-http64,"http://${cast_srv_ip}/tftpboot/nbi_img/bootx64.efi"
-
-dhcp-match=set:efi-http32,option:client-arch,15
-dhcp-option-force=tag:efi-http32,60,"HTTPClient"
-dhcp-boot=tag:efi-http32,"http://${cast_srv_ip}/tftpboot/nbi_img/bootia32.efi"
-
-dhcp-match=set:efi-httparm,option:client-arch,19
-dhcp-option-force=tag:efi-httparm,60,"HTTPClient"
-dhcp-boot=tag:efi-httparm,"http://${cast_srv_ip}/tftpboot/nbi_img/bootaa64.efi"
-DNSMQSQ_END
-
-        if [ "$ocs_litesrv_netmode" = "use-existing-dhcpd" ]; then
-          cat <<-DNSMQSQ_END >> $dnsmasq_cfg
-
-# Proxy DHCP menu triggers for HTTP Boot architectures
-pxe-service=16,"HTTP Boot x64",unused
-pxe-service=15,"HTTP Boot x86",unused
-pxe-service=19,"HTTP Boot ARM64",unused
-DNSMQSQ_END
-        fi
-      fi
-    fi
-
     systemctl start dnsmasq
     start_nat_service
     gen_ocs_live_netboot_conf
-    if [ "$ocs_uefi_http_boot" = "yes" ]; then
+    if [ ! -h /var/www/html/tftpboot ]; then
       ln -fsv /tftpboot /var/www/html/tftpboot
+    fi
+    if [ ! -h /var/www/html/grub ]; then
+      ln -fsv /tftpboot/nbi_img/grub /var/www/html/grub
     fi
     # Put filesystem.squashfs in http service root.
     if [ "$squashfs_fmode" -ge 4 ]; then
@@ -1907,8 +1850,6 @@ task_stop_feed_img_for_cast() {
   fi
   systemctl stop dnsmasq
   systemctl stop lighttpd
-  rm -f /var/www/html/tftpboot
-  rm -f $(dirname $GRUB_EFINB_DIR)/grub.cfg
   stop_nat_service
   stop_ocs_service -m $ocs no
   return 0

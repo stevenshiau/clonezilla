@@ -108,11 +108,12 @@ for i in $pkg_2_be_removed_for_drbl_live; do
 done
 
 # preset some network setting
-guess_uplink_port="$(LC_ALL=C route -n | awk '/^0.0.0.0/ {print $8}' | sort | head -n 1)"
+guess_uplink_port="$(LC_ALL=C ip route show default 2>/dev/null | awk '/^default/ {for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | sort | head -n 1)"
 case "$alias_eth0_for_drbl_clients" in
   yes)
     ethernet_drbl="eth0:1"
-    LC_ALL=C ifconfig $ethernet_drbl $alias_eth0_IP_addr netmask 255.255.255.0
+    LC_ALL=C ip addr add $alias_eth0_IP_addr/255.255.255.0 dev ${ethernet_drbl%%:*} label $ethernet_drbl
+    LC_ALL=C ip link set dev ${ethernet_drbl%%:*} up
     ;;
 esac
 
@@ -273,7 +274,7 @@ if [ -e /lib/udev/vol_id ]; then
 fi
 
 # turn off alias IP address
-[ "$alias_eth0_for_drbl_clients" = "yes" ] && ifconfig eth0:1 down
+[ "$alias_eth0_for_drbl_clients" = "yes" ] && LC_ALL=C ip addr flush dev eth0 label eth0:1
 
 # Remove grpck option "-p". This is only a workaround since the issue has not been fixed in Debian
 # Ref: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=638263

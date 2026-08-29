@@ -407,7 +407,23 @@ local_dev_clone() {
       ;;
    esac
    # To read do_ntfs_512to4k_fix_flag and do_ntfs_4kto512_fix_flag after ocs-sr restoring job.
-   [ -e /var/lib/clonezilla/ocs-vars ] && . /var/lib/clonezilla/ocs-vars
+   if [ -e /var/lib/clonezilla/ocs-vars ]; then
+     local backup_postaction="$postaction"
+     local backup_source_type="$source_type"
+     local backup_mode="$mode"
+     local backup_ocs_onthefly_mode="$ocs_onthefly_mode"
+     local backup_src_dev="$src_dev"
+     local backup_tgt_dev="$tgt_dev"
+     local backup_ocs_user_mode="$ocs_user_mode"
+     . /var/lib/clonezilla/ocs-vars
+     postaction="$backup_postaction"
+     source_type="$backup_source_type"
+     mode="$backup_mode"
+     ocs_onthefly_mode="$backup_ocs_onthefly_mode"
+     src_dev="$backup_src_dev"
+     tgt_dev="$backup_tgt_dev"
+     ocs_user_mode="$backup_ocs_user_mode"
+   fi
 } # end of local_dev_clone
 #
 show_target_machine_prompt() {
@@ -549,7 +565,23 @@ clone_over_net() {
          ;;
     esac
     # To read do_ntfs_512to4k_fix_flag and do_ntfs_4kto512_fix_flag after ocs-sr restoring job.
-    [ -e /var/lib/clonezilla/ocs-vars ] && . /var/lib/clonezilla/ocs-vars
+    if [ -e /var/lib/clonezilla/ocs-vars ]; then
+      local backup_postaction="$postaction"
+      local backup_source_type="$source_type"
+      local backup_mode="$mode"
+      local backup_ocs_onthefly_mode="$ocs_onthefly_mode"
+      local backup_src_dev="$src_dev"
+      local backup_tgt_dev="$tgt_dev"
+      local backup_ocs_user_mode="$ocs_user_mode"
+      . /var/lib/clonezilla/ocs-vars
+      postaction="$backup_postaction"
+      source_type="$backup_source_type"
+      mode="$backup_mode"
+      ocs_onthefly_mode="$backup_ocs_onthefly_mode"
+      src_dev="$backup_src_dev"
+      tgt_dev="$backup_tgt_dev"
+      ocs_user_mode="$backup_ocs_user_mode"
+    fi
   fi
 } # end of clone_over_net
 #
@@ -1940,8 +1972,9 @@ if [ "$ocs_play_sound" = "yes" ]; then
   echo " done!"
 fi
 
-if [ "$ocs_onthefly_mode" != "interactive" ]; then
+if [ "$ocs_onthefly_mode" != "interactive" ] || ! pgrep -f ocs-live-run-menu >/dev/null; then
   # Only when not in interactive mode we will run run_post_cmd_when_clone_end here.
+  # Or, if we are in interactive mode but not running under ocs-live-run-menu, we also run it.
   run_post_cmd_when_clone_end "$postaction" | tee --append ${OCS_LOGFILE}
 fi
 

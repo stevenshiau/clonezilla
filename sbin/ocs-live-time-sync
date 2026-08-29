@@ -113,6 +113,36 @@ sync_via_kernel() {
        echo "$msg_ok_let_do_it" | tee --append ${OCS_LOGFILE}
        dpkg-reconfigure tzdata
        if [ $? -eq 0 ]; then
+         # Check boot parameters for hardware clock setting first
+         if grep -qw "utc=no" /proc/cmdline || grep -qw "live-config.utc=no" /proc/cmdline; then
+           echo "$msg_rtc_is_local_time_by_boot_param"
+           timedatectl set-local-rtc 1 --adjust-system-clock
+         elif grep -qw "utc=yes" /proc/cmdline || grep -qw "live-config.utc=yes" /proc/cmdline; then
+           echo "$msg_rtc_is_utc_by_boot_param"
+           timedatectl set-local-rtc 0 --adjust-system-clock
+         else
+           # Prompt the user interactively
+           if [ "$batch_mode" = "no" ]; then
+             echo "$msg_ask_bios_clock_utc_or_local"
+             echo "$msg_bios_clock_utc_option"
+             echo "$msg_bios_clock_local_option"
+             echo -n "$msg_please_select_one_or_two"
+             read rtc_choice
+             case "$rtc_choice" in
+               2)
+                 echo "$msg_setting_bios_clock_to_local"
+                 timedatectl set-local-rtc 1 --adjust-system-clock
+                 ;;
+               *)
+                 echo "$msg_setting_bios_clock_to_utc"
+                 timedatectl set-local-rtc 0 --adjust-system-clock
+                 ;;
+             esac
+           else
+             # In batch mode, default to UTC
+             timedatectl set-local-rtc 0 --adjust-system-clock
+           fi
+         fi
          touch /run/live/$ocs
        fi
        return 0
@@ -140,6 +170,16 @@ while [ $# -gt 0 ]; do
 done
 check_if_root
 ask_and_load_lang_set
+
+# Fallback localizations if not defined in the loaded language file
+[ -z "$msg_rtc_is_local_time_by_boot_param" ] && msg_rtc_is_local_time_by_boot_param="According to boot parameters, hardware clock (RTC) is in local time."
+[ -z "$msg_rtc_is_utc_by_boot_param" ] && msg_rtc_is_utc_by_boot_param="According to boot parameters, hardware clock (RTC) is in UTC."
+[ -z "$msg_ask_bios_clock_utc_or_local" ] && msg_ask_bios_clock_utc_or_local="Is your BIOS/hardware clock set to UTC or Local Time?"
+[ -z "$msg_bios_clock_utc_option" ] && msg_bios_clock_utc_option="1) UTC (Default - Recommended for Linux-only systems)"
+[ -z "$msg_bios_clock_local_option" ] && msg_bios_clock_local_option="2) Local Time (Standard for Windows dual-boot systems)"
+[ -z "$msg_please_select_one_or_two" ] && msg_please_select_one_or_two="Please select [1/2]: "
+[ -z "$msg_setting_bios_clock_to_local" ] && msg_setting_bios_clock_to_local="Configuring system to interpret the BIOS clock as Local Time..."
+[ -z "$msg_setting_bios_clock_to_utc" ] && msg_setting_bios_clock_to_utc="Configuring system to interpret the BIOS clock as UTC..."
 
 if [ "$force_run" = "no" ]; then
   if [ -e "/run/live/$ocs" ]; then
