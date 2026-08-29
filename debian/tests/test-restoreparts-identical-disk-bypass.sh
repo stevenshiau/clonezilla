@@ -75,5 +75,26 @@ else
   exit 1
 fi
 
+# Test Case 3: Restoring partition with identical source_part and target_parts
+# But they may have formatting/whitespace differences, e.g. source_part="sda3", target_parts="sda3 "
+# Should return 3 (bypass conversion because partitions are identical)
+target_hd=""
+target_parts="sda3 "
+dsksname_from_img="sda"
+source_part="sda3"
+BOOTUP=""
+ocs_batch_mode="on"
+
+echo "Running Test Case 3: Restoring sda3 from sda3 (with trailing space)..."
+ret3=0
+create_temp_image_for_different_target_dev_name_if_necessary || ret3=$?
+
+if [ "$ret3" -eq 3 ]; then
+  echo "PASS: Correctly bypassed conversion (returned 3) for identical partition and target_parts."
+else
+  echo "FAIL: Expected return code 3, got $ret3"
+  exit 1
+fi
+
 echo "=== All Identical Disk Bypass Logic Tests Passed Successfully! ==="
 exit 0

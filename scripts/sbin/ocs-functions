@@ -8908,7 +8908,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # TODO 2025/03/08:
   # (1) Avoid multiple unicast clones to convert the same image.
   # img_cnvt_count is a global variable for removing the temp converted image dir
-  local tmp_img_from_to_opt do_convert_flag
+  local tmp_img_from_to_opt do_convert_flag clean_src_part clean_tgt_parts
   local dest_dev_ cnvt_cmd_ md_src_dsk_flag i_disk
   # create_temp_img_flag is global variable.
   # Check if target disk/part name exists in the image.
@@ -8943,9 +8943,13 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # source_part is a global variable.
   # If source_part exists, and it is not the same with target_parts",
   # it means the image of a partition will be restored to different part.
+  clean_src_part=""
+  clean_tgt_parts=""
+  [ -n "$source_part" ] && clean_src_part="$(strip_leading_dev "$source_part" | xargs)"
+  [ -n "$target_parts" ] && clean_tgt_parts="$(strip_leading_dev "$target_parts" | xargs)"
   tmp_img_from_to_opt=""
-  if [ -n "$source_part" -a -n "$target_parts" ] && \
-     [ "$source_part" != "$target_parts" ] ; then
+  if [ -n "$clean_src_part" -a -n "$clean_tgt_parts" ] && \
+     [ "$clean_src_part" != "$clean_tgt_parts" ] ; then
     do_convert_flag="yes"
     tmp_img_from_to_opt="-f $source_part -d $target_parts"
   fi
