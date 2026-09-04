@@ -519,11 +519,44 @@ fi
 gen_config_grub_2_efi(){
 local grub_conf="$1"
 local bg_img output_file
+local efi_gop_built_in="no"
+local live_sys_dir efi_f insmod_efi_gop
 [ -z "$grub_conf" ] && grub_conf=grub.cfg
 bg_img="$(basename $bgimg_file)"
 output_file="$output_dir/$grub_conf"
 # the timeout is in unit 1/10 sec, convert to sec for grub
 timeout_sec="$(echo "scale=0; $timeout /10" | bc -l)"
+
+live_sys_dir="${output_dir%/boot/grub*}"
+[ -z "$live_sys_dir" ] && live_sys_dir="/"
+# Check EFI/boot/grubx64.efi as requested by user, plus other possible loaders
+for efi_f in "$output_dir/grubx64.efi" \
+             "$output_dir/../../EFI/boot/grubx64.efi" \
+             "$live_sys_dir/EFI/boot/grubx64.efi" \
+             "$live_sys_dir/EFI/boot/bootx64.efi" \
+             "$live_sys_dir/EFI/boot/grubia32.efi" \
+             "$live_sys_dir/EFI/boot/bootia32.efi" \
+             "$live_sys_dir/EFI/boot/grubaa64.efi" \
+             "$live_sys_dir/EFI/boot/bootaa64.efi" \
+             "$live_sys_dir/EFI/boot/grubarm.efi" \
+             "$live_sys_dir/EFI/boot/bootarm.efi" \
+             "$live_sys_dir/EFI/boot/grubriscv64.efi" \
+             "$live_sys_dir/EFI/boot/bootriscv64.efi"; do
+  if [ -f "$efi_f" ]; then
+    if LC_ALL=C strings "$efi_f" | grep -q -w "efi_gop"; then
+      efi_gop_built_in="yes"
+      break
+    fi
+  fi
+done
+
+if [ "$efi_gop_built_in" = "yes" ]; then
+  echo "Found efi_gop built-in in grub EFI bootloader, no need to load it in grub.cfg."
+  insmod_efi_gop="# insmod efi_gop"
+else
+  insmod_efi_gop="insmod efi_gop"
+fi
+
 echo "Adding grub2 efi menus for $output_title..."
 cat <<-BOOT_MENU_END > $output_file
 #
@@ -563,7 +596,7 @@ efitextmode 0
 
 # Load graphics (only correspoonding ones will be found)
 # (U)EFI
-insmod efi_gop
+$insmod_efi_gop
 #insmod efi_uga # Debian grub 2.14 has dropped this.
 # legacy BIOS
 # insmod vbe
