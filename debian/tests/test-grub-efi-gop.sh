@@ -93,8 +93,8 @@ echo "Case 4 Passed!"
 
 # Test Case 5: Verify efitextmode secureboot conditional wrapping
 echo "Testing Case 5: Verify efitextmode is wrapped in a secureboot condition..."
-if ! grep -A 2 'if \[ "\$secureboot" != "on" \];' "$MOCK_BOOT_GRUB/grub.cfg" | grep -q 'efitextmode 0'; then
-  echo "FAIL: Expected efitextmode 0 to be conditionally wrapped based on secureboot, but got:"
+if ! grep -A 2 'if \[ "\$shim_lock" != "y" \];' "$MOCK_BOOT_GRUB/grub.cfg" | grep -q 'efitextmode 0'; then
+  echo "FAIL: Expected efitextmode 0 to be conditionally wrapped based on shim_lock, but got:"
   grep -A 4 -B 2 "efitextmode" "$MOCK_BOOT_GRUB/grub.cfg" || echo "(not found)"
   exit 1
 fi
