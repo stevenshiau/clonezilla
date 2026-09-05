@@ -564,7 +564,10 @@ set pref=/boot/grub
 set default="0"
 set timeout="$timeout_sec"
 # Force to set the mode. The EFI specification says that mode 0 must be available and have columns and rows of 80 and 25 respectively.
-efitextmode 0
+# efitextmode command is prohibited under Secure Boot lockdown.
+if [ "\$secureboot" != "on" ]; then
+  efitextmode 0
+fi
 # For grub 2.04, a workaround to avoid boot failure is to add "rmmod tpm": https://bugs.debian.org/975835. However, it might fail in secure boot uEFI machine, and the error is like:
 # error: verification requested but nobody cares: /live/vmlinuz.
 # Out of range pointer 0x3000000004040
@@ -597,7 +600,6 @@ efitextmode 0
 # Load graphics (only correspoonding ones will be found)
 # (U)EFI
 $insmod_efi_gop
-#insmod efi_uga # Debian grub 2.14 has dropped this.
 # legacy BIOS
 # insmod vbe
 if [ x\$feature_default_font_path = xy ] ; then
