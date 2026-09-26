@@ -16787,6 +16787,18 @@ is_disk_without_part_and_fs() {
   local rc=1
   [ -z "$dev_" ] && exit 1
   part_no="$(LC_ALL=C lsblk -l -n -o TYPE /dev/$dev_ | grep -Ew "^part" | wc -l)"
+  if [ "$part_no" -eq 0 ]; then
+    # lsblk reads udev's device database, not just the kernel's raw
+    # partition table, so a source device attached moments earlier in this
+    # session (e.g. over NBD, or any device whose table was just written)
+    # can transiently show zero partitions here even though the on-disk
+    # table is already correct. Force a rescan + udev settle and recount
+    # once before concluding the disk really has no partitions, rather than
+    # reporting a false "no partition" on this race.
+    partprobe /dev/$dev_ >/dev/null 2>&1
+    udevadm settle --timeout=5 >/dev/null 2>&1
+    part_no="$(LC_ALL=C lsblk -l -n -o TYPE /dev/$dev_ | grep -Ew "^part" | wc -l)"
+  fi
   if is_whole_disk $dev_ && [ "$part_no" -eq 0 ] && \
      ! is_block_device_with_fs $dev_; then
     rc=0
