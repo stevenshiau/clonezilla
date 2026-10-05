@@ -124,4 +124,54 @@ for script in "${TARGET_SCRIPTS[@]}"; do
 done
 echo "PASS: All targeted scripts contain disable_stdin_non_blocking_mode."
 
+# Test 4: Verify ocs-live-feed-img wait loop executes read without EAGAIN
+echo "Testing ocs-live-feed-img client waiting loop with non-blocking stdin..."
+python3 -c "
+import os, fcntl, subprocess
+
+test_script = '''
+DRBL_SCRIPT_PATH=\"/usr/share/drbl\"
+. /root/clonezilla/scripts/sbin/ocs-functions
+
+BOOTUP=\"\"
+msg_delimiter_star_line=\"*\"
+msg_now_wait_for_client_to_connect=\"Waiting for clients...\"
+msg_do_all_clients_finish_jobs=\"Done?\"
+msg_it_might_stop_required_restoring_service=\"Warning\"
+msg_let_me_ask_you_again=\"Ask again\"
+
+# Extract loop snippet from sbin/ocs-live-feed-img
+choose_term=\"no\"
+while [ \"\$choose_term\" = \"no\" ]; do
+  disable_stdin_non_blocking_mode
+  read input_key
+  case \"\$input_key\" in
+   y|Y)
+        disable_stdin_non_blocking_mode
+        read input_key2
+        case \"\$input_key2\" in
+         y|Y) choose_term=\"yes\" ;;
+        esac
+        ;;
+   n|N)
+        choose_term=\"yes\"
+        ;;
+  esac
+done
+'''
+
+r, w = os.pipe()
+flags = fcntl.fcntl(r, fcntl.F_GETFL)
+fcntl.fcntl(r, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+os.write(w, b'n\n')
+
+proc = subprocess.Popen(['bash', '-c', test_script], stdin=r, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+stdout, stderr = proc.communicate()
+if proc.returncode != 0 or b'read error' in stderr:
+    print('STDOUT:', stdout.decode())
+    print('STDERR:', stderr.decode())
+    exit(1)
+"
+echo "PASS: ocs-live-feed-img client waiting loop executed without read errors."
+
 echo "=== All disable_stdin_non_blocking_mode Tests Passed Successfully! ==="
