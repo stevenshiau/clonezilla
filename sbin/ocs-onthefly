@@ -120,17 +120,21 @@ kill_clone_prog_nc_process() {
 confirm_do_it_in_target_dev() {
   local DEV_MODEL machine_name
   if [ "$mode" = "local" -o "$STATUS" = "clone_client" ]; then
-    # From target_hd, we can get the partitions list
-    # We need the partition table to conver the selected HD to partitions.
-    tgt_parts=""
-    for idisk in $target_hd; do
-      BACKUP_DEVS=""
-      echo "Searching for data partition(s)..." | tee --append ${OCS_LOGFILE}
-      get_known_partition_proc_format $idisk data
-      tgt_parts="$tgt_parts $BACKUP_DEVS"
-    done
-    # get_dev_model_shown will give $dev_model_shown
-    get_dev_model_shown "$target_hd $tgt_parts"
+    if [ "$source_type" = "partition" ]; then
+      get_dev_model_shown "$tgt_dev"
+    else
+      # From target_hd, we can get the partitions list
+      # We need the partition table to conver the selected HD to partitions.
+      tgt_parts=""
+      for idisk in $target_hd; do
+        BACKUP_DEVS=""
+        echo "Searching for data partition(s)..." | tee --append ${OCS_LOGFILE}
+        get_known_partition_proc_format $idisk data
+        tgt_parts="$tgt_parts $BACKUP_DEVS"
+      done
+      # get_dev_model_shown will give $dev_model_shown
+      get_dev_model_shown "$target_hd $tgt_parts"
+    fi
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_uppercase_Warning!!! $msg_uppercase_Warning!!! $msg_uppercase_Warning!!!"
     echo "$msg_uppercase_Warning! $msg_all_data_in_dev_will_be_overwritten: $tgt_dev" | tee --append ${OCS_LOGFILE}
@@ -343,6 +347,12 @@ prepare_network_clone_dev_info() {
     NC_PORT=$((NC_PORT + 6))
     . $hd_tgt_tmp/target_type.ocs_onthefly
     source_type=$source_type
+    if [ "$source_type" = "partition" ]; then
+      create_part="no"
+      create_part_type=""
+      opt_for_ocs_sr_restore_this_run="$(echo " $opt_for_ocs_sr_restore_this_run " | sed -r -e 's/[[:space:]]+(-k0|-k1|-k2|--fdisk-proportion|--fdisk-manual)[[:space:]]+/ /g' -e 's/[[:space:]]+-k[[:space:]]+/ /g' -e 's/^[[:space:]]+//' -e 's/[[:space:]]+$//')"
+      opt_for_ocs_sr_restore_this_run="-k $opt_for_ocs_sr_restore_this_run"
+    fi
     if [ "$target_type" = "disk" -a -z "$target_hd" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
       echo "Target type is disk, but target disk name (Ex. hdb) can NOT be found!" | tee --append ${OCS_LOGFILE}
@@ -668,9 +678,9 @@ USAGE() {
     echo "-icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
     echo "-iefi, --ignore-update-efi-nvram  Skip updating boot entries in EFI NVRAm after cloning."
     echo "-k, --no-sfdisk          Do NOT create partition table in boot sector in target machine"
-    echo "-k0,                     Create partition table based on the partition table from the image. this is the same as as default. Just an option to let us explain the action easier."
-    echo "-k1,                     Create partition table in the target disk proportionally."
-    echo "-k2,                     Enter command line prompt to create partition table manually before restoring image."
+    echo "-k0,                     Create partition table based on the partition table from the source disk (disk clone only). This is the same as default for disk cloning. Just an option to let us explain the action easier."
+    echo "-k1,                     Create partition table in the target disk proportionally (disk clone only)."
+    echo "-k2,                     Enter command line prompt to create partition table manually before restoring image (disk clone only)."
     echo "-j2, --clone-hidden-data  Use dd to clone the image of the data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool."
     echo "-m, --no-boot-loader-clone  Do NOT clone boot loader"
     echo "-o, --load-geometry      Force to use the saved CHS (cylinders, heads, sectors) when using sfdisk in restoring."
@@ -966,21 +976,9 @@ set_ocs_onthefly_extra_param() {
 
   # About partition table
   case "$source_type" in
-    partition) 
-    # Partition restore only. default NOT to create partition table
-    if [ "$ocs_user_mode" = "expert" ]; then
-      $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
-      "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set_single_choice $msg_hint_for_fdisk:" \
-      0 0 0 $DIA_ESC \
-      "-k "      "$msg_ocs_onthefly_param_n"  \
-      "-k1 "     "$msg_ocs_param_k1"  \
-      "-k2 "     "$msg_ocs_param_k2"  \
-      "-k0 "     "$msg_use_the_part_table_from_sourcedisk"  \
-      "exit "    "$msg_exit" \
-      2>> $OCS_PARAM_TMP
-    else
-      echo "-k " >> $OCS_PARAM_TMP
-    fi
+    partition)
+    # Partition restore only. NOT to create partition table
+    echo "-k " >> $OCS_PARAM_TMP
     ;;
     *)
     # Disk restore, default to create partition table
@@ -1730,6 +1728,16 @@ else
   check_source_and_target_type
 fi
 
+if [ "$source_type" = "partition" ]; then
+  if [ "$create_part_type" = "proportion" -o "$create_part_type" = "manual" ] || echo " $ocs_onthefly_all_opts " | grep -Eq "[[:space:]]+-k0[[:space:]]+|[[:space:]]+--fdisk-proportion[[:space:]]+|[[:space:]]+--fdisk-manual[[:space:]]+"; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Option -k0/-k1/-k2 is only for disk cloning. In partition clone mode, option -k (do not create partition table) will be used to prevent erasing the destination disk." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  create_part="no"
+  create_part_type=""
+fi
+
 #
 if [ -n "$STATUS" ]; then
   # It's in network clone mode
@@ -1778,16 +1786,22 @@ ocs_onthefly_all_opts="$(echo $ocs_onthefly_all_opts | sed \
 			 -r -e "s/-d ask_user/-d $tgt_dev/g" \
 			 -r -e "s/--destination ask_user/--destination $tgt_dev/")"
 opt_for_ocs_sr_restore_this_run="$(remove_src_dest_etc_opt $ocs_onthefly_all_opts)"
-if [ "$mode" = "local" -a "$source_type" = "partition" ]; then
-  # For local part to part, no matter "-f disk/part" (source device) is 
-  # got from interactive mode or from command line option, we should add it
-  # so that later ocs-sr can have it. This is because in some cases local part
-  # to part don't need to or can not convert the image, 
-  # or it's useless to convert the image. e.g., sda1 -> sda5
-  # While for local disk to disk, the image will be converted, and a tag file
-  # "device_name_converted.info" is added to save the original disk, 
-  # and from its content ($orig_dev) we can find the source device.
-  opt_for_ocs_sr_restore_this_run="$opt_for_ocs_sr_restore_this_run -f \"$src_dev\""
+if [ "$source_type" = "partition" ]; then
+  # For partition clone, remove any -k0, -k1, -k2 from options passed to ocs-sr
+  # and make sure -k is passed so ocs-sr will NOT create partition table on the target disk.
+  opt_for_ocs_sr_restore_this_run="$(echo " $opt_for_ocs_sr_restore_this_run " | sed -r -e 's/[[:space:]]+(-k0|-k1|-k2|--fdisk-proportion|--fdisk-manual)[[:space:]]+/ /g' -e 's/[[:space:]]+-k[[:space:]]+/ /g' -e 's/^[[:space:]]+//' -e 's/[[:space:]]+$//')"
+  opt_for_ocs_sr_restore_this_run="-k $opt_for_ocs_sr_restore_this_run"
+  if [ "$mode" = "local" ]; then
+    # For local part to part, no matter "-f disk/part" (source device) is 
+    # got from interactive mode or from command line option, we should add it
+    # so that later ocs-sr can have it. This is because in some cases local part
+    # to part don't need to or can not convert the image, 
+    # or it's useless to convert the image. e.g., sda1 -> sda5
+    # While for local disk to disk, the image will be converted, and a tag file
+    # "device_name_converted.info" is added to save the original disk, 
+    # and from its content ($orig_dev) we can find the source device.
+    opt_for_ocs_sr_restore_this_run="$opt_for_ocs_sr_restore_this_run -f \"$src_dev\""
+  fi
 fi
 echo "opt_for_ocs_sr_restore_this_run: $opt_for_ocs_sr_restore_this_run"
 
