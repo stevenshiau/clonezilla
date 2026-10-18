@@ -38,6 +38,17 @@ do_mount_local_dev() {
    local mount_cmd fsck_repo fsck_extra_opt
 
    prepare_mnt_point_ocsroot
+   if mountpoint -q $ocsroot; then
+     echo "$ocsroot is already mounted."
+     return 0
+   fi
+
+   # Start MDRAID devices so that RAID arrays can be detected and used as repository
+   if type ocs-mdraid-start &>/dev/null; then
+     ocs-mdraid-start
+     udevadm settle 2>/dev/null
+   fi
+
    if [ "$ocs_prompt_mode" = "tui" ]; then
      $DIA --title "$msg_nchc_free_software_labs" --clear \
           --msgbox "$msg_prompt_for_insert_USB_dev_if_necessary" 0 0
@@ -54,6 +65,13 @@ do_mount_local_dev() {
        fi
      fi
    fi
+
+   # Check if ocsroot was mounted while waiting (e.g. via another terminal)
+   if mountpoint -q $ocsroot; then
+     echo "$ocsroot is already mounted."
+     return 0
+   fi
+
    echo "Mounting local dev as $ocsroot..."
    ANS_TMP=`mktemp /tmp/ocs_ans.XXXXXX`
    trap "[ -f "$ANS_TMP" ] && rm -f $ANS_TMP" HUP INT QUIT TERM EXIT
@@ -1232,6 +1250,12 @@ get_ocsroot_resource() {
   fi
   local TMP
   #
+  # Ensure MDRAID devices are started so that any array is assembled
+  if type ocs-mdraid-start &>/dev/null; then
+    ocs-mdraid-start
+    udevadm settle 2>/dev/null
+  fi
+
   if [ -z "$ocsroot_src" ]; then
     # If $ocsroot is a mount point, then default in "skip", otherwise default in "local_dev"
     if mountpoint $ocsroot >/dev/null 2>&1; then 

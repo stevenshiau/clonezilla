@@ -25,4 +25,12 @@ if type mdadm &>/dev/null; then
     if grep -q "^md" /proc/mdstat 2>/dev/null; then
         echo "MDRAID arrays successfully assembled."
     fi
+
+    # Switch any read-only/auto-read-only arrays to read-write mode so they can be mounted or written
+    if [ -f /proc/mdstat ]; then
+        for md in $(awk '/^md.*\(.*read-only.*\)/ {print $1}' /proc/mdstat 2>/dev/null); do
+            mdadm --readwrite "/dev/$md" >/dev/null 2>&1 || true
+        done
+    fi
+    udevadm settle 2>/dev/null
 fi

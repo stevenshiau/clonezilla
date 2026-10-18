@@ -16,6 +16,11 @@ if type mdadm &>/dev/null && [ -f /proc/mdstat ]; then
     ACTIVE_MDS=$(awk '/^md/ {print $1}' /proc/mdstat 2>/dev/null | sort -r)
 
     for md in $ACTIVE_MDS; do
+        # If the device or any of its partitions is mounted (e.g. as image repository), skip stopping it
+        if grep -qE "^/dev/${md}(p[0-9]+)?[[:space:]]" /proc/mounts 2>/dev/null; then
+            echo "  Skipping mounted MDRAID device: /dev/$md"
+            continue
+        fi
         echo "  Shutting Down MDRAID device: /dev/$md "
         # If the device is busy (e.g. mounted), mdadm will exit with an error
         # and leave the array running to prevent system crash.

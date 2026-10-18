@@ -4690,7 +4690,9 @@ get_disk_or_part_hardware_info() {
     [ -n "$(echo $part_type | grep -Eiw "(extended|0x5|0xf)")" ] && return 8
 
     if [ "$flag_skip_lvm_raid" = "yes" ]; then
-     [ -n "$(echo "$part_type" | grep -Ei "(lvm|raid)")" ] && return 8
+      if ! is_whole_disk /dev/$p && ! is_block_device_with_fs /dev/$p; then
+        [ -n "$(echo "$part_type" | grep -Ei "(lvm|raid)")" ] && return 8
+      fi
     fi
 
     # Size
@@ -4953,7 +4955,7 @@ get_input_dev_name() {
 	  if [ "$skip_lvm_raid" = "yes" ]; then
             # Exception: we should keep LVM or MDRAID if the device is whole block disk
 	    # e.g., /dev/sdb which is PV or /dev/md127 with xfs.
-            if is_block_device_with_fs /dev/$p; then
+            if ! is_whole_disk /dev/$p && ! is_block_device_with_fs /dev/$p; then
               [ "$rc" = "0" ] && case "$FILE" in *lvm*|*raid*) continue ;; esac
 	    fi
 	  fi
@@ -5015,7 +5017,7 @@ get_input_dev_name() {
                   [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue
                 fi
                 if [ "$skip_lvm_raid" = "yes" ]; then
-                  if is_block_device_with_fs /dev/$p; then
+                  if ! is_whole_disk /dev/$p && ! is_block_device_with_fs /dev/$p; then
                     [ "$rc" = "0" ] && case "$FILE" in *lvm*|*raid*) continue ;; esac
                   fi
                 fi
@@ -5059,7 +5061,7 @@ get_input_dev_name() {
        if [ "$skip_lvm_raid" = "yes" ]; then
          # Exception: we should keep LVM or MDRAID if the device is whole block disk
 	 # e.g., /dev/sdb which is PV or /dev/md127 with xfs.
-         if is_block_device_with_fs /dev/$p; then
+         if ! is_whole_disk /dev/$p && ! is_block_device_with_fs /dev/$p; then
            [ "$rc" = "0" ] && case "$FILE" in *lvm*|*raid*) continue ;; esac
 	 fi
        fi
@@ -9458,6 +9460,12 @@ task_savedisk() {
   # the associated active MD arrays must be appended so their contents
   # are saved properly.
   # ====================================================================
+  if type ocs-mdraid-start &>/dev/null; then
+    echo "Ensuring MDRAID arrays are assembled for detection..." | tee --append $OCS_LOGFILE
+    ocs-mdraid-start | tee --append $OCS_LOGFILE
+    udevadm settle 2>/dev/null
+    sleep 1
+  fi
   auto_mds="$(get_md_devices_from_disk_or_part "$target_hd")"
   for imd in $auto_mds; do
     if is_partition "$imd"; then
@@ -12386,6 +12394,12 @@ ocs-live-env-prepare(){
     [ ! -d "$ocsroot" ] && mkdir -p $ocsroot
   fi
   
+  # Start MDRAID devices
+  if type ocs-mdraid-start &>/dev/null; then
+    ocs-mdraid-start
+    udevadm settle 2>/dev/null
+  fi
+
   choose_language_in_fb_term
   [ -z "$ocs_lang" ] && ocs_lang=en_US.UTF-8
   ask_and_load_lang_set $ocs_lang
