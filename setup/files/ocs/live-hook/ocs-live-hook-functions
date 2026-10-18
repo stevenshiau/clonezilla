@@ -704,7 +704,7 @@ get_non_free_net_firmware_for_ubuntu() {
   # firmware-atheros, firmware-brcm80211, firmware-bnx2, firmware-bnx2x, firmware-ipw2x00, firmware-ipw3945, firmware-iwlwifi
   # $mirror_url and $debian_dist are from hook
   local target_dir="$1"
-  local DISTRIB_ID tmp_wd f inst_cmd rc
+  local DISTRIB_ID tmp_wd f inst_cmd rc fw_pkgs sub_pkgs deb fw_src_dir
   if [ -z "$target_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
     echo "XXXXXXXXX! No target_dir in function get_non_free_net_firmware!"
@@ -728,35 +728,65 @@ get_non_free_net_firmware_for_ubuntu() {
   fi
   # >= Ubuntu 21.04, nic-firmware is not available anymore in udeb format.
   # Hence we have to extract them from linux-firmware.
+  # In modern Ubuntu (>= 24.10 / 26.04), linux-firmware is a metapackage and firmware is split
+  # into subpackages. We only download subpackages that contain firmware for network cards:
+  # - linux-firmware-misc (bnx2, bnx2x, cxgb, ...)
+  # - packages for wireless / ethernet / nic vendors (realtek, broadcom-wireless, intel-wireless,
+  #   marvell-wireless, mediatek, netronome, qlogic, qualcomm-wireless, mellanox-spectrum, marvell-prestera)
+  fw_pkgs="linux-firmware"
+  sub_pkgs="$(apt-cache depends linux-firmware 2>/dev/null | grep -E "^[[:space:]]*Depends:[[:space:]]*linux-firmware" | awk '{print $2}')"
+  if [ -n "$sub_pkgs" ]; then
+    for p in $sub_pkgs; do
+      case "$p" in
+        linux-firmware-misc|*wireless*|*realtek*|*netronome*|*mediatek*|*qlogic*|*mellanox*|*spectrum*|*prestera*)
+          fw_pkgs="$fw_pkgs $p"
+          ;;
+        *)
+          # Skip non-network card packages (graphics, NPU, SoC, audio, etc.)
+          ;;
+      esac
+    done
+  elif apt-cache show linux-firmware-misc >/dev/null 2>&1; then
+    # Fallback if apt-cache depends did not list subpackages
+    fw_pkgs="$fw_pkgs linux-firmware-misc"
+  fi
   # Find the license doc and firmware then put them.
-  apt-get -y -d --reinstall install linux-firmware
+  apt-get -y -d --reinstall install $fw_pkgs
   rc=$?
   if [ "$rc" -gt 0 ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-    echo "XXXXXXXXX! Unable to download linux-firmware!"
+    echo "XXXXXXXXX! Unable to download firmware packages ($fw_pkgs)!"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     return 1
   fi
   echo "Extracting non-free firmware doc and puting it in Clonezilla live..."
   mkdir -p $tmp_wd/firm_tmp/
-  dpkg --extract /var/cache/apt/archives/linux-firmware_*.deb $tmp_wd/firm_tmp/
+  for pkg in $fw_pkgs; do
+    for deb in /var/cache/apt/archives/${pkg}_*.deb; do
+      [ -f "$deb" ] && dpkg --extract "$deb" $tmp_wd/firm_tmp/
+    done
+  done
   mkdir -p $target_dir/usr/share/doc/linux-firmware/
-  cp -a $tmp_wd/firm_tmp/usr/share/doc/linux-firmware/* $target_dir/usr/share/doc/linux-firmware/
+  if [ -d "$tmp_wd/firm_tmp/usr/share/doc/linux-firmware" ]; then
+    cp -a $tmp_wd/firm_tmp/usr/share/doc/linux-firmware/* $target_dir/usr/share/doc/linux-firmware/ 2>/dev/null || true
+  fi
+  fw_src_dir="$tmp_wd/firm_tmp/usr/lib/firmware"
+  [ ! -d "$fw_src_dir" ] && [ -d "$tmp_wd/firm_tmp/lib/firmware" ] && fw_src_dir="$tmp_wd/firm_tmp/lib/firmware"
   while read -r f; do
     [ -n "$(echo "$f" | grep -E "^[[:space:]]*#")" ] && continue
-    if [ -e "$tmp_wd/firm_tmp/usr/lib/firmware/$f.zst" ]; then
+    if [ -e "$fw_src_dir/$f.zst" ]; then
       # With .zst compression
-      inst_cmd="install -m644 -D $tmp_wd/firm_tmp/usr/lib/firmware/$f.zst $target_dir/usr/lib/firmware/$f.zst"
+      inst_cmd="install -m644 -D $fw_src_dir/$f.zst $target_dir/usr/lib/firmware/$f.zst"
       echo "Running: $inst_cmd"
       eval $inst_cmd
-    elif [ -e "$tmp_wd/firm_tmp/usr/lib/firmware/$f" ]; then
+    elif [ -e "$fw_src_dir/$f" ]; then
       # Without .zst compression
-      inst_cmd="install -m644 -D $tmp_wd/firm_tmp/usr/lib/firmware/$f $target_dir/usr/lib/firmware/$f"
+      inst_cmd="install -m644 -D $fw_src_dir/$f $target_dir/usr/lib/firmware/$f"
       echo "Running: $inst_cmd"
       eval $inst_cmd
     else
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "File $tmp_wd/firm_tmp/$f not found. Skip putting it."
+      echo "File $fw_src_dir/$f not found. Skip putting it."
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
   done <<< "$(cat $tmp_wd/nic-firmware.lst)"
