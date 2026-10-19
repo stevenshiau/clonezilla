@@ -124,5 +124,25 @@ if [[ "$res" != *"-goc"* || "$res" != *"-pe mypass"* || "$res" != *"-pfg mypassf
   exit 1
 fi
 
+# Test 9: Test zxc compression options
+echo "Testing -z10p and --zxcmt-compress options..."
+res=$(test_parse -z10p)
+if [[ "$res" != *"-z10p"* ]]; then
+  echo "FAIL: -z10p not added to OCS_OPT (got: $res)"
+  exit 1
+fi
+
+res=$(test_parse --zxcmt-compress)
+if [[ "$res" != *"-z10p"* ]]; then
+  echo "FAIL: --zxcmt-compress not mapped to -z10p in OCS_OPT (got: $res)"
+  exit 1
+fi
+
+res=$(test_parse --smp-zxc-compress)
+if [[ "$res" != *"-z10p"* ]]; then
+  echo "FAIL: --smp-zxc-compress not mapped to -z10p in OCS_OPT (got: $res)"
+  exit 1
+fi
+
 echo "PASS: All options parsed and verified successfully!"
 exit 0

@@ -40,6 +40,7 @@ USAGE() {
     echo "-z7, --lrzip-compress    Convert to lrzip format"
     echo "-z8, --lz4-compress      Convert to lz4 format"
     echo "-z9, --zstd-compress     Convert to zstd format"
+    echo "-z10p, --zxcmt-compress  Convert to zxc format"
     echo "SRC_IMAGE_NAME and DEST_IMAGE_NAME are the image dir name, not absolute path"
     echo "If the destination compression format is not assigned, XZ format will be used"
     echo "If \"ask_user\" is used as SRC_IMAGE_NAME or DEST_IMAGE_NAME, a dialog menu will be shown to allow selection or inputing."
@@ -55,6 +56,10 @@ choose_compress_format() {
   local z_opt default_comp
   trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
   show_z4_or_above_menu_or_not
+  if type zxc &>/dev/null; then
+    ocs_z10p_option_1="-z10p"
+    ocs_z10p_option_2="$(rep_whspc_w_udrsc "${msg_ocs_param_z10p:-Compress using zxc (multicores)}")"
+  fi
   if [ -n "$ocs_z5_option_1" ]; then
     default_comp_opt="--default-item $ocs_z5_option_1"
   fi
@@ -71,6 +76,7 @@ choose_compress_format() {
   $ocs_z7_option_1      $ocs_z7_option_2 \
   $ocs_z8_option_1      $ocs_z8_option_2 \
   $ocs_z9_option_1      $ocs_z9_option_2 \
+  $ocs_z10p_option_1    $ocs_z10p_option_2 \
   "-z0"      "$msg_ocs_param_z0" \
   2> $TMP
   z_opt="$(cat $TMP)"
@@ -104,6 +110,8 @@ choose_compress_format() {
    -z7)  IMG_CLONE_CMP="lrzip -q - $extra_lrzip_opt";;
    -z8)  IMG_CLONE_CMP="lz4 -T0 -c $extra_lz4_opt";;
    -z9)  IMG_CLONE_CMP="zstd -T0 -c $extra_zstd_opt";;
+   -z10p) [ -z "$extra_zxc_opt" ] && extra_zxc_opt="-T0 -3"
+          IMG_CLONE_CMP="zxc -c $extra_zxc_opt";;
      *)  IMG_CLONE_CMP="xz -c -T0 $extra_xz_opt";;
   esac
   [ -f "$TMP" ] && rm -f $TMP
@@ -692,6 +700,9 @@ while [ $# -gt 0 ]; do
    -z7|--lrzip-compress) IMG_CLONE_CMP="lrzip -q - $extra_lrzip_opt"; shift;;
    -z8|--lz4-compress)   IMG_CLONE_CMP="lz4 -T0 -c $extra_lz4_opt"; shift;;
    -z9|--zstd-compress)  IMG_CLONE_CMP="zstd -T0 -c $extra_zstd_opt"; shift;;
+   -z10p|--zxcmt-compress|--smp-zxc-compress|--zxc-compress)
+          [ -z "$extra_zxc_opt" ] && extra_zxc_opt="-T0 -3"
+          IMG_CLONE_CMP="zxc -c $extra_zxc_opt"; shift;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
            exit 2 ;;

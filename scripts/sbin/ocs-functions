@@ -808,7 +808,7 @@ get_image_cat_zip_cmd() {
  
   img_comp_format="" 
   # (1)
-  comp_prog_ref="$(echo "$imgf" | grep -Eo -- ".ptcl-img.(gz|bz2|lzo|lzma|xz|lzip|lrz|lz4|zst|uncomp)?")"
+  comp_prog_ref="$(echo "$imgf" | grep -Eo -- ".ptcl-img.(gz|bz2|lzo|lzma|xz|lzip|lrz|lz4|zst|zxc|uncomp)?" || true)"
   cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)" 
   cat_prog=""
   zip_stdin_cmd=""
@@ -912,6 +912,18 @@ get_image_cat_zip_cmd() {
               zip_stdin_cmd="zstd -c $extra_zstd_opt"
               unzip_stdin_cmd="zstd -dc $extra_zstd_dc_opt"
               ;;
+      zxc)
+              [ -z "$extra_zxc_dc_opt" ] && extra_zxc_dc_opt="-T0"
+              [ -z "$extra_zxc_opt" ] && extra_zxc_opt="-T0 -3"
+              if [ "$use_parallel_decompression" = "no" ] || [ "$cpu_no" -le 1 ]; then
+                extra_zxc_dc_opt_="$(echo "$extra_zxc_dc_opt" | sed -r "s/-T[[:digit:]]+/-T1/")"
+              else
+                extra_zxc_dc_opt_="$extra_zxc_dc_opt"
+              fi
+              cat_prog="zxc -dc $extra_zxc_dc_opt_"
+              zip_stdin_cmd="zxc -c $extra_zxc_opt"
+              unzip_stdin_cmd="zxc -dc $extra_zxc_dc_opt_"
+              ;;
     esac
   fi
   # img_comp_format is global variable for later reference use.
@@ -982,6 +994,17 @@ get_image_cat_zip_cmd() {
       cat_prog="zstd -dc $extra_zstd_dc_opt"
       zip_stdin_cmd="zstd -c $extra_zstd_opt"
       unzip_stdin_cmd="zstd -dc $extra_zstd_dc_opt"
+    elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -iE "(ZXC|zxc) compressed data")" ] || [ -n "$(echo $imgf | grep -iE "\.zxc(\.[a-z0-9]+)?$")" ]; then
+      [ -z "$extra_zxc_dc_opt" ] && extra_zxc_dc_opt="-T0"
+      [ -z "$extra_zxc_opt" ] && extra_zxc_opt="-T0 -3"
+      if [ "$use_parallel_decompression" = "no" ] || [ "$cpu_no" -le 1 ]; then
+        extra_zxc_dc_opt_="$(echo "$extra_zxc_dc_opt" | sed -r "s/-T[[:digit:]]+/-T1/")"
+      else
+        extra_zxc_dc_opt_="$extra_zxc_dc_opt"
+      fi
+      cat_prog="zxc -dc $extra_zxc_dc_opt_"
+      zip_stdin_cmd="zxc -c $extra_zxc_opt"
+      unzip_stdin_cmd="zxc -dc $extra_zxc_dc_opt_"
     elif [ -n "$(LC_ALL=C file -Ls $imgf | grep -i "lzip compressed data")" ]; then
       # Ex: sda1.ntfs-img.aa: lzip compressed data - version 1, os: Unix
       if [ "$cpu_no" -gt 1 ] && \
@@ -1078,6 +1101,7 @@ ocs-get-comp-suffix() {
     lzip*|plzip*)                           suffix="lzip";;
     lrzip*)                                 suffix="lrz";;
     zstd*|zstdmt*)                          suffix="zst";;
+    zxc*|unzxc*|zxccat*)                    suffix="zxc";;
   esac
   if [ -n "$suffix" ]; then
     echo "$suffix"
@@ -11728,11 +11752,11 @@ check_ocs_input_params(){
     IMG_CLONE_CMP="gzip -c $extra_gzip_opt"
   fi
   
-  more_compress_progs="lzma xz lzip plzip lrzip lz4 zstd zstdmt"
+  more_compress_progs="lzma xz lzip plzip lrzip lz4 zstd zstdmt zxc"
   for i in $more_compress_progs; do
     eval iz=\$i
     # lrzip uses "-q -", the rest use "-c"
-    if [ "$IMG_CLONE_CMP" = "$iz -c" -o "$IMG_CLONE_CMP" = "$iz -q -" ]; then
+    if [ "$IMG_CLONE_CMP" = "$iz -c" -o "$IMG_CLONE_CMP" = "$iz -q -" ] || echo "$IMG_CLONE_CMP" | grep -qE "^$iz "; then
       if ! type $iz &>/dev/null; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "$iz is NOT found in this server. The default compression program (gzip) will be used."
@@ -11877,6 +11901,7 @@ USAGE_common_save(){
     echo " -z8p, --lz4mt-compress   Compress using lz4 multi-thread when saving."
     echo " -z9, --zstd-compress     Compress using zstd when saving."
     echo " -z9p, --zstdmt-compress   Compress using zstdmt (multicores) when saving."
+    echo " -z10p, --zxcmt-compress  Compress using zxc (multicores) when saving."
 } # end of USAGE_common_save
 #
 USAGE_reserved_word_for_save() {
@@ -11893,7 +11918,7 @@ USAGE_common_general() {
     echo " --debug=LEVEL            Output the partimage debug log in directory /var/log/ with debug LEVEL (0,1,2... default=0)"
     echo " -m, --module  MODULE     Force to load kernel module MODULE, this is useful when some SCSI device is not detected. NOTE! Use only one module, more than one may cause parsing problem."
     echo " --use-netcat             Use netcat instead of nuttcp when running ocs-onthefly in the clone over net mode."
-    echo " --net-filter PROGRAM     Use the PROGRAM (gzip/lzop/bzip2/xz/lz4/zstd/cat) before sending partition data to netcat (only in network clone mode). The default action is zstd. Use \"cat\" if you do not want to compress (Good for fast internode network)."
+    echo " --net-filter PROGRAM     Use the PROGRAM (gzip/lzop/bzip2/xz/lz4/zstd/zxc/cat) before sending partition data to netcat (only in network clone mode). The default action is zstd. Use \"cat\" if you do not want to compress (Good for fast internode network)."
     echo " -o0, --run-prerun-dir    Run the script in the directory $OCS_POSTRUN_DIR before clone is started. The command will be run before MBR is created or saved."
     echo " -o1, -o, --run-postrun-dir    Run the script in the directory $OCS_POSTRUN_DIR when clone is finished. The command will be run before that assigned in -p or --postaction."
     echo " -w, --wait-time TIME     Wait for TIME secs before saving/restoring"
@@ -16434,6 +16459,20 @@ case "$net_filter" in
        else
          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
          echo "gzip is NOT found." | tee --append $OCS_LOGFILE
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+         echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
+	 exit 1
+       fi
+       ;;
+   zxc)
+       [ -z "$extra_zxc_opt_onthefly" ] && extra_zxc_opt_onthefly="-T0 -3"
+       [ -z "$extra_zxc_dc_opt_onthefly" ] && extra_zxc_dc_opt_onthefly="-T0"
+       if type zxc &>/dev/null; then
+         net_filter_comp="zxc -c $extra_zxc_opt_onthefly"
+         net_filter_decomp="zxc -dc $extra_zxc_dc_opt_onthefly"
+       else
+         [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+         echo "zxc is NOT found." | tee --append $OCS_LOGFILE
          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
          echo "$msg_program_stop" | tee --append ${OCS_LOGFILE}
 	 exit 1
