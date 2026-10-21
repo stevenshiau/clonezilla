@@ -144,5 +144,31 @@ if [[ "$res" != *"-z10p"* ]]; then
   exit 1
 fi
 
+# Test 10: Test kanzi compression options
+echo "Testing -z11p and --kanzimt-compress options..."
+res=$(test_parse -z11p)
+if [[ "$res" != *"-z11p"* ]]; then
+  echo "FAIL: -z11p not added to OCS_OPT (got: $res)"
+  exit 1
+fi
+
+res=$(test_parse --kanzimt-compress)
+if [[ "$res" != *"-z11p"* ]]; then
+  echo "FAIL: --kanzimt-compress not mapped to -z11p in OCS_OPT (got: $res)"
+  exit 1
+fi
+
+res=$(test_parse --smp-kanzi-compress)
+if [[ "$res" != *"-z11p"* ]]; then
+  echo "FAIL: --smp-kanzi-compress not mapped to -z11p in OCS_OPT (got: $res)"
+  exit 1
+fi
+
+res=$(test_parse -z11)
+if [[ "$res" != *"-z11"* ]]; then
+  echo "FAIL: -z11 not added to OCS_OPT (got: $res)"
+  exit 1
+fi
+
 echo "PASS: All options parsed and verified successfully!"
 exit 0

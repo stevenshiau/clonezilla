@@ -41,6 +41,7 @@ USAGE() {
     echo "-z8, --lz4-compress      Convert to lz4 format"
     echo "-z9, --zstd-compress     Convert to zstd format"
     echo "-z10p, --zxcmt-compress  Convert to zxc format"
+    echo "-z11p, --kanzimt-compress Convert to kanzi format"
     echo "SRC_IMAGE_NAME and DEST_IMAGE_NAME are the image dir name, not absolute path"
     echo "If the destination compression format is not assigned, XZ format will be used"
     echo "If \"ask_user\" is used as SRC_IMAGE_NAME or DEST_IMAGE_NAME, a dialog menu will be shown to allow selection or inputing."
@@ -60,6 +61,10 @@ choose_compress_format() {
     ocs_z10p_option_1="-z10p"
     ocs_z10p_option_2="$(rep_whspc_w_udrsc "${msg_ocs_param_z10p:-Compress using zxc (multicores)}")"
   fi
+  if type kanzi &>/dev/null; then
+    ocs_z11p_option_1="-z11p"
+    ocs_z11p_option_2="$(rep_whspc_w_udrsc "${msg_ocs_param_z11p:-Compress using kanzi (multicores)}")"
+  fi
   if [ -n "$ocs_z5_option_1" ]; then
     default_comp_opt="--default-item $ocs_z5_option_1"
   fi
@@ -77,6 +82,7 @@ choose_compress_format() {
   $ocs_z8_option_1      $ocs_z8_option_2 \
   $ocs_z9_option_1      $ocs_z9_option_2 \
   $ocs_z10p_option_1    $ocs_z10p_option_2 \
+  $ocs_z11p_option_1    $ocs_z11p_option_2 \
   "-z0"      "$msg_ocs_param_z0" \
   2> $TMP
   z_opt="$(cat $TMP)"
@@ -112,6 +118,8 @@ choose_compress_format() {
    -z9)  IMG_CLONE_CMP="zstd -T0 -c $extra_zstd_opt";;
    -z10p) [ -z "$extra_zxc_opt" ] && extra_zxc_opt="-T0 -3"
           IMG_CLONE_CMP="zxc -c $extra_zxc_opt";;
+   -z11p) [ -z "$extra_kanzi_opt" ] && extra_kanzi_opt="-j 0 -l 3"
+          IMG_CLONE_CMP="kanzi -c -o stdout $extra_kanzi_opt";;
      *)  IMG_CLONE_CMP="xz -c -T0 $extra_xz_opt";;
   esac
   [ -f "$TMP" ] && rm -f $TMP
@@ -703,6 +711,9 @@ while [ $# -gt 0 ]; do
    -z10p|--zxcmt-compress|--smp-zxc-compress|--zxc-compress)
           [ -z "$extra_zxc_opt" ] && extra_zxc_opt="-T0 -3"
           IMG_CLONE_CMP="zxc -c $extra_zxc_opt"; shift;;
+   -z11p|--kanzimt-compress|--smp-kanzi-compress|--kanzi-compress)
+          [ -z "$extra_kanzi_opt" ] && extra_kanzi_opt="-j 0 -l 3"
+          IMG_CLONE_CMP="kanzi -c -o stdout $extra_kanzi_opt"; shift;;
    -*)     echo "${0}: ${1}: invalid option" >&2
            USAGE >& 2
            exit 2 ;;
