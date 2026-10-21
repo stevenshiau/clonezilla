@@ -118,8 +118,8 @@ if [[ "$cat_prog" != *"kanzi -d -o stdout"* ]]; then
   exit 1
 fi
 
-if [[ "$unzip_stdin_cmd" != *"kanzi -d -o stdout"* ]]; then
-  echo "FAIL: unzip_stdin_cmd expected to contain 'kanzi -d -o stdout', got '$unzip_stdin_cmd'"
+if [[ "$unzip_stdin_cmd" != *"kanzi -d -o stdout"*" -i"* ]]; then
+  echo "FAIL: unzip_stdin_cmd expected to contain 'kanzi -d -o stdout ... -i', got '$unzip_stdin_cmd'"
   exit 1
 fi
 
@@ -146,8 +146,8 @@ touch "$dummy_knz"
 use_parallel_decompression="yes"
 
 get_image_cat_zip_cmd "$dummy_knz"
-if [[ "$unzip_stdin_cmd" != *"kanzi -d -o stdout"* ]]; then
-  echo "FAIL: fallback unzip_stdin_cmd expected 'kanzi -d -o stdout', got '$unzip_stdin_cmd'"
+if [[ "$unzip_stdin_cmd" != *"kanzi -d -o stdout"*" -i"* ]]; then
+  echo "FAIL: fallback unzip_stdin_cmd expected 'kanzi -d -o stdout ... -i', got '$unzip_stdin_cmd'"
   exit 1
 fi
 echo "  PASS: fallback get_image_cat_zip_cmd correctly identifies .knz."
@@ -252,7 +252,12 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -d|--decompress) is_decomp=1; shift;;
     -c|--compress) is_decomp=0; shift;;
-    -i) shift; file_in="$1"; shift;;
+    -i) shift
+        if [ $# -gt 0 ] && [ -n "$1" ]; then
+          file_in="$1"
+          shift
+        fi
+        ;;
     -o) shift; file_out="$1"; shift;;
     -j|-t|--jobs=*) shift;;
     -l|--level=*) shift;;
@@ -285,13 +290,17 @@ echo "$TEST_DATA" > "$TMP_DIR/original.txt"
 get_image_cat_zip_cmd "sda1.ext4-ptcl-img.knz.aa"
 eval "$zip_stdin_cmd < \"$TMP_DIR/original.txt\" > \"$TMP_DIR/sda1.ext4-ptcl-img.knz.aa\""
 
-# Decompress using unzip_stdin_cmd
-eval "$unzip_stdin_cmd < \"$TMP_DIR/sda1.ext4-ptcl-img.knz.aa\" > \"$TMP_DIR/restored_stdin.txt\""
+# Decompress using unzip_stdin_cmd with file argument (direct mode in ocs-chkimg and unicast_restore_by_partclone)
+eval "$unzip_stdin_cmd \"$TMP_DIR/sda1.ext4-ptcl-img.knz.aa\" > \"$TMP_DIR/restored_direct.txt\""
+
+# Decompress using unzip_stdin_cmd in a pipe (split image mode)
+eval "cat \"$TMP_DIR/sda1.ext4-ptcl-img.knz.aa\" | $unzip_stdin_cmd > \"$TMP_DIR/restored_pipe.txt\""
 
 # Decompress using cat_prog
 eval "$cat_prog \"$TMP_DIR/sda1.ext4-ptcl-img.knz.aa\" > \"$TMP_DIR/restored_cat.txt\""
 
-diff -u "$TMP_DIR/original.txt" "$TMP_DIR/restored_stdin.txt"
+diff -u "$TMP_DIR/original.txt" "$TMP_DIR/restored_direct.txt"
+diff -u "$TMP_DIR/original.txt" "$TMP_DIR/restored_pipe.txt"
 diff -u "$TMP_DIR/original.txt" "$TMP_DIR/restored_cat.txt"
 
 echo "  PASS: Data compression and decompression stream verified."
