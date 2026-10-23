@@ -226,30 +226,57 @@ fi
 echo "PASS: Test 4 (disk clone with -k0) correctly preserved disk partitioning"
 
 # Test 5: task_restoreparts in scripts/sbin/ocs-functions guards against same-disk partition cloning
-echo "--- Test 5: task_restoreparts logic for same disk vs different disk ---"
+# but must NOT disable create_part for restoredisk (reproducing issue from log-k0f.txt)
+echo "--- Test 5: task_restoreparts logic for restoredisk vs restoreparts (same disk vs different disk) ---"
+
+# Case 5a: restoredisk on same disk (source_hd="nvme0n1", target_hd="nvme0n1", ocs_sr_type="restoredisk")
+# Must KEEP create_part="yes" to allow partition table creation
+ocs_sr_type="restoredisk"
 source_hd="nvme0n1"
 target_hd="nvme0n1"
 create_part="yes"
-if [ "$create_part" = "yes" -a -n "$source_hd" -a -n "$target_hd" -a "$source_hd" = "$target_hd" ]; then
-  create_part="no"
+if [ -n "$(echo "$ocs_sr_type" | grep -E "parts")" ]; then
+  if [ "$create_part" = "yes" -a -n "$source_hd" -a -n "$target_hd" -a "$source_hd" = "$target_hd" ]; then
+    create_part="no"
+  fi
 fi
-if [ "$create_part" != "no" ]; then
-  echo "FAIL: Expected task_restoreparts to force create_part='no' for same disk, got '$create_part'"
+if [ "$create_part" != "yes" ]; then
+  echo "FAIL: Expected restoredisk to keep create_part='yes' on same disk (log-k0f.txt bug), got '$create_part'"
   exit 1
 fi
 
-# For different disks with -k1:
+# Case 5b: restoreparts on same disk (source_hd="nvme0n1", target_hd="nvme0n1", ocs_sr_type="ld2d_restoreparts")
+# Must force create_part="no" to protect parent disk
+ocs_sr_type="ld2d_restoreparts"
+source_hd="nvme0n1"
+target_hd="nvme0n1"
+create_part="yes"
+if [ -n "$(echo "$ocs_sr_type" | grep -E "parts")" ]; then
+  if [ "$create_part" = "yes" -a -n "$source_hd" -a -n "$target_hd" -a "$source_hd" = "$target_hd" ]; then
+    create_part="no"
+  fi
+fi
+if [ "$create_part" != "no" ]; then
+  echo "FAIL: Expected restoreparts to force create_part='no' for same disk, got '$create_part'"
+  exit 1
+fi
+
+# Case 5c: restoreparts on different disks with -k1 (source_hd="sdc", target_hd="sdd", ocs_sr_type="ld2d_restoreparts")
+# Must keep create_part="yes" to allow proportional partition table creation on destination disk
+ocs_sr_type="ld2d_restoreparts"
 source_hd="sdc"
 target_hd="sdd"
 create_part="yes"
-if [ "$create_part" = "yes" -a -n "$source_hd" -a -n "$target_hd" -a "$source_hd" = "$target_hd" ]; then
-  create_part="no"
+if [ -n "$(echo "$ocs_sr_type" | grep -E "parts")" ]; then
+  if [ "$create_part" = "yes" -a -n "$source_hd" -a -n "$target_hd" -a "$source_hd" = "$target_hd" ]; then
+    create_part="no"
+  fi
 fi
 if [ "$create_part" != "yes" ]; then
-  echo "FAIL: Expected task_restoreparts to keep create_part='yes' for different disks, got '$create_part'"
+  echo "FAIL: Expected restoreparts to keep create_part='yes' for different disks, got '$create_part'"
   exit 1
 fi
-echo "PASS: Test 5 (task_restoreparts safety guard) correctly handled same vs different disk"
+echo "PASS: Test 5 (task_restoreparts safety guard) correctly handled restoredisk vs restoreparts"
 
 echo "=== All Tests Passed Successfully! ==="
 exit 0

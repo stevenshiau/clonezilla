@@ -10620,11 +10620,13 @@ task_restoreparts() {
   # When restoring partition(s), if source disk and target disk are the same disk,
   # we must not recreate the partition table on that disk, otherwise all other
   # partitions on the disk will be erased!
-  if [ "$create_part" = "yes" -a -n "$source_hd" -a -n "$target_hd" -a "$source_hd" = "$target_hd" ]; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Source and destination partitions are on the same disk ($target_hd). Skipping partition table creation to protect existing partitions." | tee --append $OCS_LOGFILE
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-    create_part="no"
+  if [ -n "$(echo "$ocs_sr_type" | grep -E "parts")" ]; then
+    if [ "$create_part" = "yes" -a -n "$source_hd" -a -n "$target_hd" -a "$source_hd" = "$target_hd" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Source and destination partitions are on the same disk ($target_hd). Skipping partition table creation to protect existing partitions." | tee --append $OCS_LOGFILE
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      create_part="no"
+    fi
   fi
   # countdown or wait for confirm
   dev_to_be_overwrite=""
