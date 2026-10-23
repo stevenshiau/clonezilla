@@ -348,10 +348,12 @@ prepare_network_clone_dev_info() {
     . $hd_tgt_tmp/target_type.ocs_onthefly
     source_type=$source_type
     if [ "$source_type" = "partition" ]; then
-      create_part="no"
-      create_part_type=""
-      opt_for_ocs_sr_restore_this_run="$(echo " $opt_for_ocs_sr_restore_this_run " | sed -r -e 's/[[:space:]]+(-k0|-k1|-k2|--fdisk-proportion|--fdisk-manual)[[:space:]]+/ /g' -e 's/[[:space:]]+-k[[:space:]]+/ /g' -e 's/^[[:space:]]+//' -e 's/[[:space:]]+$//')"
-      opt_for_ocs_sr_restore_this_run="-k $opt_for_ocs_sr_restore_this_run"
+      # If neither -k nor partition creation option (-k1/-k2/-k0) was specified, default to -k
+      if ! echo " $opt_for_ocs_sr_restore_this_run " | grep -Eq "[[:space:]]+(-k|-k0|-k1|-k2|--no-sfdisk|--fdisk-proportion|--fdisk-manual)[[:space:]]+"; then
+        create_part="no"
+        create_part_type=""
+        opt_for_ocs_sr_restore_this_run="-k $opt_for_ocs_sr_restore_this_run"
+      fi
     fi
     if [ "$target_type" = "disk" -a -z "$target_hd" ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -678,9 +680,9 @@ USAGE() {
     echo "-icds, --ignore-chk-dsk-size-pt  Skip checking destination disk size before creating the partition table on it. By default it will be checked and if the size is smaller than the source disk, quit."
     echo "-iefi, --ignore-update-efi-nvram  Skip updating boot entries in EFI NVRAm after cloning."
     echo "-k, --no-sfdisk          Do NOT create partition table in boot sector in target machine"
-    echo "-k0,                     Create partition table based on the partition table from the source disk (disk clone only). This is the same as default for disk cloning. Just an option to let us explain the action easier."
-    echo "-k1,                     Create partition table in the target disk proportionally (disk clone only)."
-    echo "-k2,                     Enter command line prompt to create partition table manually before restoring image (disk clone only)."
+    echo "-k0,                     Create partition table based on the partition table from the source disk. Just an option to let us explain the action easier."
+    echo "-k1,                     Create partition table in the target disk proportionally."
+    echo "-k2,                     Enter command line prompt to create partition table manually before restoring image."
     echo "-j2, --clone-hidden-data  Use dd to clone the image of the data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool."
     echo "-m, --no-boot-loader-clone  Do NOT clone boot loader"
     echo "-o, --load-geometry      Force to use the saved CHS (cylinders, heads, sectors) when using sfdisk in restoring."
@@ -977,8 +979,26 @@ set_ocs_onthefly_extra_param() {
   # About partition table
   case "$source_type" in
     partition)
-    # Partition restore only. NOT to create partition table
-    echo "-k " >> $OCS_PARAM_TMP
+    # Partition restore only. default NOT to create partition table
+    local shd_tmp="" thd_tmp=""
+    [ -n "$src_dev" -a "$src_dev" != "ask_user" ] && shd_tmp="$(get_diskname $src_dev)"
+    [ -n "$tgt_dev" -a "$tgt_dev" != "ask_user" ] && thd_tmp="$(get_diskname $tgt_dev)"
+    if [ -n "$shd_tmp" -a -n "$thd_tmp" -a "$shd_tmp" = "$thd_tmp" ]; then
+      # Same disk partition clone, force -k
+      echo "-k " >> $OCS_PARAM_TMP
+    elif [ "$ocs_user_mode" = "expert" ]; then
+      $DIA --backtitle "$msg_nchc_free_software_labs" --title  \
+      "$msg_ocs_onthefly_advanced_extra_param | $msg_mode: $ocs_mode_prompt" --menu "$msg_choose_param_to_set_single_choice $msg_hint_for_fdisk:" \
+      0 0 0 $DIA_ESC \
+      "-k "      "$msg_ocs_onthefly_param_n"  \
+      "-k1 "     "$msg_ocs_param_k1"  \
+      "-k2 "     "$msg_ocs_param_k2"  \
+      "-k0 "     "$msg_use_the_part_table_from_sourcedisk"  \
+      "exit "    "$msg_exit" \
+      2>> $OCS_PARAM_TMP
+    else
+      echo "-k " >> $OCS_PARAM_TMP
+    fi
     ;;
     *)
     # Disk restore, default to create partition table
@@ -1729,13 +1749,25 @@ else
 fi
 
 if [ "$source_type" = "partition" ]; then
-  if [ "$create_part_type" = "proportion" -o "$create_part_type" = "manual" ] || echo " $ocs_onthefly_all_opts " | grep -Eq "[[:space:]]+-k0[[:space:]]+|[[:space:]]+--fdisk-proportion[[:space:]]+|[[:space:]]+--fdisk-manual[[:space:]]+"; then
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-    echo "Option -k0/-k1/-k2 is only for disk cloning. In partition clone mode, option -k (do not create partition table) will be used to prevent erasing the destination disk." | tee --append ${OCS_LOGFILE}
-    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  local shd_chk="" thd_chk=""
+  [ -n "$src_dev" -a "$src_dev" != "ask_user" ] && shd_chk="$(get_diskname $src_dev)"
+  [ -n "$tgt_dev" -a "$tgt_dev" != "ask_user" ] && thd_chk="$(get_diskname $tgt_dev)"
+  if [ -n "$shd_chk" -a -n "$thd_chk" -a "$shd_chk" = "$thd_chk" ]; then
+    # Same disk partition cloning (e.g., nvme0n1p4 -> nvme0n1p7)
+    if [ "$create_part_type" = "proportion" -o "$create_part_type" = "manual" ] || echo " $ocs_onthefly_all_opts " | grep -Eq "[[:space:]]+-k0[[:space:]]+|[[:space:]]+--fdisk-proportion[[:space:]]+|[[:space:]]+--fdisk-manual[[:space:]]+"; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Source and destination partitions are on the same disk ($thd_chk). Partition table will NOT be recreated to prevent erasing the parent disk. Option -k is enforced." | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    fi
+    create_part="no"
+    create_part_type=""
+  else
+    # Different disks partition cloning (e.g. sdc1 -> sdd1)
+    # If no partition creation option was explicitly specified (-k0, -k1, -k2, -k), default to -k
+    if [ "$create_part_type" != "proportion" -a "$create_part_type" != "manual" ] && ! echo " $ocs_onthefly_all_opts " | grep -Eq "[[:space:]]+(-k|-k0|-k1|-k2|--no-sfdisk|--fdisk-proportion|--fdisk-manual)[[:space:]]+"; then
+      create_part="no"
+    fi
   fi
-  create_part="no"
-  create_part_type=""
 fi
 
 #
@@ -1787,10 +1819,21 @@ ocs_onthefly_all_opts="$(echo $ocs_onthefly_all_opts | sed \
 			 -r -e "s/--destination ask_user/--destination $tgt_dev/")"
 opt_for_ocs_sr_restore_this_run="$(remove_src_dest_etc_opt $ocs_onthefly_all_opts)"
 if [ "$source_type" = "partition" ]; then
-  # For partition clone, remove any -k0, -k1, -k2 from options passed to ocs-sr
-  # and make sure -k is passed so ocs-sr will NOT create partition table on the target disk.
-  opt_for_ocs_sr_restore_this_run="$(echo " $opt_for_ocs_sr_restore_this_run " | sed -r -e 's/[[:space:]]+(-k0|-k1|-k2|--fdisk-proportion|--fdisk-manual)[[:space:]]+/ /g' -e 's/[[:space:]]+-k[[:space:]]+/ /g' -e 's/^[[:space:]]+//' -e 's/[[:space:]]+$//')"
-  opt_for_ocs_sr_restore_this_run="-k $opt_for_ocs_sr_restore_this_run"
+  local shd_chk="" thd_chk=""
+  [ -n "$src_dev" -a "$src_dev" != "ask_user" ] && shd_chk="$(get_diskname $src_dev)"
+  [ -n "$tgt_dev" -a "$tgt_dev" != "ask_user" ] && thd_chk="$(get_diskname $tgt_dev)"
+  if [ -n "$shd_chk" -a -n "$thd_chk" -a "$shd_chk" = "$thd_chk" ]; then
+    # Same disk partition clone: strictly forbid recreating partition table on the same disk
+    opt_for_ocs_sr_restore_this_run="$(echo " $opt_for_ocs_sr_restore_this_run " | sed -r -e 's/[[:space:]]+(-k0|-k1|-k2|--fdisk-proportion|--fdisk-manual)[[:space:]]+/ /g' -e 's/[[:space:]]+-k[[:space:]]+/ /g' -e 's/^[[:space:]]+//' -e 's/[[:space:]]+$//')"
+    opt_for_ocs_sr_restore_this_run="-k $opt_for_ocs_sr_restore_this_run"
+  else
+    # Different disks partition clone:
+    # If -k1, -k2, -k0, or -k was explicitly given, preserve it!
+    # If none of them was specified, default to -k to avoid unintentional partition table creation.
+    if ! echo " $opt_for_ocs_sr_restore_this_run " | grep -Eq "[[:space:]]+(-k|-k0|-k1|-k2|--no-sfdisk|--fdisk-proportion|--fdisk-manual)[[:space:]]+"; then
+      opt_for_ocs_sr_restore_this_run="-k $opt_for_ocs_sr_restore_this_run"
+    fi
+  fi
   if [ "$mode" = "local" ]; then
     # For local part to part, no matter "-f disk/part" (source device) is 
     # got from interactive mode or from command line option, we should add it
