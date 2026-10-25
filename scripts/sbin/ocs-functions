@@ -1465,7 +1465,7 @@ save_part_by_partclone() {
       dd)
          # Special case, dd, no compression + no splitting.
          # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-         cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT_DD $ptcl_read_dio_opt $ptcl_rescue_opt -L $partclone_img_info_tmp -s $source_dev --output \"$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}\""
+         cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT_DD $ptcl_read_dio_opt -L $partclone_img_info_tmp -s $source_dev --output \"$tgt_dir/$(to_filename ${tgt_file}).${fs_pre}-img.${comp_suf}\""
          ;;
        *)
          # Special case, not dd, no compression + no splitting
@@ -1476,7 +1476,7 @@ save_part_by_partclone() {
     case "$fs_p" in
       dd)
          # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-         cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT_DD $ptcl_read_dio_opt $ptcl_rescue_opt -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
+         cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT_DD $ptcl_read_dio_opt -L $partclone_img_info_tmp -s $source_dev --output - | $compress_prog_opt"
          ;;
        *)
          cmd_partclone="partclone.${fs_p} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt $ptcl_rescue_opt -L $partclone_img_info_tmp -c -s $source_dev --output - | $compress_prog_opt"
@@ -6886,13 +6886,13 @@ udp_send_part_img_or_dev() {
       echo "Unable to identify the file system on /dev/$part. Will use Partclone dd mode." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-      cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG -s /dev/$part -o - 2>/dev/null" 
+      cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT_DD $ptcl_read_dio_opt -L $PARTCLONE_LOG -s /dev/$part -o - 2>/dev/null" 
     elif ! `is_partclone_support_fs $ptfs`; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "The file system \"$ptfs\" on /dev/$part is not supported by Partclone. Use Partclone dd mode for raw device deployment." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-      cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG -s /dev/$part -o - 2>/dev/null" 
+      cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT_DD $ptcl_read_dio_opt -L $PARTCLONE_LOG -s /dev/$part -o - 2>/dev/null" 
     else
       cmd_partclone="partclone.${ptfs} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG -c -s /dev/$part -o - 2>/dev/null" 
     fi
@@ -15790,7 +15790,7 @@ create_bt_image_files_from_partclone_img() {
   	  exit 1
         fi
         # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when extracting 
-        cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT -s - -S $pt_size_ --btfiles -z ${bt_buffer_size} -o $ocsroot_btzone/$tgt_dir/$img_file"
+        cmd_partclone_extract="partclone.${fs_} -d $PARTCLONE_RESTORE_OPT_DD -s - -S $pt_size_ --btfiles -z ${bt_buffer_size} -o $ocsroot_btzone/$tgt_dir/$img_file"
       fi
       echo "Preparing image slice files for BT use: $ocsroot_btzone/$tgt_dir/${img_file}/" | tee --append ${OCS_LOGFILE}
       cat <<_EOT_ | tee -a ${OCS_LOGFILE}
@@ -15875,7 +15875,7 @@ _EOT_
       done
     ) \
     | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
-    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -d --btfiles \
+    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT_DD -L $partclone_img_info_tmp -d --btfiles \
       -z ${bt_buffer_size} -s - -o "$ocsroot_btzone/$tgt_dir/$img_file"
 _EOT_
     ( for img in $ocsroot/"$tgt_dir"/$img_file_prefix; do
@@ -15885,7 +15885,7 @@ _EOT_
       done
     ) \
     | $unzip_stdin_cmd 2> $unzip_stdin_cmd_error \
-    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT -L $partclone_img_info_tmp -d --btfiles \
+    | LC_ALL=C partclone.dd $PARTCLONE_RESTORE_OPT_DD -L $partclone_img_info_tmp -d --btfiles \
       -z ${bt_buffer_size} -s - -o "$ocsroot_btzone/$tgt_dir/$img_file"
     retcodes=(${PIPESTATUS[@]})
     
@@ -16194,7 +16194,7 @@ force_to_dd_clone_local_part() {
     echo "Using partclone to clone the file system sector by sector..." | tee --append $OCS_LOGFILE 
     get_partclone_direct_io_opt read $src_p # Obtain ptcl_read_dio_opt
     get_partclone_direct_io_opt write $tgt_p # Obtain ptcl_write_dio_opt
-    cmd_partclone="partclone.dd $PARTCLONE_RESTORE_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
+    cmd_partclone="partclone.dd $PARTCLONE_D2D_OPT_DD $ptcl_read_dio_opt $ptcl_write_dio_opt -L $PARTCLONE_LOG -s $src_p -O $tgt_p"
     echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
     ret=$?
@@ -16562,7 +16562,7 @@ onthefly_receive_partition_from_server_then_write() {
     else
       # Some parameters for partclone.dd are not required. Here "-r" is not provided by partclone.dd when restoring
       cmd_partclone="$netpipe_cli_cmd | $net_filter_decomp | \
-      partclone.${pt_fs} $PARTCLONE_RESTORE_OPT -L $PARTCLONE_LOG -s -  -o $tgt_p"
+      partclone.dd $PARTCLONE_RESTORE_OPT_DD -L $PARTCLONE_LOG -s -  -o $tgt_p"
     fi
     echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
     LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
@@ -16590,7 +16590,7 @@ onthefly_receive_partition_from_server_then_write() {
      partclone)
       echo "Using partclone.dd to do sector-by-sector cloning..."  
       cmd_partclone="$netpipe_cli_cmd | $net_filter_decomp | \
-      partclone.dd $PARTCLONE_RESTORE_OPT -L $PARTCLONE_LOG -s - -o $tgt_p"
+      partclone.dd $PARTCLONE_RESTORE_OPT_DD -L $PARTCLONE_LOG -s - -o $tgt_p"
       echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
       LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
       ret=$?
@@ -16680,7 +16680,7 @@ feed_dev_in_onthefly_server() {
       $net_filter_comp | $netpipe_srv_cmd $bg_opt"
     else
       # Some parameters for partclone.dd are not required. Here "-c" is not provided by partclone.dd when saving.
-      cmd_partclone="partclone.${pt_fs} $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
+      cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT_DD $ptcl_read_dio_opt -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
       $net_filter_comp | $netpipe_srv_cmd $bg_opt"
     fi
     LC_ALL=C eval_with_retry "( ( ${cmd_partclone} ) && exit \${PIPESTATUS[0]} )"
@@ -16706,7 +16706,7 @@ feed_dev_in_onthefly_server() {
       # Ex: partclone.reiserfs -c -s /dev/hda3 -o -
       get_partclone_direct_io_opt read $src_p # Obtain ptcl_read_dio_opt
       echo "Using partclone to clone..." | tee --append $OCS_LOGFILE
-      cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT $ptcl_read_dio_opt -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
+      cmd_partclone="partclone.dd $PARTCLONE_SAVE_OPT_DD $ptcl_read_dio_opt -L $PARTCLONE_LOG -s $src_p -o - 2>/dev/null | \
       $net_filter_comp | $netpipe_srv_cmd $bg_opt"
       LC_ALL=C eval_with_retry "( ( ${cmd_partclone} ) && exit \${PIPESTATUS[0]} )"
       ret=$?

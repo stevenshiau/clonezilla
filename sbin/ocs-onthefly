@@ -1636,6 +1636,7 @@ PARTIMAGE_SAVE_OPT=
 STATUS=
 ocs_onthefly_mode=""
 # Some default setting.
+rescue_mode="off"
 ocs_batch_mode="off"
 install_grub="off"
 grub_partition="auto" 
@@ -1942,10 +1943,32 @@ case "$mode" in
     ;;
 esac
 
+# Set/Reset init values for partclone
+PARTCLONE_SAVE_OPT="$PARTCLONE_SAVE_OPT_INIT"
+PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT_INIT"
+PARTCLONE_SAVE_OPT_DD="$PARTCLONE_SAVE_OPT_DD_INIT"
+PARTCLONE_RESTORE_OPT_DD="$PARTCLONE_RESTORE_OPT_DD_INIT"
+if [ "$nogui" = "off" ]; then
+  PARTCLONE_SAVE_OPT="$PARTCLONE_SAVE_OPT -N"
+  PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT -N"
+  PARTCLONE_SAVE_OPT_DD="$PARTCLONE_SAVE_OPT_DD -N"
+  PARTCLONE_RESTORE_OPT_DD="$PARTCLONE_RESTORE_OPT_DD -N"
+  PARTCLONE_D2D_OPT="$PARTCLONE_D2D_OPT -N"
+  PARTCLONE_D2D_OPT_DD="$PARTCLONE_D2D_OPT_DD -N"
+fi
+if [ "$rescue_mode" = "on" ]; then
+  PARTCLONE_SAVE_OPT="$PARTCLONE_SAVE_OPT --rescue --force"
+  PARTCLONE_RESTORE_OPT="$PARTCLONE_RESTORE_OPT --rescue --force"
+  PARTCLONE_D2D_OPT="$PARTCLONE_D2D_OPT --rescue --force"
+fi
+
 if [ "$verbose" = "on" ]; then
   echo "PARTIMAGE_RESTORE_OPT: $PARTIMAGE_RESTORE_OPT" | tee --append ${OCS_LOGFILE}
   echo "PARTIMAGE_SAVE_OPT: $PARTIMAGE_SAVE_OPT" | tee --append ${OCS_LOGFILE}
+  echo "PARTCLONE_SAVE_OPT: $PARTCLONE_SAVE_OPT" | tee --append ${OCS_LOGFILE}
   echo "PARTCLONE_RESTORE_OPT: $PARTCLONE_RESTORE_OPT" | tee --append ${OCS_LOGFILE}
+  echo "PARTCLONE_D2D_OPT: $PARTCLONE_D2D_OPT" | tee --append ${OCS_LOGFILE}
+  echo "PARTCLONE_D2D_OPT_DD: $PARTCLONE_D2D_OPT_DD" | tee --append ${OCS_LOGFILE}
   echo "SOURCE: $src_dev" | tee --append ${OCS_LOGFILE}
   echo "TARGET: $tgt_dev" | tee --append ${OCS_LOGFILE}
   echo "Starting PORT # for netcat/nuttcp: $NC_PORT" | tee --append ${OCS_LOGFILE}
