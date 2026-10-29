@@ -1590,7 +1590,7 @@ save_part_by_partimage() {
 save_part_by_dd() {
   local partclone_img_info_tmp IP s2s_img_prog_for_save dd_save_extra_opt
   # case (3): not supported filesystem, the last choice is to use dd to dump.
-  # //NOTE// For dd, we will force to use gzip only, no other compression will be used (See function check_ocs_input_params). This will make program easier.
+  # //NOTE// For dd, any supported compression program can be used (e.g. gzip, zstd, etc.). See function check_ocs_input_params.
   # The image file name is like sda1.dd-img.aa, not sda1.dd-img.gz.aa
   #
   # If file system is BSD_slice, we make use of this function to save the BSD slice data
@@ -11782,10 +11782,10 @@ check_ocs_input_params(){
         IMG_CLONE_CMP="gzip -c $extra_gzip_opt"
       fi
       
-      if [ "$USE_PARTCLONE" != "yes" ]; then
+      if [ "$USE_PARTCLONE" != "yes" -a "$FORCE_TO_USE_DD" != "yes" ]; then
         # Since new file name format is only for partclone, if user, say, choose partimage + $iz, the created partition image file is like: hda1.aa, hda1.ab... If we use "file -Ls hda1.aa", it will only show "data", and the restoration will fail since there is no way to know the compression format. Either file name or file magic are not available.
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-        echo "$iz must be used with partclone in Clonezilla. The default compression program (gzip) will be used!"
+        echo "$iz must be used with partclone or dd in Clonezilla. The default compression program (gzip) will be used!"
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         IMG_CLONE_CMP="gzip -c $extra_gzip_opt"
       fi

@@ -202,6 +202,23 @@ echo "[Test 6] Testing check_ocs_input_params for kanzi..."
     exit 1
   fi
 )
+
+# Case 6d: kanzi mock installed and FORCE_TO_USE_DD="yes" (dd mode) -> keep kanzi
+(
+  mkdir -p "$TMP_DIR/mock_bin"
+  echo '#!/bin/sh' > "$TMP_DIR/mock_bin/kanzi"
+  chmod +x "$TMP_DIR/mock_bin/kanzi"
+  export PATH="$TMP_DIR/mock_bin:$PATH"
+  IMG_CLONE_CMP="kanzi -c -o stdout -j 0 -l 3"
+  USE_PARTCLONE="no"
+  FORCE_TO_USE_DD="yes"
+  VOL_LIMIT=0
+  check_ocs_input_params >/dev/null 2>&1
+  if [[ "$IMG_CLONE_CMP" != *"kanzi"* ]]; then
+    echo "FAIL: Expected kanzi to be kept when FORCE_TO_USE_DD is yes, got: $IMG_CLONE_CMP"
+    exit 1
+  fi
+)
 echo "  PASS: check_ocs_input_params correctly validates kanzi."
 
 # -------------------------------------------------------------

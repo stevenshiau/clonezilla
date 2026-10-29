@@ -220,6 +220,23 @@ echo "[Test 6] Testing check_ocs_input_params for zxc..."
     exit 1
   fi
 )
+
+# Case 6d: zxc mock installed and FORCE_TO_USE_DD="yes" (dd mode) -> keep zxc
+(
+  mkdir -p "$TMP_DIR/mock_bin"
+  echo '#!/bin/sh' > "$TMP_DIR/mock_bin/zxc"
+  chmod +x "$TMP_DIR/mock_bin/zxc"
+  export PATH="$TMP_DIR/mock_bin:$PATH"
+  IMG_CLONE_CMP="zxc -c -T0 -3"
+  USE_PARTCLONE="no"
+  FORCE_TO_USE_DD="yes"
+  VOL_LIMIT=0
+  check_ocs_input_params >/dev/null 2>&1
+  if [[ "$IMG_CLONE_CMP" != *"zxc"* ]]; then
+    echo "FAIL: Expected zxc to be kept when FORCE_TO_USE_DD is yes, got: $IMG_CLONE_CMP"
+    exit 1
+  fi
+)
 echo "  PASS: check_ocs_input_params correctly validates zxc."
 
 # -------------------------------------------------------------
