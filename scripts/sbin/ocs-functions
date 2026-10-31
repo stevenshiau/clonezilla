@@ -15301,6 +15301,7 @@ gen_chksum_for_files_in_dev() {
   local sum_part="${1#/dev/*}"  # partition or LV name, e.g. sda1
   local tgt_dir="$2"   # target dir, full path, like /home/partimag/my-img
   local sum_part_tmpd rc gz_stdin_cmd gunz_cmd rc_chk part_reg_f_list reg_file_lines
+  local cpu_no xargs_p_opt pipestatus_chk
   sum_part_tmpd="$(LC_ALL=C mktemp -d /tmp/chksum_tmpd.XXXXXX)"
   part_reg_f_list="$(LC_ALL=C mktemp /tmp/part_f_temp.XXXXXX)"
   # Generate checksum
@@ -15315,19 +15316,31 @@ gen_chksum_for_files_in_dev() {
       gz_stdin_cmd="gzip -c"
       gunz_cmd="gzip -d"
     fi
+    # Determine CPU core count for parallel checksum calculation
+    cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)"
+    [ "$cpu_no" -lt 1 ] && cpu_no=1
+    if [ "$cpu_no" -gt 1 ]; then
+      xargs_p_opt="-P $cpu_no -n 200"
+    else
+      xargs_p_opt=""
+    fi
     # chksum_cmd_for_files_in_dev is from drbl-ocs.conf.
     echo "Generating $chksum_cmd_for_files_in_dev checksums for files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
     echo "$msg_this_might_take_some_time" | tee --append ${OCS_LOGFILE}
     # Here we do not put the output file directly, instead we compress it to reduce the I/O.
     # In case if the image repository is network file system, like NFS. It will be very slow.
     LC_ALL=C find $sum_part_tmpd -type f -print | pv -p -t -N "Searching files in /dev/$sum_part" > $part_reg_f_list
-    reg_file_lines="$(LC_ALL=C cat $part_reg_f_list | wc -l)"
+    reg_file_lines="$(LC_ALL=C wc -l < $part_reg_f_list)"
     echo "Creating checksums for totally $reg_file_lines files in /dev/$sum_part..."
-    cat $part_reg_f_list | xargs -d '\n' $chksum_cmd_for_files_in_dev \
+    # For b3sum, Rayon by default uses all logical cores for each file. When running
+    # parallel xargs processes, limit Rayon to 1 thread per process to avoid CPU
+    # core oversubscription and thread contention.
+    RAYON_NUM_THREADS=1 < $part_reg_f_list xargs -r $xargs_p_opt -d '\n' $chksum_cmd_for_files_in_dev \
     | pv -peltf -s $reg_file_lines | $gz_stdin_cmd \
-    > "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz" \
-    | tee --append ${OCS_LOGFILE}
-    rc_chk="${PIPESTATUS[0]}"
+    > "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz"
+    pipestatus_chk=("${PIPESTATUS[@]}")
+    rc_chk="${pipestatus_chk[0]}"
+    [ "$rc_chk" -eq 0 -a -n "${pipestatus_chk[2]}" ] && [ "${pipestatus_chk[2]}" -ne 0 ] && rc_chk="${pipestatus_chk[2]}"
 
     set_acess_mode_for_img "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz"
     umount /dev/$sum_part
