@@ -5326,6 +5326,9 @@ get_existing_disk_image() {
    local ASK_IMGNAME=1
    local TMP="$(mktemp /tmp/ocs.XXXXXX)"
    local disk_size_ ihd disks_size_all mnt_src
+   local file_path file fileinfo disk_content pt_compact ihd_clean
+   local max_dia_height="${MAX_DIALOG_HEIGHT:-10}"
+   local rest_dia_width="${RESTORE_DIA_WIDTH:-70}"
 
    case "$list_mode" in
      "rest-unenc") list_des="$msg_choose_the_image_to_restore $msg_only_nonenc_is_shown" ;;
@@ -5334,69 +5337,67 @@ get_existing_disk_image() {
 
    echo -n "Searching for images..."
    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-   numfiles=`ls $imagedir 2> /dev/null | wc -l`
-   numfiles=`expr $numfiles + 0`
-   # list the previous saved images
-   # the list of images can be put in one page
-   # The result shown for each image is like: 2014-1216-0930_sda_8590MB
    filelist=""
    numfiles=0
-   for file in `ls $imagedir 2> /dev/null`; do
+   for file_path in "$imagedir"/*; do
+     [ ! -e "$file_path" ] && break
      echo -n "."
      # only directory ..., not file
-     [ ! -d "$imagedir/$file" ] && continue
-     [ ! -f "$imagedir/$file/disk" ] && continue
+     [ ! -d "$file_path" ] && continue
+     [ ! -f "$file_path/disk" ] && continue
      # Skip pseudo image
-     [ -e "$imagedir/$file/00-pseudo-img-note.txt" ] && continue
+     [ -e "$file_path/00-pseudo-img-note.txt" ] && continue
      # When mode is nonenc or enc, we should skip some dirs.
      case "$list_mode" in
-       "rest-unenc") { [ -e "$imagedir/$file/ecryptfs.info" ] || [ -e "$imagedir/$file/gocryptfs.info" ]; } && continue ;;
+       "rest-unenc") { [ -e "$file_path/ecryptfs.info" ] || [ -e "$file_path/gocryptfs.info" ]; } && continue ;;
      esac
-     if is_ecryptfs_img $imagedir/$file; then
+     file="${file_path##*/}"
+     if is_ecryptfs_img "$file_path"; then
        # Encrypted image
-       . $imagedir/$file/ecryptfs.info
-       fileinfo="${time_of_img}-enc"
-       fileinfo=$fileinfo"_""$(echo "$disk_of_img" | tr ' ' _)"
+       . "$file_path/ecryptfs.info"
+       fileinfo="${time_of_img}-enc_${disk_of_img// /_}"
        disks_size_all="$disks_size_all_of_img"
-     elif is_gocryptfs_img "$imagedir/$file"; then
-       mnt_src="$(get_gocryptfs_info_path $imagedir/$file/)"
+     elif is_gocryptfs_img "$file_path"; then
+       mnt_src="$(get_gocryptfs_info_path "$file_path/")"
        . "$mnt_src/gocryptfs.info"
-       fileinfo="${time_of_img}-enc"
-       fileinfo=$fileinfo"_""$(echo "$disk_of_img" | tr ' ' _)"
+       fileinfo="${time_of_img}-enc_${disk_of_img// /_}"
        disks_size_all="$disks_size_all_of_img"
      else
        # Not encrypted
-       fileinfo="$(get_img_created_time $imagedir/$file)"
-       fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/disk 2>/dev/null)
+       fileinfo="$(get_img_created_time "$file_path")"
+       read -r disk_content < "$file_path/disk" 2>/dev/null || disk_content=""
+       fileinfo="${fileinfo}_${disk_content// /_}"
        disks_size_all=""
-       if [ -e "$imagedir/$file/disk" ]; then
-         for ihd in `get_disk_list_from_img $imagedir/$file` ; do 
+       if [ -n "$disk_content" ]; then
+         for ihd in $disk_content; do 
            disk_size_=""
-           if [ -e "$imagedir/$file/$(to_filename ${ihd})-pt.parted.compact" ]; then
-             disk_size_="$(LC_ALL=C grep -E "^Disk /dev/" $imagedir/$file/$(to_filename ${ihd})-pt.parted.compact | awk -F":" '{print $2}' | sed -r -e "s/[[:space:]]//g")"
+           ihd_clean="$(to_filename "$ihd")"
+           pt_compact="$file_path/$ihd_clean-pt.parted.compact"
+           if [ -f "$pt_compact" ]; then
+             disk_size_="$(LC_ALL=C awk -F":" '/^Disk \/dev\// {gsub(/[[:space:]]/, "", $2); print $2; exit}' "$pt_compact" 2>/dev/null)"
            fi
-           [ -n "$disk_size_" ] && disks_size_all="$(LC_ALL=C echo "${disks_size_all}_${disk_size_}" | tr ' ' _)"
+           [ -n "$disk_size_" ] && disks_size_all="${disks_size_all}_${disk_size_// /_}"
          done
        fi
      fi
      #
-     [ -n "$disks_size_all" ] && fileinfo=${fileinfo}""${disks_size_all}
+     [ -n "$disks_size_all" ] && fileinfo="${fileinfo}${disks_size_all}"
      filelist="$filelist $file $fileinfo"
-     numfiles="$(LC_ALL=C expr $numfiles + 1)"
+     numfiles=$((numfiles + 1))
    done
    echo
 
    if [ "$numfiles" -gt 0 ]; then
-     if [ "$numfiles" -lt "$MAX_DIALOG_HEIGHT" ]; then
+     if [ "$numfiles" -lt "$max_dia_height" ]; then
        height="$numfiles"
      else
-       height="$MAX_DIALOG_HEIGHT"
+       height="$max_dia_height"
      fi
      while [ "$ASK_IMGNAME" -eq 1 ]; do
        $DIA \
          --backtitle "$msg_nchc_free_software_labs" \
          --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-         --menu "$list_des:" 0 $RESTORE_DIA_WIDTH \
+         --menu "$list_des:" 0 $rest_dia_width \
          $height $filelist 2> $TMP
        tgt_file="$(cat $TMP)"
        if [ -z "$tgt_file" ]; then
@@ -5435,6 +5436,9 @@ get_existing_parts_image() {
    local tgt_file="" ans_ list_des mnt_src
    local ASK_IMGNAME=1
    local TMP="$(mktemp /tmp/ocs.XXXXXX)"
+   local file_path file fileinfo parts_content disk_content has_cksum ckf
+   local max_dia_height="${MAX_DIALOG_HEIGHT:-10}"
+   local rest_dia_width="${RESTORE_DIA_WIDTH:-70}"
    case "$list_mode" in
      "check")   list_des="$msg_choose_the_image_to_be_checked" ;;
      "convert") list_des="$msg_choose_the_image_to_be_converted_compression" ;;
@@ -5448,62 +5452,73 @@ get_existing_parts_image() {
 
    echo -n "Searching for images..."
    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-   numfiles="$(LC_ALL=C ls $imagedir 2> /dev/null | wc -l)"
-   numfiles="$(LC_ALL=C expr $numfiles + 0)"
    filelist=""
    numfiles=0
-   for file in `ls $imagedir 2> /dev/null`; do
+   for file_path in "$imagedir"/*; do
+     [ ! -e "$file_path" ] && break
      echo -n "."
      # only directory ..., not file
-     [ ! -d "$imagedir/$file" ] && continue
-     [ ! -f "$imagedir/$file/parts" -a ! -f "$imagedir/$file/disk" ] && continue
+     [ ! -d "$file_path" ] && continue
+     [ ! -f "$file_path/parts" -a ! -f "$file_path/disk" ] && continue
      # When mode is nonenc, enc or checksum, we should skip some dirs.
      case "$list_mode" in
-       "nonenc"|"rest-unenc") { [ -e "$imagedir/$file/ecryptfs.info" ] || [ -e "$imagedir/$file/gocryptfs.info" ]; } && continue ;;
-       "enc")    { [ ! -e "$imagedir/$file/ecryptfs.info" ] && [ ! -e "$imagedir/$file/gocryptfs.info" ]; } && continue ;;
-       "checksum")  [ -z "$(ls $imagedir/$file/*-*sum.info* 2>/dev/null)" ] && continue ;;
+       "nonenc"|"rest-unenc") { [ -e "$file_path/ecryptfs.info" ] || [ -e "$file_path/gocryptfs.info" ]; } && continue ;;
+       "enc")    { [ ! -e "$file_path/ecryptfs.info" ] && [ ! -e "$file_path/gocryptfs.info" ]; } && continue ;;
+       "checksum")
+         has_cksum="no"
+         for ckf in "$file_path"/*-*sum.info*; do
+           if [ -e "$ckf" ]; then
+             has_cksum="yes"
+             break
+           fi
+         done
+         [ "$has_cksum" = "no" ] && continue
+         ;;
      esac
-     if is_ecryptfs_img $imagedir/$file; then
-       . $imagedir/$file/ecryptfs.info
+     file="${file_path##*/}"
+     if is_ecryptfs_img "$file_path"; then
+       . "$file_path/ecryptfs.info"
        fileinfo="${time_of_img}-enc"
-       if [ -f "$imagedir/$file/parts" ]; then 
-         fileinfo=$fileinfo"_""$(echo $parts_of_img | tr ' ' _)"
-       elif [ -f "$imagedir/$file/disk" ]; then 
-         fileinfo=$fileinfo"_""$(echo $disk_of_img | tr ' ' _)"
+       if [ -f "$file_path/parts" ]; then 
+         fileinfo="${fileinfo}_${parts_of_img// /_}"
+       elif [ -f "$file_path/disk" ]; then 
+         fileinfo="${fileinfo}_${disk_of_img// /_}"
        fi
-     elif is_gocryptfs_img "$imagedir/$file"; then
-       mnt_src="$(get_gocryptfs_info_path $imagedir/$file/)"
+     elif is_gocryptfs_img "$file_path"; then
+       mnt_src="$(get_gocryptfs_info_path "$file_path/")"
        . "$mnt_src/gocryptfs.info"
        fileinfo="${time_of_img}-enc"
-       if [ -f "$imagedir/$file/parts" ]; then 
-         fileinfo=$fileinfo"_""$(echo $parts_of_img | tr ' ' _)"
-       elif [ -f "$imagedir/$file/disk" ]; then 
-         fileinfo=$fileinfo"_""$(echo $disk_of_img | tr ' ' _)"
+       if [ -f "$file_path/parts" ]; then 
+         fileinfo="${fileinfo}_${parts_of_img// /_}"
+       elif [ -f "$file_path/disk" ]; then 
+         fileinfo="${fileinfo}_${disk_of_img// /_}"
        fi
      else
-       fileinfo="$(get_img_created_time $imagedir/$file)"
-       if [ -f "$imagedir/$file/parts" ]; then 
-         fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/parts)
-       elif [ -f "$imagedir/$file/disk" ]; then 
-         fileinfo=$fileinfo"_"$(tr ' ' _ < $imagedir/$file/disk)
+       fileinfo="$(get_img_created_time "$file_path")"
+       if [ -f "$file_path/parts" ]; then 
+         read -r parts_content < "$file_path/parts" 2>/dev/null || parts_content=""
+         fileinfo="${fileinfo}_${parts_content// /_}"
+       elif [ -f "$file_path/disk" ]; then 
+         read -r disk_content < "$file_path/disk" 2>/dev/null || disk_content=""
+         fileinfo="${fileinfo}_${disk_content// /_}"
        fi
      fi
      filelist="$filelist $file $fileinfo"
-     numfiles="$(LC_ALL=C expr $numfiles + 1)"
+     numfiles=$((numfiles + 1))
    done
    echo
 
    if [ "$numfiles" -gt 0 ]; then
-     if [ "$numfiles" -lt "$MAX_DIALOG_HEIGHT" ]; then
+     if [ "$numfiles" -lt "$max_dia_height" ]; then
        height="$numfiles"
      else
-       height="$MAX_DIALOG_HEIGHT"
+       height="$max_dia_height"
      fi
      while [ "$ASK_IMGNAME" -eq 1 ]; do
        $DIA \
        --backtitle "$msg_nchc_free_software_labs" \
        --title "$msg_nchc_clonezilla | $msg_mode: $ocs_mode_prompt" \
-       --menu "$list_des:" 0 $RESTORE_DIA_WIDTH \
+       --menu "$list_des:" 0 $rest_dia_width \
        $height $filelist 2> $TMP
        tgt_file="$(cat $TMP)"
        if [ -z "$tgt_file" ]; then
@@ -13568,19 +13583,19 @@ is_whole_disk() {
 #
 to_dev_name() {
   local src=$1
-  echo "$src" | sed -e 's:!:/:g'
+  echo "${src//!//}"
 } # to_dev_name
 #
 to_filename() {
   local src=$1
-  echo "$src" | sed -e 's!/!-!g'
+  echo "${src//\//-}"
 } # end of to_filename
 #
 to_sysblock_name() {
   # Function to convert /sys/ file name, e.g. the cciss/c0d0 file name under /sys is /sys/block/cciss!c0d0/size
   # We have convert to /sys/block/cciss!c0d0/size
   local src=$1
-  echo "$src" | sed -e 's:/:!:g'
+  echo "${src//\//!}"
 } # end of to_sysblock_name
 #
 get_part_list() {
@@ -14769,19 +14784,22 @@ get_img_created_time() {
     my_ocs_exit 1
   fi
   img_tm=""
-  if is_ecryptfs_img $img_path; then
-    . $img_path/ecryptfs.info
+  if is_ecryptfs_img "$img_path"; then
+    . "$img_path/ecryptfs.info"
     img_tm="$time_of_img"
-  elif is_gocryptfs_img $img_path; then
-    mnt_src="$(get_gocryptfs_info_path $img_path/)"
+  elif is_gocryptfs_img "$img_path"; then
+    mnt_src="$(get_gocryptfs_info_path "$img_path/")"
     . "$mnt_src/gocryptfs.info"
     img_tm="$time_of_img"
   else
     # First we find the tag in the file "clonezilla-img". Suppress all the space because it might be used in dialog prompt.
-    img_tm="$(LC_ALL=C grep -E "^### Image created time: " $img_path/clonezilla-img 2>/dev/null | awk -F":" '{print $2}' | sed -r -e "s|[[:space:]]*||g")"
+    if [ -f "$img_path/clonezilla-img" ]; then
+      img_tm="$(LC_ALL=C awk -F":" '/^### Image created time: / {gsub(/[[:space:]]/, "", $2); print $2; exit}' "$img_path/clonezilla-img" 2>/dev/null)"
+    fi
     if [ -z "$img_tm" ]; then
       # No tag found. Use the image dir created time.
-      img_tm="$(LC_ALL=C ls -ld --time-style=+%Y-%m%d-%H%M $img_path | awk '{ print $6;}')"
+      img_tm="$(LC_ALL=C date -r "$img_path" +%Y-%m%d-%H%M 2>/dev/null)"
+      [ -z "$img_tm" ] && img_tm="$(LC_ALL=C ls -ld --time-style=+%Y-%m%d-%H%M "$img_path" 2>/dev/null | awk '{ print $6;}')"
     fi
   fi
   echo "$img_tm"
