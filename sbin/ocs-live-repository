@@ -160,7 +160,12 @@ do_uri_mount_local_dev() {
         # Check if Clonezilla live USB drive is mounted or not.
         if ! findmnt $ocs_usb_part > /dev/null 2>&1; then
 	  echo "Found Clonezilla live USB drive that is not mounted: $ocs_usb_part"
-          ocsroot_mnt_cmd_local="LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt $ocs_usb_part $ocsroot"
+          usb_part_fs="$(LANG=C ocs-get-dev-info $ocs_usb_part filesystem 2>/dev/null)"
+          if [ "$usb_part_fs" = "ntfs" ]; then
+            ocsroot_mnt_cmd_local="mount_ntfs_partition $ocs_usb_part $ocsroot \"$ocsroot_def_mnt_opt\""
+          else
+            ocsroot_mnt_cmd_local="LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt $ocs_usb_part $ocsroot"
+          fi
         else
           [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
 	  echo "Clonezilla live USB drive ($ocs_usb_part) is busy! It can not be mounted as the image repository." | tee --append ${OCS_LOGFILE}
@@ -180,7 +185,12 @@ do_uri_mount_local_dev() {
       fi
       ;;
     *)
-      ocsroot_mnt_cmd_local="LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt $target_part $ocsroot"
+      part_fs="$(LANG=C ocs-get-dev-info $target_part filesystem 2>/dev/null)"
+      if [ "$part_fs" = "ntfs" ]; then
+        ocsroot_mnt_cmd_local="mount_ntfs_partition $target_part $ocsroot \"$ocsroot_def_mnt_opt\""
+      else
+        ocsroot_mnt_cmd_local="LC_ALL=C mount -t auto -o $ocsroot_def_mnt_opt $target_part $ocsroot"
+      fi
       ;;
   esac
   if [ "$echo_ocs_repository" != "no" ]; then

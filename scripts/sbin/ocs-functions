@@ -18806,3 +18806,104 @@ or, manually with: '${CHECKSUM}sum -c ${CHECKSUMS}'.
 EOF
   done
 } # end of create_live_binary_checksum
+#
+mount_ntfs_partition() {
+  # Function to mount an NTFS partition, prioritizing high-performance in-kernel drivers:
+  # 1. Modern in-kernel read-write 'ntfs' driver (Linux 7.1+ / Namjae Jeon & Anton Altaparmakov)
+  # 2. In-kernel 'ntfs3' driver (Linux 5.15+ to 6.x / Paragon Software)
+  # 3. Userspace FUSE 'ntfs-3g' (legacy fallback)
+  # Usage: mount_ntfs_partition <device> <mount_point> [mount_options]
+  local dev_="$1"
+  local mnt_="$2"
+  local mnt_opts_="$3"
+  local target_dev_ rc check_rw test_file ntfs_desc skip_legacy_ntfs
+  local -a mnt_opt_arr=()
+
+  if [ -z "$dev_" ] || [ -z "$mnt_" ]; then
+    return 1
+  fi
+
+  case "$dev_" in
+    /*) target_dev_="$dev_" ;;
+    *)  target_dev_="/dev/$dev_" ;;
+  esac
+
+  if [ -n "$mnt_opts_" ]; then
+    mnt_opt_arr=(-o "$mnt_opts_")
+  fi
+
+  check_rw="yes"
+  case ",$mnt_opts_," in
+    *,ro,*) check_rw="no" ;;
+  esac
+
+  # 1. Prioritize modern in-kernel read-write 'ntfs' driver (Linux 7.1+)
+  # If modinfo gives description and it does not contain 'read-write', skip legacy ntfs for rw mounts
+  ntfs_desc="$(modinfo -F description ntfs 2>/dev/null)"
+  skip_legacy_ntfs="no"
+  if [ -n "$ntfs_desc" ] && ! echo "$ntfs_desc" | grep -qi "read-write"; then
+    if [ "$check_rw" = "yes" ]; then
+      skip_legacy_ntfs="yes"
+    fi
+  fi
+
+  if [ "$skip_legacy_ntfs" = "no" ]; then
+    if modprobe ntfs 2>/dev/null || grep -q "[[:space:]]ntfs$" /proc/filesystems 2>/dev/null || (echo "$ntfs_desc" | grep -qi "read-write"); then
+      # Use -i (--internal-only) to bypass /sbin/mount.ntfs symlink pointing to ntfs-3g
+      LC_ALL=C mount -i -t ntfs "${mnt_opt_arr[@]}" "$target_dev_" "$mnt_" 2>/dev/null
+      rc=$?
+      if [ $rc -eq 0 ] && mountpoint -q "$mnt_"; then
+        if [ "$check_rw" = "yes" ]; then
+          test_file="$(mktemp "$mnt_/.ocs_ntfs_test.XXXXXX" 2>/dev/null)"
+          if [ $? -eq 0 ] && [ -f "$test_file" ]; then
+            rm -f "$test_file"
+            echo "Mounted $target_dev_ on $mnt_ using in-kernel ntfs read-write driver."
+            return 0
+          else
+            # Legacy read-only ntfs driver or mounted read-only, try next driver
+            umount "$mnt_" 2>/dev/null
+          fi
+        else
+          echo "Mounted $target_dev_ on $mnt_ using in-kernel ntfs driver."
+          return 0
+        fi
+      fi
+    fi
+  fi
+
+  # 2. Prioritize in-kernel 'ntfs3' driver (Linux 5.15+ to 6.x)
+  if modprobe ntfs3 2>/dev/null || grep -q "[[:space:]]ntfs3$" /proc/filesystems 2>/dev/null || modinfo ntfs3 &>/dev/null; then
+    LC_ALL=C mount -i -t ntfs3 "${mnt_opt_arr[@]}" "$target_dev_" "$mnt_" 2>/dev/null
+    rc=$?
+    if [ $rc -eq 0 ] && mountpoint -q "$mnt_"; then
+      if [ "$check_rw" = "yes" ]; then
+        test_file="$(mktemp "$mnt_/.ocs_ntfs_test.XXXXXX" 2>/dev/null)"
+        if [ $? -eq 0 ] && [ -f "$test_file" ]; then
+          rm -f "$test_file"
+          echo "Mounted $target_dev_ on $mnt_ using in-kernel ntfs3 driver."
+          return 0
+        else
+          umount "$mnt_" 2>/dev/null
+        fi
+      else
+        echo "Mounted $target_dev_ on $mnt_ using in-kernel ntfs3 driver."
+        return 0
+      fi
+    fi
+  fi
+
+  # 3. Fall back to userspace ntfs-3g
+  if type ntfs-3g &>/dev/null; then
+    echo "Mounting $target_dev_ on $mnt_ using ntfs-3g..."
+    ntfs-3g "$target_dev_" "$mnt_" "${mnt_opt_arr[@]}"
+    rc=$?
+    if [ $rc -eq 0 ] && mountpoint -q "$mnt_"; then
+      return 0
+    fi
+  fi
+
+  # 4. Final fallback to generic mount
+  LC_ALL=C mount "${mnt_opt_arr[@]}" "$target_dev_" "$mnt_"
+  return $?
+} # end of mount_ntfs_partition
+
