@@ -9483,6 +9483,9 @@ task_savedisk() {
   target_hd="$(cat $ANS_TMP | tr -d \")"
   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
 
+  # Tune NVMe block queue settings if target disks are NVMe
+  tune_nvme_block_queue_settings $target_hd
+
   # We need the partition table to conver the selected HD to partitions.
   target_parts=""
   target_swap_parts=""
@@ -9903,6 +9906,9 @@ task_saveparts() {
   target_parts="$(cat $ANS_TMP | tr -d \")"
   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
 
+  # Tune NVMe block queue settings if target partitions are on NVMe
+  tune_nvme_block_queue_settings $target_parts
+
   # find the target hd
   # maybe we will have one more sd (like sda1, sda2, sdb1, sdb3 -> sda, sdb)
   for ipart in $target_parts; do
@@ -10250,6 +10256,9 @@ task_restoredisk() {
     fi
     ;;
   esac
+
+  # Tune NVMe block queue settings if destination disks are NVMe
+  tune_nvme_block_queue_settings $target_hd
   
   # Check MD5SUMS, SHA1SUMS before the image is converted in case
   chk_checksum_for_img_flag=""
@@ -10488,6 +10497,9 @@ task_restoreparts() {
   # 2nd: add them back if it's shown in special_parts
   target_parts="$(echo "$target_parts" | tr ' ' '\n' | grep -vE "mtdblock|mmcblk.*boot" | tr '\n' ' ' | xargs)"
   target_parts+=" $(restore_mtd_emmcboot_dev_prepare)"
+
+  # Tune NVMe block queue settings if target partitions are on NVMe
+  tune_nvme_block_queue_settings $target_parts
 
   # we use the port to identify it's unicast, bittorrent or multicast.
   if [ -z "$port" ]; then
@@ -16188,6 +16200,7 @@ local_lvm_clone_warning() {
 #
 force_to_dd_clone_local_part() {
   local cmd_partclone
+  tune_nvme_block_queue_settings "$src_p" "$tgt_p"
   case "$S2S_CLONE_PROG_IN_OCS_ONTHEFLY" in 
    dd)
     echo "Filesystem in $src_p is not well supported. Use dd to clone..." | tee --append $OCS_LOGFILE
@@ -16231,6 +16244,7 @@ local_partition_to_partiton_clone() {
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
   fi
+  tune_nvme_block_queue_settings "$src_p" "$tgt_p"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Source partition file system is $pt_fs..." | tee --append $OCS_LOGFILE
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
@@ -17864,10 +17878,37 @@ check_if_nvme_ssd() {
   return $rc
 } # end of check_if_nvme_ssd
 #
+tune_nvme_block_queue_settings() {
+  # Function to optimize Linux block layer queue settings for NVMe SSDs before cloning/imaging:
+  # - Increase readahead to 8192 sectors (4 MB)
+  # - Set I/O scheduler to 'none' for lowest latency and overhead
+  # Usage: tune_nvme_block_queue_settings <dev1> [dev2] ...
+  local dev_ dsk_ dsk_dev_ sys_dsk_
+  for dev_ in "$@"; do
+    [ -z "$dev_" ] && continue
+    dsk_="$(get_diskname "$dev_")"
+    [ -z "$dsk_" ] && continue
+    dsk_dev_="/dev/$dsk_"
+    if check_if_nvme_ssd "$dsk_dev_"; then
+      if type blockdev &>/dev/null; then
+        blockdev --setra 8192 "$dsk_dev_" 2>/dev/null
+      fi
+      sys_dsk_="$(to_sysblock_name "$dsk_")"
+      if [ -w "/sys/block/$sys_dsk_/queue/scheduler" ]; then
+        echo none > "/sys/block/$sys_dsk_/queue/scheduler" 2>/dev/null
+      fi
+    fi
+  done
+} # end of tune_nvme_block_queue_settings
+#
 get_partclone_direct_io_opt() {
   local i_type_="$1"
   local i_part_="$2"
   local hdtmp_
+
+  # Optimize queue settings on detected NVMe devices before transfer starts
+  tune_nvme_block_queue_settings "$i_part_"
+
   # ptcl_write_dio_opt/ptcl_read_dio_opt/enable_dio is a global variable
   # Only reset the wanted variable. E.g., if we want is write, only reset ptcl_write_dio_opt, and vice versa.
   # Otherwise it might affect others. E.g., when we need both ptcl_read_dio_opt & ptcl_write_dio_opt in local device cloning:
