@@ -30,75 +30,64 @@ unmount_wait_and_try() {
 #
 gen_checksums_for_img_if_assigned() {
   local img_dir="$1"  # absolute path
-  local count imtd imtd_shown check_mtd_flag total_cksum out_f ifname_
-  # checksum_method_for_img is from drbl-ocs.conf.
-  # Generate MD5SUMS, SHA1SUMS, B2SUMS...
-  # E.g.,
-  # if [ "$gen_b2sum" = "yes" ]; then
-  #   echo "Generating B2SUMS for image $target_dir. This might take a while..."
-  #   (cd $img_dir; time b2sum * > B2SUMS)
-  # fi
-  #for imtd in $checksum_method_for_img; do
-  #  eval check_mtd_flag="\$gen_$imtd"
-  #  out_f="$(echo $imtd | tr "[a-z]" "[A-Z]")S" # e.g., b2sum -> B2SUMS
-  #  if [ "$check_mtd_flag" = "yes" ]; then
-  #    echo "Generating $out_f for image $target_dir. This might take a while..."
-  #    (cd $img_dir; time $imtd * > $out_f)
-  #  fi
-  #done
-  # Another way to make use of Linux kernel cache is to run in background and use "wait" to be finished.
-  # E.g., 
-  # -----------------------------------------
-  #    (cd $img_dir; time $imtd * > $out_f &)
-  #    wait
-  # -----------------------------------------
-  # However, the following should be the best. Thanks to barkoder.
-  # 2024/12/10 Improvement: read once, pass to all of the checksum programs.
-  # Ref: https://github.com/stevenshiau/clonezilla/issues/127
-  count=0
+  local imtd check_mtd_flag out_f
+  local -a active_mtds=()
+  local imtd_shown=""
+  local file_list cpu_no xargs_p_opt
+
+  if [ -z "$img_dir" -o ! -d "$img_dir" ]; then
+    return 1
+  fi
+
   for imtd in $checksum_method_for_img; do
     eval check_mtd_flag="\$gen_$imtd"
     if [ "$check_mtd_flag" = "yes" ]; then
-      count="$((count +1))"
+      active_mtds+=("$imtd")
       imtd_shown="$imtd_shown $imtd"
     fi
   done
-  total_cksum="$count"
-  if [ "$total_cksum" -eq 0 ]; then
+
+  if [ "${#active_mtds[@]}" -eq 0 ]; then
     return 5
   fi
+
   imtd_shown="$(echo $imtd_shown | sed -r -e "s/^ //g")" # Remove the leading space
-  echo -n "Generating checksums ($imtd_shown) for image $target_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
-  for i in $img_dir/*; do
-    ifname_="$(basename "$i")"
-    count=1
-    gen_cmd=""
-    for imtd in $checksum_method_for_img; do
-      eval check_mtd_flag="\$gen_$imtd"
-      out_f="\"$img_dir\"/$(echo $imtd | tr "[a-z]" "[A-Z]")S" # e.g., b2sum -> B2SUMS
-      if [ "$check_mtd_flag" = "yes" ]; then
-        # The command is like:
-        # cat "$i" | tee >(md5sum >> "$img_dir"/MD5SUMS; sed -r -e "s| -$| $ifname_|" "$img_dir"/MD5SUMS) |\
-        #           tee >(sha1sum >> "$img_dir"/SHA1SUMS; sed -r -e "s| -$| $ifname_|" "$img_dir"/SHA1SUMS) |\
-        #           b2sum >> "$img_dir"/B2SUMS; sed -r -e "s| -$| $ifname_|" "$img_dir"/B2SUMS;
-        if [ "$count" -eq "$total_cksum" ]; then
-        # last one
-          gen_cmd="$gen_cmd | $imtd | sed -r -e \"s| -$| $ifname_|\" >> $out_f; echo -n ."
-        else
-          gen_cmd="$gen_cmd | tee >($imtd | sed -r -e \"s| -$| $ifname_|\" >> $out_f)"
-          # Prepare the next count
-          count="$((count +1))"
-        fi
-      fi
-    done
-    if [ -n "$gen_cmd" ]; then
-      if [ "$verbose" = "on" ] ; then
-        echo
-        echo -n "Generating checksums $checksum_method_for_img for file $i in image $img_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
-      fi
-      eval "cat \"$i\" $gen_cmd"
-    fi
+  echo -n "Generating checksums ($imtd_shown) for image ${target_dir:-$(basename "$img_dir")}. This might take a while..." | tee --append ${OCS_LOGFILE}
+
+  file_list="$(LC_ALL=C mktemp /tmp/cksum_flist.XXXXXX)"
+  trap "[ -f \"$file_list\" ] && rm -f \"$file_list\"" HUP INT QUIT TERM EXIT
+  (
+    cd "$img_dir"
+    LC_ALL=C find . -maxdepth 1 -type f ! -name "*SUMS" ! -name "*sums" ! -name ".*" | sed -e 's|^\./||' | LC_ALL=C sort > "$file_list"
+  )
+
+  if [ ! -s "$file_list" ]; then
+    rm -f "$file_list"
+    echo " done!"
+    echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
+    return 0
+  fi
+
+  # Determine CPU core count for parallel checksum calculation
+  cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)"
+  [ "$cpu_no" -lt 1 ] && cpu_no=1
+  if [ "$cpu_no" -gt 1 ]; then
+    xargs_p_opt="-P $cpu_no -n 1"
+  else
+    xargs_p_opt="-n 1"
+  fi
+
+  for imtd in "${active_mtds[@]}"; do
+    out_f="$img_dir/$(echo "$imtd" | tr '[a-z]' '[A-Z]')S"
+    rm -f "$out_f"
+    (
+      cd "$img_dir"
+      RAYON_NUM_THREADS=1 xargs -r $xargs_p_opt -d '\n' "$imtd" < "$file_list"
+    ) | LC_ALL=C sort -k 2,2 > "$out_f"
+    set_acess_mode_for_img "$out_f"
   done
+
+  rm -f "$file_list"
   echo " done!"
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
 } # end of gen_checksums_for_img_if_assigned
