@@ -112,16 +112,28 @@ echo "[Test 3] Testing multiple checksum algorithms (SHA1SUMS and B2SUMS)..."
 )
 
 # -------------------------------------------------------------
-# Test 4: Spaces in filenames are preserved and verified
+# Test 4: Spaces and special characters in filenames are preserved and verified
 # -------------------------------------------------------------
-echo "[Test 4] Testing spaces in filenames..."
+echo "[Test 4] Testing spaces and special characters in filenames..."
 (
+  special_f="$IMG_DIR/file with \$dollar and \"quote\" and spaces.txt"
+  echo "special content" > "$special_f"
+  dash_f="$IMG_DIR/-n leading dash.txt"
+  echo "dash content" > "$dash_f"
+
+  gen_md5sum="yes"
+  gen_sha1sum="yes"
+  gen_b2sum="no"
+  gen_b3sum="no"
+  gen_checksums_for_img_if_assigned "$IMG_DIR" >/dev/null 2>&1
+
   if ! grep -q "file with spaces.txt" "$IMG_DIR/MD5SUMS"; then
     echo "FAIL: file with spaces.txt not found in MD5SUMS!"
     exit 1
   fi
   (cd "$IMG_DIR" && md5sum -c MD5SUMS > /dev/null 2>&1)
-  echo "  PASS: Files with spaces in names handled cleanly."
+  (cd "$IMG_DIR" && sha1sum -c SHA1SUMS > /dev/null 2>&1)
+  echo "  PASS: Files with spaces, quotes, dollars, and dashes handled cleanly."
 )
 
 # -------------------------------------------------------------
@@ -145,9 +157,9 @@ echo "[Test 5] Testing return code when no checksum is assigned..."
 )
 
 # -------------------------------------------------------------
-# Test 6: Progress output displays status for each checksum method
+# Test 6: Multiplexed read-once checksum generation and progress output
 # -------------------------------------------------------------
-echo "[Test 6] Testing progress status output formatting..."
+echo "[Test 6] Testing read-once multiplexed checksum generation and progress output..."
 (
   gen_md5sum="yes"
   gen_sha1sum="yes"
@@ -157,27 +169,28 @@ echo "[Test 6] Testing progress status output formatting..."
   out_log="$TMP_TEST_DIR/test6_out.log"
   gen_checksums_for_img_if_assigned "$IMG_DIR" > "$out_log" 2>&1
 
-  if ! grep -q "md5sum\.\.\." "$out_log"; then
-    echo "FAIL: md5sum... progress not found in output!"
-    exit 1
-  fi
-  if ! grep -q "sha1sum\.\.\." "$out_log"; then
-    echo "FAIL: sha1sum... progress not found in output!"
-    exit 1
-  fi
-  if ! grep -q "b2sum\.\.\." "$out_log"; then
-    echo "FAIL: b2sum... progress not found in output!"
-    exit 1
-  fi
-  if ! grep -q "b3sum\.\.\." "$out_log"; then
-    echo "FAIL: b3sum... progress not found in output!"
+  for m in MD5SUMS SHA1SUMS B2SUMS B3SUMS; do
+    if [ ! -f "$IMG_DIR/$m" ]; then
+      echo "FAIL: Expected checksum file $IMG_DIR/$m not found!"
+      exit 1
+    fi
+  done
+
+  if ! grep -q "\.\.\." "$out_log"; then
+    echo "FAIL: Progress dots not found in output!"
     exit 1
   fi
   if ! grep -q " done!" "$out_log"; then
     echo "FAIL: done! not found in output!"
     exit 1
   fi
-  echo "  PASS: Progress status for each checksum algorithm verified."
+
+  check_md5sum="yes"
+  check_sha1sum="yes"
+  check_b2sum="yes"
+  check_b3sum="yes"
+  check_checksums_for_img "$IMG_DIR"
+  echo "  PASS: Read-once multiplexed checksum generation and progress output verified."
 )
 
 echo "=== All Image Checksum Generation Tests Passed! ==="

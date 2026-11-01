@@ -30,10 +30,12 @@ unmount_wait_and_try() {
 #
 gen_checksums_for_img_if_assigned() {
   local img_dir="$1"  # absolute path
-  local imtd check_mtd_flag out_f
+  local orig_dir imtd check_mtd_flag out_f
   local -a active_mtds=()
   local imtd_shown=""
-  local file_list cpu_no xargs_p_opt
+  local file_list f cur_mtd cur_out last_mtd last_out
+  local total_mtds last_idx fd i
+  local -a tee_fds close_fds
 
   if [ -z "$img_dir" -o ! -d "$img_dir" ]; then
     return 1
@@ -55,40 +57,71 @@ gen_checksums_for_img_if_assigned() {
   echo -n "Generating checksums ($imtd_shown) for image ${target_dir:-$(basename "$img_dir")}. This might take a while..." | tee --append ${OCS_LOGFILE}
 
   file_list="$(LC_ALL=C mktemp /tmp/cksum_flist.XXXXXX)"
-  trap "[ -f \"$file_list\" ] && rm -f \"$file_list\"" HUP INT QUIT TERM EXIT
-  (
-    cd "$img_dir"
-    LC_ALL=C find . -maxdepth 1 -type f ! -name "*SUMS" ! -name "*sums" ! -name ".*" | sed -e 's|^\./||' | LC_ALL=C sort > "$file_list"
-  )
+  orig_dir="$(pwd)"
+  trap "[ -f \"$file_list\" ] && rm -f \"$file_list\"; cd \"$orig_dir\" 2>/dev/null || true" HUP INT QUIT TERM EXIT
+  cd "$img_dir"
+
+  # Find regular files directly in image directory, excluding existing *SUMS, *sums and hidden files
+  LC_ALL=C find . -maxdepth 1 -type f ! -name "*SUMS" ! -name "*sums" ! -name ".*" | sed -e 's|^\./||' | LC_ALL=C sort > "$file_list"
 
   if [ ! -s "$file_list" ]; then
     rm -f "$file_list"
+    cd "$orig_dir"
     echo " done!" | tee --append ${OCS_LOGFILE}
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     return 0
   fi
 
-  # Determine CPU core count for parallel checksum calculation
-  cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)"
-  [ "$cpu_no" -lt 1 ] && cpu_no=1
-  if [ "$cpu_no" -gt 1 ]; then
-    xargs_p_opt="-P $cpu_no -n 1"
-  else
-    xargs_p_opt="-n 1"
-  fi
-
   for imtd in "${active_mtds[@]}"; do
-    echo -n " $imtd..." | tee --append ${OCS_LOGFILE}
     out_f="$img_dir/$(echo "$imtd" | tr '[a-z]' '[A-Z]')S"
     rm -f "$out_f"
-    (
-      cd "$img_dir"
-      RAYON_NUM_THREADS=1 xargs -r $xargs_p_opt -d '\n' "$imtd" < "$file_list"
-    ) | LC_ALL=C sort -k 2,2 > "$out_f"
-    set_acess_mode_for_img "$out_f"
+  done
+
+  total_mtds="${#active_mtds[@]}"
+  last_idx=$((total_mtds - 1))
+  last_mtd="${active_mtds[$last_idx]}"
+  last_out="$img_dir/$(echo "$last_mtd" | tr '[a-z]' '[A-Z]')S"
+
+  # Read once, pass to all active checksum programs simultaneously
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    tee_fds=()
+    close_fds=()
+
+    if [ "$verbose" = "on" ]; then
+      echo
+      echo -n "Generating checksums ($imtd_shown) for file $f in image $img_dir. This might take a while..." | tee --append ${OCS_LOGFILE}
+    fi
+
+    for ((i=0; i<last_idx; i++)); do
+      cur_mtd="${active_mtds[$i]}"
+      cur_out="$img_dir/$(echo "$cur_mtd" | tr '[a-z]' '[A-Z]')S"
+      fd=$((i + 3))
+      eval "exec $fd> >(RAYON_NUM_THREADS=1 \"$cur_mtd\" | while read -r h _; do printf '%s  %s\n' \"\$h\" \"\$f\" >> \"\$cur_out\"; done)"
+      tee_fds+=("/dev/fd/$fd")
+      close_fds+=("$fd>&-")
+    done
+
+    if [ "${#tee_fds[@]}" -gt 0 ]; then
+      tee "${tee_fds[@]}" < "$f" | (RAYON_NUM_THREADS=1 "$last_mtd" | while read -r h _; do printf '%s  %s\n' "$h" "$f" >> "$last_out"; done)
+      eval "exec ${close_fds[*]}"
+      wait
+    else
+      RAYON_NUM_THREADS=1 "$last_mtd" < "$f" | while read -r h _; do printf '%s  %s\n' "$h" "$f" >> "$last_out"; done
+    fi
+    echo -n "." | tee --append ${OCS_LOGFILE}
+  done < "$file_list"
+
+  for imtd in "${active_mtds[@]}"; do
+    out_f="$img_dir/$(echo "$imtd" | tr '[a-z]' '[A-Z]')S"
+    if [ -f "$out_f" ]; then
+      LC_ALL=C sort -k 2,2 -o "$out_f" "$out_f"
+      set_acess_mode_for_img "$out_f"
+    fi
   done
 
   rm -f "$file_list"
+  cd "$orig_dir"
   echo " done!" | tee --append ${OCS_LOGFILE}
   echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
 } # end of gen_checksums_for_img_if_assigned
