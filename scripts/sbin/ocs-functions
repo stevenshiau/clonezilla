@@ -4717,50 +4717,51 @@ get_disk_or_part_hardware_info() {
     # exfat
     # 0x7
 
-    part_type="$(jq -r "[ .[] | select(.name == \"$p\") ] | (if length > 1 then (map(select(.type == \"part\"))[0] // .[0]) else .[0] end) | .type, .fstype, .parttype" $hwinfo_json_f)"
+    part_type="$(jq -r "[ .[] | select(.name == \"$p\") ] | (if length > 1 then (map(select(.type == \"part\"))[0] // .[0]) else .[0] end) | .type, .fstype, .parttype" $hwinfo_json_f 2>/dev/null)"
     rc=$?
     # The return "8" means return "continue" (8 characters). 
     # Here this function is extracted from a loop.
     # No more using "continue" in this function.
     # Because >= bash 4.4 raises it as a warning, and then continue won't be run.
     [ "$rc" -gt 0 ] && return 8
-    [ -n "$(echo $part_type | grep -Eiw "(extended|0x5|0xf)")" ] && return 8
+    case "$part_type" in
+      *extended*|*0x5*|*0xf*) return 8 ;;
+    esac
 
     if [ "$flag_skip_lvm_raid" = "yes" ]; then
-      if ! is_whole_disk /dev/$p && ! is_block_device_with_fs /dev/$p; then
-        [ -n "$(echo "$part_type" | grep -Ei "(lvm|raid)")" ] && return 8
-      fi
+      case "$part_type" in
+        *lvm*|*raid*)
+          if ! is_whole_disk "/dev/$p" && ! is_block_device_with_fs "/dev/$p"; then
+            return 8
+          fi
+          ;;
+      esac
     fi
 
-    # Size
-    dsize="$(jq -r "[ .[] | select(.name == \"$p\") ] | (if length > 1 then (map(select(.type == \"part\"))[0] // .[0]) else .[0] end) | .size" $hwinfo_json_f)"
-    # If empty, set it to "No_size"
+    dsk_="$(get_diskname "$p")" # sda1 -> sda
+    local p_meta
+    p_meta="$(jq -r --arg p "$p" --arg d "$dsk_" '
+      ( [ .[] | select(.name == $p) ] | (if length > 1 then (map(select(.type == "part"))[0] // .[0]) else .[0] end) ) as $part |
+      ( ( .[] | select(.name == $d) ) // {} ) as $disk |
+      [
+        ($part.size // "No_size"),
+        ($part.fstype // "No_file_system"),
+        ($disk.model // "No_disk_model"),
+        ($part.label // "No_label"),
+        ($disk.id_path_tag // "No_ID_path"),
+        ($disk.serial // "No_serial_no")
+      ] | @tsv
+    ' "$hwinfo_json_f" 2>/dev/null)"
+    rc=$?
+    [ "$rc" -gt 0 -o -z "$p_meta" ] && return 8
+
+    IFS=$'\t' read -r dsize part_fs dmodel part_lb id_path_tag serialno <<< "$p_meta"
+    # If empty, set fallback default values
     dsize="${dsize:-No_size}"
-
-    # File system
-    part_fs="$(jq -r "[ .[] | select(.name == \"$p\") ] | (if length > 1 then (map(select(.type == \"part\"))[0] // .[0]) else .[0] end) | .fstype" $hwinfo_json_f)"
-    # If empty, set it to "No_file_system"
     part_fs="${part_fs:-No_file_system}"
-
-    # Show from which disk. The result is like:
-    # 20GB|ext3|In_VMware_Virtual_IDE_Hard_Drive|
-    dsk_="$(get_diskname $p)" # sda1 -> sda
-    dmodel="$(jq -r ".[] | select(.name == \"$dsk_\") | .model" $hwinfo_json_f)"
     dmodel="${dmodel:-No_disk_model}"
-
-    # Volume label
-    part_lb="$(jq -r "[ .[] | select(.name == \"$p\") ] | (if length > 1 then (map(select(.type == \"part\"))[0] // .[0]) else .[0] end) | .label" $hwinfo_json_f)"
-    # If empty, set it to "No_label"
     part_lb="${part_lb:-No_label}"
-
-    # ID path tag from disk
-    id_path_tag="$(jq -r ".[] | select(.name == \"$dsk_\") | .id_path_tag" $hwinfo_json_f)"
-    # If empty, set it to "No_ID_path"
     id_path_tag="${id_path_tag:-No_ID_path}"
-
-    # Serial no from disk
-    serialno="$(jq -r ".[] | select(.name == \"$dsk_\") | .serial" $hwinfo_json_f)"
-    # If empty, set it to "No_serial_no"
     serialno="${serialno:-No_serial_no}"
 
     # Put them together
@@ -4769,35 +4770,30 @@ get_disk_or_part_hardware_info() {
     DEV_MODEL="${DEV_MODEL//[$' \n\"\'']/_}"
   else
     # Disk
+    local d_meta
+    d_meta="$(jq -r --arg p "$p" '
+      ( ( .[] | select(.name == $p) ) // {} ) as $disk |
+      [
+        ($disk.size // "No_size"),
+        ($disk.model // "No_Model"),
+        ($disk.fstype // ""),
+        ($disk.logical_block_size // ""),
+        ($disk.id_path_tag // "No_ID_path"),
+        ($disk.serial // "No_disk_serial_no")
+      ] | @tsv
+    ' "$hwinfo_json_f" 2>/dev/null)"
+    rc=$?
+    [ "$rc" -gt 0 -o -z "$d_meta" ] && return 8
 
-    # Size
-    dsize="$(jq -r ".[] | select(.name == \"$p\") | .size" $hwinfo_json_f)"
-    # If empty, set it to "No_size"
+    IFS=$'\t' read -r dsize dmodel part_fs logical_blk_size id_path_tag serialno <<< "$d_meta"
+    # If empty, set fallback default values
     dsize="${dsize:-No_size}"
-
-    # Model
-    dmodel="$(jq -r ".[] | select(.name == \"$p\") | .model" $hwinfo_json_f)"
-    # If empty, set it to "No_Model"
     dmodel="${dmodel:-No_Model}"
+    id_path_tag="${id_path_tag:-No_ID_path}"
+    serialno="${serialno:-No_disk_serial_no}"
 
     # File system. It might be disk block device with file system.
-    # However, in this case this is normally listed as a partition in Clonezilla
-    part_fs="$(jq -r ".[] | select(.name == \"$p\") | .fstype" $hwinfo_json_f)"
-    # Append it
     [ -n "$part_fs" ] && dsize="${dsize}|${part_fs}"
-
-    # Show the logical block size
-    logical_blk_size="$(jq -r ".[] | select(.name == \"$p\") | .logical_block_size" $hwinfo_json_f)"
-
-    # Put ID path
-    id_path_tag="$(jq -r ".[] | select(.name == \"$p\") | .id_path_tag" $hwinfo_json_f)"
-    # If empty, set it to "No_ID_path|"
-    id_path_tag="${id_path_tag:-No_ID_path}"
-
-    # Serial no
-    serialno="$(jq -r ".[] | select(.name == \"$p\") | .serial" $hwinfo_json_f)"
-    # If empty, set it to "No_disk_serial_no"
-    serialno="${serialno:-No_disk_serial_no}"
 
     # Put them together
     DEV_MODEL="${dsize}|${dmodel}|${id_path_tag}|block:${logical_blk_size}|${serialno}"
@@ -4860,12 +4856,23 @@ get_not_busy_disks_or_parts() {
   echo
 
   echo -n "Excluding linux raid member partition..."
-  for dev in $all_disks $all_partitions; do
-    echo -n "."
-    if is_linux_raid_member "/dev/$dev"; then
-      excluded_devices+=("$dev")
-    fi
-  done
+  local raid_devs=""
+  if type blkid &>/dev/null; then
+    raid_devs="$(LC_ALL=C blkid -t TYPE="linux_raid_member" -o device 2>/dev/null)"
+  fi
+  if [ -n "$raid_devs" ]; then
+    for rdev in $raid_devs; do
+      echo -n "."
+      excluded_devices+=("${rdev#/dev/*}")
+    done
+  else
+    for dev in $all_disks $all_partitions; do
+      echo -n "."
+      if is_linux_raid_member "/dev/$dev"; then
+        excluded_devices+=("$dev")
+      fi
+    done
+  fi
 
   for dev in $dev_to_be_exclude; do
     excluded_devices+=("$dev")
@@ -4942,7 +4949,13 @@ get_input_dev_name() {
     [ -z "$selection" -o "$selection" = "default" ] && selection="checklist"
     [ -z "$skip_lvm_raid" -o "$skip_lvm_raid" = "default" ] && skip_lvm_raid="no"
 
+    TMP=`mktemp /tmp/ocs.XXXXXX`
+    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
+    blk_info_f=`mktemp /tmp/ocs-blkinfo.XXXXXX`
+    trap "[ -f "$blk_info_f" ] && rm -f $blk_info_f" HUP INT QUIT TERM EXIT
+
     get_not_busy_disks_or_parts $dev_type "" "$dev_to_be_exclude"  # we will get dev_list
+    ocs-blk-dev-info "$blk_info_f"
 
     # With dev_list, continue
     case "$dev_type" in
@@ -4972,7 +4985,8 @@ get_input_dev_name() {
 	  dev_list_kept="$dev_list"
           get_not_busy_disks_or_parts harddisk "" "$dev_to_be_exclude"  # we will get dev_list
 	  for ih in $dev_list; do
-            hd_fs="$(LC_ALL=C ocs-get-dev-info "/dev/$ih" filesystem 2>/dev/null)"
+            hd_fs="$(jq -r --arg d "$ih" '.[] | select(.name == $d) | .fstype' "$blk_info_f" 2>/dev/null)"
+            [ -z "$hd_fs" ] && hd_fs="$(LC_ALL=C ocs-get-dev-info "/dev/$ih" filesystem 2>/dev/null)"
 	    # If file system exists, append it
 	    if [ -n "$hd_fs" ]; then
 	      hd_with_fs_list="$hd_with_fs_list $ih"
@@ -4984,19 +4998,39 @@ get_input_dev_name() {
         for p in $dev_list; do
           echo -n "."
           # skip swap and extended partition
-          FILE="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem parttype 2>/dev/null | tr [:upper:] [:lower:])"
-          rc=$?
-          if [ "$rc" = "0" ]; then
-            [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue
+          part_meta="$(jq -r --arg p "$p" '
+            ( [ .[] | select(.name == $p) ] | (if length > 1 then (map(select(.type == "part"))[0] // .[0]) else .[0] end) ) as $part |
+            [ ($part.type // ""), ($part.fstype // ""), ($part.parttype // "") ] | @tsv
+          ' "$blk_info_f" 2>/dev/null)"
+          IFS=$'\t' read -r ptype pfstype pparttype <<< "$part_meta"
+          if [ -n "$ptype" -o -n "$pfstype" -o -n "$pparttype" ]; then
+            case "$ptype $pparttype" in
+              *extended*|*0x5*|*0xf*) continue ;;
+            esac
+            if [ "$skip_lvm_raid" = "yes" ]; then
+              case "$ptype $pfstype" in
+                *lvm*|*raid*)
+                  if ! is_whole_disk "/dev/$p" && ! is_block_device_with_fs "/dev/$p"; then
+                    continue
+                  fi
+                  ;;
+              esac
+            fi
+          else
+            FILE="$(LC_ALL=C ocs-get-dev-info "/dev/$p" type filesystem parttype 2>/dev/null | tr [:upper:] [:lower:])"
+            rc=$?
+            if [ "$rc" = "0" ]; then
+              case "$FILE" in
+                *extended*|*0x5*|*0xf*) continue ;;
+              esac
+            fi
+            if [ "$skip_lvm_raid" = "yes" ]; then
+              if ! is_whole_disk "/dev/$p" && ! is_block_device_with_fs "/dev/$p"; then
+                [ "$rc" = "0" ] && case "$FILE" in *lvm*|*raid*) continue ;; esac
+              fi
+            fi
           fi
-	  if [ "$skip_lvm_raid" = "yes" ]; then
-            # Exception: we should keep LVM or MDRAID if the device is whole block disk
-	    # e.g., /dev/sdb which is PV or /dev/md127 with xfs.
-            if ! is_whole_disk /dev/$p && ! is_block_device_with_fs /dev/$p; then
-              [ "$rc" = "0" ] && case "$FILE" in *lvm*|*raid*) continue ;; esac
-	    fi
-	  fi
-          NUMDEV=$[NUMDEV+1]
+          NUMDEV=$((NUMDEV + 1))
         done
         echo ""
 	echo "Partition number: $NUMDEV"
@@ -5014,10 +5048,6 @@ get_input_dev_name() {
         ;;
     esac
 
-    TMP=`mktemp /tmp/ocs.XXXXXX`
-    trap "[ -f "$TMP" ] && rm -f $TMP" HUP INT QUIT TERM EXIT
-    blk_info_f=`mktemp /tmp/ocs-blkinfo.XXXXXX`
-    trap "[ -f "$blk_info_f" ] && rm -f $blk_info_f" HUP INT QUIT TERM EXIT
     # check if any harddisk is found ?
     if [ $NUMDEV -le 0 ]; then
       case "$dev_type" in
@@ -5084,25 +5114,12 @@ get_input_dev_name() {
     fi
 
     :> $TMP # Clean the TMP file
-    ocs-blk-dev-info $blk_info_f
     # Prepare the dialog menu info
     echo -n "Preparing the dialog menu info..."
     for p in $(reduce_multipath_dev $dev_list); do
        DEV_MODEL=""
        echo -n "."
-       FILE="$(jq -r "[ .[] | select(.name == \"$p\") ] | (if length > 1 then (map(select(.type == \"part\"))[0] // .[0]) else .[0] end) | .type, .fstype, .parttype" $blk_info_f | tr [:upper:] [:lower:])"
-       rc=$?
-       if [ "$rc" = "0" ]; then
-         [ -n "$(echo $FILE | grep -Eiw "(extended|0x5|0xf)")" ] && continue
-       fi
-       if [ "$skip_lvm_raid" = "yes" ]; then
-         # Exception: we should keep LVM or MDRAID if the device is whole block disk
-	 # e.g., /dev/sdb which is PV or /dev/md127 with xfs.
-         if ! is_whole_disk /dev/$p && ! is_block_device_with_fs /dev/$p; then
-           [ "$rc" = "0" ] && case "$FILE" in *lvm*|*raid*) continue ;; esac
-	 fi
-       fi
-       get_disk_or_part_hardware_info "$p" default $blk_info_f
+       get_disk_or_part_hardware_info "$p" "$skip_lvm_raid" "$blk_info_f"
        rc_g=$?
        [ "$rc_g" -eq 8 ] && continue
        [ -z "$DEV_MODEL" ] && DEV_MODEL="No_description"
