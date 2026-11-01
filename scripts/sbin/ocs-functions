@@ -15371,12 +15371,22 @@ gen_chksum_for_files_in_dev() {
   local sum_part="${1#/dev/*}"  # partition or LV name, e.g. sda1
   local tgt_dir="$2"   # target dir, full path, like /home/partimag/my-img
   local sum_part_tmpd rc gz_stdin_cmd gunz_cmd rc_chk part_reg_f_list reg_file_lines
-  local cpu_no xargs_p_opt pipestatus_chk
+  local cpu_no xargs_p_opt pipestatus_chk part_fs
   sum_part_tmpd="$(LC_ALL=C mktemp -d /tmp/chksum_tmpd.XXXXXX)"
   part_reg_f_list="$(LC_ALL=C mktemp /tmp/part_f_temp.XXXXXX)"
   # Generate checksum
-  mount -o ro /dev/$sum_part $sum_part_tmpd 2>/dev/null
-  rc=$?
+  part_fs="$(LC_ALL=C ocs-get-dev-info "/dev/$sum_part" filesystem 2>/dev/null || true)"
+  [ -z "$part_fs" ] && part_fs="$(LC_ALL=C blkid -s TYPE -o value "/dev/$sum_part" 2>/dev/null || true)"
+  case "$part_fs" in
+    [nN][tT][fF][sS]*)
+      mount_ntfs_partition "/dev/$sum_part" "$sum_part_tmpd" "ro"
+      rc=$?
+      ;;
+    *)
+      mount -o ro /dev/$sum_part $sum_part_tmpd 2>/dev/null
+      rc=$?
+      ;;
+  esac
   trap "[ -d "$sum_part_tmpd" ] && umount $sum_part_tmpd &>/dev/null" HUP INT QUIT TERM EXIT
   if [ "$rc" -eq 0 ]; then
     if type pigz &>/dev/null; then
@@ -15434,7 +15444,7 @@ inspect_chksum_for_files_in_dev() {
   local sum_part="${1#/dev/*}"  # partition or LV name, e.g. sda1
   local tgt_dir="$2"   # target dir, full path, like /home/partimag/my-img
   local chksum_file csumf_basename chksum_cmd sum_part_tmpd rc rc_chk
-  local chksum_file_lines chk_rlt_log cpu_no xargs_p_opt pipestatus_chk
+  local chksum_file_lines chk_rlt_log cpu_no xargs_p_opt pipestatus_chk part_fs
 
   if [ -z "$sum_part" -o -z "$tgt_dir" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -15463,8 +15473,18 @@ inspect_chksum_for_files_in_dev() {
   # Check the checksum
   if [ -n "$sum_part_tmpd" ]; then
     mkdir -p $sum_part_tmpd
-    mount -o ro /dev/$sum_part $sum_part_tmpd
-    rc=$?
+    part_fs="$(LC_ALL=C ocs-get-dev-info "/dev/$sum_part" filesystem 2>/dev/null || true)"
+    [ -z "$part_fs" ] && part_fs="$(LC_ALL=C blkid -s TYPE -o value "/dev/$sum_part" 2>/dev/null || true)"
+    case "$part_fs" in
+      [nN][tT][fF][sS]*)
+        mount_ntfs_partition "/dev/$sum_part" "$sum_part_tmpd" "ro"
+        rc=$?
+        ;;
+      *)
+        mount -o ro /dev/$sum_part $sum_part_tmpd
+        rc=$?
+        ;;
+    esac
     trap "[ -d "$sum_part_tmpd" ] && umount $sum_part_tmpd &>/dev/null" HUP INT QUIT TERM EXIT
     if [ "$rc" -eq 0 ]; then
       # Determine CPU core count for parallel checksum calculation
@@ -18954,7 +18974,7 @@ mount_ntfs_partition() {
 
   # 1. Prioritize modern in-kernel read-write 'ntfs' driver (Linux 7.1+)
   # If modinfo gives description and it does not contain 'read-write', skip legacy ntfs for rw mounts
-  ntfs_desc="$(modinfo -F description ntfs 2>/dev/null)"
+  ntfs_desc="$(modinfo -F description ntfs 2>/dev/null || true)"
   skip_legacy_ntfs="no"
   if [ -n "$ntfs_desc" ] && ! echo "$ntfs_desc" | grep -qi "read-write"; then
     if [ "$check_rw" = "yes" ]; then

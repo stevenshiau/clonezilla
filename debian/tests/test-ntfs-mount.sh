@@ -481,4 +481,104 @@ EOF
   echo "  PASS: ocs-live-repository seamlessly mounts NTFS repository using prioritized in-kernel driver."
 )
 
+# -------------------------------------------------------------
+# Test 7: gen_chksum_for_files_in_dev and inspect_chksum_for_files_in_dev NTFS integration
+# -------------------------------------------------------------
+echo "[Test 7] Testing checksum functions mount NTFS partition using prioritized driver..."
+(
+  TEST_DIR=$(mktemp -d)
+  trap 'rm -rf "$TEST_DIR"' EXIT
+
+  MOCK_BIN="$TEST_DIR/bin"
+  mkdir -p "$MOCK_BIN"
+  export PATH="$MOCK_BIN:$PATH"
+
+  CALL_LOG="$TEST_DIR/calls.log"
+  touch "$CALL_LOG"
+
+  cat <<EOF > "$MOCK_BIN/ocs-get-dev-info"
+#!/bin/bash
+if [ "\$2" = "filesystem" ] || [ "\$2" = "fs" ]; then
+  echo "ntfs"
+fi
+EOF
+  chmod +x "$MOCK_BIN/ocs-get-dev-info"
+
+  cat <<EOF > "$MOCK_BIN/modinfo"
+#!/bin/bash
+if [ "\$1" = "-F" ] && [ "\$2" = "description" ] && [ "\$3" = "ntfs" ]; then
+  echo "NTFS read-write filesystem driver"
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "$MOCK_BIN/modinfo"
+
+  cat <<EOF > "$MOCK_BIN/mount"
+#!/bin/bash
+echo "mount \$*" >> "$CALL_LOG"
+args=("\$@")
+dev="\${args[-2]}"
+target_dir="\${args[-1]}"
+echo "\$target_dir" > "$TEST_DIR/mnt_target"
+mkdir -p "\$target_dir"
+echo "data" > "\$target_dir/testfile.txt"
+exit 0
+EOF
+  chmod +x "$MOCK_BIN/mount"
+
+  cat <<EOF > "$MOCK_BIN/mountpoint"
+#!/bin/bash
+exit 0
+EOF
+  chmod +x "$MOCK_BIN/mountpoint"
+
+  cat <<EOF > "$MOCK_BIN/umount"
+#!/bin/bash
+if [ -f "$TEST_DIR/mnt_target" ]; then
+  mnt_dir="\$(cat "$TEST_DIR/mnt_target")"
+  rm -rf "\$mnt_dir"/* "\$mnt_dir"/.[!.]* 2>/dev/null || true
+fi
+exit 0
+EOF
+  chmod +x "$MOCK_BIN/umount"
+
+  export ocs_log_dir="$TEST_DIR/log"
+  mkdir -p "$ocs_log_dir"
+  export OCS_LOGFILE="$TEST_DIR/ocs.log"
+  touch "$OCS_LOGFILE"
+  export chksum_cmd_for_files_in_dev="b3sum"
+
+  TGT_IMG="$TEST_DIR/img"
+  mkdir -p "$TGT_IMG"
+
+  gen_chksum_for_files_in_dev "/dev/sda1" "$TGT_IMG"
+  rc=$?
+  if [ $rc -ne 0 ]; then
+    echo "FAIL: gen_chksum_for_files_in_dev exited with $rc"
+    exit 1
+  fi
+
+  if ! grep -q "mount -i -t ntfs -o ro /dev/sda1" "$CALL_LOG"; then
+    echo "FAIL: Expected 'mount -i -t ntfs -o ro /dev/sda1' in CALL_LOG, got:"
+    cat "$CALL_LOG"
+    exit 1
+  fi
+
+  inspect_chksum_for_files_in_dev "/dev/sda1" "$TGT_IMG"
+  rc_inspect=$?
+  if [ $rc_inspect -ne 0 ]; then
+    echo "FAIL: inspect_chksum_for_files_in_dev exited with $rc_inspect"
+    exit 1
+  fi
+
+  ntfs_calls=$(grep -c "mount -i -t ntfs -o ro /dev/sda1" "$CALL_LOG")
+  if [ "$ntfs_calls" -ne 2 ]; then
+    echo "FAIL: Expected 2 mount_ntfs_partition calls for gen + inspect, got $ntfs_calls"
+    cat "$CALL_LOG"
+    exit 1
+  fi
+  echo "  PASS: Both gen_chksum_for_files_in_dev and inspect_chksum_for_files_in_dev mount NTFS partition via prioritized driver."
+)
+
 echo "=== All NTFS Mount Logic Tests Passed! ==="
