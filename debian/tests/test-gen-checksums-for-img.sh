@@ -144,4 +144,40 @@ echo "[Test 5] Testing return code when no checksum is assigned..."
   echo "  PASS: Correctly returned 5 when no checksum was assigned."
 )
 
+# -------------------------------------------------------------
+# Test 6: Progress output displays status for each checksum method
+# -------------------------------------------------------------
+echo "[Test 6] Testing progress status output formatting..."
+(
+  gen_md5sum="yes"
+  gen_sha1sum="yes"
+  gen_b2sum="yes"
+  gen_b3sum="yes"
+
+  out_log="$TMP_TEST_DIR/test6_out.log"
+  gen_checksums_for_img_if_assigned "$IMG_DIR" > "$out_log" 2>&1
+
+  if ! grep -q "md5sum\.\.\." "$out_log"; then
+    echo "FAIL: md5sum... progress not found in output!"
+    exit 1
+  fi
+  if ! grep -q "sha1sum\.\.\." "$out_log"; then
+    echo "FAIL: sha1sum... progress not found in output!"
+    exit 1
+  fi
+  if ! grep -q "b2sum\.\.\." "$out_log"; then
+    echo "FAIL: b2sum... progress not found in output!"
+    exit 1
+  fi
+  if ! grep -q "b3sum\.\.\." "$out_log"; then
+    echo "FAIL: b3sum... progress not found in output!"
+    exit 1
+  fi
+  if ! grep -q " done!" "$out_log"; then
+    echo "FAIL: done! not found in output!"
+    exit 1
+  fi
+  echo "  PASS: Progress status for each checksum algorithm verified."
+)
+
 echo "=== All Image Checksum Generation Tests Passed! ==="
