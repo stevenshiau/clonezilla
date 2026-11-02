@@ -437,4 +437,119 @@ echo "[Test 7] Testing non-NTFS filesystem (ext4) uses generic mount..."
 )
 echo "  PASS: Non-NTFS partitions safely use generic mount without invoking NTFS drivers."
 
+# -------------------------------------------------------------
+# Test 8: Simulate Windows System-Compressed (WOF) / Cloud Placeholder failure
+# -------------------------------------------------------------
+echo "[Test 8] Testing WOF/Cloud placeholder handling (os error 95)..."
+(
+  echo "ntfs" > "$DEV_FS_DIR/sdg1"
+  mkdir -p "$MOCK_MOUNT_DATA/Windows"
+  echo "real file" > "$MOCK_MOUNT_DATA/Windows/system.ini"
+
+  # Create a wrapper script for b3sum to simulate os error 95 on a specific file
+  cat <<'EOF' > "$MOCK_BIN/b3sum"
+#!/bin/bash
+if [[ " $* " == *" -c "* ]]; then
+  # Read stdin
+  input=$(cat)
+  if echo "$input" | grep -q "Report.wer"; then
+    echo "b3sum: WARNING: 1 computed checksum did NOT match" >&2
+    # Output failure to stdout
+    path=$(echo "$input" | grep "Report.wer" | awk '{print $2}')
+    echo "$path: FAILED (Operation not supported (os error 95))"
+    exit 1
+  fi
+  # Pass through if no Report.wer
+  echo "$input" | /usr/bin/b3sum "$@"
+  exit $?
+fi
+
+# Mock generation: fail with os error 95 for Report.wer
+for arg in "$@"; do
+  if [[ "$arg" == *Report.wer* ]]; then
+    echo "b3sum: $arg: Operation not supported (os error 95)" >&2
+    exit 1
+  fi
+done
+
+# Remove --no-mmap if passed so we can run the real b3sum without issues if it's an older version
+args=()
+for arg in "$@"; do
+  if [ "$arg" != "--no-mmap" ]; then
+    args+=("$arg")
+  fi
+done
+exec /usr/bin/b3sum "${args[@]}"
+EOF
+  chmod +x "$MOCK_BIN/b3sum"
+
+  export CALL_LOG="$TMP_DIR/calls_test8.log"
+  touch "$CALL_LOG"
+
+  chksum_cmd_for_files_in_dev="b3sum"
+  TGT_IMG="$TMP_DIR/img_test8"
+  mkdir -p "$TGT_IMG"
+
+  # During generation, we need to create the fake Report.wer in the mount target directory dynamically
+  # because if we create an unreadable file in mock_data, `cp -a` might fail in the mock `mount`.
+  # Instead, we modify the mock mount command for Test 8:
+  cat <<'EOF' > "$MOCK_BIN/mount"
+#!/bin/bash
+if [ -n "$CALL_LOG" ]; then
+  echo "mount $*" >> "$CALL_LOG"
+fi
+args=("$@")
+dev="${args[-2]}"
+target_dir="${args[-1]}"
+dev_key="$(basename "$dev")"
+echo "$target_dir" > "$MOUNT_RECORD/$dev_key"
+mkdir -p "$target_dir"
+cp -a "$MOCK_MOUNT_DATA/." "$target_dir/" 2>/dev/null || true
+if [ "$dev_key" = "sdg1" ]; then
+  echo "fake crash dump" > "$target_dir/Report.wer"
+fi
+exit 0
+EOF
+  chmod +x "$MOCK_BIN/mount"
+
+  export ocs_log_dir="$TMP_DIR/log"
+  export OCS_LOGFILE="$TMP_DIR/ocs_test8.log"
+  touch "$OCS_LOGFILE"
+
+  # The generation should succeed despite the os error 95 for one file
+  gen_chksum_for_files_in_dev "/dev/sdg1" "$TGT_IMG"
+  
+  # For inspection, the checksum file won't have Report.wer because generation failed it.
+  # So to test inspection handling, we must manually append the Report.wer to the checksum info.
+  info_gz="$TGT_IMG/sdg1.files-b3sum.info.gz"
+  # Unzip, append fake hash, rezip
+  gunzip "$info_gz"
+  info_txt="${info_gz%.gz}"
+  # The checksum file format is: <hash>  <filepath>
+  # We must use the correct mountpoint prefix that inspect will expect.
+  # But inspect uses grep -E -o "/tmp/chksum_tmpd.[[:alnum:]]{6}" from the first line.
+  first_line_mnt=$(head -n 1 "$info_txt" | awk '{print $2}' | grep -E -o "/tmp/chksum_tmpd.[[:alnum:]]{6}")
+  echo "0000000000000000000000000000000000000000000000000000000000000000  $first_line_mnt/Report.wer" >> "$info_txt"
+  gzip "$info_txt"
+
+  # Now inspect. It should detect the os error 95 and treat it as a warning, returning 0
+  inspect_chksum_for_files_in_dev "/dev/sdg1" "$TGT_IMG"
+  rc_inspect=$?
+  
+  if [ "$rc_inspect" -ne 0 ]; then
+    echo "FAIL: inspect_chksum_for_files_in_dev failed for WOF placeholder with exit code $rc_inspect"
+    exit 1
+  fi
+
+  if ! grep -q "Notice: 1 file(s) are Windows system-compressed (WOF) or OneDrive cloud placeholders" "$OCS_LOGFILE"; then
+    echo "FAIL: Expected Notice message in OCS_LOGFILE, got:"
+    cat "$OCS_LOGFILE"
+    exit 1
+  fi
+  
+  # Cleanup mock
+  rm -f "$MOCK_BIN/b3sum"
+)
+echo "  PASS: WOF/Cloud placeholders (os error 95) handled gracefully as warnings."
+
 echo "=== All gen_chksum_for_files_in_dev tests PASSED ==="

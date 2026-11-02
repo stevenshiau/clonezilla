@@ -15371,7 +15371,7 @@ gen_chksum_for_files_in_dev() {
   local sum_part="${1#/dev/*}"  # partition or LV name, e.g. sda1
   local tgt_dir="$2"   # target dir, full path, like /home/partimag/my-img
   local sum_part_tmpd rc gz_stdin_cmd gunz_cmd rc_chk part_reg_f_list reg_file_lines
-  local cpu_no xargs_p_opt pipestatus_chk part_fs
+  local cpu_no xargs_p_opt pipestatus_chk part_fs chksum_extra_opt
   sum_part_tmpd="$(LC_ALL=C mktemp -d /tmp/chksum_tmpd.XXXXXX)"
   part_reg_f_list="$(LC_ALL=C mktemp /tmp/part_f_temp.XXXXXX)"
   # Generate checksum
@@ -15405,6 +15405,8 @@ gen_chksum_for_files_in_dev() {
       xargs_p_opt=""
     fi
     # chksum_cmd_for_files_in_dev is from drbl-ocs.conf.
+    chksum_extra_opt=""
+    [ "$chksum_cmd_for_files_in_dev" = "b3sum" ] && chksum_extra_opt="--no-mmap"
     echo "Generating $chksum_cmd_for_files_in_dev checksums for files in device /dev/$sum_part..." | tee --append ${OCS_LOGFILE}
     echo "$msg_this_might_take_some_time" | tee --append ${OCS_LOGFILE}
     # Here we do not put the output file directly, instead we compress it to reduce the I/O.
@@ -15415,7 +15417,7 @@ gen_chksum_for_files_in_dev() {
     # For b3sum, Rayon by default uses all logical cores for each file. When running
     # parallel xargs processes, limit Rayon to 1 thread per process to avoid CPU
     # core oversubscription and thread contention.
-    RAYON_NUM_THREADS=1 < $part_reg_f_list xargs -r $xargs_p_opt -d '\n' $chksum_cmd_for_files_in_dev \
+    RAYON_NUM_THREADS=1 < $part_reg_f_list xargs -r $xargs_p_opt -d '\n' $chksum_cmd_for_files_in_dev $chksum_extra_opt \
     | pv -peltf -s $reg_file_lines | $gz_stdin_cmd \
     > "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz"
     pipestatus_chk=("${PIPESTATUS[@]}")
@@ -15506,8 +15508,10 @@ inspect_chksum_for_files_in_dev() {
       # For b3sum, Rayon by default uses all logical cores for each file. When running
       # parallel xargs processes, limit Rayon to 1 thread per process to avoid CPU
       # core oversubscription and thread contention.
+      local chksum_extra_opt=""
+      [ "$chksum_cmd" = "b3sum" ] && chksum_extra_opt="--no-mmap"
       LC_ALL=C zcat $chksum_file \
-      | RAYON_NUM_THREADS=1 xargs -r $xargs_p_opt -d '\n' sh -c 'cmd="$1"; shift; printf "%s\n" "$@" | "$cmd" -c' _ "$chksum_cmd" \
+      | RAYON_NUM_THREADS=1 xargs -r $xargs_p_opt -d '\n' sh -c 'cmd="$1"; extra_opt="$2"; shift 2; printf "%s\n" "$@" | "$cmd" $extra_opt -c' _ "$chksum_cmd" "$chksum_extra_opt" \
       | pv -N "/dev/$sum_part" -peltf -s $chksum_file_lines \
       | grep -Ev ': OK$' | tee -a ${OCS_LOGFILE} $chk_rlt_log | awk 'NR<9'
       pipestatus_chk=("${PIPESTATUS[@]}")
@@ -15515,6 +15519,26 @@ inspect_chksum_for_files_in_dev() {
       [ "$rc_chk" -eq 0 -a -n "${pipestatus_chk[0]}" ] && [ "${pipestatus_chk[0]}" -ne 0 ] && rc_chk="${pipestatus_chk[0]}"
       # Strip the mount point path before going on
       perl -pi -e "s|$sum_part_tmpd||g" $chk_rlt_log
+
+      if [ "$rc_chk" -ne 0 ] && [ -s "$chk_rlt_log" ]; then
+        # Check if all failures are just unsupported attributes (WOF/Cloud placeholders)
+        local corrupted_count
+        local unsupported_count
+        # Exclude the comment line (starts with #) from counts
+        corrupted_count="$(LC_ALL=C grep -Ev '^#|Operation not supported|os error 95' "$chk_rlt_log" | grep -c 'FAILED' || true)"
+        unsupported_count="$(LC_ALL=C grep -iE 'Operation not supported|os error 95' "$chk_rlt_log" | grep -c 'FAILED' || true)"
+        
+        if [ "$corrupted_count" -eq 0 ] && [ "$unsupported_count" -gt 0 ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "Notice: $unsupported_count file(s) are Windows system-compressed (WOF) or OneDrive cloud placeholders." | tee --append ${OCS_LOGFILE}
+          echo "They returned 'Operation not supported' and cannot be read by the in-kernel filesystem driver." | tee --append ${OCS_LOGFILE}
+          echo "All other standard files passed checksum verification successfully." | tee --append ${OCS_LOGFILE}
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          # Treat as passed since no genuine corruption was found
+          rc_chk=0
+        fi
+      fi
+
       if [ "$rc_chk" -ne 0 ]; then
         [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
         echo "$msg_chksum_for_files_not_match: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
