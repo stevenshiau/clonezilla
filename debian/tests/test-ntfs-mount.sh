@@ -527,6 +527,19 @@ exit 0
 EOF
   chmod +x "$MOCK_BIN/mount"
 
+  cat <<EOF > "$MOCK_BIN/ntfs-3g"
+#!/bin/bash
+echo "ntfs-3g \$*" >> "$CALL_LOG"
+args=("\$@")
+dev="\${args[-2]}"
+target_dir="\${args[-1]}"
+echo "\$target_dir" > "$TEST_DIR/mnt_target"
+mkdir -p "\$target_dir"
+echo "data" > "\$target_dir/testfile.txt"
+exit 0
+EOF
+  chmod +x "$MOCK_BIN/ntfs-3g"
+
   cat <<EOF > "$MOCK_BIN/mountpoint"
 #!/bin/bash
 exit 0
@@ -559,8 +572,8 @@ EOF
     exit 1
   fi
 
-  if ! grep -q "mount -i -t ntfs -o ro /dev/sda1" "$CALL_LOG"; then
-    echo "FAIL: Expected 'mount -i -t ntfs -o ro /dev/sda1' in CALL_LOG, got:"
+  if ! grep -q "ntfs-3g -o ro /dev/sda1" "$CALL_LOG"; then
+    echo "FAIL: Expected 'ntfs-3g -o ro /dev/sda1' in CALL_LOG, got:"
     cat "$CALL_LOG"
     exit 1
   fi
@@ -572,13 +585,13 @@ EOF
     exit 1
   fi
 
-  ntfs_calls=$(grep -c "mount -i -t ntfs -o ro /dev/sda1" "$CALL_LOG")
+  ntfs_calls=$(grep -c "ntfs-3g -o ro /dev/sda1" "$CALL_LOG")
   if [ "$ntfs_calls" -ne 2 ]; then
-    echo "FAIL: Expected 2 mount_ntfs_partition calls for gen + inspect, got $ntfs_calls"
+    echo "FAIL: Expected 2 ntfs-3g calls for gen + inspect, got $ntfs_calls"
     cat "$CALL_LOG"
     exit 1
   fi
-  echo "  PASS: Both gen_chksum_for_files_in_dev and inspect_chksum_for_files_in_dev mount NTFS partition via prioritized driver."
+  echo "  PASS: Both gen_chksum_for_files_in_dev and inspect_chksum_for_files_in_dev mount NTFS partition via ntfs-3g."
 )
 
 echo "=== All NTFS Mount Logic Tests Passed! ==="

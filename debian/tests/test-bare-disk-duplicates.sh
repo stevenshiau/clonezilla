@@ -150,6 +150,53 @@ if [[ "$DEV_MODEL" != "10G|xfs|In_LVM_Volume|LVMVolume|pci-0000-lvm|lvm-serial-9
 fi
 echo "PASS: vg-lv successfully parsed as partition despite being type 'dm' in JSON."
 
+# --- TEST 5: Whole disk with empty filesystem field (nvme0n1 and sda from old-ok.txt) ---
+echo "TEST 5: Whole disk with empty filesystem (nvme0n1 and sda)..."
+cat <<'EOF' >> "$JSON_FILE"
+EOF
+python3 -c '
+import json
+with open("'"$JSON_FILE"'", "r") as f:
+    data = json.load(f)
+data.extend([
+    {"name": "nvme0n1", "type": "disk", "size": "64G", "model": "VMware Virtual NVMe Disk", "fstype": "", "logical_block_size": "512", "id_path_tag": "pci-0000_0b_00_0-nvme-1", "serial": "VMware NVME 0000"},
+    {"name": "nvme0n2", "type": "disk", "size": "35G", "model": "VMware Virtual NVMe Disk", "fstype": "ext4", "logical_block_size": "512", "id_path_tag": "pci-0000_0b_00_0-nvme-7", "serial": "VMware NVME 0000"},
+    {"name": "sda", "type": "disk", "size": "64G", "model": "VMware Virtual SATA Hard Drive", "fstype": "", "logical_block_size": "512", "id_path_tag": "pci-0000_02_04_0-ata-1_0", "serial": "00000000000000000001"}
+])
+with open("'"$JSON_FILE"'", "w") as f:
+    json.dump(data, f)
+'
+
+is_partition() {
+  return 1
+}
+
+get_disk_or_part_hardware_info "nvme0n1" "default" "$JSON_FILE"
+echo "DEV_MODEL for nvme0n1: '$DEV_MODEL'"
+if [[ "$DEV_MODEL" != "64G|VMware_Virtual_NVMe_Disk|pci-0000_0b_00_0-nvme-1|block:512|VMware_NVME_0000" ]]; then
+  echo "FAIL: Unexpected nvme0n1 DEV_MODEL: '$DEV_MODEL'"
+  exit 1
+fi
+echo "PASS: nvme0n1 matches old-ok.txt format exactly."
+
+get_disk_or_part_hardware_info "sda" "default" "$JSON_FILE"
+echo "DEV_MODEL for sda: '$DEV_MODEL'"
+if [[ "$DEV_MODEL" != "64G|VMware_Virtual_SATA_Hard_Drive|pci-0000_02_04_0-ata-1_0|block:512|00000000000000000001" ]]; then
+  echo "FAIL: Unexpected sda DEV_MODEL: '$DEV_MODEL'"
+  exit 1
+fi
+echo "PASS: sda matches old-ok.txt format exactly."
+
+# --- TEST 6: Whole disk with filesystem field (nvme0n2 from old-ok.txt) ---
+echo "TEST 6: Whole disk with filesystem field (nvme0n2)..."
+get_disk_or_part_hardware_info "nvme0n2" "default" "$JSON_FILE"
+echo "DEV_MODEL for nvme0n2: '$DEV_MODEL'"
+if [[ "$DEV_MODEL" != "35G|ext4|VMware_Virtual_NVMe_Disk|pci-0000_0b_00_0-nvme-7|block:512|VMware_NVME_0000" ]]; then
+  echo "FAIL: Unexpected nvme0n2 DEV_MODEL: '$DEV_MODEL'"
+  exit 1
+fi
+echo "PASS: nvme0n2 matches old-ok.txt format exactly."
+
 # Clean up
 rm -f "$JSON_FILE"
 

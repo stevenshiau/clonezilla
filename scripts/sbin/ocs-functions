@@ -4784,12 +4784,12 @@ get_disk_or_part_hardware_info() {
         ($part.label // "No_label"),
         ($disk.id_path_tag // "No_ID_path"),
         ($disk.serial // "No_serial_no")
-      ] | @tsv
+      ] | join("\u001f")
     ' "$hwinfo_json_f" 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 -o -z "$p_meta" ] && return 8
 
-    IFS=$'\t' read -r dsize part_fs dmodel part_lb id_path_tag serialno <<< "$p_meta"
+    IFS=$'\x1f' read -r dsize part_fs dmodel part_lb id_path_tag serialno <<< "$p_meta"
     # If empty, set fallback default values
     dsize="${dsize:-No_size}"
     part_fs="${part_fs:-No_file_system}"
@@ -4814,12 +4814,12 @@ get_disk_or_part_hardware_info() {
         ($disk.logical_block_size // ""),
         ($disk.id_path_tag // "No_ID_path"),
         ($disk.serial // "No_disk_serial_no")
-      ] | @tsv
+      ] | join("\u001f")
     ' "$hwinfo_json_f" 2>/dev/null)"
     rc=$?
     [ "$rc" -gt 0 -o -z "$d_meta" ] && return 8
 
-    IFS=$'\t' read -r dsize dmodel part_fs logical_blk_size id_path_tag serialno <<< "$d_meta"
+    IFS=$'\x1f' read -r dsize dmodel part_fs logical_blk_size id_path_tag serialno <<< "$d_meta"
     # If empty, set fallback default values
     dsize="${dsize:-No_size}"
     dmodel="${dmodel:-No_Model}"
@@ -5034,9 +5034,9 @@ get_input_dev_name() {
           # skip swap and extended partition
           part_meta="$(jq -r --arg p "$p" '
             ( [ .[] | select(.name == $p) ] | (if length > 1 then (map(select(.type == "part"))[0] // .[0]) else .[0] end) ) as $part |
-            [ ($part.type // ""), ($part.fstype // ""), ($part.parttype // "") ] | @tsv
+            [ ($part.type // ""), ($part.fstype // ""), ($part.parttype // "") ] | join("\u001f")
           ' "$blk_info_f" 2>/dev/null)"
-          IFS=$'\t' read -r ptype pfstype pparttype <<< "$part_meta"
+          IFS=$'\x1f' read -r ptype pfstype pparttype <<< "$part_meta"
           if [ -n "$ptype" -o -n "$pfstype" -o -n "$pparttype" ]; then
             case "$ptype $pparttype" in
               *extended*|*0x5*|*0xf*) continue ;;
