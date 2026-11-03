@@ -73,6 +73,7 @@ chroot() {
     return $?
   elif [[ "$1" == /initrd-sh-* ]]; then
     echo "Mock running initrd script: $1" >> /tmp/mock_restored_os_test_log
+    cat "$mnt/$1" >> /tmp/mock_restored_os_test_log
     return 0
   else
     # default fallback
@@ -181,6 +182,14 @@ if [ "$rc_case1" -ne 0 ]; then
   exit 1
 else
   echo "PASS: Case 1 (/usr/sbin/dracut) passed!"
+fi
+
+# Verify that dracut was called with -N (--no-hostonly)
+if ! grep -q -- "dracut -N" /tmp/mock_restored_os_test_log; then
+  echo "FAIL: dracut was not called with -N (--no-hostonly) option!"
+  exit 1
+else
+  echo "PASS: Verified dracut invoked with -N option."
 fi
 
 echo "=== All Tests Passed Successfully ==="
