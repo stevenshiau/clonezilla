@@ -7555,6 +7555,144 @@ save_logv() {
   return $rc_save_logv
 } # end of save_logv
 
+# Generate LVM-compatible 32-character UUID (format: 6-4-4-4-4-4-6)
+gen_lvm_uuid() {
+  local raw_uuid=""
+  if [ -r /proc/sys/kernel/random/uuid ]; then
+    raw_uuid="$(cat /proc/sys/kernel/random/uuid)"
+  elif type uuidgen &>/dev/null; then
+    raw_uuid="$(uuidgen)"
+  else
+    raw_uuid="$(LC_ALL=C od -x -N 16 /dev/urandom 2>/dev/null | head -n 1 | awk '{print $2$3$4$5$6$7$8$9}')"
+  fi
+  [ -z "$raw_uuid" ] && raw_uuid="$(date +%s%N)${RANDOM}${RANDOM}"
+  echo "$raw_uuid" | tr '[:lower:]' '[:upper:]' | tr -cd '[:alnum:]' | cut -c1-32 | sed -E 's/(.{6})(.{4})(.{4})(.{4})(.{4})(.{4})(.{6})/\1-\2-\3-\4-\5-\6-\7/'
+} # end of gen_lvm_uuid
+
+# Create shadow Volume Group metadata configuration for d2d cloning
+create_shadow_vg_conf() {
+  local orig_conf="$1"
+  local shadow_conf="$2"
+  local orig_vg="$3"
+  local shadow_vg="$4"
+  local pv_parse_conf="$5"
+  local pv_uuid_map="$6"
+  local new_vguuid m_vg m_dev m_orig_pvuuid m_new_pvuuid tmp_conf
+
+  if [ ! -f "$orig_conf" ]; then
+    return 1
+  fi
+
+  tmp_conf="$(mktemp /tmp/shadow_vg_conf.XXXXXX)"
+  cp -f "$orig_conf" "$tmp_conf"
+
+  # 1. Replace the top-level VG name with shadow_vg
+  sed -i -e "0,/^[[:space:]]*${orig_vg}[[:space:]]*{/s/^[[:space:]]*${orig_vg}[[:space:]]*{/${shadow_vg} {/" "$tmp_conf"
+
+  # 2. Replace the top-level VG UUID (first id = "..." in the file)
+  new_vguuid="$(gen_lvm_uuid)"
+  sed -i -e "0,/id = \"[^\"]*\"/s/id = \"[^\"]*\"/id = \"${new_vguuid}\"/" "$tmp_conf"
+
+  # 3. Replace PV UUIDs and device paths
+  if [ -f "$pv_uuid_map" ]; then
+    while read m_vg m_dev m_orig_pvuuid m_new_pvuuid; do
+      [ "$m_vg" != "$orig_vg" ] && continue
+      [ -z "$m_dev" -o -z "$m_new_pvuuid" ] && continue
+      if [ -n "$m_orig_pvuuid" ]; then
+        awk -v old_id="$m_orig_pvuuid" -v new_id="$m_new_pvuuid" -v new_dev="$m_dev" '
+          $0 ~ "id = \"" old_id "\"" {
+            sub("id = \"" old_id "\"", "id = \"" new_id "\"")
+            in_pv = 1
+          }
+          in_pv && /device = / {
+            sub(/device = "[^"]*"/, "device = \"" new_dev "\"")
+            in_pv = 0
+          }
+          { print }
+        ' "$tmp_conf" > "${tmp_conf}.mod" && mv -f "${tmp_conf}.mod" "$tmp_conf"
+      fi
+    done < "$pv_uuid_map"
+  fi
+
+  cp -f "$tmp_conf" "$shadow_conf"
+  rm -f "$tmp_conf"
+  return 0
+} # end of create_shadow_vg_conf
+
+# Clone logical volume to logical volume using Partclone in d2d mode
+clone_lv_to_lv() {
+  local pt_fs="$1"
+  local src_lv="$2"  # e.g., /dev/pve/root
+  local tgt_lv="$3"  # e.g., /dev/pve_ocs_tgt/root
+  local ret cmd_partclone
+  local ptcl_read_dio_opt ptcl_write_dio_opt log_opt
+  [ -n "$PARTCLONE_LOG" ] && log_opt="-L $PARTCLONE_LOG"
+
+  if [ -z "$pt_fs" -o -z "$src_lv" -o -z "$tgt_lv" ]; then
+    echo "Wrong options in clone_lv_to_lv!!!" | tee --append $OCS_LOGFILE
+    echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
+    return 1
+  fi
+
+  tune_nvme_block_queue_settings "$src_lv" "$tgt_lv"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "Source LV file system is $pt_fs..." | tee --append $OCS_LOGFILE
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+
+  echo "Cloning $src_lv to $tgt_lv..." | tee --append $OCS_LOGFILE
+  clean_filesystem_header_in_dev $tgt_lv
+
+  if [ "$FORCE_TO_USE_DD" = "yes" ]; then
+    echo "Forced to use dd/partclone.dd to clone LV..." | tee --append $OCS_LOGFILE
+    get_partclone_direct_io_opt read $src_lv
+    get_partclone_direct_io_opt write $tgt_lv
+    cmd_partclone="partclone.dd $PARTCLONE_D2D_OPT_DD $ptcl_read_dio_opt $ptcl_write_dio_opt $log_opt -s $src_lv -O $tgt_lv"
+    echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
+    LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
+    ret=$?
+  elif [ "$USE_NTFSCLONE_IN_OCS_ONTHEFLY" = "yes" ] && [ "$pt_fs" = "ntfs" ]; then
+    echo "Using ntfsclone to clone LV..." | tee --append $OCS_LOGFILE
+    check_ntfs_partition_integrity $src_lv
+    ntfsclone --save-image --output - $src_lv 2>/dev/null | \
+    ntfsclone $ntfsclone_progress_option --restore-image --overwrite $tgt_lv -
+    ret="${PIPESTATUS[0]}"
+  elif [ "$USE_PARTCLONE_IN_OCS_ONTHEFLY" = "yes" ] && is_partclone_support_fs $pt_fs; then
+    get_partclone_direct_io_opt read $src_lv
+    get_partclone_direct_io_opt write $tgt_lv
+    echo "Using partclone to clone LV..." | tee --append $OCS_LOGFILE
+    if [ "$pt_fs" != "dd" ]; then
+      cmd_partclone="partclone.${pt_fs} $PARTCLONE_D2D_OPT $ptcl_read_dio_opt $ptcl_write_dio_opt $log_opt -b -s $src_lv -O $tgt_lv"
+    else
+      cmd_partclone="partclone.dd $PARTCLONE_D2D_OPT_DD $ptcl_read_dio_opt $ptcl_write_dio_opt $log_opt -s $src_lv -O $tgt_lv"
+    fi
+    echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
+    LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
+    ret=$?
+    [ -n "$PARTCLONE_LOG" -a -f "${PARTCLONE_LOG}" ] && cat "${PARTCLONE_LOG}" >> ${OCS_LOGFILE}
+  elif is_partimage_support_fs $pt_fs; then
+    echo "Using partimage to clone LV..." | tee --append $OCS_LOGFILE
+    partimage $DEFAULT_STDOUT_PARTIMAGE_SAVE_OPT save $src_lv stdout 2> /dev/null | \
+    partimage $DEFAULT_STDIN_PARTIMAGE_RESTORE_OPT $PARTIMAGE_RESTORE_ONTHEFLY_OPT restore $tgt_lv stdin
+    ret=$?
+  else
+    echo "Filesystem $pt_fs in $src_lv is not supported by partclone. Fallback to partclone.dd..." | tee --append $OCS_LOGFILE
+    get_partclone_direct_io_opt read $src_lv
+    get_partclone_direct_io_opt write $tgt_lv
+    cmd_partclone="partclone.dd $PARTCLONE_D2D_OPT_DD $ptcl_read_dio_opt $ptcl_write_dio_opt $log_opt -s $src_lv -O $tgt_lv"
+    echo "Running: $cmd_partclone" | tee --append ${OCS_LOGFILE}
+    LC_ALL=C eval "(${cmd_partclone} && exit \${PIPESTATUS[0]})"
+    ret=$?
+  fi
+
+  echo "$msg_delimiter_star_line"
+  if [ "$ret" -ge 1 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+    echo "Failed to clone $src_lv to $tgt_lv" | tee --append $OCS_LOGFILE
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  fi
+  return $ret
+} # end of clone_lv_to_lv
+
 # Restore LVM: PV/VG/LV data
 # Part of these codes are from http://www.trickytools.com/php/clonesys.php
 # Thanks to Jerome Delamarche (jd@inodes-fr.com)
@@ -7563,6 +7701,7 @@ restore_logv() {
   local mode="$2" # mode is unicast, multicast, d2d, bittorrent, or netcat_nuttcp
   local port="$3"
   local volg is_in_chosen_partition lvm_tmp ipt lsrc_dev rc lv_corr_pt_his lv_corr_pt
+  local source_lv target_lv lv_name tgt_pvuuid
   # target_dir_fullpath is local (in function task_saveparts) global variable, since restore_logv is used in function task_restoreparts
   # source_hd and target_hd are from ocs-onthefly.
   check_ocs_variables_if_fails_quit restore_logv \
@@ -7652,7 +7791,13 @@ restore_logv() {
       # Double insurance: wipe RAID superblocks before pvcreate
       mdadm --zero-superblock $dev 2>/dev/null || true
       wipefs -a -f $dev 2>/dev/null || true
-      pvcreate -ff --yes --uuid $uuid --zero y --restorefile $lvm_tmp/lvm_$vg.conf $dev 3<&- 4<&-
+      if [ "$mode" = "d2d" ]; then
+        tgt_pvuuid="$(gen_lvm_uuid)"
+        pvcreate -ff --yes --uuid "$tgt_pvuuid" --zero y $dev 3<&- 4<&-
+        echo "$vg $dev $uuid $tgt_pvuuid" >> "$lvm_tmp/pv_uuid_map.txt"
+      else
+        pvcreate -ff --yes --uuid $uuid --zero y --restorefile $lvm_tmp/lvm_$vg.conf $dev 3<&- 4<&-
+      fi
       rm -f $lvm_tmp/lvm_$vg.conf
     fi
   done < $PV_PARSE_CONF
@@ -7671,42 +7816,73 @@ restore_logv() {
   # Restore the vg conf
   echo "Restoring the VG config... " | tee --append $OCS_LOGFILE
   local restored_vgs=""
+  local shadow_vgs=""
+  local target_vg=""
   while read vg dev uuid; do
     # //NOTE// VG might exist in more than one PV. If so, we only have to create it once.
     # E.g.,
     # centos7 /dev/sda2 UUID
     # centos7 /dev/sda3 UUID
     # Ref: https://sourceforge.net/p/clonezilla/discussion/Help/thread/13f8ed6643/?limit=25#4ae4
-    if vgs $vg &>/dev/null; then
-      echo "VG $vg already exists. No need to create it again."
-      vgs $vg
-      continue
+    if [ "$mode" = "d2d" ]; then
+      target_vg="${vg}_ocs_tgt"
+      if vgs $target_vg &>/dev/null; then
+        echo "Shadow VG $target_vg already exists. No need to create it again."
+        vgs $target_vg
+        continue
+      fi
+      if [ "$vg" = "/NOT_FOUND" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "///WARNING/// $dev didn't have the volume group." | tee --append $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        continue
+      fi
+      if [ ! -e "$target_dir_fullpath/lvm_$vg.conf" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "///WARNING/// lvm_$vg.conf not found." | tee --append $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+        continue
+      fi
+      create_shadow_vg_conf "$target_dir_fullpath/lvm_$vg.conf" "$lvm_tmp/lvm_${target_vg}.conf" "$vg" "$target_vg" "$PV_PARSE_CONF" "$lvm_tmp/pv_uuid_map.txt"
+      vgcfgrestore --force -f "$lvm_tmp/lvm_${target_vg}.conf" $target_vg 2>&1 3<&- 4<&- | tee --append $OCS_LOGFILE
+      rc=${PIPESTATUS[0]}
+      rm -f "$lvm_tmp/lvm_${target_vg}.conf"
+      [ $rc -ne 0 ] && break
+      restored_vgs="$restored_vgs $target_vg"
+      shadow_vgs="$shadow_vgs $target_vg"
+    else
+      if vgs $vg &>/dev/null; then
+        echo "VG $vg already exists. No need to create it again."
+        vgs $vg
+        continue
+      fi
+      if [ "$vg" = "/NOT_FOUND" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "///WARNING/// $dev didn't have the volume group." | tee --append $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        # copy_log "$target_dir_fullpath" "lvm"
+        continue
+      fi
+      if [ ! -e "$target_dir_fullpath/lvm_$vg.conf" ]; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "///WARNING/// lvm_$vg.conf not found." | tee --append $OCS_LOGFILE
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
+        # copy_log "$target_dir_fullpath" "lvm"
+        continue
+      fi
+      cp -f "$target_dir_fullpath/lvm_$vg.conf" $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
+      # vgcfgrestore -f $target_dir_fullpath/lvm_$vg.conf $vg 2>/dev/null
+      # Add "--force" to force metadata restore even with thin pool LVs.
+      vgcfgrestore --force -f "$lvm_tmp/lvm_$vg.conf" $vg 2>&1 3<&- 4<&- | tee --append $OCS_LOGFILE
+      rc=${PIPESTATUS[0]}
+      rm -f "$lvm_tmp/lvm_$vg.conf"
+      [ $rc -ne 0 ] && break
+      restored_vgs="$restored_vgs $vg"
     fi
-    if [ "$vg" = "/NOT_FOUND" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "///WARNING/// $dev didn't have the volume group." | tee --append $OCS_LOGFILE
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      # copy_log "$target_dir_fullpath" "lvm"
-      continue
-    fi
-    if [ ! -e "$target_dir_fullpath/lvm_$vg.conf" ]; then
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "///WARNING/// lvm_$vg.conf not found." | tee --append $OCS_LOGFILE
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-      echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
-      # copy_log "$target_dir_fullpath" "lvm"
-      continue
-    fi
-    cp -f "$target_dir_fullpath/lvm_$vg.conf" $lvm_tmp/  # Since mmap function maybe not available on remote disk (Ex. image is on samba disk). We have to copy the config file to local disk. Thanks to Gerald HERMANT <ghermant _at_ astrel fr> for reporting this bugs.
-    # vgcfgrestore -f $target_dir_fullpath/lvm_$vg.conf $vg 2>/dev/null
-    # Add "--force" to force metadata restore even with thin pool LVs.
-    vgcfgrestore --force -f "$lvm_tmp/lvm_$vg.conf" $vg 2>&1 3<&- 4<&- | tee --append $OCS_LOGFILE
-    rc=${PIPESTATUS[0]}
-    rm -f "$lvm_tmp/lvm_$vg.conf"
-    [ $rc -ne 0 ] && break
-    restored_vgs="$restored_vgs $vg"
   done < $PV_PARSE_CONF
-  [ -d "$lvm_tmp" -a -n "$lvm_tmp" ] && rmdir $lvm_tmp
+  [ -d "$lvm_tmp" -a -n "$lvm_tmp" ] && rm -rf $lvm_tmp
   echo "done." | tee --append $OCS_LOGFILE
   if [ $rc -ne 0 ]; then
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
@@ -7718,9 +7894,10 @@ restore_logv() {
 
   # --- THIN PROVISIONING ---
   # Fix thin pools because vgcfgrestore creates broken thin pools (missing kernel metadata).
-  # NEVER run this in d2d mode because the source disk is local and lvremove/lvcreate would wipe the source pool!
   # In non-d2d mode, only run this on VGs that were actually restored via vgcfgrestore in this run.
-  if [ "$mode" != "d2d" ] && [ -n "$restored_vgs" ]; then
+  # In d2d mode, restored_vgs contains the shadow VGs (*_ocs_tgt), so thin pools are safely
+  # repaired on the shadow target VGs without touching the source disk!
+  if [ -n "$restored_vgs" ]; then
     echo "Checking for thin pools to repair..." | tee --append $OCS_LOGFILE
     for vg in $restored_vgs; do
       thin_pools="$(LC_ALL=C lvs --noheadings -o lv_name,segtype $vg 2>/dev/null | awk '$2=="thin-pool" {print $1}')"
@@ -7795,40 +7972,47 @@ restore_logv() {
     done
     # If LV is not in the chosen partition, skip this, continue with the next LV.
     [ "$is_in_chosen_partition" = "no" ] && continue
-    # Now lv_corr_pt is the corresponding partition of LV we want to deal with. This is especially for local device cloning.
-    # Convert to file name prefix, e.g. /dev/lucid-server/root -> lucid-server-root
+
+    lv_name="${lv#/dev/${volg}/}"
     fn="$(to_ocs_dev_img_name $lv)"
+    if [ "$mode" = "d2d" ]; then
+      source_lv="$lv"
+      target_lv="/dev/${volg}_ocs_tgt/${lv_name}"
+    else
+      source_lv=""
+      target_lv="$lv"
+    fi
+
     # Log the logical volume which is restored. The leading "/dev/" is removed, i.e. the results might be: lucid-server/root lucid-server/usr
     target_logv="$target_logv ${lv#/dev/*}"
+
     # create the swap if it's swap partition
     case "$fs" in
       *[Ss][Ww][Aa][Pp]*)
-         if [ "$mode" != "d2d" ]; then
-           echo $msg_delimiter_star_line
-           echo "Found the swap partition $lv info, create it by:" | tee --append ${OCS_LOGFILE}
-           # read LABEL, UUID info for $partition if swappt-$(to_filename ${fn}).info exists
-           uuid_opt=""
-           label_opt=""
-           if [ -e "$target_dir_fullpath/swappt-$(to_filename ${fn}).info" ]; then
-             UUID=""
-             LABEL=""
-             . "$target_dir_fullpath/swappt-$(to_filename ${fn}).info"
-             [ -n "$UUID" ] && uuid_opt="-U $UUID"
-             [ -n "$LABEL" ] && label_opt="-L $LABEL"
-           fi
-           echo "mkswap $label_opt $uuid_opt $lv" | tee --append ${OCS_LOGFILE}
-           mkswap $label_opt $uuid_opt $lv | tee --append ${OCS_LOGFILE}
-           echo $msg_delimiter_star_line
-           # then skip the rest.
-           continue
+         echo $msg_delimiter_star_line
+         echo "Found the swap partition $target_lv info, create it by:" | tee --append ${OCS_LOGFILE}
+         # read LABEL, UUID info for $partition if swappt-$(to_filename ${fn}).info exists
+         uuid_opt=""
+         label_opt=""
+         if [ -e "$target_dir_fullpath/swappt-$(to_filename ${fn}).info" ]; then
+           UUID=""
+           LABEL=""
+           . "$target_dir_fullpath/swappt-$(to_filename ${fn}).info"
+           [ -n "$UUID" ] && uuid_opt="-U $UUID"
+           [ -n "$LABEL" ] && label_opt="-L $LABEL"
          fi
+         echo "mkswap $label_opt $uuid_opt $target_lv" | tee --append ${OCS_LOGFILE}
+         mkswap $label_opt $uuid_opt $target_lv | tee --append ${OCS_LOGFILE}
+         echo $msg_delimiter_star_line
+         # then skip the rest.
+         continue
          ;;
     esac
 
     # --- THIN PROVISIONING ---
     # Skip thin pool data restoration (It shouldn't be restored by partclone.dd or dd)
-    if [ "$mode" != "d2d" ] && [ -n "$(LC_ALL=C lvs --noheadings -o segtype $lv 2>/dev/null | grep -Ew 'thin-pool')" ]; then
-      echo "Device $lv is a thin pool. Skipping data restoration." | tee --append $OCS_LOGFILE
+    if [ -n "$(LC_ALL=C lvs --noheadings -o segtype $target_lv 2>/dev/null | grep -Ew 'thin-pool')" ]; then
+      echo "Device $target_lv is a thin pool. Skipping data restoration." | tee --append $OCS_LOGFILE
       continue
     fi
     # --- THIN PROVISIONING ---
@@ -7837,19 +8021,19 @@ restore_logv() {
     rc=""
     case "$mode" in
       "unicast")
-        do_unicast_stdin_restore "$target_dir_fullpath" $fn $lv
+        do_unicast_stdin_restore "$target_dir_fullpath" $fn $target_lv
         rc="$?"
         ;;
       "multicast")
-        do_multicast_udpcast_restore "$target_dir_fullpath" $fn $lv
+        do_multicast_udpcast_restore "$target_dir_fullpath" $fn $target_lv
         rc="$?"
         ;;
       "bittorrent")
-        collect_bittorrent_restore_dev "$target_dir_fullpath" $fn $lv
+        collect_bittorrent_restore_dev "$target_dir_fullpath" $fn $target_lv
         rc="$?"
         ;;
       "d2d")
-        # Local device to local device
+        # Local device to local device via Partclone
         check_ocs_variables_if_fails_quit restore_logv \
         target_hd source_hd | tee --append $OCS_LOGFILE
         [ "${PIPESTATUS[0]}" -gt 0 ] && exit 1
@@ -7861,36 +8045,23 @@ restore_logv() {
           echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
           exit 1
         fi
-        lsrc_dev="$(echo $lv_corr_pt | replace_disk_name_stdin $target_hd $source_hd)"
-        echo "Processing local LV $fn with corresponding device $lsrc_dev to $lv_corr_pt cloning..." \
+        echo "Processing local LV $source_lv to $target_lv cloning via Partclone..." \
         | tee --append ${OCS_LOGFILE}
-        if [ -z "$(echo $lv_corr_pt_his | grep -E "$target_dir_fullpath $lsrc_dev $lv_corr_pt")" ]; then
-          # Since there might be multiple LVs in the same corresponding partition, we only have to do once.
-          # E.g., LV: root, home, var, etc in /dev/nvme0n1p3, but we only do once:
-          # do_d2d_local_restore /tmp/d2d-pseudo-tmp-cnvted nvme0n1p3 sda3
-          # Ref: https://sourceforge.net/p/clonezilla/discussion/Clonezilla_live/thread/f6a7e860c9
-          do_d2d_local_restore "$target_dir_fullpath" $lsrc_dev $lv_corr_pt
-          rc="$?"
-          # It's done once, so keep the process history in lv_corr_pt_his.
-          lv_corr_pt_his="$target_dir_fullpath $lsrc_dev $lv_corr_pt"
-        else
-          echo "The cloning for local LV $fn with corresponding device $lsrc_dev to $lv_corr_pt was done previously. No need to do it again..." \
-          | tee --append ${OCS_LOGFILE}
-          rc=0
-        fi
+        clone_lv_to_lv "$fs" "$source_lv" "$target_lv"
+        rc="$?"
         ;;
       "netcat_nuttcp")
         # Device to device via network
         netcat_nuttcp_check
         set_onthefly_net_filter_program
         # We use NC_PORT to receive data from onthefly server
-        do_d2d_network_restore "$target_dir_fullpath" $lv
+        do_d2d_network_restore "$target_dir_fullpath" $target_lv
         rc="$?"
         ;;
     esac
     if [ -n "$rc" ] && [ $rc -gt 0 ]; then
       [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-      echo "Failed to restore partition image file $target_dir_fullpath/${fn}* to $lv. Maybe this image is corrupt." | tee --append $OCS_LOGFILE
+      echo "Failed to restore partition image file $target_dir_fullpath/${fn}* to $target_lv. Maybe this image is corrupt." | tee --append $OCS_LOGFILE
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       echo "$msg_program_stop"      | tee --append ${OCS_LOGFILE}
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
@@ -7899,6 +8070,32 @@ restore_logv() {
     fi
   done
   exec 3<&-
+
+  # In d2d mode: finalize shadow Volume Groups by renaming them back to original names
+  if [ "$mode" = "d2d" ] && [ -n "$shadow_vgs" ]; then
+    echo "Finalizing LVM Volume Groups on target disk $target_hd..." | tee --append $OCS_LOGFILE
+    local filter_rules=""
+    for ihd in $target_hd; do
+      filter_rules="${filter_rules}\"a|^/dev/${ihd}.*|\", "
+    done
+    filter_rules="${filter_rules}\"r|.*|\""
+
+    for tgt_vg in $shadow_vgs; do
+      orig_vg="${tgt_vg%_ocs_tgt}"
+      echo "Deactivating Volume Groups $tgt_vg and $orig_vg..." | tee --append $OCS_LOGFILE
+      vgchange -an "$tgt_vg" 2>/dev/null || true
+      vgchange -an "$orig_vg" 2>/dev/null || true
+
+      echo "Renaming shadow Volume Group $tgt_vg to $orig_vg on target disk $target_hd..." | tee --append $OCS_LOGFILE
+      vgrename_cmd="vgrename --config 'devices { filter = [ ${filter_rules} ] }' $tgt_vg $orig_vg"
+      echo "Running: $vgrename_cmd" | tee --append $OCS_LOGFILE
+      eval "$vgrename_cmd" 2>&1 | tee --append $OCS_LOGFILE
+      if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+        vgrename "$tgt_vg" "$orig_vg" 2>&1 | tee --append $OCS_LOGFILE
+      fi
+    done
+  fi
+
   return $rc
 } # end of restore_logv
 #

@@ -24,19 +24,19 @@ if [[ "$*" == *"segtype pve"* ]]; then
   echo "  vm-100-disk-0 thin"
 elif [[ "$*" == *"pool_lv,lv_size pve"* ]]; then
   echo "  vm-100-disk-0 data 10737418240B"
-elif [[ "$*" == *"lv_size pve/data_tdata"* ]]; then
+elif [[ "$*" == *"lv_size pve"* && "$*" == *"data_tdata"* ]]; then
   echo "  53687091200B"
-elif [[ "$*" == *"lv_size pve/data_tmeta"* ]]; then
+elif [[ "$*" == *"lv_size pve"* && "$*" == *"data_tmeta"* ]]; then
   echo "  536870912B"
-elif [[ "$*" == *"chunk_size pve/data"* ]]; then
+elif [[ "$*" == *"chunk_size pve"* && "$*" == *"data"* ]]; then
   echo "  65536B"
-elif [[ "$*" == *"segtype /dev/pve/root"* ]]; then
+elif [[ "$*" == *"segtype"* && "$*" == *"root"* ]]; then
   echo "  linear"
-elif [[ "$*" == *"segtype /dev/pve/vm-100-disk-0"* ]]; then
+elif [[ "$*" == *"segtype"* && "$*" == *"vm-100-disk-0"* ]]; then
   echo "  thin"
-elif [[ "$*" == *"segtype /dev/pve/data"* ]]; then
+elif [[ "$*" == *"segtype"* && "$*" == *"data"* ]]; then
   echo "  thin-pool"
-elif [[ "$*" == *"segtype /dev/pve/swap"* ]]; then
+elif [[ "$*" == *"segtype"* && "$*" == *"swap"* ]]; then
   echo "  linear"
 fi
 exit 0
@@ -83,6 +83,27 @@ exit 0
 EOF
 chmod +x "$MOCK_BIN/mkswap"
 
+cat << 'EOF' > "$MOCK_BIN/partclone.ext4"
+#!/bin/bash
+echo "partclone.ext4 $*" >> "$ACTION_LOG"
+exit 0
+EOF
+chmod +x "$MOCK_BIN/partclone.ext4"
+
+cat << 'EOF' > "$MOCK_BIN/vgrename"
+#!/bin/bash
+echo "vgrename $*" >> "$ACTION_LOG"
+exit 0
+EOF
+chmod +x "$MOCK_BIN/vgrename"
+
+cat << 'EOF' > "$MOCK_BIN/vgchange"
+#!/bin/bash
+echo "vgchange $*" >> "$ACTION_LOG"
+exit 0
+EOF
+chmod +x "$MOCK_BIN/vgchange"
+
 # Setup pseudo image files
 export target_dir_fullpath="$TMP_DIR/img"
 mkdir -p "$target_dir_fullpath"
@@ -92,7 +113,17 @@ cat << 'EOF' > "$target_dir_fullpath/lvm_logv.list"
 /dev/pve/vm-100-disk-0 ext4
 /dev/pve/swap swap
 EOF
-touch "$target_dir_fullpath/lvm_pve.conf"
+cat << 'EOF' > "$target_dir_fullpath/lvm_pve.conf"
+pve {
+	id = "fake-vg-uuid-1111-2222-3333-4444"
+	physical_volumes {
+		pv0 {
+			id = "fake-uuid"
+			device = "/dev/sda3"
+		}
+	}
+}
+EOF
 
 mkdir -p /dev/pve
 touch /dev/pve/root /dev/pve/vm-100-disk-0 /dev/pve/data /dev/pve/swap
@@ -100,6 +131,8 @@ touch /dev/pve/root /dev/pve/vm-100-disk-0 /dev/pve/data /dev/pve/swap
 export OCS_LOGFILE="$TMP_DIR/ocs.log"
 export source_hd="sda"
 export target_hd="sdb"
+export USE_PARTCLONE_IN_OCS_ONTHEFLY="yes"
+export partclone_support_fs="ext4 ext3 ext2 xfs btrfs ntfs fat32 vfat dd"
 
 . scripts/sbin/ocs-functions
 
@@ -121,13 +154,20 @@ do_unicast_stdin_restore() {
 }
 export -f do_unicast_stdin_restore
 
-# Test 1: d2d mode protection (Issue #198)
-echo "--- Test 1: restore_logv in d2d mode with thin pool and swap ---"
+# Test 1: d2d mode with shadow VG and Partclone
+echo "--- Test 1: restore_logv in d2d mode with shadow VG and Partclone ---"
 > "$ACTION_LOG"
 
 cat << 'EOF' > "$MOCK_BIN/vgs"
 #!/bin/bash
-# In d2d mode, source VG already exists on the local machine
+if [[ "$*" == *"pve_ocs_tgt"* ]]; then
+  if grep -q "vgcfgrestore.*pve_ocs_tgt" "$ACTION_LOG"; then
+    exit 0
+  else
+    exit 1
+  fi
+fi
+# pve source VG exists
 exit 0
 EOF
 chmod +x "$MOCK_BIN/vgs"
@@ -135,36 +175,78 @@ chmod +x "$MOCK_BIN/vgs"
 cat << 'EOF' > "$MOCK_BIN/vgcfgrestore"
 #!/bin/bash
 echo "vgcfgrestore $*" >> "$ACTION_LOG"
+mkdir -p /dev/pve_ocs_tgt
+touch /dev/pve_ocs_tgt/root /dev/pve_ocs_tgt/vm-100-disk-0 /dev/pve_ocs_tgt/data /dev/pve_ocs_tgt/swap
 exit 0
 EOF
 chmod +x "$MOCK_BIN/vgcfgrestore"
 
 restore_logv "sdb3" "d2d" "ld2d"
 
-if grep -q "lvremove" "$ACTION_LOG"; then
-  echo "FAIL: lvremove was called in d2d mode! Source thin pool was destroyed."
+# 1. Source disk must NEVER be modified (Issue #198 safety check)
+if grep -E "lvremove.*(^|[[:space:]])pve/" "$ACTION_LOG"; then
+  echo "FAIL: lvremove was called on source VG pve! Source thin pool was destroyed."
   cat "$ACTION_LOG"
   exit 1
 fi
 
-if grep -q "lvcreate" "$ACTION_LOG"; then
-  echo "FAIL: lvcreate was called in d2d mode! Source thin pool was modified."
+if grep -E "lvcreate.*(^|[[:space:]])pve/" "$ACTION_LOG"; then
+  echo "FAIL: lvcreate was called on source VG pve! Source thin pool was modified."
   cat "$ACTION_LOG"
   exit 1
 fi
 
-if grep -q "mkswap" "$ACTION_LOG"; then
-  echo "FAIL: mkswap was called in d2d mode on source LV!"
+if grep -E "mkswap.*(^|[[:space:]])/dev/pve/" "$ACTION_LOG"; then
+  echo "FAIL: mkswap was called on source LV /dev/pve/swap in d2d mode!"
   cat "$ACTION_LOG"
   exit 1
 fi
 
-if ! grep -q "do_d2d_local_restore.*sda3 sdb3" "$ACTION_LOG"; then
-  echo "FAIL: do_d2d_local_restore was not called for underlying partition!"
+# 2. Target shadow VG must be created and thin pool repaired safely on target
+if ! grep -q "vgcfgrestore.*pve_ocs_tgt" "$ACTION_LOG"; then
+  echo "FAIL: vgcfgrestore was not called for shadow VG pve_ocs_tgt!"
   cat "$ACTION_LOG"
   exit 1
 fi
-echo "PASS: Test 1 (d2d mode): lvremove, lvcreate, and mkswap were NOT called; underlying partition was safely cloned."
+
+if ! grep -q "lvremove.*pve_ocs_tgt/vm-100-disk-0" "$ACTION_LOG"; then
+  echo "FAIL: lvremove was not called on shadow VG pve_ocs_tgt!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if ! grep -q "lvcreate.*pve_ocs_tgt/data" "$ACTION_LOG"; then
+  echo "FAIL: lvcreate thin-pool was not called on shadow VG pve_ocs_tgt!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if ! grep -q "mkswap.*/dev/pve_ocs_tgt/swap" "$ACTION_LOG"; then
+  echo "FAIL: mkswap was not called on target shadow LV /dev/pve_ocs_tgt/swap!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+# 3. LVs must be cloned with Partclone (not dd on the PV)
+if ! grep -q "partclone.ext4.*-s /dev/pve/root -O /dev/pve_ocs_tgt/root" "$ACTION_LOG"; then
+  echo "FAIL: partclone.ext4 was not called for root LV!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if ! grep -q "partclone.ext4.*-s /dev/pve/vm-100-disk-0 -O /dev/pve_ocs_tgt/vm-100-disk-0" "$ACTION_LOG"; then
+  echo "FAIL: partclone.ext4 was not called for thin LV vm-100-disk-0!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+# 4. Target shadow VG must be renamed back to original VG name with device filter
+if ! grep -q "vgrename.*pve_ocs_tgt pve" "$ACTION_LOG"; then
+  echo "FAIL: vgrename was not called to finalize target VG name!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+echo "PASS: Test 1 (d2d mode): Shadow VG created, thin pool safely repaired on target, LVs cloned via Partclone, and VG renamed."
 
 # Test 2: unicast mode (image restore) with thin pool
 echo "--- Test 2: restore_logv in unicast mode (restoring from image) ---"
