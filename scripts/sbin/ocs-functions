@@ -7624,14 +7624,30 @@ clone_lv_to_lv() {
   local pt_fs="$1"
   local src_lv="$2"  # e.g., /dev/pve/root
   local tgt_lv="$3"  # e.g., /dev/pve_ocs_tgt/root
-  local ret cmd_partclone
+  local ret cmd_partclone detected_fs supported
   local ptcl_read_dio_opt ptcl_write_dio_opt log_opt
   [ -n "$PARTCLONE_LOG" ] && log_opt="-L $PARTCLONE_LOG"
 
-  if [ -z "$pt_fs" -o -z "$src_lv" -o -z "$tgt_lv" ]; then
+  if [ -z "$src_lv" -o -z "$tgt_lv" ]; then
     echo "Wrong options in clone_lv_to_lv!!!" | tee --append $OCS_LOGFILE
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     return 1
+  fi
+
+  # Determine exact filesystem type for Partclone
+  if type ocs-get-dev-info &>/dev/null; then
+    detected_fs="$(LC_ALL=C ocs-get-dev-info "$src_lv" fs 2>/dev/null)"
+  fi
+  if [ -n "$detected_fs" ]; then
+    pt_fs="$detected_fs"
+  elif ! is_partclone_support_fs "$pt_fs"; then
+    # If pt_fs is a description string like "Linux rev 1.0 ext4 filesystem data (ext4)"
+    for supported in $partclone_support_fs; do
+      if echo "$pt_fs" | grep -Eiq "\b${supported}\b"; then
+        pt_fs="$supported"
+        break
+      fi
+    done
   fi
 
   tune_nvme_block_queue_settings "$src_lv" "$tgt_lv"
