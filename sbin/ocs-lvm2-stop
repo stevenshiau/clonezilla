@@ -33,14 +33,14 @@ then
 	#  LV Path                /dev/lucid-server/root
 	#  LV Name                root
 
-	if [ -n "$(LC_ALL=C lvdisplay | grep -E "LV Path")" ]; then
+	if [ -n "$(LC_ALL=C lvdisplay 2>/dev/null | grep -E "LV Path")" ]; then
 	  lv_name_grep_term="LV Path"
 	else
 	  lv_name_grep_term="LV Name"
 	fi
 
-	LOGICAL_VOLUMES=`LC_ALL=C lvdisplay 2>/dev/null|grep "$lv_name_grep_term"|awk '{print $3}'|sort|xargs echo`
-	VOLUME_GROUPS=`LC_ALL=C vgdisplay 2>/dev/null|grep "VG Name"|awk '{print $3}'|sort|xargs echo`
+	LOGICAL_VOLUMES=`LC_ALL=C lvdisplay 2>/dev/null|grep "$lv_name_grep_term"|awk '{print $3}'|sort -u|xargs echo`
+	VOLUME_GROUPS=`LC_ALL=C vgdisplay 2>/dev/null|grep "VG Name"|awk '{print $3}'|sort -u|xargs echo`
 	for x in ${LOGICAL_VOLUMES}
 	do
 		LV_IS_ACTIVE=`LC_ALL=C lvdisplay ${x} 2>/dev/null|grep "# open"|awk '{print $3}'`
@@ -62,6 +62,7 @@ then
 			# eend
 		fi
 	done
+	vgchange -an --ignorelockingfailure >/dev/null 2>&1 || true
 
 	for x in ${LOGICAL_VOLUMES}
 	do

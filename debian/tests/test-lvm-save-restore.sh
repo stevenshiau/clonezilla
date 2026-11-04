@@ -653,4 +653,98 @@ if [ $rc -eq 0 ]; then
 fi
 
 echo "PASS: Test 5: Fallback to partclone.dd and error handling verified."
+
+# ==============================================================================
+# TEST 6: ocs-expand-lvm with duplicate VG names across disks
+# ==============================================================================
+echo "--- Test 6: ocs-expand-lvm with duplicate VG names across disks ---"
+> "$ACTION_LOG"
+
+cat << 'EOF' > "$MOCK_BIN/vgs"
+#!/bin/bash
+cmd="$*"
+if [[ "$cmd" != *"--config devices{filter="* ]]; then
+  echo "WARNING: VG name almalinux is used by VGs KIMQOg and 7E6AB8." >&2
+  echo "Multiple VGs found with the same name: skipping almalinux" >&2
+  exit 1
+fi
+if [[ "$cmd" == *"-o pv_name"* ]]; then
+  echo "  /dev/sda2"
+elif [[ "$cmd" == *"-o pv_free"* ]]; then
+  echo "  5000.00"
+elif [[ "$cmd" == *"-o lv_name"* ]]; then
+  echo "  home"
+fi
+exit 0
+EOF
+chmod +x "$MOCK_BIN/vgs"
+
+cat << 'EOF' > "$MOCK_BIN/pvs"
+#!/bin/bash
+cmd="$*"
+if [[ "$cmd" == *"-o vg_name"* ]]; then
+  echo "  almalinux"
+elif [[ "$cmd" == *"-o dev_size"* ]]; then
+  echo "  25000.00"
+elif [[ "$cmd" == *"-o pv_size"* ]]; then
+  echo "  20000.00"
+fi
+exit 0
+EOF
+chmod +x "$MOCK_BIN/pvs"
+
+cat << 'EOF' > "$MOCK_BIN/lvs"
+#!/bin/bash
+echo "  10000.00"
+exit 0
+EOF
+chmod +x "$MOCK_BIN/lvs"
+
+cat << 'EOF' > "$MOCK_BIN/pvresize"
+#!/bin/bash
+echo "pvresize $*" >> "$ACTION_LOG"
+exit 0
+EOF
+chmod +x "$MOCK_BIN/pvresize"
+
+cat << 'EOF' > "$MOCK_BIN/lvresize"
+#!/bin/bash
+echo "lvresize $*" >> "$ACTION_LOG"
+exit 0
+EOF
+chmod +x "$MOCK_BIN/lvresize"
+
+cat << 'EOF' > "$MOCK_BIN/ocs-resize-part"
+#!/bin/bash
+echo "ocs-resize-part $*" >> "$ACTION_LOG"
+exit 0
+EOF
+chmod +x "$MOCK_BIN/ocs-resize-part"
+
+rm -f /dev/sda2
+mknod /dev/sda2 b 8 2 2>/dev/null || touch /dev/sda2
+trap 'rm -rf "$TMP_DIR"; rm -f /dev/sda2' EXIT
+
+sbin/ocs-expand-lvm -b /dev/sda2
+rm -f /dev/sda2
+
+if ! grep -q "pvresize.*--config devices{filter.*a\|\^/dev/sda\.\*\|.*r\|\.\*\|.*\/dev\/sda2" "$ACTION_LOG"; then
+  echo "FAIL: pvresize was not called with device filter for sda!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if ! grep -q "lvresize.*--config devices{filter.*a\|\^/dev/sda\.\*\|.*r\|\.\*\|" "$ACTION_LOG"; then
+  echo "FAIL: lvresize was not called with device filter for sda!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if ! grep -q "ocs-resize-part --batch /dev/almalinux/home" "$ACTION_LOG"; then
+  echo "FAIL: ocs-resize-part was not called for /dev/almalinux/home!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+echo "PASS: Test 6: ocs-expand-lvm handled duplicate VGs smoothly using device filter."
 echo "=== All Comprehensive LVM Save, Restore & Cloning Tests Passed Successfully! ==="
