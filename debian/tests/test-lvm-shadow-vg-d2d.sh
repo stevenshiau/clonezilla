@@ -243,9 +243,9 @@ EOF
 
 restore_logv "sdb2" "d2d" "ld2d"
 
-# Verify PV creation on target
-if ! grep -q "pvcreate.*-ff --yes --uuid.*--zero y /dev/sdb2" "$ACTION_LOG"; then
-  echo "FAIL: pvcreate was not run with fresh UUID on /dev/sdb2!"
+# Verify PV creation on target with fresh UUID and restorefile
+if ! grep -q "pvcreate.*-ff --yes --uuid.*--restorefile.*/dev/sdb2" "$ACTION_LOG"; then
+  echo "FAIL: pvcreate was not run with fresh UUID and --restorefile on /dev/sdb2!"
   cat "$ACTION_LOG"
   exit 1
 fi

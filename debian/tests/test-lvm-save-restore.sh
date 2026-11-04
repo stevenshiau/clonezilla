@@ -491,15 +491,15 @@ if grep -E "mkswap.*(^|[[:space:]])/dev/(vg_system|vg_data)/" "$ACTION_LOG"; the
   exit 1
 fi
 
-# 2. Fresh PV UUIDs created on target partitions
-if ! grep -q "pvcreate.*-ff --yes --uuid.*--zero y /dev/sdb2" "$ACTION_LOG"; then
-  echo "FAIL: pvcreate was not called with fresh UUID on /dev/sdb2!"
+# 2. Fresh PV UUIDs created on target partitions with --restorefile
+if ! grep -q "pvcreate.*-ff --yes --uuid.*--restorefile.*/dev/sdb2" "$ACTION_LOG"; then
+  echo "FAIL: pvcreate was not called with fresh UUID and restorefile on /dev/sdb2!"
   cat "$ACTION_LOG"
   exit 1
 fi
 
-if ! grep -q "pvcreate.*-ff --yes --uuid.*--zero y /dev/sdb3" "$ACTION_LOG"; then
-  echo "FAIL: pvcreate was not called with fresh UUID on /dev/sdb3!"
+if ! grep -q "pvcreate.*-ff --yes --uuid.*--restorefile.*/dev/sdb3" "$ACTION_LOG"; then
+  echo "FAIL: pvcreate was not called with fresh UUID and restorefile on /dev/sdb3!"
   cat "$ACTION_LOG"
   exit 1
 fi

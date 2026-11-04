@@ -7774,6 +7774,24 @@ restore_logv() {
   fi
   #
   lvm_tmp="$(mktemp -d /tmp/lvm_tmp.XXXXXX)"
+  # Pre-generate shadow VG configurations and PV UUID mapping in d2d mode so that
+  # pvcreate can be called with --restorefile and --uuid
+  if [ "$mode" = "d2d" ]; then
+    while read vg dev uuid; do
+      [ "$vg" = "/NOT_FOUND" ] && continue
+      tgt_pvuuid="$(gen_lvm_uuid)"
+      echo "$vg $dev $uuid $tgt_pvuuid" >> "$lvm_tmp/pv_uuid_map.txt"
+    done < $PV_PARSE_CONF
+
+    while read vg dev uuid; do
+      [ "$vg" = "/NOT_FOUND" ] && continue
+      target_vg="${vg}_ocs_tgt"
+      if [ -f "$target_dir_fullpath/lvm_$vg.conf" ] && [ ! -f "$lvm_tmp/lvm_${target_vg}.conf" ]; then
+        create_shadow_vg_conf "$target_dir_fullpath/lvm_$vg.conf" "$lvm_tmp/lvm_${target_vg}.conf" "$vg" "$target_vg" "$PV_PARSE_CONF" "$lvm_tmp/pv_uuid_map.txt"
+      fi
+    done < $PV_PARSE_CONF
+  fi
+
   # create PV first
   echo "Creating the PV... " | tee --append $OCS_LOGFILE
   while read vg dev uuid; do
@@ -7808,9 +7826,22 @@ restore_logv() {
       mdadm --zero-superblock $dev 2>/dev/null || true
       wipefs -a -f $dev 2>/dev/null || true
       if [ "$mode" = "d2d" ]; then
-        tgt_pvuuid="$(gen_lvm_uuid)"
-        pvcreate -ff --yes --uuid "$tgt_pvuuid" --zero y $dev 3<&- 4<&-
-        echo "$vg $dev $uuid $tgt_pvuuid" >> "$lvm_tmp/pv_uuid_map.txt"
+        target_vg="${vg}_ocs_tgt"
+        tgt_pvuuid="$(awk -v v="$vg" -v d="$dev" '$1==v && $2==d {print $4}' "$lvm_tmp/pv_uuid_map.txt" 2>/dev/null | head -n 1)"
+        [ -z "$tgt_pvuuid" ] && tgt_pvuuid="$(gen_lvm_uuid)"
+        rc_pv=1
+        if [ -f "$lvm_tmp/lvm_${target_vg}.conf" ]; then
+          pvcreate -ff --yes --uuid "$tgt_pvuuid" --zero y --restorefile "$lvm_tmp/lvm_${target_vg}.conf" $dev 3<&- 4<&-
+          rc_pv=$?
+        fi
+        if [ $rc_pv -ne 0 ]; then
+          pvcreate -ff --yes --zero y $dev 3<&- 4<&-
+          actual_pvuuid="$(LC_ALL=C pvs --noheadings -o pv_uuid $dev 2>/dev/null | tr -d ' ')"
+          if [ -n "$actual_pvuuid" -a -f "$target_dir_fullpath/lvm_$vg.conf" ]; then
+            sed -i -e "s/$tgt_pvuuid/$actual_pvuuid/g" "$lvm_tmp/pv_uuid_map.txt"
+            create_shadow_vg_conf "$target_dir_fullpath/lvm_$vg.conf" "$lvm_tmp/lvm_${target_vg}.conf" "$vg" "$target_vg" "$PV_PARSE_CONF" "$lvm_tmp/pv_uuid_map.txt"
+          fi
+        fi
       else
         pvcreate -ff --yes --uuid $uuid --zero y --restorefile $lvm_tmp/lvm_$vg.conf $dev 3<&- 4<&-
       fi
@@ -7860,7 +7891,9 @@ restore_logv() {
         echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
         continue
       fi
-      create_shadow_vg_conf "$target_dir_fullpath/lvm_$vg.conf" "$lvm_tmp/lvm_${target_vg}.conf" "$vg" "$target_vg" "$PV_PARSE_CONF" "$lvm_tmp/pv_uuid_map.txt"
+      if [ ! -f "$lvm_tmp/lvm_${target_vg}.conf" ]; then
+        create_shadow_vg_conf "$target_dir_fullpath/lvm_$vg.conf" "$lvm_tmp/lvm_${target_vg}.conf" "$vg" "$target_vg" "$PV_PARSE_CONF" "$lvm_tmp/pv_uuid_map.txt"
+      fi
       vgcfgrestore --force -f "$lvm_tmp/lvm_${target_vg}.conf" $target_vg 2>&1 3<&- 4<&- | tee --append $OCS_LOGFILE
       rc=${PIPESTATUS[0]}
       rm -f "$lvm_tmp/lvm_${target_vg}.conf"
@@ -10858,8 +10891,14 @@ task_restoreparts() {
         fi
       done
     fi
-    if [ -f "$ocsroot/$target_dir/disk" ]; then
-      intended_src="$(cat "$ocsroot/$target_dir/disk")"
+    local disk_file=""
+    if [ "$create_temp_img_flag" = "done" ] && [ -n "$orig_ocsroot" ] && [ -n "$orig_target_dir" ] && [ -f "$orig_ocsroot/$orig_target_dir/disk" ]; then
+      disk_file="$orig_ocsroot/$orig_target_dir/disk"
+    elif [ -f "$ocsroot/$target_dir/disk" ]; then
+      disk_file="$ocsroot/$target_dir/disk"
+    fi
+    if [ -n "$disk_file" -a -f "$disk_file" ]; then
+      intended_src="$(cat "$disk_file")"
       for idisk in $intended_src; do
         if [ -z "$(echo $source_hd | grep -Ew "$idisk" 2>/dev/null)" ]; then
           source_hd="$source_hd $idisk"
