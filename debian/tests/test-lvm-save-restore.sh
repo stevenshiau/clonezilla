@@ -663,7 +663,7 @@ echo "--- Test 6: ocs-expand-lvm with duplicate VG names across disks ---"
 cat << 'EOF' > "$MOCK_BIN/vgs"
 #!/bin/bash
 cmd="$*"
-if [[ "$cmd" != *"--config devices{filter="* ]]; then
+if [[ "$cmd" != *"--config"* || "$cmd" != *"filter"* ]]; then
   echo "WARNING: VG name almalinux is used by VGs KIMQOg and 7E6AB8." >&2
   echo "Multiple VGs found with the same name: skipping almalinux" >&2
   exit 1

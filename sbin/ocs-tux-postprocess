@@ -9,6 +9,67 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . /etc/drbl/drbl-ocs.conf
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
+# Provide get_restored_os_extra_root_path if not already loaded from ocs-functions
+if ! type get_restored_os_extra_root_path &>/dev/null; then
+  get_restored_os_extra_root_path() {
+    # Function to find the subvolume root path under the mount point for btrfs or similar layouts
+    # Returns extra path like "/@/.snapshots/1/snapshot", "/@", "/root", or ""
+    local target_mnt="$1"
+    local def_subvol_out def_path isnap cand sub
+
+    # 1. Standard flat root: if /boot and (/etc/os-release or /etc/fstab) exist directly at root
+    if [ -d "$target_mnt/boot" ] && [ -f "$target_mnt/etc/os-release" -o -f "$target_mnt/etc/fstab" ]; then
+      echo ""
+      return 0
+    fi
+
+    # 2. btrfs subvolume get-default
+    if type btrfs &>/dev/null; then
+      def_subvol_out="$(btrfs subvolume get-default "$target_mnt" 2>/dev/null)"
+      if [ -n "$def_subvol_out" ] && [ -z "$(echo "$def_subvol_out" | grep "(FS_TREE)")" ]; then
+        def_path="$(echo "$def_subvol_out" | sed -r -e 's/.*path[[:space:]]+//')"
+        if [ -n "$def_path" ] && [ -d "$target_mnt/$def_path/boot" -o -f "$target_mnt/$def_path/etc/os-release" -o -f "$target_mnt/$def_path/etc/fstab" ]; then
+          echo "/$def_path"
+          return 0
+        fi
+      fi
+    fi
+
+    # 3. openSUSE Snapper layout: @/.snapshots/*/snapshot
+    if [ -d "$target_mnt/@/.snapshots" ]; then
+      for isnap in $(ls -vd "$target_mnt"/@/.snapshots/*/snapshot 2>/dev/null | tac); do
+        if [ -d "$isnap/boot" -o -f "$isnap/etc/os-release" -o -f "$isnap/etc/fstab" ]; then
+          echo "${isnap#$target_mnt}"
+          return 0
+        fi
+      done
+    fi
+
+    # 4. Ubuntu / Debian / openSUSE flat / Arch @ layout
+    if [ -d "$target_mnt/@/boot" -o -f "$target_mnt/@/etc/os-release" -o -f "$target_mnt/@/etc/fstab" ]; then
+      echo "/@"
+      return 0
+    fi
+
+    # 5. Fedora >= 38 root layout
+    if [ -d "$target_mnt/root/boot" -o -f "$target_mnt/root/etc/os-release" -o -f "$target_mnt/root/etc/fstab" ]; then
+      echo "/root"
+      return 0
+    fi
+
+    # 6. Fallback: check any snapshot or subvolume with boot
+    cand="$(find "$target_mnt" -maxdepth 4 -type d -name "boot" 2>/dev/null | head -n 1)"
+    if [ -n "$cand" ]; then
+      sub="${cand%/boot}"
+      echo "${sub#$target_mnt}"
+      return 0
+    fi
+
+    echo ""
+    return 0
+  }
+fi
+
 #
 USAGE() {
     echo "$ocs - To remove the Linux udev persistent files"
@@ -63,15 +124,21 @@ rm_udev_persistent_record() {
           [ -d "$hd_img" -a -n "$hd_img" ] && rmdir $hd_img
 	  continue
         fi
+        extra_root_path=""
+        if type get_restored_os_extra_root_path &>/dev/null; then
+          extra_root_path="$(get_restored_os_extra_root_path "$hd_img")"
+        fi
+        target_sys_root="${hd_img}${extra_root_path}"
+
 	# NIC
 	for inet in `get-nic-devs`; do
           # If MAC address is not found in 70-persistent-net.rules, it means the image is not restored to the same machine, therefore remove it. Even just one does not match.
           imac="$(LC_ALL=C drbl-get-macadd $inet)"
-          if [ -e "$hd_img/etc/udev/rules.d/70-persistent-net.rules" -a \
+          if [ -e "$target_sys_root/etc/udev/rules.d/70-persistent-net.rules" -a \
           	"$remove_udev_nic" = "true" ]; then
-             if ! grep -q -Ei "^SUBSYSTEM.*${imac}" $hd_img/etc/udev/rules.d/70-persistent-net.rules 2>/dev/null; then
-               echo "MAC address $imac of $inet was not found in $hd_img/etc/udev/rules.d/70-persistent-net.rules. This persistent net file does not fit the hardware. Remove it."
-               LC_ALL=C rm -fv $hd_img/etc/udev/rules.d/70-persistent-net.rules
+             if ! grep -q -Ei "^SUBSYSTEM.*${imac}" $target_sys_root/etc/udev/rules.d/70-persistent-net.rules 2>/dev/null; then
+               echo "MAC address $imac of $inet was not found in $target_sys_root/etc/udev/rules.d/70-persistent-net.rules. This persistent net file does not fit the hardware. Remove it."
+               LC_ALL=C rm -fv $target_sys_root/etc/udev/rules.d/70-persistent-net.rules
 	       break
              fi
           fi
@@ -79,46 +146,46 @@ rm_udev_persistent_record() {
 	for inet in `get-nic-devs`; do
           # If MAC address is not found in /etc/sysconfig/network-scripts/ifcfg-eth*, it means the image is not restored to the same machine, therefore remove it. Even just one does not match.
           imac="$(LC_ALL=C drbl-get-macadd $inet)"
-	  if ! grep -q -Ei "^HWADDR=$imac" $hd_img/etc/sysconfig/network-scripts/ifcfg-eth* 2>/dev/null; then
-            if ls $hd_img/etc/sysconfig/network-scripts/ifcfg-eth* &>/dev/null; then
-              echo "MAC address $imac of $inet was not found in $hd_img/etc/sysconfig/network-scripts/ifcfg-eth*. This MAC data does not fit the hardware. Comment it."
-              LC_ALL=C perl -pi -e 's/(^HWADDR=.*)/#$1 # Commented by Clonezilla/g' $hd_img/etc/sysconfig/network-scripts/ifcfg-eth*
+	  if ! grep -q -Ei "^HWADDR=$imac" $target_sys_root/etc/sysconfig/network-scripts/ifcfg-eth* 2>/dev/null; then
+            if ls $target_sys_root/etc/sysconfig/network-scripts/ifcfg-eth* &>/dev/null; then
+              echo "MAC address $imac of $inet was not found in $target_sys_root/etc/sysconfig/network-scripts/ifcfg-eth*. This MAC data does not fit the hardware. Comment it."
+              LC_ALL=C perl -pi -e 's/(^HWADDR=.*)/#$1 # Commented by Clonezilla/g' $target_sys_root/etc/sysconfig/network-scripts/ifcfg-eth*
 	      break
             fi
           fi
         done
 	# CD
-        if [ -e "$hd_img/etc/udev/rules.d/70-persistent-cd.rules" -a \
+        if [ -e "$target_sys_root/etc/udev/rules.d/70-persistent-cd.rules" -a \
 		"$remove_udev_cd" = "true" ]; then
-          rm -fv $hd_img/etc/udev/rules.d/70-persistent-cd.rules
+          rm -fv $target_sys_root/etc/udev/rules.d/70-persistent-cd.rules
         fi
 	# Dbus machine id 
 	# Ref: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=639261
 	#      http://unix.stackexchange.com/questions/120612/why-cant-i-run-gnome-apps-over-remote-ssh-session
 	# Thanks to Peter Sun for reporting this.
 	# gen_ma_id_flag is where we will know if it's the right partition to deal with.
-        if [ -e "$hd_img/var/lib/dbus/machine-id" -a \
+        if [ -e "$target_sys_root/var/lib/dbus/machine-id" -a \
 		"$remove_dbus_machine_id" = "true" ]; then
-          rm -fv $hd_img/var/lib/dbus/machine-id
+          rm -fv $target_sys_root/var/lib/dbus/machine-id
 	  gen_ma_id_flag="yes"
         fi
-        if [ -e "$hd_img/etc/machine-id" -a \
+        if [ -e "$target_sys_root/etc/machine-id" -a \
 		"$remove_dbus_machine_id" = "true" ]; then
-          rm -fv $hd_img/etc/machine-id
+          rm -fv $target_sys_root/etc/machine-id
 	  gen_ma_id_flag="yes"
         fi
 	if [ "$gen_ma_id_flag" = "yes" ]; then
-          echo "Found the file system and mount point to re-generate machine id: $target_p, $hd_img"
-          systemd-machine-id-setup --root=$hd_img
-          if [ -e "$hd_img/etc/machine-id" ]; then
-            chmod 444 $hd_img/etc/machine-id
+          echo "Found the file system and mount point to re-generate machine id: $target_p, $target_sys_root"
+          systemd-machine-id-setup --root=$target_sys_root
+          if [ -e "$target_sys_root/etc/machine-id" ]; then
+            chmod 444 $target_sys_root/etc/machine-id
 	    # TODO: maybe a better file to replace /etc/issue?
-            chcon --reference=$hd_img/etc/issue $hd_img/etc/machine-id
-            chcon -u system_u -t machineid_t $hd_img/etc/machine-id
-            (cd $hd_img/var/lib/dbus/; ln -fs /etc/machine-id .)
+            chcon --reference=$target_sys_root/etc/issue $target_sys_root/etc/machine-id
+            chcon -u system_u -t machineid_t $target_sys_root/etc/machine-id
+            (cd $target_sys_root/var/lib/dbus/; ln -fs /etc/machine-id .)
           else
             [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-            echo "Failed to create /etc/machine-id in the deployed GNU/Linux $hd_img/."
+            echo "Failed to create /etc/machine-id in the deployed GNU/Linux $target_sys_root/."
             [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
           fi
         fi
@@ -126,28 +193,28 @@ rm_udev_persistent_record() {
         # This file contains a whitelist of disk device IDs. When restored/cloned to different hardware or
         # different VM/disk, the device IDs change, causing LVM to ignore the volumes, resulting in boot failure.
 	# Ref: https://sourceforge.net/p/clonezilla/discussion/Open_discussion/thread/d587cfc539/
-        if [ -f "$hd_img/etc/lvm/devices/system.devices" ]; then
+        if [ -f "$target_sys_root/etc/lvm/devices/system.devices" ]; then
           echo "Found LVM system.devices in target OS. Clearing it to prevent boot failure on cloned disk..."
-          rm -f "$hd_img/etc/lvm/devices/system.devices"
+          rm -f "$target_sys_root/etc/lvm/devices/system.devices"
           
           # Try to regenerate the LVM devices file using vgimportdevices inside the target chroot.
           # We only run vgimportdevices if the target OS has it installed and chroot is executable.
           # Standard paths for vgimportdevices: /sbin/vgimportdevices, /usr/sbin/vgimportdevices
-          if [ -x "$hd_img/sbin/vgimportdevices" -o -x "$hd_img/usr/sbin/vgimportdevices" ]; then
+          if [ -x "$target_sys_root/sbin/vgimportdevices" -o -x "$target_sys_root/usr/sbin/vgimportdevices" ]; then
             echo "Regenerating LVM devices file inside chroot..."
             
             # Bind mount necessary virtual file systems for LVM to scan hardware devices.
-            mount --bind /dev "$hd_img/dev"
-            mount --bind /proc "$hd_img/proc"
-            mount --bind /sys "$hd_img/sys"
+            mount --bind /dev "$target_sys_root/dev"
+            mount --bind /proc "$target_sys_root/proc"
+            mount --bind /sys "$target_sys_root/sys"
             bind_run="no"
-            if [ -d "$hd_img/run" ]; then
-              mount --bind /run "$hd_img/run"
+            if [ -d "$target_sys_root/run" ]; then
+              mount --bind /run "$target_sys_root/run"
               bind_run="yes"
             fi
             
             # Run vgimportdevices -a in chroot environment
-            LC_ALL=C chroot "$hd_img" vgimportdevices -a 2>/dev/null
+            LC_ALL=C chroot "$target_sys_root" vgimportdevices -a 2>/dev/null
             rc_vgimport=$?
             if [ "$rc_vgimport" -ne 0 ]; then
               echo "Warning: vgimportdevices failed in chroot (exit code $rc_vgimport), possibly due to architecture mismatch. Leaving it deleted for auto-generation on next boot."
@@ -155,13 +222,19 @@ rm_udev_persistent_record() {
             
             # Clean up the bind mounts
             if [ "$bind_run" = "yes" ]; then
-              unmount_wait_and_try "$hd_img/run"
+              unmount_wait_and_try "$target_sys_root/run"
             fi
-            unmount_wait_and_try "$hd_img/sys"
-            unmount_wait_and_try "$hd_img/proc"
-            unmount_wait_and_try "$hd_img/dev"
+            unmount_wait_and_try "$target_sys_root/sys"
+            unmount_wait_and_try "$target_sys_root/proc"
+            unmount_wait_and_try "$target_sys_root/dev"
           else
             echo "vgimportdevices command not found in target OS. Leaving it deleted for auto-generation on next boot."
+          fi
+        fi
+        if [ -f "$target_sys_root/etc/lvm/lvm.conf" ]; then
+          if grep -q -Ei "^[[:space:]]*#?[[:space:]]*use_devicesfile" "$target_sys_root/etc/lvm/lvm.conf"; then
+            echo "Setting use_devicesfile = 0 in $target_sys_root/etc/lvm/lvm.conf to allow LVM to scan all devices..."
+            perl -pi -e 's/^[[:space:]]*#?[[:space:]]*use_devicesfile[[:space:]]*=.*/\tuse_devicesfile = 0/g' "$target_sys_root/etc/lvm/lvm.conf"
           fi
         fi
         [ "$mrc" -eq 0 ] && unmount_wait_and_try $target_p

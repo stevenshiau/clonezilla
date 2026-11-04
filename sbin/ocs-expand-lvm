@@ -40,7 +40,8 @@ expand_LV_in_VG() {
   local lv_size_f lv_size_tmp_f lv size ilv total_size total_free_size extend_size
   local vg_="$1"
   local total_free_size="$2"
-  local filter_opt="$3"
+  shift 2
+  local filter_opt=("$@")
   if [ -z "$vg_" ]; then
     echo "Error! No VG assigned in function expand_LV_in_VG."
     return 1
@@ -53,13 +54,13 @@ expand_LV_in_VG() {
   lv_size_f="$(mktemp /tmp/lv_size_f.XXXXXX)" || exit 1
   lv_size_tmp_f="$(mktemp /tmp/lv_size_ratio.XXXXXX)" || exit 1
   # If there are more than 1 PV?
-  all_LV="$(LC_ALL=C vgs $filter_opt --noheadings -o lv_name ${vg_} 2>/dev/null | xargs echo)"
+  all_LV="$(LC_ALL=C vgs "${filter_opt[@]}" --noheadings -o lv_name ${vg_} 2>/dev/null | xargs echo)"
   total_size="0"
   for ilv in $all_LV; do
     fs="$(ocs-get-dev-info /dev//${vg_}/$ilv fs)"
     # Skip expanding swap LV.
     if [ "$fs" != "swap" ]; then
-      size="$(LC_ALL=C lvs $filter_opt --units m --noheadings --nosuffix -o size /dev/${vg_}/$ilv 2>/dev/null | awk '{print $1}')"
+      size="$(LC_ALL=C lvs "${filter_opt[@]}" --units m --noheadings --nosuffix -o size /dev/${vg_}/$ilv 2>/dev/null | awk '{print $1}')"
       [ -z "$size" ] && continue
       echo "/dev/${vg_}/$ilv $size" >> $lv_size_f
       total_size="$(LC_ALL=C printf "%.0f" "$(echo "($total_size + $size)" | bc -l 2>/dev/null)")"
@@ -96,7 +97,7 @@ expand_LV_in_VG() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       continue
     fi
-    cmd="lvresize $filter_opt -L +${ext_size}m $lv"
+    cmd="lvresize ${filter_opt[@]} -L +${ext_size}m $lv"
     echo "Running: $cmd"
     $dry_run_prefix eval $cmd
     echo $msg_delimiter_star_line
@@ -199,17 +200,17 @@ for idev in $cand_pv_dev; do
   [ -n "$dsk" ] && cand_disks="$cand_disks $dsk"
 done
 cand_disks="$(echo $cand_disks | tr ' ' '\n' | sort -u | xargs)"
-lvm_filter_opt=""
+lvm_filter_opt=()
 if [ -n "$cand_disks" ]; then
   filter_rules=""
   for cdsk in $cand_disks; do
     filter_rules="${filter_rules}\"a|^/dev/${cdsk}.*|\", "
   done
   filter_rules="${filter_rules}\"r|.*|\""
-  lvm_filter_opt="--config devices{filter=[${filter_rules}]}"
+  lvm_filter_opt=(--config "devices { filter = [ ${filter_rules} ] }")
 fi
 
-all_vgs="$(LC_ALL=C pvs $lvm_filter_opt --noheadings -o vg_name $cand_pv_dev 2>/dev/null | xargs echo)"
+all_vgs="$(LC_ALL=C pvs "${lvm_filter_opt[@]}" --noheadings -o vg_name $cand_pv_dev 2>/dev/null | xargs echo)"
 if [ -z "$all_vgs" ]; then
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "No any VG on $cand_pv_dev was found."
@@ -220,21 +221,21 @@ fi
 echo "Found VG(s): $all_vgs"
 # Expand the PV after enlarging the partition.
 ocs-lvm2-start
-[ -n "$lvm_filter_opt" ] && LC_ALL=C vgchange -K -a y $lvm_filter_opt 2>/dev/null || true
+[ "${#lvm_filter_opt[@]}" -gt 0 ] && LC_ALL=C vgchange -K -a y "${lvm_filter_opt[@]}" 2>/dev/null || true
 for ivg in $all_vgs; do
   # Get the PV from VG
   pv_resize_flag=""
-  ipv="$(LC_ALL=C vgs $lvm_filter_opt --noheadings -o pv_name $ivg 2>/dev/null | xargs echo)"
+  ipv="$(LC_ALL=C vgs "${lvm_filter_opt[@]}" --noheadings -o pv_name $ivg 2>/dev/null | xargs echo)"
   [ -z "$ipv" ] && ipv="$(echo $cand_pv_dev | xargs)"
-  devsize_="$(LC_ALL=C pvs $lvm_filter_opt --units m --nosuffix --noheadings -o dev_size $ipv 2>/dev/null | awk '{print $1}')"
-  pvsize_="$(LC_ALL=C pvs $lvm_filter_opt --units m --nosuffix --noheadings -o pv_size $ipv 2>/dev/null | awk '{print $1}')"
+  devsize_="$(LC_ALL=C pvs "${lvm_filter_opt[@]}" --units m --nosuffix --noheadings -o dev_size $ipv 2>/dev/null | awk '{print $1}')"
+  pvsize_="$(LC_ALL=C pvs "${lvm_filter_opt[@]}" --units m --nosuffix --noheadings -o pv_size $ipv 2>/dev/null | awk '{print $1}')"
   if [ -n "$devsize_" -a -n "$pvsize_" ] && [ "$(LC_ALL=C echo "$pvsize_ < $devsize_" | bc -l 2>/dev/null)" = "1" ]; then
     echo "PV size ($pvsize_ MiB) is smaller than device size ($devsize_ MiB)"
-    expand_cmd="pvresize $lvm_filter_opt $ipv"
+    expand_cmd="pvresize ${lvm_filter_opt[@]} $ipv"
     echo "Running: $expand_cmd"
     $dry_run_prefix eval $expand_cmd
   fi
-  vg_free_size="$(LC_ALL=C vgs $lvm_filter_opt --units m --nosuffix --noheadings -o pv_free $ivg 2>/dev/null | awk '{print $1}')"
+  vg_free_size="$(LC_ALL=C vgs "${lvm_filter_opt[@]}" --units m --nosuffix --noheadings -o pv_free $ivg 2>/dev/null | awk '{print $1}')"
   echo "VG $ivg is in $ipv. Expand $ipv with free space: $vg_free_size MiB"
   # If vg_free_size is empty or not numeric, skip it
   if [ -z "$vg_free_size" ] || ! [[ "$vg_free_size" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
@@ -250,7 +251,7 @@ for ivg in $all_vgs; do
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     continue
   fi
-  expand_LV_in_VG $ivg $vg_free_size "$lvm_filter_opt"
+  expand_LV_in_VG $ivg $vg_free_size "${lvm_filter_opt[@]}"
   echo $msg_delimiter_star_line
 done
 

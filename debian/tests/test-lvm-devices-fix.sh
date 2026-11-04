@@ -191,6 +191,56 @@ else
 fi
 
 # Clean up temporary test files
-rm -rf "$MOCK_SRC" "$HD_IMG_DIR" /tmp/mock_mount_binds /tmp/mock_unmounts /tmp/mock_debug_log "$DRBL_SCRIPT_PATH"
+rm -rf "$MOCK_SRC" "$HD_IMG_DIR" /tmp/mock_mount_binds /tmp/mock_unmounts /tmp/mock_debug_log
+
+# Test 2: Btrfs subvolume layout (e.g. AlmaLinux 10 / Fedora with subvolume /root)
+echo "--- Test 2: Btrfs subvolume layout with /root ---"
+rm -rf "$MOCK_SRC"
+mkdir -p "$MOCK_SRC/root/etc/lvm/devices"
+mkdir -p "$MOCK_SRC/root/sbin"
+mkdir -p "$MOCK_SRC/root/dev" "$MOCK_SRC/root/proc" "$MOCK_SRC/root/sys" "$MOCK_SRC/root/run"
+mkdir -p "$MOCK_SRC/root/boot"
+touch "$MOCK_SRC/root/etc/os-release"
+
+echo "original_btrfs_whitelist" > "$MOCK_SRC/root/etc/lvm/devices/system.devices"
+cat << 'EOF' > "$MOCK_SRC/root/etc/lvm/lvm.conf"
+devices {
+    use_devicesfile = 1
+}
+EOF
+
+cat <<'EOF' > "$MOCK_SRC/root/sbin/vgimportdevices"
+#!/bin/sh
+if [ "$1" = "-a" ]; then
+  echo "regenerated_btrfs_whitelist" > /etc/lvm/devices/system.devices
+  exit 0
+else
+  exit 1
+fi
+EOF
+chmod +x "$MOCK_SRC/root/sbin/vgimportdevices"
+
+> /tmp/mock_debug_log
+> /tmp/mock_mount_binds
+> /tmp/mock_unmounts
+
+bash sbin/ocs-tux-postprocess mocksda3
+
+HD_IMG_DIR2=$(grep "Mock mount called:.*mocksda3" /tmp/mock_debug_log | awk '{print $NF}')
+if [ -z "$HD_IMG_DIR2" ]; then
+  echo "FAIL: Temporary mount directory for mocksda3 not found in logs!"
+  exit 1
+fi
+
+if grep -q "Mock chroot called: target_root=$HD_IMG_DIR2/root cmd=vgimportdevices arg=-a" /tmp/mock_debug_log; then
+  echo "PASS: chroot and vgimportdevices -a were successfully executed for Btrfs /root subvolume!"
+else
+  echo "FAIL: vgimportdevices was not executed inside Btrfs /root subvolume chroot!"
+  cat /tmp/mock_debug_log
+  exit 1
+fi
+
+# Clean up temporary test files
+rm -rf "$MOCK_SRC" "$HD_IMG_DIR2" /tmp/mock_mount_binds /tmp/mock_unmounts /tmp/mock_debug_log "$DRBL_SCRIPT_PATH"
 echo "=== LVM Postprocessing Tests Passed Successfully! ==="
 exit 0
