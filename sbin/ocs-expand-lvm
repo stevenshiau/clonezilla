@@ -97,11 +97,21 @@ expand_LV_in_VG() {
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
       continue
     fi
-    cmd="lvresize ${filter_opt[@]} -L +${ext_size}m $lv"
-    echo "Running: $cmd"
-    $dry_run_prefix eval $cmd
+    echo "Running: lvresize ${filter_opt[@]} -L +${ext_size}m $lv"
+    $dry_run_prefix lvresize "${filter_opt[@]}" -L "+${ext_size}m" $lv
     echo $msg_delimiter_star_line
-    $dry_run_prefix ocs-resize-part --batch $lv
+    is_thin_pool="$(LC_ALL=C lvs "${filter_opt[@]}" --noheadings -o segtype "$lv" 2>/dev/null | grep -Ew 'thin-pool')"
+    if [ -n "$is_thin_pool" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Device $lv is a thin pool container. Skip filesystem resizing."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    elif [ -b "$lv" -o -e "$lv" ]; then
+      $dry_run_prefix ocs-resize-part --batch $lv
+    else
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Block device \"$lv\" not found! Skip filesystem resizing."
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    fi
   done < $lv_size_tmp_f
   
   [ -e "$lv_size_f" ] && rm -f $lv_size_f
@@ -231,9 +241,8 @@ for ivg in $all_vgs; do
   pvsize_="$(LC_ALL=C pvs "${lvm_filter_opt[@]}" --units m --nosuffix --noheadings -o pv_size $ipv 2>/dev/null | awk '{print $1}')"
   if [ -n "$devsize_" -a -n "$pvsize_" ] && [ "$(LC_ALL=C echo "$pvsize_ < $devsize_" | bc -l 2>/dev/null)" = "1" ]; then
     echo "PV size ($pvsize_ MiB) is smaller than device size ($devsize_ MiB)"
-    expand_cmd="pvresize ${lvm_filter_opt[@]} $ipv"
-    echo "Running: $expand_cmd"
-    $dry_run_prefix eval $expand_cmd
+    echo "Running: pvresize ${lvm_filter_opt[@]} $ipv"
+    $dry_run_prefix pvresize "${lvm_filter_opt[@]}" $ipv
   fi
   vg_free_size="$(LC_ALL=C vgs "${lvm_filter_opt[@]}" --units m --nosuffix --noheadings -o pv_free $ivg 2>/dev/null | awk '{print $1}')"
   echo "VG $ivg is in $ipv. Expand $ipv with free space: $vg_free_size MiB"

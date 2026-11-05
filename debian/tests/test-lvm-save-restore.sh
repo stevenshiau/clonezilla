@@ -723,10 +723,13 @@ chmod +x "$MOCK_BIN/ocs-resize-part"
 
 rm -f /dev/sda2
 mknod /dev/sda2 b 8 2 2>/dev/null || touch /dev/sda2
-trap 'rm -rf "$TMP_DIR"; rm -f /dev/sda2' EXIT
+mkdir -p /dev/almalinux
+mknod /dev/almalinux/home b 253 0 2>/dev/null || touch /dev/almalinux/home
+trap 'rm -rf "$TMP_DIR"; rm -f /dev/sda2; rm -rf /dev/almalinux' EXIT
 
 sbin/ocs-expand-lvm -b /dev/sda2
 rm -f /dev/sda2
+rm -rf /dev/almalinux
 
 if ! grep -q "pvresize.*--config devices{filter.*a\|\^/dev/sda\.\*\|.*r\|\.\*\|.*\/dev\/sda2" "$ACTION_LOG"; then
   echo "FAIL: pvresize was not called with device filter for sda!"
@@ -747,4 +750,76 @@ if ! grep -q "ocs-resize-part --batch /dev/almalinux/home" "$ACTION_LOG"; then
 fi
 
 echo "PASS: Test 6: ocs-expand-lvm handled duplicate VGs smoothly using device filter."
+
+# ==============================================================================
+# TEST 7: ocs-expand-lvm with thin pool container (pool00) and thin LV (home)
+# ==============================================================================
+echo "--- Test 7: ocs-expand-lvm with thin pool container and thin LV ---"
+> "$ACTION_LOG"
+
+cat << 'EOF' > "$MOCK_BIN/vgs"
+#!/bin/bash
+cmd="$*"
+if [[ "$cmd" == *"-o pv_name"* ]]; then
+  echo "  /dev/sda2"
+elif [[ "$cmd" == *"-o pv_free"* ]]; then
+  echo "  4568.00"
+elif [[ "$cmd" == *"-o lv_name"* ]]; then
+  echo "  pool00 home"
+fi
+exit 0
+EOF
+chmod +x "$MOCK_BIN/vgs"
+
+cat << 'EOF' > "$MOCK_BIN/lvs"
+#!/bin/bash
+cmd="$*"
+if [[ "$cmd" == *"-o segtype"* ]]; then
+  if [[ "$cmd" == *"pool00"* ]]; then
+    echo "  thin-pool"
+  else
+    echo "  thin"
+  fi
+elif [[ "$cmd" == *"-o size"* ]]; then
+  echo "  19000.00"
+fi
+exit 0
+EOF
+chmod +x "$MOCK_BIN/lvs"
+
+rm -f /dev/sda2
+mknod /dev/sda2 b 8 2 2>/dev/null || touch /dev/sda2
+mkdir -p /dev/almalinux
+mknod /dev/almalinux/home b 253 0 2>/dev/null || touch /dev/almalinux/home
+trap 'rm -rf "$TMP_DIR"; rm -f /dev/sda2; rm -rf /dev/almalinux' EXIT
+
+sbin/ocs-expand-lvm -b /dev/sda2
+rm -f /dev/sda2
+rm -rf /dev/almalinux
+
+if ! grep -q "lvresize.*pool00" "$ACTION_LOG"; then
+  echo "FAIL: lvresize was not called for thin pool container pool00!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if ! grep -q "lvresize.*home" "$ACTION_LOG"; then
+  echo "FAIL: lvresize was not called for data LV home!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if grep -q "ocs-resize-part.*pool00" "$ACTION_LOG"; then
+  echo "FAIL: ocs-resize-part was erroneously called for thin pool container pool00!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if ! grep -q "ocs-resize-part --batch /dev/almalinux/home" "$ACTION_LOG"; then
+  echo "FAIL: ocs-resize-part was not called for data LV home!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+echo "PASS: Test 7: thin pool container pool00 resized without running ocs-resize-part, and home resized successfully."
 echo "=== All Comprehensive LVM Save, Restore & Cloning Tests Passed Successfully! ==="

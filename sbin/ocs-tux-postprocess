@@ -9,6 +9,18 @@ DRBL_SCRIPT_PATH="${DRBL_SCRIPT_PATH:-/usr/share/drbl}"
 . /etc/drbl/drbl-ocs.conf
 . $DRBL_SCRIPT_PATH/sbin/ocs-functions
 
+# Provide get_diskname if not already loaded from ocs-functions
+if ! type get_diskname &>/dev/null; then
+  get_diskname() {
+    local dev="${1#/dev/}"
+    if [[ "$dev" =~ ^(.*[0-9])p[0-9]*$ ]]; then
+      echo "${BASH_REMATCH[1]}"
+    else
+      echo "${dev%%[0-9]*}"
+    fi
+  }
+fi
+
 # Provide get_restored_os_extra_root_path if not already loaded from ocs-functions
 if ! type get_restored_os_extra_root_path &>/dev/null; then
   get_restored_os_extra_root_path() {
@@ -213,11 +225,42 @@ rm_udev_persistent_record() {
               bind_run="yes"
             fi
             
-            # Run vgimportdevices -a in chroot environment
-            LC_ALL=C chroot "$target_sys_root" vgimportdevices -a 2>/dev/null
-            rc_vgimport=$?
+            # Construct device filter for target disk(s) to avoid duplicate VG collisions with source disk in d2d mode
+            target_disks=""
+            for t_dev in $selected_dev; do
+              t_dsk="$(get_diskname "$t_dev")"
+              [ -n "$t_dsk" ] && target_disks="$target_disks $t_dsk"
+            done
+            target_disks="$(echo $target_disks | tr ' ' '\n' | sort -u | xargs)"
+            if [ -z "$target_disks" -a -n "$target_p" ]; then
+              target_disks="$(get_diskname "$target_p")"
+            fi
+            chroot_filter_rules=""
+            if [ -n "$target_disks" ]; then
+              for td in $target_disks; do
+                chroot_filter_rules="${chroot_filter_rules}\"a|^/dev/${td}.*|\", "
+              done
+              chroot_filter_rules="${chroot_filter_rules}\"r|.*|\""
+            fi
+
+            # Run vgimportdevices in chroot environment (try with target disk filter first to avoid duplicate VGs)
+            rc_vgimport=1
+            if [ -n "$chroot_filter_rules" ]; then
+              LC_ALL=C chroot "$target_sys_root" vgimportdevices --config "devices { filter = [ ${chroot_filter_rules} ] }" -a 2>/dev/null
+              rc_vgimport=$?
+            fi
+            if [ "$rc_vgimport" -ne 0 ]; then
+              LC_ALL=C chroot "$target_sys_root" vgimportdevices -a 2>/dev/null
+              rc_vgimport=$?
+            fi
             if [ "$rc_vgimport" -ne 0 ]; then
               echo "Warning: vgimportdevices failed in chroot (exit code $rc_vgimport), possibly due to architecture mismatch. Leaving it deleted for auto-generation on next boot."
+              if [ -f "$target_sys_root/etc/lvm/lvm.conf" ]; then
+                if grep -q -Ei "^[[:space:]]*#?[[:space:]]*use_devicesfile" "$target_sys_root/etc/lvm/lvm.conf"; then
+                  echo "Setting use_devicesfile = 0 in $target_sys_root/etc/lvm/lvm.conf to allow LVM to scan all devices..."
+                  perl -pi -e 's/^[[:space:]]*#?[[:space:]]*use_devicesfile[[:space:]]*=.*/\tuse_devicesfile = 0/g' "$target_sys_root/etc/lvm/lvm.conf"
+                fi
+              fi
             fi
             
             # Clean up the bind mounts
@@ -229,12 +272,12 @@ rm_udev_persistent_record() {
             unmount_wait_and_try "$target_sys_root/dev"
           else
             echo "vgimportdevices command not found in target OS. Leaving it deleted for auto-generation on next boot."
-          fi
-        fi
-        if [ -f "$target_sys_root/etc/lvm/lvm.conf" ]; then
-          if grep -q -Ei "^[[:space:]]*#?[[:space:]]*use_devicesfile" "$target_sys_root/etc/lvm/lvm.conf"; then
-            echo "Setting use_devicesfile = 0 in $target_sys_root/etc/lvm/lvm.conf to allow LVM to scan all devices..."
-            perl -pi -e 's/^[[:space:]]*#?[[:space:]]*use_devicesfile[[:space:]]*=.*/\tuse_devicesfile = 0/g' "$target_sys_root/etc/lvm/lvm.conf"
+            if [ -f "$target_sys_root/etc/lvm/lvm.conf" ]; then
+              if grep -q -Ei "^[[:space:]]*#?[[:space:]]*use_devicesfile" "$target_sys_root/etc/lvm/lvm.conf"; then
+                echo "Setting use_devicesfile = 0 in $target_sys_root/etc/lvm/lvm.conf to allow LVM to scan all devices..."
+                perl -pi -e 's/^[[:space:]]*#?[[:space:]]*use_devicesfile[[:space:]]*=.*/\tuse_devicesfile = 0/g' "$target_sys_root/etc/lvm/lvm.conf"
+              fi
+            fi
           fi
         fi
         [ "$mrc" -eq 0 ] && unmount_wait_and_try $target_p

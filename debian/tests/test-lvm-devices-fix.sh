@@ -19,7 +19,7 @@ echo "original_whitelist_data" > "$MOCK_SRC/etc/lvm/devices/system.devices"
 # Create mock vgimportdevices command
 cat <<'EOF' > "$MOCK_SRC/sbin/vgimportdevices"
 #!/bin/sh
-if [ "$1" = "-a" ]; then
+if echo "$*" | grep -q -- "-a"; then
   # Recreate the file with new data
   echo "regenerated_whitelist_data" > /etc/lvm/devices/system.devices
   exit 0
@@ -54,18 +54,22 @@ export -f unmount_wait_and_try
 chroot() {
   local target_root="$1"
   local cmd="$2"
-  local arg="$3"
-  echo "Mock chroot called: target_root=$target_root cmd=$cmd arg=$arg" >> /tmp/mock_debug_log
+  shift 2
+  echo "Mock chroot called: target_root=$target_root cmd=$cmd args=$*" >> /tmp/mock_debug_log
   if [ "$cmd" = "vgimportdevices" ]; then
     # We execute the script inside target_root, but we must point its output to target_root
     # We can do this by running it and shifting its /etc paths. Or simpler, the mock script
     # can write directly if we replace /etc with target_root/etc.
-    # Let's adjust the vgimportdevices script dynamically to write to target_root!
-    sed -i "s|/etc/lvm/devices/system.devices|$target_root/etc/lvm/devices/system.devices|g" "$target_root/sbin/vgimportdevices"
-    "$target_root/sbin/vgimportdevices" "$arg"
+    sed -i "s|/etc/lvm/devices/system.devices|$target_root/etc/lvm/devices/system.devices|g" "$target_root/sbin/vgimportdevices" 2>/dev/null || true
+    sed -i "s|/etc/lvm/devices/system.devices|$target_root/etc/lvm/devices/system.devices|g" "$target_root/usr/sbin/vgimportdevices" 2>/dev/null || true
+    if [ -x "$target_root/sbin/vgimportdevices" ]; then
+      "$target_root/sbin/vgimportdevices" "$@"
+    elif [ -x "$target_root/usr/sbin/vgimportdevices" ]; then
+      "$target_root/usr/sbin/vgimportdevices" "$@"
+    fi
   else
     # Fallback/default command execution
-    "$@"
+    "$cmd" "$@"
   fi
 }
 export -f chroot
@@ -158,10 +162,17 @@ if [ -z "$HD_IMG_DIR" ]; then
 fi
 
 # 1. Verify if the test logs show that chroot and vgimportdevices were called
-if grep -q "Mock chroot called: target_root=$HD_IMG_DIR cmd=vgimportdevices arg=-a" /tmp/mock_debug_log; then
+if grep -q "Mock chroot called: target_root=$HD_IMG_DIR cmd=vgimportdevices args=.*-a" /tmp/mock_debug_log; then
   echo "PASS: chroot and vgimportdevices -a were successfully executed!"
 else
   echo "FAIL: vgimportdevices was not executed inside chroot!"
+  exit 1
+fi
+
+if grep -q "Mock chroot called: target_root=$HD_IMG_DIR cmd=vgimportdevices args=.*--config.*filter" /tmp/mock_debug_log; then
+  echo "PASS: vgimportdevices was executed with device filter!"
+else
+  echo "FAIL: vgimportdevices was not called with device filter!"
   exit 1
 fi
 
@@ -211,7 +222,7 @@ EOF
 
 cat <<'EOF' > "$MOCK_SRC/root/sbin/vgimportdevices"
 #!/bin/sh
-if [ "$1" = "-a" ]; then
+if echo "$*" | grep -q -- "-a"; then
   echo "regenerated_btrfs_whitelist" > /etc/lvm/devices/system.devices
   exit 0
 else
@@ -232,7 +243,7 @@ if [ -z "$HD_IMG_DIR2" ]; then
   exit 1
 fi
 
-if grep -q "Mock chroot called: target_root=$HD_IMG_DIR2/root cmd=vgimportdevices arg=-a" /tmp/mock_debug_log; then
+if grep -q "Mock chroot called: target_root=$HD_IMG_DIR2/root cmd=vgimportdevices args=.*-a" /tmp/mock_debug_log; then
   echo "PASS: chroot and vgimportdevices -a were successfully executed for Btrfs /root subvolume!"
 else
   echo "FAIL: vgimportdevices was not executed inside Btrfs /root subvolume chroot!"
