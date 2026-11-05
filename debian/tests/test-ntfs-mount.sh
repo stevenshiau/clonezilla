@@ -594,4 +594,97 @@ EOF
   echo "  PASS: Both gen_chksum_for_files_in_dev and inspect_chksum_for_files_in_dev mount NTFS partition via ntfs-3g."
 )
 
+# -------------------------------------------------------------
+# Test 8: ocs-rm-win-swap-hib unmount logic on NTFS partition
+# -------------------------------------------------------------
+echo "[Test 8] Testing ocs-rm-win-swap-hib unmount logic on NTFS partition..."
+(
+  TEST_DIR=$(mktemp -d)
+  trap 'rm -rf "$TEST_DIR"' EXIT
+
+  MOCK_BIN="$TEST_DIR/bin"
+  mkdir -p "$MOCK_BIN"
+  export PATH="$MOCK_BIN:$PATH"
+
+  CALL_LOG="$TEST_DIR/calls.log"
+  touch "$CALL_LOG"
+
+  cat <<EOF > "$MOCK_BIN/ocs-get-dev-info"
+#!/bin/bash
+if [ "\$2" = "filesystem" ]; then
+  echo "ntfs"
+fi
+EOF
+  chmod +x "$MOCK_BIN/ocs-get-dev-info"
+
+  cat <<EOF > "$MOCK_BIN/mountpoint"
+#!/bin/bash
+exit 0
+EOF
+  chmod +x "$MOCK_BIN/mountpoint"
+
+  cat <<EOF > "$MOCK_BIN/mount"
+#!/bin/bash
+echo "mount \$*" >> "$CALL_LOG"
+exit 0
+EOF
+  chmod +x "$MOCK_BIN/mount"
+
+  cat <<EOF > "$MOCK_BIN/umount"
+#!/bin/bash
+echo "umount \$*" >> "$CALL_LOG"
+exit 0
+EOF
+  chmod +x "$MOCK_BIN/umount"
+
+  cat <<EOF > "$MOCK_BIN/modinfo"
+#!/bin/bash
+if [ "\$1" = "-F" ] && [ "\$2" = "description" ] && [ "\$3" = "ntfs" ]; then
+  echo "NTFS read-write filesystem driver"
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "$MOCK_BIN/modinfo"
+
+  cat <<EOF > "$MOCK_BIN/mktemp"
+#!/bin/bash
+if [ "\$1" = "-d" ]; then
+  target="\$2"
+  dir="\${target%XXXXXX}dir123"
+  mkdir -p "\$dir"
+  echo "\$dir"
+  exit 0
+fi
+target="\$1"
+file="\${target%XXXXXX}123456"
+touch "\$file"
+echo "\$file"
+exit 0
+EOF
+  chmod +x "$MOCK_BIN/mktemp"
+
+  check_if_root() { return 0; }
+  export -f check_if_root
+
+  MOCK_DRBL="$TEST_DIR/drbl"
+  mkdir -p "$MOCK_DRBL"
+  if [ -d "/usr/share/drbl" ]; then
+    cp -a /usr/share/drbl/* "$MOCK_DRBL/"
+  fi
+  mkdir -p "$MOCK_DRBL/sbin"
+  cp -a "$SCRIPT_DIR/scripts/sbin/"* "$MOCK_DRBL/sbin/"
+  export DRBL_SCRIPT_PATH="$MOCK_DRBL"
+
+  out=$(bash "$SCRIPT_DIR/sbin/ocs-rm-win-swap-hib" /dev/sda1)
+  if ! grep -q "umount /dev/sda1" "$CALL_LOG"; then
+    echo "FAIL: Expected 'umount /dev/sda1' call in log, got:"
+    cat "$CALL_LOG"
+    echo "Script output:"
+    echo "$out"
+    exit 1
+  fi
+  echo "  PASS: ocs-rm-win-swap-hib successfully mounts and unmounts NTFS partition."
+)
+
 echo "=== All NTFS Mount Logic Tests Passed! ==="
