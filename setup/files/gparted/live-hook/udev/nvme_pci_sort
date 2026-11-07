@@ -1,0 +1,128 @@
+#!/bin/sh
+# A mechanism to sort NVMe block devices in PCI order.
+# This script runs in initramfs before cpu_online so that NVMe controllers
+# are bound sequentially while only 1 CPU is active.
+
+CMDLINE_FILE="${CMDLINE_FILE:-/proc/cmdline}"
+SYS_DIR="${SYS_DIR:-/sys}"
+
+if [ ! -f "$CMDLINE_FILE" ] || [ -z "$(grep -Ew "(ocs_1_cpu_udev|ocs_nvme_pci_sort)" "$CMDLINE_FILE" 2>/dev/null)" ]; then
+  # Skip if neither ocs_1_cpu_udev nor ocs_nvme_pci_sort exists.
+  exit 0
+fi
+
+PCI_DEVS_DIR="$SYS_DIR/bus/pci/devices"
+if [ ! -d "$PCI_DEVS_DIR" ]; then
+  exit 0
+fi
+
+# Find all NVMe PCI devices (class 0x010802 or 0x0108*)
+nvme_devs=""
+for d in "$PCI_DEVS_DIR"/*; do
+  [ -d "$d" ] || continue
+  class="$(cat "$d/class" 2>/dev/null)"
+  case "$class" in
+    0x010802*|0x0108*)
+      nvme_devs="$nvme_devs $d"
+      ;;
+  esac
+done
+
+# If fewer than 2 NVMe controllers exist, no re-ordering is necessary.
+nvme_count=$(echo $nvme_devs | wc -w)
+if [ "$nvme_count" -lt 2 ]; then
+  exit 0
+fi
+
+# Sort NVMe PCI devices strictly by PCI BDF address (LC_ALL=C for hex order)
+sorted_pci_devs=$(printf "%s\n" $nvme_devs | LC_ALL=C sort)
+
+# Check if NVMe controllers are already bound in PCI order (nvme0, nvme1, ...)
+idx=0
+already_sorted="true"
+for pci_path in $sorted_pci_devs; do
+  ctrl_dir=$(ls -d "$pci_path/nvme/nvme"* 2>/dev/null | head -n 1)
+  ctrl_base=$(basename "$ctrl_dir" 2>/dev/null)
+  if [ "$ctrl_base" != "nvme$idx" ]; then
+    already_sorted="false"
+    break
+  fi
+  idx=$((idx + 1))
+done
+
+if [ "$already_sorted" = "true" ]; then
+  echo "NVMe controllers are already in PCI order."
+  exit 0
+fi
+
+echo "Sorting NVMe block devices by PCI order..."
+
+AUTOPROBE_FILE="$SYS_DIR/bus/pci/drivers_autoprobe"
+PCI_NVME_DRIVER_DIR="$SYS_DIR/bus/pci/drivers/nvme"
+
+# Temporarily disable PCI driver auto-probing so devices do not re-bind asynchronously
+if [ -e "$AUTOPROBE_FILE" ]; then
+  echo 0 > "$AUTOPROBE_FILE" 2>/dev/null || true
+fi
+
+# Unbind all currently bound NVMe controllers
+for pci_path in $nvme_devs; do
+  bdf=$(basename "$pci_path")
+  if [ -e "$PCI_NVME_DRIVER_DIR/$bdf" ] || [ -e "$PCI_NVME_DRIVER_DIR/unbind" ]; then
+    echo "$bdf" > "$PCI_NVME_DRIVER_DIR/unbind" 2>/dev/null || true
+  fi
+done
+
+# Reload nvme module if possible to reset nvme_instance_ida counter to 0
+if [ -e "$SYS_DIR/module/nvme" ]; then
+  modprobe -r nvme 2>/dev/null || rmmod nvme 2>/dev/null || true
+  modprobe nvme 2>/dev/null || true
+else
+  modprobe nvme 2>/dev/null || true
+fi
+
+# Ensure nvme driver interface is present
+if [ ! -d "$PCI_NVME_DRIVER_DIR" ]; then
+  # nvme driver not available, re-enable auto-probing and exit
+  [ -e "$AUTOPROBE_FILE" ] && echo 1 > "$AUTOPROBE_FILE" 2>/dev/null || true
+  exit 0
+fi
+
+# Sequentially bind each NVMe controller in strict PCI order
+for pci_path in $sorted_pci_devs; do
+  bdf=$(basename "$pci_path")
+  echo -n "$bdf... "
+  echo "$bdf" > "$PCI_NVME_DRIVER_DIR/bind" 2>/dev/null || true
+
+  # Wait synchronously for this controller to become 'live' and scan its namespaces
+  timeout=50 # Up to 5 seconds
+  while [ $timeout -gt 0 ]; do
+    if [ -d "$pci_path/nvme" ]; then
+      ctrl_state=$(cat "$pci_path/nvme/nvme"*/state 2>/dev/null)
+      if [ "$ctrl_state" = "live" ]; then
+        # Wait a short moment for namespace block devices to be created
+        ns_timeout=10 # up to 0.5s
+        while [ $ns_timeout -gt 0 ]; do
+          if [ -n "$(ls -d "$pci_path/nvme/nvme"*/nvme*n* 2>/dev/null)" ]; then
+            break
+          fi
+          sleep 0.05
+          ns_timeout=$((ns_timeout - 1))
+        done
+        break
+      fi
+    fi
+    sleep 0.1
+    timeout=$((timeout - 1))
+  done
+done
+echo "done!"
+
+# Restore PCI driver auto-probing
+if [ -e "$AUTOPROBE_FILE" ]; then
+  echo 1 > "$AUTOPROBE_FILE" 2>/dev/null || true
+fi
+
+# Settle udev events for newly created block devices
+udevadm settle --timeout=10 2>/dev/null || true
+echo "NVMe devices sorted in PCI order successfully."
