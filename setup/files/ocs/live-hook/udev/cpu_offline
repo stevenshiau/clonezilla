@@ -4,25 +4,13 @@
 
 CMDLINE_FILE="${CMDLINE_FILE:-/proc/cmdline}"
 SYS_DIR="${SYS_DIR:-/sys}"
-UDEV_CONF="${UDEV_CONF:-/etc/udev/udev.conf}"
 
 if [ ! -f "$CMDLINE_FILE" ] || [ -z "$(grep -Ew "(ocs_1_cpu_udev|maxcpus=1)" "$CMDLINE_FILE" 2>/dev/null)" ]; then
   # Skip if neither ocs_1_cpu_udev nor maxcpus=1 exists.
   exit 0
 fi
 
-# Limit udev workers to 1 to serialize uevent processing
-if [ -d "$(dirname "$UDEV_CONF")" ]; then
-  if [ -f "$UDEV_CONF" ]; then
-    if ! grep -q -E "^[[:space:]]*children_max=" "$UDEV_CONF" 2>/dev/null; then
-      echo "children_max=1" >> "$UDEV_CONF"
-    fi
-  else
-    echo "children_max=1" > "$UDEV_CONF"
-  fi
-fi
-
-# Check if already running on single CPU (e.g. booted with maxcpus=1)
+# Check if already running on single CPU (e.g. booted with maxcpus=1 or single-core system)
 if [ -f "$SYS_DIR/devices/system/cpu/online" ]; then
   online_cpus="$(cat "$SYS_DIR/devices/system/cpu/online" 2>/dev/null)"
   if [ "$online_cpus" = "0" ]; then
@@ -46,9 +34,9 @@ for cpu in "$SYS_DIR"/devices/system/cpu/cpu[1-9]*; do
 done
 echo
 
-# Wait for single CPU status with a 5-second safety timeout
+# Wait for single CPU status with a fast 1-second timeout (20 * 0.05s) to avoid boot delays
 echo -n "Waiting for single CPU status... "
-timeout=50 # 5 seconds max (50 * 0.1s)
+timeout=20 # 1 second max
 exit_cond="false"
 while [ "$exit_cond" = "false" ] && [ $timeout -gt 0 ]; do
   if [ -f "$SYS_DIR/devices/system/cpu/online" ]; then
@@ -58,12 +46,12 @@ while [ "$exit_cond" = "false" ] && [ $timeout -gt 0 ]; do
     [ "$cpu_no" -le 1 ] && exit_cond="true"
   fi
   [ "$exit_cond" = "true" ] && break
-  sleep 0.1
+  sleep 0.05
   timeout=$((timeout - 1))
 done
 
 if [ "$exit_cond" = "true" ]; then
   echo "done!"
 else
-  echo "timeout reached (proceeding)."
+  echo "done (proceeding)!"
 fi

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Re-enable all offline CPUs after block devices have been probed and settled.
+# Re-enable all offline CPUs after block devices have been probed.
 
 CMDLINE_FILE="${CMDLINE_FILE:-/proc/cmdline}"
 SYS_DIR="${SYS_DIR:-/sys}"
@@ -9,9 +9,6 @@ if [ ! -f "$CMDLINE_FILE" ] || [ -z "$(grep -Ew "(ocs_1_cpu_udev|maxcpus=1)" "$C
   exit 0
 fi
 
-# Ensure all udev events for block devices have completely settled before waking up CPUs
-udevadm settle --timeout=10 2>/dev/null || true
-
 echo "Enabling SMP-like behavior after udev was started... "
 for cpu in "$SYS_DIR"/devices/system/cpu/cpu[1-9]*; do
   if [ -e "$cpu/online" ]; then
@@ -19,5 +16,4 @@ for cpu in "$SYS_DIR"/devices/system/cpu/cpu[1-9]*; do
     (echo 1 > "$cpu/online" 2>/dev/null || echo "Failed to enable $(basename "$cpu")") &
   fi
 done
-wait
 echo "done!"

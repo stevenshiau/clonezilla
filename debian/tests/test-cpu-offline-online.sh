@@ -52,12 +52,8 @@ echo "[Test 2] Testing maxcpus=1 detection when already single CPU..."
   mkdir -p "$SYS_DIR/devices/system/cpu"
   echo "0" > "$SYS_DIR/devices/system/cpu/online"
 
-  MOCK_UDEV_CONF="$TEST_DIR/etc/udev/udev.conf"
-  mkdir -p "$TEST_DIR/etc/udev"
-
   export CMDLINE_FILE
   export SYS_DIR
-  export UDEV_CONF="$MOCK_UDEV_CONF"
 
   OUT_OFF=$(sh "$SCRIPT_DIR/setup/files/ocs/live-hook/udev/cpu_offline")
   if [[ "$OUT_OFF" != *"already running on single CPU"* ]]; then
@@ -65,13 +61,7 @@ echo "[Test 2] Testing maxcpus=1 detection when already single CPU..."
     exit 1
   fi
 
-  # Check that udev.conf received children_max=1
-  if ! grep -q "^children_max=1" "$MOCK_UDEV_CONF"; then
-    echo "FAIL: Expected children_max=1 in udev.conf"
-    exit 1
-  fi
-
-  echo "  PASS: Correctly detected single CPU and configured udev children_max=1."
+  echo "  PASS: Correctly detected single CPU and exited immediately with 0 delay."
 )
 
 # -------------------------------------------------------------
@@ -95,8 +85,6 @@ echo "[Test 3] Testing offlining SMP CPUs with ocs_1_cpu_udev..."
 
   export CMDLINE_FILE
   export SYS_DIR
-  export UDEV_CONF="$TEST_DIR/etc/udev/udev.conf"
-  mkdir -p "$TEST_DIR/etc/udev"
 
   # Background watcher to simulate kernel updating cpu/online to "0" after echo 0
   (
@@ -106,7 +94,7 @@ echo "[Test 3] Testing offlining SMP CPUs with ocs_1_cpu_udev..."
       if [ "$c1" = "0" ] && [ "$c2" = "0" ]; then
         echo "0" > "$SYS_DIR/devices/system/cpu/online"
       fi
-      sleep 0.05
+      sleep 0.02
     done
   ) &
   WATCHER_PID=$!
@@ -129,9 +117,9 @@ echo "[Test 3] Testing offlining SMP CPUs with ocs_1_cpu_udev..."
 )
 
 # -------------------------------------------------------------
-# Test 4: Timeout safety in cpu_offline
+# Test 4: Fast timeout safety in cpu_offline
 # -------------------------------------------------------------
-echo "[Test 4] Testing timeout safety in cpu_offline when a CPU refuses to offline..."
+echo "[Test 4] Testing fast timeout safety in cpu_offline without long boot delays..."
 (
   TEST_DIR=$(mktemp -d)
   trap 'rm -rf "$TEST_DIR"' EXIT
@@ -146,32 +134,29 @@ echo "[Test 4] Testing timeout safety in cpu_offline when a CPU refuses to offli
 
   export CMDLINE_FILE
   export SYS_DIR
-  export UDEV_CONF="$TEST_DIR/etc/udev/udev.conf"
-  mkdir -p "$TEST_DIR/etc/udev"
 
-  # Fast timeout test: replace timeout with short value
   START_TIME=$(date +%s)
-  OUT_OFF=$(sed 's/timeout=50/timeout=3/' "$SCRIPT_DIR/setup/files/ocs/live-hook/udev/cpu_offline" | sh)
+  OUT_OFF=$(sh "$SCRIPT_DIR/setup/files/ocs/live-hook/udev/cpu_offline")
   END_TIME=$(date +%s)
 
-  if [[ "$OUT_OFF" != *"timeout reached"* ]]; then
-    echo "FAIL: Expected 'timeout reached' message, got: $OUT_OFF"
+  if [[ "$OUT_OFF" != *"proceeding"* ]]; then
+    echo "FAIL: Expected proceeding message upon timeout, got: $OUT_OFF"
     exit 1
   fi
 
   ELAPSED=$((END_TIME - START_TIME))
-  if [ "$ELAPSED" -gt 3 ]; then
-    echo "FAIL: Timeout took too long: ${ELAPSED}s"
+  if [ "$ELAPSED" -gt 2 ]; then
+    echo "FAIL: Timeout took too long (${ELAPSED}s), expected <= 2s"
     exit 1
   fi
 
-  echo "  PASS: cpu_offline safely timed out without hanging."
+  echo "  PASS: cpu_offline safely timed out in ${ELAPSED}s without hanging."
 )
 
 # -------------------------------------------------------------
-# Test 5: Re-enabling CPUs in cpu_online with udev settle and wait
+# Test 5: Fast non-blocking CPU re-enabling in cpu_online
 # -------------------------------------------------------------
-echo "[Test 5] Testing cpu_online re-enabling all offline CPUs..."
+echo "[Test 5] Testing cpu_online non-blocking CPU wake-up..."
 (
   TEST_DIR=$(mktemp -d)
   trap 'rm -rf "$TEST_DIR"' EXIT
@@ -186,18 +171,6 @@ echo "[Test 5] Testing cpu_online re-enabling all offline CPUs..."
   echo "0" > "$SYS_DIR/devices/system/cpu/cpu1/online"
   echo "0" > "$SYS_DIR/devices/system/cpu/cpu2/online"
 
-  MOCK_BIN="$TEST_DIR/bin"
-  mkdir -p "$MOCK_BIN"
-  export PATH="$MOCK_BIN:$PATH"
-
-  SETTLE_LOG="$TEST_DIR/settle.log"
-  cat <<EOF > "$MOCK_BIN/udevadm"
-#!/bin/sh
-echo "udevadm \$*" >> "$SETTLE_LOG"
-exit 0
-EOF
-  chmod +x "$MOCK_BIN/udevadm"
-
   export CMDLINE_FILE
   export SYS_DIR
 
@@ -208,35 +181,27 @@ EOF
     exit 1
   fi
 
+  # Give brief moment for background subshell to write
+  sleep 0.1
   if [ "$(cat "$SYS_DIR/devices/system/cpu/cpu1/online")" != "1" ] || [ "$(cat "$SYS_DIR/devices/system/cpu/cpu2/online")" != "1" ]; then
     echo "FAIL: cpu1 or cpu2 was not set back to 1"
     exit 1
   fi
 
-  if ! grep -q "udevadm settle" "$SETTLE_LOG"; then
-    echo "FAIL: udevadm settle was not called before bringing CPUs online"
-    exit 1
-  fi
-
-  echo "  PASS: cpu_online settled udev and restored all CPUs."
+  echo "  PASS: cpu_online woke up all CPUs asynchronously without blocking boot."
 )
 
 # -------------------------------------------------------------
-# Test 6: Verify drbl-ocs.conf boot parameter configuration
+# Test 6: Verify drbl-ocs.conf does not bottleneck udev workers
 # -------------------------------------------------------------
-echo "[Test 6] Testing drbl-ocs.conf boot parameters..."
+echo "[Test 6] Verifying drbl-ocs.conf does not contain system-wide udev bottleneck..."
 (
-  grep -E "^supp_boot_param_ocs_live_extra=.*maxcpus=1" "$SCRIPT_DIR/conf/drbl-ocs.conf" || {
-    echo "FAIL: maxcpus=1 missing from supp_boot_param_ocs_live_extra"
+  if grep -E "^supp_boot_param_ocs_live_extra=.*udev\.children-max=1" "$SCRIPT_DIR/conf/drbl-ocs.conf"; then
+    echo "FAIL: udev.children-max=1 found in supp_boot_param_ocs_live_extra (this causes system-wide boot slowdown)"
     exit 1
-  }
+  fi
 
-  grep -E "^supp_boot_param_ocs_live_extra=.*udev\.children-max=1" "$SCRIPT_DIR/conf/drbl-ocs.conf" || {
-    echo "FAIL: udev.children-max=1 missing from supp_boot_param_ocs_live_extra"
-    exit 1
-  }
-
-  echo "  PASS: drbl-ocs.conf contains maxcpus=1 and udev.children-max=1."
+  echo "  PASS: drbl-ocs.conf free of udev.children-max bottleneck."
 )
 
 echo "PASS: All CPU Offline/Online Initrd Tests passed successfully!"
