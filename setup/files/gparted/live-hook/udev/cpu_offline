@@ -1,23 +1,69 @@
 #!/bin/sh
 # A mechanism to mitigate block devices naming in random order.
-# i.e., make only 1 CPU online when udev art started.
-if [ -z "$(grep -Ew ocs_1_cpu_udev /proc/cmdline)" ]; then
-  # Skip if ocs_1_cpu_udev does not exist.
-  exit 6
+# i.e., make only 1 CPU online when udev is started.
+
+CMDLINE_FILE="${CMDLINE_FILE:-/proc/cmdline}"
+SYS_DIR="${SYS_DIR:-/sys}"
+UDEV_CONF="${UDEV_CONF:-/etc/udev/udev.conf}"
+
+if [ ! -f "$CMDLINE_FILE" ] || [ -z "$(grep -Ew "(ocs_1_cpu_udev|maxcpus=1)" "$CMDLINE_FILE" 2>/dev/null)" ]; then
+  # Skip if neither ocs_1_cpu_udev nor maxcpus=1 exists.
+  exit 0
 fi
-echo "Disabling SMP-like behavior before udev is started..."
-for cpu in `ls -dv /sys/devices/system/cpu/cpu[1-9]*`; do
-    if [ -e "$cpu/online" ]; then
-        echo -n "$(basename $cpu), "
-	(echo 0 > "$cpu/online" 2>/dev/null || echo "Failed to disable $cpu")&
+
+# Limit udev workers to 1 to serialize uevent processing
+if [ -d "$(dirname "$UDEV_CONF")" ]; then
+  if [ -f "$UDEV_CONF" ]; then
+    if ! grep -q -E "^[[:space:]]*children_max=" "$UDEV_CONF" 2>/dev/null; then
+      echo "children_max=1" >> "$UDEV_CONF"
     fi
+  else
+    echo "children_max=1" > "$UDEV_CONF"
+  fi
+fi
+
+# Check if already running on single CPU (e.g. booted with maxcpus=1)
+if [ -f "$SYS_DIR/devices/system/cpu/online" ]; then
+  online_cpus="$(cat "$SYS_DIR/devices/system/cpu/online" 2>/dev/null)"
+  if [ "$online_cpus" = "0" ]; then
+    echo "System is already running on single CPU (CPU 0)."
+    exit 0
+  fi
+fi
+
+cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo 2>/dev/null | wc -l)"
+if [ "$cpu_no" -le 1 ]; then
+  echo "System has only 1 CPU processor."
+  exit 0
+fi
+
+echo "Disabling SMP-like behavior before udev is started..."
+for cpu in "$SYS_DIR"/devices/system/cpu/cpu[1-9]*; do
+  if [ -e "$cpu/online" ]; then
+    echo -n "$(basename "$cpu"), "
+    (echo 0 > "$cpu/online" 2>/dev/null || echo "Failed to disable $(basename "$cpu")") &
+  fi
 done
 echo
-# Delay to avoid contention
+
+# Wait for single CPU status with a 5-second safety timeout
 echo -n "Waiting for single CPU status... "
+timeout=50 # 5 seconds max (50 * 0.1s)
 exit_cond="false"
-while [ "$exit_cond" = "false" ]; do
-  cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)"
-  [ "$cpu_no" -eq 1 ] && exit_cond="true"
+while [ "$exit_cond" = "false" ] && [ $timeout -gt 0 ]; do
+  if [ -f "$SYS_DIR/devices/system/cpu/online" ]; then
+    [ "$(cat "$SYS_DIR/devices/system/cpu/online" 2>/dev/null)" = "0" ] && exit_cond="true"
+  else
+    cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo 2>/dev/null | wc -l)"
+    [ "$cpu_no" -le 1 ] && exit_cond="true"
+  fi
+  [ "$exit_cond" = "true" ] && break
+  sleep 0.1
+  timeout=$((timeout - 1))
 done
-echo "done!"
+
+if [ "$exit_cond" = "true" ]; then
+  echo "done!"
+else
+  echo "timeout reached (proceeding)."
+fi
