@@ -28,6 +28,8 @@ clean_nvram_unused_boot_entry="yes"
 efiblfiles="shimx64.efi shim.efi grubx64.efi grub.efi elilo.efi bootx64.efi Boot/bootmgfw.efi grubaa64.efi bootaa64.efi bootarm.efi"
 # Default label name
 label_def="OS on hard drive"
+# Standard Windows Boot Manager (bootmgfw.efi) BCD payload (BL_WINDOWS_LOAD_OPTIONS for {bootmgr} {9dea862c-5cdd-4e70-acc1-f32b344d4795})
+win_bcd_payload_def="57494e444f5753000100000088000000780000004200430044004f0042004a004500430054003d007b00390064006500610038003600320063002d0035006300640064002d0034006500370030002d0061006300630031002d006600330032006200330034003400640034003700390035007d00000061000100000010000000040000007fff0400"
 # The log file later other program can refer
 efi_boot_file_info=""
 
@@ -208,10 +210,32 @@ check_if_nvram_efi_boot_entry_exist() {
   ret_code=""
   if [ -n "$efi_sys_part_uuid_in_nvram" ]; then
     if [ "$efi_sys_part_uuid_in_nvram" = "$efi_sys_part_uuid_in_harddrive" ]; then
-      ret_code="0"
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "EFI system partition UUID $efi_sys_part_uuid_in_nvram in EFI NVRAM matches the one on partition $efi_system_part."
-      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      # If the bootloader on this ESP is Windows Boot Manager (bootmgfw.efi),
+      # check if the NVRAM entry has the required Windows Load Options (OptionalData).
+      # If it is a bare entry without BL_WINDOWS_LOAD_OPTIONS, Windows 11 will recreate itself upon boot, causing duplicates.
+      all_esp_bnums="$(get_efi_hd_boot_entry_info -n $efi_system_part nvram boot_num)"
+      need_recreate="no"
+      for ib in $all_esp_bnums; do
+        ib_bf="$(get_efi_hd_boot_entry_info -b $ib nvram boot_file)"
+        ib_opt="$(get_efi_hd_boot_entry_info -b $ib nvram opt_data)"
+        if echo "$ib_bf" | grep -iq "bootmgfw\.efi"; then
+          if ! echo "$ib_opt" | grep -iqE '(57494e444f575300|WINDOWS)'; then
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+            echo "The Windows boot entry $ib in EFI NVRAM lacks Windows Load Options. Removing bare entry to update it."
+            [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+            do_clean_EFI_boot_entry_job "$ib"
+            need_recreate="yes"
+          fi
+        fi
+      done
+      if [ "$need_recreate" = "yes" ]; then
+        ret_code="4"
+      else
+        ret_code="0"
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "EFI system partition UUID $efi_sys_part_uuid_in_nvram in EFI NVRAM matches the one on partition $efi_system_part."
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      fi
     else
       ret_code="2"
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -234,11 +258,11 @@ check_if_nvram_efi_boot_entry_exist() {
 check_efi_boot_loader_file() {
   # Function to find the EFI boot loader file
   # File nvram_chklist_table contains something like:
-  # # label; uuid; boot_file
-  # CentOS Linux; fdd78f33-3c25-48b0-9fc7-c5dc7f1b1eff; \EFI\centos\grubx64.efi;
-  # CentOS Linux; fdd78f33-3c25-48b0-9fc7-c5dc7f1b1eff; \EFI\centos\shimx64.efi;
+  # # label; uuid; boot_file; opt_data
+  # CentOS Linux; fdd78f33-3c25-48b0-9fc7-c5dc7f1b1eff; \EFI\centos\grubx64.efi; ;
+  # CentOS Linux; fdd78f33-3c25-48b0-9fc7-c5dc7f1b1eff; \EFI\centos\shimx64.efi; ;
   # Inputted global variables: nvram_chklist_table, efi_system_part
-  local lb_ uud_ bt_f_ esp_p_
+  local lb_ uud_ bt_f_ opt_d_ esp_p_
   local mnt_pnt obreak efi_boot efi_boot_append dirs_list
   mnt_pnt="$(mktemp -d /tmp/efi_sys_part.XXXXXX)"
   # We will try to find the label/uuid/boot_file from the file $nvram_chklist_table.
@@ -250,6 +274,7 @@ check_efi_boot_loader_file() {
     [ "$lb_" = "" ] && continue
     uud_="$(echo "$line" | awk -F";" '{print $2}')"; uud_="$(echo $uud_)"
     bt_f_="$(echo "$line" | awk -F";" '{print $3}')"; bt_f_="$(echo $bt_f_)"
+    opt_d_="$(echo "$line" | awk -F";" '{print $4}')"; opt_d_="$(echo $opt_d_)"
     esp_p_="$(get_part_name_from_uuid_in_harddrive $uud_)"
     if [ -n "$esp_p_" -a -b "$esp_p_" ]; then
       # Make sure the boot file exists in the ESP partition.
@@ -273,8 +298,8 @@ check_efi_boot_loader_file() {
       esp_p_="$(echo $esp_p_ | sed -r -e "s|\/|\\\|g")"
       if [ -e "$mnt_pnt/$esp_boot_f_unix_format" ]; then
         # Make sure it does not exist in NVRAM before outputting.
-	if [ -z "$(comm -12 <(echo "$line" | sort) <(echo "$label_uuid_boot_f_in_nvram" | sort))" ]; then
-	  echo "${lb_}; ${uud_}; ${bt_f_}" >> $nvram_2_update_table
+	if [ -z "$(comm -12 <(echo "${lb_}; ${uud_}; ${bt_f_}" | sort) <(echo "$label_uuid_boot_f_in_nvram" | awk -F";" '{print $1";"$2";"$3}' | sort))" ]; then
+	  echo "${lb_}; ${uud_}; ${bt_f_}; ${opt_d_}" >> $nvram_2_update_table
 	fi
       else
         # No reference one from EFI NVRAM, we have to find or guess...
@@ -323,8 +348,8 @@ check_efi_boot_loader_file() {
           fi
         done
         # Make sure it does not exist in NVRAM before outputting.
-	if [ -z "$(comm -12 <(echo "$line" | sort) <(echo "$label_uuid_boot_f_in_nvram" | sort))" ]; then
-	  echo "${esp_boot_os}; ${uud_}; ${esp_boot_f}" >> $nvram_2_update_table
+	if [ -z "$(comm -12 <(echo "${esp_boot_os}; ${uud_}; ${esp_boot_f}" | sort) <(echo "$label_uuid_boot_f_in_nvram" | awk -F";" '{print $1";"$2";"$3}' | sort))" ]; then
+	  echo "${esp_boot_os}; ${uud_}; ${esp_boot_f}; ${opt_d_}" >> $nvram_2_update_table
 	fi
       fi
     fi
@@ -386,7 +411,7 @@ check_efi_boot_loader_file() {
         break
       fi
     done
-    echo "${esp_boot_os}; ${uud_}; ${esp_boot_f}" >> $nvram_2_update_table
+    echo "${esp_boot_os}; ${uud_}; ${esp_boot_f}; " >> $nvram_2_update_table
 
     if mountpoint ${mnt_pnt} &>/dev/null; then
       umount ${mnt_pnt}
@@ -499,14 +524,61 @@ clean_unused_uefi_boot_entry_in_nvram() {
   fi
   # Process the duplicated uEFI boot entry, just need to keep one.
   dup_bf_fp="$(get_efi_hd_boot_entry_info -a nvram boot_file_full_path | sort | uniq -d)"
+  boot_order="$(LC_ALL=C efibootmgr | grep -iE "^BootOrder:" | awk -F" " '{print $2}' | tr -d ' ')"
   for id in $dup_bf_fp; do
     all_boot_num="$(LC_ALL=C efibootmgr -v | grep -F "$id" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g")"
     all_boot_num="$(echo $all_boot_num)"  # Make it in one line
-    # Remove all the duplicated bootnum except the 1st one since we have to keep at least one.
-    boot_nums_2_be_removed="$(echo $all_boot_num | awk -F" " '{for (i=2; i<=NF; ++i) print $i}')"
+
+    # When duplicates exist, check if any entry has OptionalData (e.g., Windows BCD / BL_WINDOWS_LOAD_OPTIONS).
+    # Entries with optional data should be preferred over bare entries to prevent Windows from recreating itself.
+    boot_nums_with_opt=""
+    boot_nums_without_opt=""
+    for ib in $all_boot_num; do
+      entry_line="$(LC_ALL=C efibootmgr -v | grep -E "^Boot${ib}\*?[[:space:]]")"
+      opt_part="$(echo "$entry_line" | sed -r -e 's#^.*(\\|/)[Ee][Ff][Ii](\\|/)[^ )]*\.[Ee][Ff][Ii]\)?##' -e 's#^[[:space:]]+##' -e 's#[[:space:]]+$##')"
+      if [ -n "$opt_part" ]; then
+        boot_nums_with_opt="$boot_nums_with_opt $ib"
+      else
+        boot_nums_without_opt="$boot_nums_without_opt $ib"
+      fi
+    done
+    boot_nums_with_opt="$(echo $boot_nums_with_opt)"
+    boot_nums_without_opt="$(echo $boot_nums_without_opt)"
+
+    # Determine candidate list: prefer entries with optional data if available
+    if [ -n "$boot_nums_with_opt" ]; then
+      candidates="$boot_nums_with_opt"
+    else
+      candidates="$boot_nums_without_opt"
+    fi
+
+    # Select the best entry to keep: prefer the one appearing earliest in BootOrder, else the first candidate
+    entry_to_keep=""
+    if [ -n "$boot_order" ]; then
+      IFS=',' read -r -a bo_arr <<< "$boot_order"
+      for bo_item in "${bo_arr[@]}"; do
+        for cand in $candidates; do
+          if [ "$bo_item" = "$cand" ]; then
+            entry_to_keep="$cand"
+            break 2
+          fi
+        done
+      done
+    fi
+    if [ -z "$entry_to_keep" ]; then
+      entry_to_keep="$(echo $candidates | awk '{print $1}')"
+    fi
+
+    # Remove all duplicate entries except the chosen one
+    boot_nums_2_be_removed=""
+    for ib in $all_boot_num; do
+      if [ "$ib" != "$entry_to_keep" ]; then
+        boot_nums_2_be_removed="$boot_nums_2_be_removed $ib"
+      fi
+    done
     boot_nums_2_be_removed="$(echo $boot_nums_2_be_removed)"  # Make it in one line
     for ib in $boot_nums_2_be_removed; do
-      echo "Removing duplicated boot entry $ib..."
+      echo "Removing duplicated boot entry $ib (keeping $entry_to_keep)..."
       do_clean_EFI_boot_entry_job $ib
     done
   done
@@ -639,26 +711,15 @@ fi
 # nvram_2_update_table is the file really to be used to run efibootmgr
 nvram_chklist_table="$(mktemp /tmp/nvram_chklist_table.XXXXXX)"
 nvram_2_update_table="$(mktemp /tmp/nvram_2_update_table.XXXXXX)"
-echo "# label; uuid; boot_file" > $nvram_chklist_table
-echo "# label; uuid; boot_file" > $nvram_2_update_table
-label_uuid_boot_f_in_nvram="$(get_efi_hd_boot_entry_info -a -p ';' nvram label uuid boot_file)"
+echo "# label; uuid; boot_file; opt_data" > $nvram_chklist_table
+echo "# label; uuid; boot_file; opt_data" > $nvram_2_update_table
+label_uuid_boot_f_in_nvram="$(get_efi_hd_boot_entry_info -a -p ';' nvram label uuid boot_file opt_data)"
 if [ -n "$full_path_to_efi_file" -a \
      -e "$full_path_to_efi_file" ]; then
-  # For Windows, sometimes it just gives duplicated ones. We have to unique it, e.g.,
-  # BootCurrent: 0001
-  # Timeout: 2 seconds
-  # BootOrder: 0007,0003,0002,0001,0000,0004,0005,0006
-  # Boot0000* EFI VMware Virtual SATA Hard Drive (0.0)	PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x4,0x0)/Sata(0,0,0)
-  # Boot0001* EFI VMware Virtual SATA CDROM Drive (1.0)	PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x4,0x0)/Sata(1,0,0)
-  # Boot0002* EFI Network	PciRoot(0x0)/Pci(0x16,0x0)/Pci(0x0,0x0)/MAC(000c29144220,0)
-  # Boot0003* Windows Boot Manager	HD(2,GPT,a9427f00-e1d1-4bc5-9cd0-e23833e6fe62,0xe1800,0x31800)/File(\EFI\Microsoft\Boot\bootmgfw.efi)
-  # Boot0004* EFI VMware Virtual SATA Hard Drive (2.0)	PciRoot(0x0)/Pci(0x11,0x0)/Pci(0x4,0x0)/Sata(2,0,0)
-  # Boot0005* EFI VMware Virtual NVME Namespace (NSID 1)	PciRoot(0x0)/Pci(0x18,0x0)/Pci(0x0,0x0)/NVMe(0x1,00-00-00-00-00-00-00-00)
-  # Boot0006* EFI VMware Virtual NVME Namespace (NSID 2)	PciRoot(0x0)/Pci(0x18,0x0)/Pci(0x0,0x0)/NVMe(0x2,00-00-00-00-00-00-00-00)
-  # Boot0007* Windows Boot Manager	HD(2,GPT,a9427f00-e1d1-4bc5-9cd0-e23833e6fe62,0xe1800,0x31800)/File(\EFI\Microsoft\Boot\bootmgfw.efi)WINDOWS.........x...B.C.D.O.B.J.E.C.T.=.{.9.d.e.a.8.6.2.c.-.5.c.d.d.-.4.e.7.0.-.a.c.c.1.-.f.3.2.b.3.4.4.d.4.7.9.5.}...,................
-  get_efi_hd_boot_entry_info -a -p ';' $full_path_to_efi_file label uuid boot_file | sort | uniq >> $nvram_chklist_table
+  # For Windows, sometimes it just gives duplicated ones. We have to unique it, preferring entries with optional data.
+  get_efi_hd_boot_entry_info -a -p ';' $full_path_to_efi_file label uuid boot_file opt_data | sort | uniq >> $nvram_chklist_table
   # Append that from NVRAM if it's not the same as that from saved nvram data (efi-nvram.dat).
-  if [ -z "$(comm -12 <(cat "$nvram_chklist_table" | sort) <(echo "$label_uuid_boot_f_in_nvram" | sort))" ]; then
+  if [ -z "$(comm -12 <(cat "$nvram_chklist_table" | awk -F";" '{print $1";"$2";"$3}' | sort -u) <(echo "$label_uuid_boot_f_in_nvram" | awk -F";" '{print $1";"$2";"$3}' | sort -u))" ]; then
     if [ -n "$label_uuid_boot_f_in_nvram" ]; then
       echo "$label_uuid_boot_f_in_nvram" >> $nvram_chklist_table
     fi
@@ -669,6 +730,36 @@ else
     echo "$label_uuid_boot_f_in_nvram" >> $nvram_chklist_table
   fi
 fi
+
+# Deduplicate nvram_chklist_table for entries with same (label, uuid, boot_file), preferring entries with opt_data
+dedup_chklist="$(mktemp /tmp/dedup_chklist.XXXXXX)"
+awk -F";" '
+  /^[[:space:]]*#/ { print $0; next }
+  {
+    label=$1; gsub(/^[ \t]+|[ \t]+$/, "", label);
+    uuid=$2; gsub(/^[ \t]+|[ \t]+$/, "", uuid);
+    boot_file=$3; gsub(/^[ \t]+|[ \t]+$/, "", boot_file);
+    opt=$4; gsub(/^[ \t]+|[ \t]+$/, "", opt);
+    if (label == "") next;
+    key = label ";" uuid ";" boot_file;
+    if (!(key in seen)) {
+      seen[key] = 1;
+      keys[++n] = key;
+      data[key] = $0;
+      has_opt[key] = (opt != "") ? 1 : 0;
+    } else if (opt != "" && has_opt[key] == 0) {
+      data[key] = $0;
+      has_opt[key] = 1;
+    }
+  }
+  END {
+    for (i = 1; i <= n; i++) {
+      print data[keys[i]];
+    }
+  }
+' "$nvram_chklist_table" > "$dedup_chklist"
+cat "$dedup_chklist" > "$nvram_chklist_table"
+rm -f "$dedup_chklist"
 
 #
 if [ "$clean_nvram_unused_boot_entry" = "yes" ]; then
@@ -694,12 +785,35 @@ if [ "$ret" -eq 2 -o "$ret" -eq 4 ]; then
     [ "$label" = "" ] && continue
     uuid="$(echo "$line" | awk -F";" '{print $2}')"; uuid="$(echo $uuid)"
     esp_boot_f="$(echo "$line" | awk -F";" '{print $3}')"; esp_boot_f="$(echo $esp_boot_f)"
-    cmd_update_add_boot_entry="efibootmgr -c -d ${disk_} -p ${esp_no} -L \"$label\" -l \"$esp_boot_f\""
+    opt_data="$(echo "$line" | awk -F";" '{print $4}')"; opt_data="$(echo $opt_data)"
+
+    # If it is Windows Boot Manager (bootmgfw.efi), make sure it has the required BL_WINDOWS_LOAD_OPTIONS payload.
+    # Otherwise Windows will trigger self-healing and add a duplicate boot menu upon booting.
+    if echo "$esp_boot_f" | grep -iq "bootmgfw\.efi"; then
+      if ! echo "$opt_data" | grep -iqE '^57494e444f575300'; then
+        opt_data="$win_bcd_payload_def"
+      fi
+    fi
+
+    opt_data_arg=""
+    opt_data_bin=""
+    if [ -n "$opt_data" ] && echo "$opt_data" | grep -iqE '^[0-9a-fA-F]+$'; then
+      opt_data_bin="$(mktemp /tmp/opt_data.XXXXXX)"
+      if hex_to_bin "$opt_data" "$opt_data_bin" && [ -s "$opt_data_bin" ]; then
+        opt_data_arg="-@ $opt_data_bin"
+      else
+        rm -f "$opt_data_bin"
+        opt_data_bin=""
+      fi
+    fi
+
+    cmd_update_add_boot_entry="efibootmgr -c -d ${disk_} -p ${esp_no} -L \"$label\" -l \"$esp_boot_f\" $opt_data_arg"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "Updating/Adding the boot entry in EFI NVRAM by command:"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$cmd_update_add_boot_entry"
     LC_ALL=C eval "(${cmd_update_add_boot_entry} && exit \${PIPESTATUS[0]})"
+    [ -n "$opt_data_bin" -a -e "$opt_data_bin" ] && rm -f "$opt_data_bin"
   done < $nvram_2_update_table
   if [ -n "$efi_boot_file_info" ]; then
     output_efi_boot_info

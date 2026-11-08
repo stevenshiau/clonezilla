@@ -14472,7 +14472,7 @@ get_latest_kernel_ver_in_repository() {
 #
 get_efi_hd_boot_entry_info() {
   # This function is used to get some variables for boot entry in EFI NVRAM or the saved file. E.g. it's used to get the following variables in Boot0004 for CentOS 6.
-  # Usage: get_efi_hd_boot_entry_info (nvram|full_path_to_efi_nvram_data_file) (boot_num|label|part_no|uuid|boot_file)
+  # Usage: get_efi_hd_boot_entry_info (nvram|full_path_to_efi_nvram_data_file) (boot_num|label|part_no|uuid|boot_file|boot_file_full_path|opt_data)
   # E.g. to get the "boot_num" in the EFI NVRAM, use:
   # get_efi_hd_boot_entry_info nvram boot_num
   # To get the label from the saved file (it's from the saved image full_path_to_efi_nvram_data_file/efi-nvram.dat):
@@ -14588,12 +14588,12 @@ get_efi_hd_boot_entry_info() {
   case "$type_" in
     nvram) 
       # From nvram in the running system. Only those related to boot file
-      LC_ALL=C efibootmgr -v | grep -E "^Boot.*[[:space:]]+HD\(.*EFI" > $nvram_tmp
+      LC_ALL=C efibootmgr -v | grep -iE "^Boot.*[[:space:]]+HD\(.*EFI" > $nvram_tmp
       ;;
     *)  
       # From saved nvram file in the image dir.
       if [ -e "${type_}" ]; then
-         cat ${type_} | grep -E "^Boot.*[[:space:]]+HD\(.*EFI" > $nvram_tmp
+         cat ${type_} | grep -iE "^Boot.*[[:space:]]+HD\(.*EFI" > $nvram_tmp
       else
          return 2
       fi
@@ -14638,7 +14638,7 @@ get_efi_hd_boot_entry_info() {
     for itm in $term_; do
       case "$itm" in
         boot_num)
-	  rt_var="$(echo $line | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*/*HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g")"
+	  rt_var="$(echo $line | $filter_entry | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*/*HD\(.*\)" | awk -F" " '{print $1}' | sed -r -e "s/^Boot//g" -e "s/\*$//g")"
           ;;
         label)
           # Must be only one result. E.g., this contains at least two label, but we can only return one label
@@ -14673,17 +14673,44 @@ get_efi_hd_boot_entry_info() {
 	  # -> HD(1,GPT,UUID,0x800,0x100000)/\EFI\debian\shimx64.efi
 	  rt_var="$(echo $line | $filter_entry | grep -iE -o "HD\(.*\).*\.efi")"
           ;;
+        opt_data)
+          # e.g.,
+          # Boot000F* Windows Boot Manager  HD(1,GPT,UUID,0x800,0x32000)/\EFI\Microsoft\Boot\bootmgfw.efi57494e444f575300...
+          # -> 57494e444f575300...
+          rt_var="$(echo "$line" | $filter_entry | grep -iE "^Boot[[:alnum:]]+.*[[:space:]]+[[:print:]]*/*HD\(.*\)/.*EFI" | sed -r -e 's#^.*(\\|/)[Ee][Ff][Ii](\\|/)[^ )]*\.[Ee][Ff][Ii]\)?##' -e 's#^[[:space:]]+##' -e 's#[[:space:]]+$##')"
+          ;;
       esac
-      if [ -n "$rt_var" ]; then
+      if [ -n "$append_ch" ]; then
         rt_var_all="${rt_var_all} ${rt_var}${append_ch}"
+      else
+        if [ -n "$rt_var" ]; then
+          rt_var_all="${rt_var_all} ${rt_var}"
+        fi
       fi
     done
     if [ -n "$rt_var_all" ]; then
-      echo $rt_var_all
+      echo "${rt_var_all# }"
     fi
   done < $nvram_tmp
   [ -e "$nvram_tmp" ] && rm -f $nvram_tmp
 } # end of get_efi_hd_boot_entry_info
+#
+hex_to_bin() {
+  # Function to convert hex string into binary file
+  # Usage: hex_to_bin <hex_string> <output_binary_file>
+  local hex_str="$1"
+  local bin_file="$2"
+  [ -z "$hex_str" -o -z "$bin_file" ] && return 1
+  if type xxd &>/dev/null; then
+    echo "$hex_str" | xxd -r -p > "$bin_file"
+  elif type perl &>/dev/null; then
+    perl -e 'print pack("H*", $ARGV[0])' "$hex_str" > "$bin_file"
+  elif type python3 &>/dev/null; then
+    python3 -c "import sys, binascii; sys.stdout.buffer.write(binascii.unhexlify(sys.argv[1]))" "$hex_str" > "$bin_file"
+  else
+    return 2
+  fi
+} # end of hex_to_bin
 #
 get_part_uuid_in_harddrive() {
   # Function to get partition UUID in hard drive. The output strings will be lowercase.
