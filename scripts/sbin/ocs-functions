@@ -3291,6 +3291,13 @@ turn_off_swap_LVM2_MDRAID() {
     ocs-mdraid-stop | tee --append ${OCS_LOGFILE}
     sleep 1
   fi
+
+  # Part 4: ZFS
+  # Export ZFS pools so that the HD will not be occupied during restore
+  if [[ "$ocs_sr_type" == *restore* ]] && type zpool &>/dev/null; then
+    zpool export -a -f &>/dev/null || true
+    sleep 1
+  fi
 } # end of turn_off_swap_LVM2_MDRAID
 #
 check_integrity_of_partition_table_in_disk() {
@@ -6038,6 +6045,7 @@ unicast_restore_by_partclone() {
       # old format, image file is like: sda2.hfsp-img.aa  sda2.hfsp-img.ab  sda2.hfsp-img.ac
       fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-img.*//g")"
     fi
+    [ "$fs_" = "zfs_member" ] && fs_="zfs"
   fi
   if [ -z "${fs_}" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
@@ -6417,6 +6425,7 @@ multicast_restore_by_partclone() {
         # old format, image file is like: sda2.hfsp-img.aa  sda2.hfsp-img.ab  sda2.hfsp-img.ac
         fs_="$(echo $file_basename | sed -e "s/^$img_file\.//g" -e "s/-img.*//g")"
       fi
+      [ "$fs_" = "zfs_member" ] && fs_="zfs"
     fi
   fi
   if [ -z "${fs_}" ]; then
@@ -7649,6 +7658,7 @@ clone_lv_to_lv() {
       fi
     done
   fi
+  [ "$pt_fs" = "zfs_member" ] && pt_fs="zfs"
 
   tune_nvme_block_queue_settings "$src_lv" "$tgt_lv"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -12598,6 +12608,7 @@ is_partclone_support_fs() {
   # partclone_support_fs is a global variable in drbl-ocs.conf
   local input_fs="$1"
   local rc
+  [ "$input_fs" = "zfs_member" ] && input_fs="zfs"
   # Use 'grep -Fiw "$input_fs"' instead of 'grep -Eiw "$input_fs"', otherwise
   # echo "hfs" | grep -Eiw "hfs+" will shown. It's not what we want.
   [ -z "$input_fs" ] && return 1
@@ -13343,6 +13354,12 @@ fsck_partition() {
 	  # btrfs_scrub="btrfs scrub start -Bf $dev_"
 	  echo "Running: $btrfs_chk" | tee -a $OCS_LOGFILE
 	  eval $btrfs_chk
+          ;;
+    zfs)
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+          echo "ZFS file system check/scrub requires the pool to be imported, hence skip offline fscking this partition $dev_" | tee -a $OCS_LOGFILE
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          return 0
           ;;
     *)    
           fsck_cmd="fsck -f $fsck_exopt_ $dev_"
@@ -15666,6 +15683,7 @@ gen_chksum_for_files_in_dev() {
   # Generate checksum
   part_fs="$(LC_ALL=C ocs-get-dev-info "/dev/$sum_part" filesystem 2>/dev/null || true)"
   [ -z "$part_fs" ] && part_fs="$(LC_ALL=C blkid -s TYPE -o value "/dev/$sum_part" 2>/dev/null || true)"
+  [ "$part_fs" = "zfs_member" ] && part_fs="zfs"
   case "$part_fs" in
     [nN][tT][fF][sS]*)
       # The in-kernel ntfs module or ntfs3 module <= Linux version 7.2 does not work well. Use ntfs-3g at the moment.
@@ -15768,6 +15786,7 @@ inspect_chksum_for_files_in_dev() {
     mkdir -p $sum_part_tmpd
     part_fs="$(LC_ALL=C ocs-get-dev-info "/dev/$sum_part" filesystem 2>/dev/null || true)"
     [ -z "$part_fs" ] && part_fs="$(LC_ALL=C blkid -s TYPE -o value "/dev/$sum_part" 2>/dev/null || true)"
+    [ "$part_fs" = "zfs_member" ] && part_fs="zfs"
     case "$part_fs" in
       [nN][tT][fF][sS]*)
 	# The in-kernel ntfs module or ntfs3 module <= Linux version 7.2 does not work well. Use ntfs-3g at the moment.
@@ -16655,6 +16674,7 @@ local_partition_to_partiton_clone() {
     echo "$msg_program_stop!" | tee --append ${OCS_LOGFILE}
     exit 1
   fi
+  [ "$pt_fs" = "zfs_member" ] && pt_fs="zfs"
   tune_nvme_block_queue_settings "$src_p" "$tgt_p"
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Source partition file system is $pt_fs..." | tee --append $OCS_LOGFILE
@@ -16969,6 +16989,7 @@ onthefly_receive_partition_from_server_then_write() {
   local tgt_p="$2"  # tgt_p is like /dev/sda1
   local ret pt_size
   local cmd_partclone netpipe_cli_cmd
+  [ "$pt_fs" = "zfs_member" ] && pt_fs="zfs"
   # $netpipe_cli_cmd | $net_filter_decomp
   echo "$msg_delimiter_star_line"
   echo "Restoring $tgt_p from $SOURCE_IP:$NC_PORT..."
@@ -17052,7 +17073,7 @@ eval_with_retry() {
   local cmd_to_run="$1"
   local rc_eval
   local retry_cnt=0
-  local max_retries="$reverse_connection_timeout"
+  local max_retries="${reverse_connection_timeout:-0}"
   if [ "$reverse_connection" = "yes" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo -n "$msg_waiting_for_dest_to_listen $NC_PORT." | tee --append ${OCS_LOGFILE}
@@ -17088,6 +17109,7 @@ feed_dev_in_onthefly_server() {
   local ret
   local cmd_partclone netpipe_srv_cmd cmd_pipeline
   local bg_opt="&"
+  [ "$pt_fs" = "zfs_member" ] && pt_fs="zfs"
   if [ "$reverse_connection" = "yes" ]; then
     bg_opt=""
   fi

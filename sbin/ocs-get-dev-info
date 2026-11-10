@@ -62,6 +62,8 @@ get_fs_from_blkid() {
   elif [[ "$TYPE" =~ (isw_raid_member|linux_raid_member) ]]; then
     # Exclude non-imageable RAID member types
     TYPE=""
+  elif [[ "$TYPE" == "zfs_member" ]]; then
+    TYPE="zfs"
   elif [[ "$TYPE" == "ufs" ]]; then
     local hdtmp="/dev/$(get_diskname "${part_}")"; local ptno="$(get_part_number "${part_}")"
     local p_type="$(get_partition_table_type_from_disk "$hdtmp")"
@@ -130,6 +132,9 @@ _gather_all_info() {
     final_fs=$(get_fs_from_blkid "$device")
   fi
   local _dev_filesystem="${final_fs:-$info_fstype}"
+  if [[ "$_dev_filesystem" == "zfs_member" ]]; then
+    _dev_filesystem="zfs"
+  fi
 
   # If after all checks the filesystem is still empty, check the PARTLABEL from lsblk
   # to see if it's a Microsoft Reserved Partition.
