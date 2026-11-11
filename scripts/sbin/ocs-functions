@@ -15760,6 +15760,15 @@ gen_chksum_for_files_in_dev() {
     rc_chk="${pipestatus_chk[0]}"
     [ "$rc_chk" -eq 0 -a -n "${pipestatus_chk[2]}" ] && [ "${pipestatus_chk[2]}" -ne 0 ] && rc_chk="${pipestatus_chk[2]}"
 
+    if [ "$rc_chk" -ne 0 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Warning: Some files in /dev/$sum_part could not be read when generating checksums." | tee --append ${OCS_LOGFILE}
+      if [ "$part_fs" = "zfs" ]; then
+        echo "If this is due to ZFS I/O or checksum errors, check pool status with: zpool status -v" | tee --append ${OCS_LOGFILE}
+      fi
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    fi
+
     set_acess_mode_for_img "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz"
     case "$part_fs" in
       zfs)
@@ -15777,9 +15786,7 @@ gen_chksum_for_files_in_dev() {
     echo "$msg_unsble_to_create_checksum_file" | tee --append ${OCS_LOGFILE}
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
-  if [ -d "$sum_part_tmpd" ]; then
-    rmdir $sum_part_tmpd
-  fi
+  clean_temp_mount_dir "$sum_part_tmpd" || true
   if [ -e "$part_reg_f_list" ]; then
     rm -f $part_reg_f_list
   fi
@@ -15933,9 +15940,7 @@ inspect_chksum_for_files_in_dev() {
         read
       fi
     fi
-    if [ -d "$sum_part_tmpd" ]; then
-      rmdir $sum_part_tmpd
-    fi
+    clean_temp_mount_dir "$sum_part_tmpd" || true
   fi
   return $rc_chk
 } # end of inspect_chksum_for_files_in_dev
@@ -19439,6 +19444,43 @@ mount_ntfs_partition() {
   return $?
 } # end of mount_ntfs_partition
 #
+is_dir_or_submount_mounted() {
+  # Function to check whether a directory itself or any subdirectory within it is currently mounted
+  # Usage: is_dir_or_submount_mounted <directory>
+  local dir_="${1%/}"
+  [ -z "$dir_" ] && return 1
+  if mountpoint -q "$dir_" 2>/dev/null; then
+    return 0
+  fi
+  if grep -qE "[[:space:]]${dir_}(/|[[:space:]])" /proc/mounts 2>/dev/null; then
+    return 0
+  fi
+  return 1
+} # end of is_dir_or_submount_mounted
+#
+clean_temp_mount_dir() {
+  # Safe cleanup function for temporary mount directories.
+  # Checks whether the directory or any submount is still mounted before attempting cleanup.
+  # If mounted, refuses removal to prevent data loss.
+  # If unmounted, safely removes empty directory stubs (e.g. created by ZFS dataset mountpoints)
+  # and removes the directory itself using rmdir without ever executing recursive file deletion.
+  # Usage: clean_temp_mount_dir <directory>
+  local d_="$1"
+  [ -z "$d_" ] || [ ! -d "$d_" ] && return 0
+
+  if is_dir_or_submount_mounted "$d_"; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Warning: Directory $d_ or a submount is still mounted. Skipping removal to prevent data loss." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 1
+  fi
+
+  # Only delete empty directories (e.g. mountpoint stubs created by ZFS datasets)
+  find "$d_" -mindepth 1 -depth -type d -empty -delete 2>/dev/null || true
+  rmdir "$d_" 2>/dev/null || true
+  return 0
+} # end of clean_temp_mount_dir
+#
 is_zfs_kernel_supported() {
   # Function to check if ZFS kernel support and userspace utilities (zpool, zfs) are available
   if ! type zpool &>/dev/null || ! type zfs &>/dev/null; then
@@ -19546,12 +19588,24 @@ umount_zfs_partition() {
     [ -z "$pool_to_export" ] && pool_to_export="$(LC_ALL=C blkid -s UUID -o value "$target_dev_" 2>/dev/null || true)"
   fi
 
-  if [ -n "$mnt_" ] && [ -d "$mnt_" ]; then
-    umount -R "$mnt_" &>/dev/null || true
+  if [ -n "$pool_to_export" ]; then
+    if zpool status "$pool_to_export" 2>/dev/null | grep -qE "errors:.*Permanent errors"; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Notice: Permanent data errors were detected in ZFS pool $pool_to_export." | tee --append ${OCS_LOGFILE}
+      echo "Run 'zpool status -v $pool_to_export' or 'zpool scrub $pool_to_export' to inspect affected files." | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    fi
+    zpool export -f "$pool_to_export" &>/dev/null || true
   fi
 
-  if [ -n "$pool_to_export" ]; then
-    zpool export -f "$pool_to_export" &>/dev/null || true
+  if [ -n "$mnt_" ] && [ -d "$mnt_" ]; then
+    if is_dir_or_submount_mounted "$mnt_"; then
+      umount -R "$mnt_" &>/dev/null || true
+    fi
+    # Only clean up empty mountpoint directory stubs if completely unmounted
+    if ! is_dir_or_submount_mounted "$mnt_"; then
+      find "$mnt_" -mindepth 1 -depth -type d -empty -delete 2>/dev/null || true
+    fi
   fi
 
   return 0

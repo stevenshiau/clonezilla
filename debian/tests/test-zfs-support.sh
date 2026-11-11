@@ -684,5 +684,165 @@ if [ ! -f "$ZFS_TGT_IMG/nvme0n1p4.files-b3sum.info.gz" ]; then
 fi
 echo "PASS: dev-fs.list processing loop successfully generated checksums for all ZFS partitions"
 
+# -----------------------------------------------------------------------------
+# TEST 17: Safe mount detection and directory stubs cleanup
+# -----------------------------------------------------------------------------
+echo "--- Test 17: Testing safe mount detection and directory stubs cleanup ---"
+STUB_MNT="$TMP_DIR/stub_mnt_test"
+mkdir -p "$STUB_MNT/boot" "$STUB_MNT/ROOT/ubuntu"
+echo "ocs_stub_pool" > "/tmp/.ocs_zfs_imported_sdd1"
+
+# 17a: umount_zfs_partition cleans up empty directory stubs when unmounted
+umount_zfs_partition /dev/sdd1 "$STUB_MNT"
+if [ -d "$STUB_MNT/boot" ] || [ -d "$STUB_MNT/ROOT" ]; then
+  echo "FAIL: umount_zfs_partition did not clean up empty dataset directory stubs!"
+  exit 1
+fi
+rmdir "$STUB_MNT"
+if [ -d "$STUB_MNT" ]; then
+  echo "FAIL: STUB_MNT could not be removed after umount_zfs_partition!"
+  exit 1
+fi
+
+# 17b: clean_temp_mount_dir refuses cleanup when a mount is detected
+MNT_CHECK_DIR="$TMP_DIR/mnt_check_test"
+mkdir -p "$MNT_CHECK_DIR/submount"
+touch "$MNT_CHECK_DIR/submount/important_user_file.txt"
+
+# Mock mountpoint returning 0 (mounted)
+cat << 'EOF' > "$MOCK_BIN/mountpoint"
+#!/bin/bash
+exit 0
+EOF
+chmod +x "$MOCK_BIN/mountpoint"
+hash -r
+
+> "$OCS_LOGFILE"
+rc_clean=0
+clean_temp_mount_dir "$MNT_CHECK_DIR" || rc_clean=$?
+if [ "$rc_clean" -eq 0 ]; then
+  echo "FAIL: clean_temp_mount_dir succeeded when directory was reported as mounted!"
+  exit 1
+fi
+
+if [ ! -f "$MNT_CHECK_DIR/submount/important_user_file.txt" ]; then
+  echo "FAIL: clean_temp_mount_dir deleted content from mounted directory!"
+  exit 1
+fi
+
+if ! grep -q "still mounted. Skipping removal to prevent data loss" "$OCS_LOGFILE"; then
+  echo "FAIL: Did not log warning when mountpoint was detected!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+
+# Restore real mountpoint check (returning 1 for unmounted directory)
+rm -f "$MOCK_BIN/mountpoint"
+hash -r
+
+# 17c: When unmounted, clean_temp_mount_dir safely cleans up empty stubs without rm -rf
+EMPTY_STUBS_DIR="$TMP_DIR/empty_stubs_dir"
+mkdir -p "$EMPTY_STUBS_DIR/boot/efi" "$EMPTY_STUBS_DIR/home"
+clean_temp_mount_dir "$EMPTY_STUBS_DIR"
+if [ -d "$EMPTY_STUBS_DIR" ]; then
+  echo "FAIL: clean_temp_mount_dir failed to remove unmounted directory with empty stubs!"
+  exit 1
+fi
+
+echo "PASS: Mount safety check and empty dataset stub cleanup verified successfully"
+
+# -----------------------------------------------------------------------------
+# TEST 18: Informative notice on unreadable files and permanent ZFS pool errors
+# -----------------------------------------------------------------------------
+echo "--- Test 18: Testing notices on unreadable files and ZFS pool errors ---"
+cat << 'EOF' > "$MOCK_BIN/zpool"
+#!/bin/bash
+echo "zpool $*" >> "$ACTION_LOG"
+cmd="$1"
+shift
+case "$cmd" in
+  status)
+    echo "errors: Permanent errors have been detected in the following files:"
+    echo "    /home/user/corrupt.sqlite"
+    exit 0
+    ;;
+  import)
+    altroot=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -R)
+          altroot="$2"
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    if [ -n "$altroot" ]; then
+      mkdir -p "$altroot/home/user"
+      echo "good file" > "$altroot/home/user/good.txt"
+      echo "bad file" > "$altroot/home/user/corrupt.sqlite"
+      echo "$altroot" > "$TMP_DIR/zfs_altroot"
+    fi
+    exit 0
+    ;;
+  export)
+    if [ -f "$TMP_DIR/zfs_altroot" ]; then
+      altroot="$(cat "$TMP_DIR/zfs_altroot")"
+      if [ -d "$altroot" ]; then
+        rm -rf "$altroot"/* "$altroot"/.[!.]* "$altroot"/..?* 2>/dev/null || true
+      fi
+      rm -f "$TMP_DIR/zfs_altroot"
+    fi
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+EOF
+chmod +x "$MOCK_BIN/zpool"
+
+# Create a mock checksum command that simulates EIO on corrupt.sqlite
+cat << 'EOF' > "$MOCK_BIN/mock_chksum_with_err"
+#!/bin/bash
+for f in "$@"; do
+  if [[ "$f" == *"corrupt.sqlite"* ]]; then
+    echo "mock_chksum_with_err: $f: Input/output error (os error 5)" >&2
+    exit 1
+  fi
+  echo "mockhash  $f"
+done
+exit 0
+EOF
+chmod +x "$MOCK_BIN/mock_chksum_with_err"
+
+ZFS_ERR_IMG="$TMP_DIR/img_zfs_err"
+mkdir -p "$ZFS_ERR_IMG"
+
+chksum_cmd_for_files_in_dev="mock_chksum_with_err"
+> "$OCS_LOGFILE"
+gen_chksum_for_files_in_dev /dev/nvme0n1p2 "$ZFS_ERR_IMG" || true
+
+if ! grep -q "Warning: Some files in /dev/nvme0n1p2 could not be read when generating checksums" "$OCS_LOGFILE"; then
+  echo "FAIL: Did not log warning about unreadable files in /dev/nvme0n1p2!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+
+if ! grep -q "check pool status with: zpool status -v" "$OCS_LOGFILE"; then
+  echo "FAIL: Did not log guidance to run 'zpool status -v'!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+
+if ! grep -q "Permanent data errors were detected in ZFS pool" "$OCS_LOGFILE"; then
+  echo "FAIL: Did not detect and log permanent ZFS pool errors!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+echo "PASS: Correctly reported unreadable files warning and ZFS pool permanent errors notice"
+
 echo "=== All ZFS Support Tests Passed Successfully! ==="
 exit 0

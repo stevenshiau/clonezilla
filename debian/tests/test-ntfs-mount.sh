@@ -542,7 +542,10 @@ EOF
 
   cat <<EOF > "$MOCK_BIN/mountpoint"
 #!/bin/bash
-exit 0
+if [ -f "$TEST_DIR/mnt_target" ] && [ -d "\$1" ]; then
+  exit 0
+fi
+exit 1
 EOF
   chmod +x "$MOCK_BIN/mountpoint"
 
@@ -551,6 +554,7 @@ EOF
 if [ -f "$TEST_DIR/mnt_target" ]; then
   mnt_dir="\$(cat "$TEST_DIR/mnt_target")"
   rm -rf "\$mnt_dir"/* "\$mnt_dir"/.[!.]* 2>/dev/null || true
+  rm -f "$TEST_DIR/mnt_target"
 fi
 exit 0
 EOF
