@@ -15750,24 +15750,48 @@ gen_chksum_for_files_in_dev() {
     LC_ALL=C find $sum_part_tmpd -type f -print | pv -p -t -N "Searching files in /dev/$sum_part" > $part_reg_f_list
     reg_file_lines="$(LC_ALL=C wc -l < $part_reg_f_list)"
     echo "Creating checksums for totally $reg_file_lines files in /dev/$sum_part..."
+    local unreadable_err_log
+    unreadable_err_log="$(mktemp /tmp/unreadable_err.XXXXXX)"
     # For b3sum, Rayon by default uses all logical cores for each file. When running
     # parallel xargs processes, limit Rayon to 1 thread per process to avoid CPU
     # core oversubscription and thread contention.
     RAYON_NUM_THREADS=1 < $part_reg_f_list xargs -r $xargs_p_opt -d '\n' $chksum_cmd_for_files_in_dev $chksum_extra_opt \
+    2> "$unreadable_err_log" \
     | pv -peltf -s $reg_file_lines | $gz_stdin_cmd \
     > "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz"
     pipestatus_chk=("${PIPESTATUS[@]}")
     rc_chk="${pipestatus_chk[0]}"
     [ "$rc_chk" -eq 0 -a -n "${pipestatus_chk[2]}" ] && [ "${pipestatus_chk[2]}" -ne 0 ] && rc_chk="${pipestatus_chk[2]}"
 
-    if [ "$rc_chk" -ne 0 ]; then
+    if [ -s "$unreadable_err_log" ]; then
+      perl -pi -e "s|$sum_part_tmpd||g" "$unreadable_err_log"
+      local unreadable_count
+      unreadable_count="$(LC_ALL=C grep -cE ':( |$)' "$unreadable_err_log" || true)"
+      [ "$unreadable_count" -eq 0 ] && unreadable_count="$(LC_ALL=C wc -l < "$unreadable_err_log")"
+      local tgt_unreadable_log="$tgt_dir/$(to_filename ${sum_part})-unreadable-files.log"
+      cp -f "$unreadable_err_log" "$tgt_unreadable_log"
+
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
-      echo "Warning: Some files in /dev/$sum_part could not be read when generating checksums." | tee --append ${OCS_LOGFILE}
+      echo "Warning: $unreadable_count file(s) in /dev/$sum_part could not be read when generating checksums." | tee --append ${OCS_LOGFILE}
+      echo "The list of unreadable files is saved in: $tgt_unreadable_log" | tee --append ${OCS_LOGFILE}
+      head -n 5 "$unreadable_err_log" | tee --append ${OCS_LOGFILE}
+      if [ "$unreadable_count" -gt 5 ]; then
+        echo "... and $((unreadable_count - 5)) more unreadable file(s)." | tee --append ${OCS_LOGFILE}
+      fi
+      if [ "$part_fs" = "zfs" ]; then
+        echo "If this is due to ZFS I/O or checksum errors, check pool status with: zpool status -v" | tee --append ${OCS_LOGFILE}
+      fi
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      set_acess_mode_for_img "$tgt_unreadable_log"
+    elif [ "$rc_chk" -ne 0 ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "Warning: Checksum command returned error code $rc_chk for /dev/$sum_part." | tee --append ${OCS_LOGFILE}
       if [ "$part_fs" = "zfs" ]; then
         echo "If this is due to ZFS I/O or checksum errors, check pool status with: zpool status -v" | tee --append ${OCS_LOGFILE}
       fi
       [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     fi
+    rm -f "$unreadable_err_log"
 
     set_acess_mode_for_img "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz"
     case "$part_fs" in

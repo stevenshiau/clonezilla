@@ -825,9 +825,27 @@ chksum_cmd_for_files_in_dev="mock_chksum_with_err"
 > "$OCS_LOGFILE"
 gen_chksum_for_files_in_dev /dev/nvme0n1p2 "$ZFS_ERR_IMG" || true
 
-if ! grep -q "Warning: Some files in /dev/nvme0n1p2 could not be read when generating checksums" "$OCS_LOGFILE"; then
-  echo "FAIL: Did not log warning about unreadable files in /dev/nvme0n1p2!"
+if ! grep -q "Warning: 1 file(s) in /dev/nvme0n1p2 could not be read when generating checksums" "$OCS_LOGFILE"; then
+  echo "FAIL: Did not log warning with file count about unreadable files in /dev/nvme0n1p2!"
   cat "$OCS_LOGFILE"
+  exit 1
+fi
+
+UNREADABLE_LOG="$ZFS_ERR_IMG/nvme0n1p2-unreadable-files.log"
+if [ ! -f "$UNREADABLE_LOG" ]; then
+  echo "FAIL: Expected unreadable files log $UNREADABLE_LOG was not created!"
+  exit 1
+fi
+
+if ! grep -q "/home/user/corrupt.sqlite" "$UNREADABLE_LOG"; then
+  echo "FAIL: Corrupted file was not listed in $UNREADABLE_LOG!"
+  cat "$UNREADABLE_LOG"
+  exit 1
+fi
+
+if grep -q "/tmp/chksum_tmpd" "$UNREADABLE_LOG"; then
+  echo "FAIL: Temporary mountpoint path was not stripped from $UNREADABLE_LOG!"
+  cat "$UNREADABLE_LOG"
   exit 1
 fi
 
@@ -842,7 +860,7 @@ if ! grep -q "Permanent data errors were detected in ZFS pool" "$OCS_LOGFILE"; t
   cat "$OCS_LOGFILE"
   exit 1
 fi
-echo "PASS: Correctly reported unreadable files warning and ZFS pool permanent errors notice"
+echo "PASS: Correctly logged unreadable files count, saved stripped log, and reported ZFS pool permanent errors notice"
 
 # -----------------------------------------------------------------------------
 # TEST 19: Pre-imported ZFS pool handling in mount_zfs_partition_ro
