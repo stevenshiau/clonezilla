@@ -3293,8 +3293,8 @@ turn_off_swap_LVM2_MDRAID() {
   fi
 
   # Part 4: ZFS
-  # Export ZFS pools so that the HD will not be occupied during restore
-  if [[ "$ocs_sr_type" == *restore* ]] && type zpool &>/dev/null; then
+  # Export ZFS pools so that the HD will not be occupied during save/restore
+  if type zpool &>/dev/null; then
     zpool export -a -f &>/dev/null || true
     sleep 1
   fi
@@ -19534,28 +19534,86 @@ mount_zfs_partition_ro() {
   imported_pool_file="/tmp/.ocs_zfs_imported_$(to_filename "$dev_bname")"
   pool_to_import="ocs_zfs_$(to_filename "$dev_bname")_$$"
 
+  # Check if the pool is already imported (e.g. auto-imported at boot by systemd/udev)
+  local imported_name=""
+  if type zpool &>/dev/null; then
+    imported_name="$(LC_ALL=C zpool list -H -o name,guid 2>/dev/null | awk -v id="$pool_id" -v name="$pool_name" '($1 != "" && $1 == name) || (id != "" && $2 == id) {print $1; exit}')"
+  fi
+  if [ -n "$imported_name" ]; then
+    echo "ZFS pool '$imported_name' is currently imported. Exporting it first to re-import read-only with alternate root..." | tee --append ${OCS_LOGFILE}
+    zpool export -f "$imported_name" &>/dev/null || true
+    sleep 1
+  fi
+
+  # Build search directories for vdev discovery
+  local zpool_import_d_opts=()
+  local p_
+  for p_ in "$dev_dir" /dev /dev/mapper /dev/disk/by-id /dev/disk/by-uuid /dev/disk/by-partuuid; do
+    [ -d "$p_" ] && zpool_import_d_opts+=(-d "$p_")
+  done
+
   mkdir -p "$mnt_"
-  # Import pool with alternate root $mnt_ in read-only mode without mounting cachefile
-  zpool import -f -o readonly=on -R "$mnt_" -d "$dev_dir" -d /dev "$target_id" "$pool_to_import" 2>/dev/null
-  rc=$?
+  local import_err=""
+  # 1. Try importing with isolated alias using pool_id
+  if [ -n "$pool_id" ]; then
+    import_err="$(LC_ALL=C zpool import -f -o readonly=on -R "$mnt_" "${zpool_import_d_opts[@]}" "$pool_id" "$pool_to_import" 2>&1)"
+    rc=$?
+  else
+    rc=1
+  fi
+
+  # 2. Try importing with isolated alias using pool_name
+  if [ $rc -ne 0 ] && [ -n "$pool_name" ]; then
+    import_err="$(LC_ALL=C zpool import -f -o readonly=on -R "$mnt_" "${zpool_import_d_opts[@]}" "$pool_name" "$pool_to_import" 2>&1)"
+    rc=$?
+  fi
+
+  # 3. If importing with alias failed (e.g. read-only rename restriction), try importing with original name
   if [ $rc -ne 0 ]; then
-    # Try importing without renaming if renaming is not supported
-    zpool import -f -o readonly=on -R "$mnt_" -d "$dev_dir" -d /dev "$target_id" 2>/dev/null
+    target_id="${pool_id:-$pool_name}"
+    import_err="$(LC_ALL=C zpool import -f -o readonly=on -R "$mnt_" "${zpool_import_d_opts[@]}" "$target_id" 2>&1)"
     rc=$?
     if [ $rc -eq 0 ]; then
       pool_to_import="${pool_name:-$target_id}"
     fi
   fi
 
-  if [ $rc -eq 0 ]; then
-    echo "$pool_to_import" > "$imported_pool_file"
-    # Mount all mountable datasets in the pool under alternate root
-    zfs mount -a 2>/dev/null || true
-    echo "Mounted ZFS pool on $target_dev_ under $mnt_."
-    return 0
+  # 4. Try importing by pool_name if different from target_id
+  if [ $rc -ne 0 ] && [ -n "$pool_name" ] && [ "$target_id" != "$pool_name" ]; then
+    import_err="$(LC_ALL=C zpool import -f -o readonly=on -R "$mnt_" "${zpool_import_d_opts[@]}" "$pool_name" 2>&1)"
+    rc=$?
+    if [ $rc -eq 0 ]; then
+      pool_to_import="$pool_name"
+    fi
   fi
 
-  return $rc
+  # 5. Fallback: try importing without -d options using default search paths
+  if [ $rc -ne 0 ]; then
+    target_id="${pool_id:-$pool_name}"
+    import_err="$(LC_ALL=C zpool import -f -o readonly=on -R "$mnt_" "$target_id" "$pool_to_import" 2>&1)"
+    rc=$?
+    if [ $rc -ne 0 ]; then
+      import_err="$(LC_ALL=C zpool import -f -o readonly=on -R "$mnt_" "$target_id" 2>&1)"
+      rc=$?
+      if [ $rc -eq 0 ]; then
+        pool_to_import="${pool_name:-$target_id}"
+      fi
+    fi
+  fi
+
+  if [ $rc -ne 0 ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Failed to import ZFS pool for $target_dev_:" | tee --append ${OCS_LOGFILE}
+    [ -n "$import_err" ] && echo "$import_err" | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return $rc
+  fi
+
+  echo "$pool_to_import" > "$imported_pool_file"
+  # Mount all mountable datasets in the pool under alternate root
+  zfs mount -a 2>/dev/null || true
+  echo "Mounted ZFS pool on $target_dev_ under $mnt_." | tee --append ${OCS_LOGFILE}
+  return 0
 } # end of mount_zfs_partition_ro
 #
 umount_zfs_partition() {

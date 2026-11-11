@@ -4,7 +4,7 @@ set -e
 
 echo "=== Running Clonezilla ZFS Support Tests ==="
 
-TMP_DIR="$(mktemp -d /tmp/test-zfs-XXXXXX)"
+export TMP_DIR="$(mktemp -d /tmp/test-zfs-XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 MOCK_BIN="$TMP_DIR/bin"
@@ -843,6 +843,96 @@ if ! grep -q "Permanent data errors were detected in ZFS pool" "$OCS_LOGFILE"; t
   exit 1
 fi
 echo "PASS: Correctly reported unreadable files warning and ZFS pool permanent errors notice"
+
+# -----------------------------------------------------------------------------
+# TEST 19: Pre-imported ZFS pool handling in mount_zfs_partition_ro
+# -----------------------------------------------------------------------------
+echo "--- Test 19: Testing pre-imported ZFS pool detection and re-import ---"
+cat << 'EOF' > "$MOCK_BIN/zpool"
+#!/bin/bash
+echo "zpool $*" >> "$ACTION_LOG"
+cmd="$1"
+shift
+case "$cmd" in
+  status)
+    exit 0
+    ;;
+  list)
+    # Simulate rpool being pre-imported
+    if [ -f "$TMP_DIR/simulated_pre_imported" ]; then
+      echo -e "rpool\t17969138287380862017"
+    fi
+    exit 0
+    ;;
+  import)
+    altroot=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -R)
+          altroot="$2"
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    if [ -n "$altroot" ]; then
+      mkdir -p "$altroot/etc"
+      echo "zfs reimported file" > "$altroot/etc/test.txt"
+      echo "$altroot" > "$TMP_DIR/zfs_altroot"
+    fi
+    exit 0
+    ;;
+  export)
+    # When exported, rpool is no longer in zpool list
+    rm -f "$TMP_DIR/simulated_pre_imported"
+    if [ -f "$TMP_DIR/zfs_altroot" ]; then
+      altroot="$(cat "$TMP_DIR/zfs_altroot")"
+      if [ -d "$altroot" ]; then
+        rm -rf "$altroot"/* "$altroot"/.[!.]* "$altroot"/..?* 2>/dev/null || true
+      fi
+      rm -f "$TMP_DIR/zfs_altroot"
+    fi
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+EOF
+chmod +x "$MOCK_BIN/zpool"
+
+# Set up simulated pre-imported state
+touch "$TMP_DIR/simulated_pre_imported"
+
+PRE_MNT="$TMP_DIR/pre_import_mnt"
+mkdir -p "$PRE_MNT"
+> "$OCS_LOGFILE"
+
+rc_pre=0
+mount_zfs_partition_ro /dev/nvme0n1p4 "$PRE_MNT" || rc_pre=$?
+if [ "$rc_pre" -ne 0 ]; then
+  echo "FAIL: mount_zfs_partition_ro failed on pre-imported pool with exit code $rc_pre!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+
+if ! grep -q "ZFS pool 'rpool' is currently imported. Exporting it first" "$OCS_LOGFILE"; then
+  echo "FAIL: Did not log message about exporting currently imported pool!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+
+if ! grep -q "Mounted ZFS pool on /dev/nvme0n1p4" "$OCS_LOGFILE"; then
+  echo "FAIL: mount_zfs_partition_ro did not mount /dev/nvme0n1p4!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+
+umount_zfs_partition /dev/nvme0n1p4 "$PRE_MNT"
+clean_temp_mount_dir "$PRE_MNT" || true
+echo "PASS: Pre-imported ZFS pool was detected, exported, and successfully mounted read-only"
 
 echo "=== All ZFS Support Tests Passed Successfully! ==="
 exit 0
