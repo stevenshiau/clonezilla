@@ -4332,6 +4332,14 @@ task_postprocessing() {
         while read dev_ x_fs y; do
           [ "$dev_" = "#" ] && continue
           [ "$x_fs" = "swap" -o "$x_fs" = "MS_Reserved_Partition" ] && continue
+          if [ "$x_fs" = "zfs" -o "$x_fs" = "zfs_member" ]; then
+            if ! is_zfs_kernel_supported; then
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+              echo "ZFS file-level checksum generation requires zfs tools and kernel module, hence skip creating checksum file for partition $dev_." | tee --append ${OCS_LOGFILE}
+              [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+              continue
+            fi
+          fi
           gen_chksum_for_files_in_dev "$dev_" "$img_dir"
         done < "$img_dir/dev-fs.list"
         echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
@@ -15678,13 +15686,32 @@ gen_chksum_for_files_in_dev() {
   local tgt_dir="$2"   # target dir, full path, like /home/partimag/my-img
   local sum_part_tmpd rc gz_stdin_cmd gunz_cmd rc_chk part_reg_f_list reg_file_lines
   local cpu_no xargs_p_opt pipestatus_chk part_fs chksum_extra_opt
-  sum_part_tmpd="$(LC_ALL=C mktemp -d /tmp/chksum_tmpd.XXXXXX)"
-  part_reg_f_list="$(LC_ALL=C mktemp /tmp/part_f_temp.XXXXXX)"
-  # Generate checksum
+
   part_fs="$(LC_ALL=C ocs-get-dev-info "/dev/$sum_part" filesystem 2>/dev/null || true)"
   [ -z "$part_fs" ] && part_fs="$(LC_ALL=C blkid -s TYPE -o value "/dev/$sum_part" 2>/dev/null || true)"
   [ "$part_fs" = "zfs_member" ] && part_fs="zfs"
   case "$part_fs" in
+    zfs)
+      if ! is_zfs_kernel_supported; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "ZFS file-level checksum generation requires zfs tools and kernel module, hence skip creating checksum file for partition /dev/$sum_part." | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        return 0
+      fi
+      ;;
+    swap|MS_Reserved_Partition)
+      return 0
+      ;;
+  esac
+
+  sum_part_tmpd="$(LC_ALL=C mktemp -d /tmp/chksum_tmpd.XXXXXX)"
+  part_reg_f_list="$(LC_ALL=C mktemp /tmp/part_f_temp.XXXXXX)"
+  # Generate checksum
+  case "$part_fs" in
+    zfs)
+      mount_zfs_partition_ro "/dev/$sum_part" "$sum_part_tmpd"
+      rc=$?
+      ;;
     [nN][tT][fF][sS]*)
       # The in-kernel ntfs module or ntfs3 module <= Linux version 7.2 does not work well. Use ntfs-3g at the moment.
       # mount_ntfs_partition "/dev/$sum_part" "$sum_part_tmpd" "ro"
@@ -15696,7 +15723,7 @@ gen_chksum_for_files_in_dev() {
       rc=$?
       ;;
   esac
-  trap "[ -d "$sum_part_tmpd" ] && umount $sum_part_tmpd &>/dev/null" HUP INT QUIT TERM EXIT
+  trap "if [ \"$part_fs\" = 'zfs' ]; then umount_zfs_partition '/dev/$sum_part' '$sum_part_tmpd' &>/dev/null; else [ -d '$sum_part_tmpd' ] && umount $sum_part_tmpd &>/dev/null; fi" HUP INT QUIT TERM EXIT
   if [ "$rc" -eq 0 ]; then
     if type pigz &>/dev/null; then
       gz_stdin_cmd="pigz -c"
@@ -15734,8 +15761,16 @@ gen_chksum_for_files_in_dev() {
     [ "$rc_chk" -eq 0 -a -n "${pipestatus_chk[2]}" ] && [ "${pipestatus_chk[2]}" -ne 0 ] && rc_chk="${pipestatus_chk[2]}"
 
     set_acess_mode_for_img "$tgt_dir/$(to_filename ${sum_part}).files-${chksum_cmd_for_files_in_dev}.info.gz"
-    umount /dev/$sum_part
+    case "$part_fs" in
+      zfs)
+        umount_zfs_partition "/dev/$sum_part" "$sum_part_tmpd"
+        ;;
+      *)
+        umount /dev/$sum_part
+        ;;
+    esac
   else
+    rc_chk="$rc"
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
     echo "$msg_fail_to_mount_maybe_linux_not_support:" | tee --append ${OCS_LOGFILE}
     LC_ALL=C blkid /dev/$sum_part | tee --append ${OCS_LOGFILE}
@@ -15763,6 +15798,21 @@ inspect_chksum_for_files_in_dev() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     return 2
   fi
+
+  part_fs="$(LC_ALL=C ocs-get-dev-info "/dev/$sum_part" filesystem 2>/dev/null || true)"
+  [ -z "$part_fs" ] && part_fs="$(LC_ALL=C blkid -s TYPE -o value "/dev/$sum_part" 2>/dev/null || true)"
+  [ "$part_fs" = "zfs_member" ] && part_fs="zfs"
+  case "$part_fs" in
+    zfs)
+      if ! is_zfs_kernel_supported; then
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+        echo "ZFS file-level checksum inspection requires zfs tools and kernel module, hence skip inspecting checksum for partition /dev/$sum_part." | tee --append ${OCS_LOGFILE}
+        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+        return 0
+      fi
+      ;;
+  esac
+
   get_chksum_info_from_img "$tgt_dir" $sum_part  # output: chksum_cmd, chksum_file
   if [ -z "${chksum_cmd}" ]; then
     [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
@@ -15784,10 +15834,11 @@ inspect_chksum_for_files_in_dev() {
   # Check the checksum
   if [ -n "$sum_part_tmpd" ]; then
     mkdir -p $sum_part_tmpd
-    part_fs="$(LC_ALL=C ocs-get-dev-info "/dev/$sum_part" filesystem 2>/dev/null || true)"
-    [ -z "$part_fs" ] && part_fs="$(LC_ALL=C blkid -s TYPE -o value "/dev/$sum_part" 2>/dev/null || true)"
-    [ "$part_fs" = "zfs_member" ] && part_fs="zfs"
     case "$part_fs" in
+      zfs)
+        mount_zfs_partition_ro "/dev/$sum_part" "$sum_part_tmpd"
+        rc=$?
+        ;;
       [nN][tT][fF][sS]*)
 	# The in-kernel ntfs module or ntfs3 module <= Linux version 7.2 does not work well. Use ntfs-3g at the moment.
         # mount_ntfs_partition "/dev/$sum_part" "$sum_part_tmpd" "ro"
@@ -15799,7 +15850,7 @@ inspect_chksum_for_files_in_dev() {
         rc=$?
         ;;
     esac
-    trap "[ -d "$sum_part_tmpd" ] && umount $sum_part_tmpd &>/dev/null" HUP INT QUIT TERM EXIT
+    trap "if [ \"$part_fs\" = 'zfs' ]; then umount_zfs_partition '/dev/$sum_part' '$sum_part_tmpd' &>/dev/null; else [ -d '$sum_part_tmpd' ] && umount $sum_part_tmpd &>/dev/null; fi" HUP INT QUIT TERM EXIT
     if [ "$rc" -eq 0 ]; then
       # Determine CPU core count for parallel checksum calculation
       cpu_no="$(LC_ALL=C grep -iE "^processor" /proc/cpuinfo | wc -l)"
@@ -15863,7 +15914,14 @@ inspect_chksum_for_files_in_dev() {
        echo "$msg_chksum_inspection_for_files_passed: /dev/$sum_part" | tee --append ${OCS_LOGFILE}
        echo "$msg_chksum_results_saved_in_this_file: $chk_rlt_log" | tee --append ${OCS_LOGFILE} 
       fi
-      umount /dev/$sum_part
+      case "$part_fs" in
+        zfs)
+          umount_zfs_partition "/dev/$sum_part" "$sum_part_tmpd"
+          ;;
+        *)
+          umount /dev/$sum_part
+          ;;
+      esac
     else
       [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
       echo "$msg_fail_to_mount_maybe_linux_not_support:" | tee --append ${OCS_LOGFILE}
@@ -19380,4 +19438,122 @@ mount_ntfs_partition() {
   LC_ALL=C mount "${mnt_opt_arr[@]}" "$target_dev_" "$mnt_"
   return $?
 } # end of mount_ntfs_partition
+#
+is_zfs_kernel_supported() {
+  # Function to check if ZFS kernel support and userspace utilities (zpool, zfs) are available
+  if ! type zpool &>/dev/null || ! type zfs &>/dev/null; then
+    return 1
+  fi
+  modprobe zfs 2>/dev/null || true
+  if [ -e /dev/zfs ] || grep -qE "[[:space:]]zfs$" /proc/filesystems 2>/dev/null || zpool status &>/dev/null; then
+    return 0
+  fi
+  return 1
+} # end of is_zfs_kernel_supported
+#
+mount_zfs_partition_ro() {
+  # Function to mount/import a ZFS partition and its datasets under a specified mount point (altroot)
+  # in read-only mode for file checksum generation or verification.
+  # Usage: mount_zfs_partition_ro <device> <mount_point>
+  local dev_="$1"
+  local mnt_="$2"
+  local target_dev_ pool_id pool_name target_id dev_bname dev_dir pool_to_import rc
+  local imported_pool_file
+
+  if [ -z "$dev_" ] || [ -z "$mnt_" ]; then
+    return 1
+  fi
+
+  case "$dev_" in
+    /*) target_dev_="$dev_" ;;
+    *)  target_dev_="/dev/$dev_" ;;
+  esac
+
+  dev_bname="${target_dev_#/dev/*}"
+  dev_dir="$(dirname "$target_dev_")"
+
+  # Query pool id (UUID) or pool label (LABEL) via blkid
+  pool_id="$(LC_ALL=C blkid -s UUID -o value "$target_dev_" 2>/dev/null || true)"
+  pool_name="$(LC_ALL=C blkid -s LABEL -o value "$target_dev_" 2>/dev/null || true)"
+
+  # If blkid does not yield pool id/name, query zpool import
+  if [ -z "$pool_id" ] && [ -z "$pool_name" ]; then
+    pool_id="$(LC_ALL=C zpool import -d "$dev_dir" -d /dev 2>/dev/null | awk '/pool:/{p=$2} /id:/{id=$2} /'"$dev_bname"'/{print id; exit}')"
+  fi
+
+  target_id="${pool_id:-$pool_name}"
+  if [ -z "$target_id" ]; then
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+    echo "Unable to identify ZFS pool on $target_dev_." | tee --append ${OCS_LOGFILE}
+    [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+    return 1
+  fi
+
+  imported_pool_file="/tmp/.ocs_zfs_imported_$(to_filename "$dev_bname")"
+  pool_to_import="ocs_zfs_$(to_filename "$dev_bname")_$$"
+
+  mkdir -p "$mnt_"
+  # Import pool with alternate root $mnt_ in read-only mode without mounting cachefile
+  zpool import -f -o readonly=on -R "$mnt_" -d "$dev_dir" -d /dev "$target_id" "$pool_to_import" 2>/dev/null
+  rc=$?
+  if [ $rc -ne 0 ]; then
+    # Try importing without renaming if renaming is not supported
+    zpool import -f -o readonly=on -R "$mnt_" -d "$dev_dir" -d /dev "$target_id" 2>/dev/null
+    rc=$?
+    if [ $rc -eq 0 ]; then
+      pool_to_import="${pool_name:-$target_id}"
+    fi
+  fi
+
+  if [ $rc -eq 0 ]; then
+    echo "$pool_to_import" > "$imported_pool_file"
+    # Mount all mountable datasets in the pool under alternate root
+    zfs mount -a 2>/dev/null || true
+    echo "Mounted ZFS pool on $target_dev_ under $mnt_."
+    return 0
+  fi
+
+  return $rc
+} # end of mount_zfs_partition_ro
+#
+umount_zfs_partition() {
+  # Function to cleanly unmount datasets and export a previously imported ZFS pool
+  # Usage: umount_zfs_partition <device> [mount_point]
+  local dev_="$1"
+  local mnt_="$2"
+  local target_dev_ dev_bname imported_pool_file pool_to_export
+
+  if [ -z "$dev_" ]; then
+    return 1
+  fi
+
+  case "$dev_" in
+    /*) target_dev_="$dev_" ;;
+    *)  target_dev_="/dev/$dev_" ;;
+  esac
+
+  dev_bname="${target_dev_#/dev/*}"
+  imported_pool_file="/tmp/.ocs_zfs_imported_$(to_filename "$dev_bname")"
+  pool_to_export=""
+
+  if [ -f "$imported_pool_file" ]; then
+    pool_to_export="$(cat "$imported_pool_file" 2>/dev/null)"
+    rm -f "$imported_pool_file"
+  fi
+
+  if [ -z "$pool_to_export" ]; then
+    pool_to_export="$(LC_ALL=C blkid -s LABEL -o value "$target_dev_" 2>/dev/null || true)"
+    [ -z "$pool_to_export" ] && pool_to_export="$(LC_ALL=C blkid -s UUID -o value "$target_dev_" 2>/dev/null || true)"
+  fi
+
+  if [ -n "$mnt_" ] && [ -d "$mnt_" ]; then
+    umount -R "$mnt_" &>/dev/null || true
+  fi
+
+  if [ -n "$pool_to_export" ]; then
+    zpool export -f "$pool_to_export" &>/dev/null || true
+  fi
+
+  return 0
+} # end of umount_zfs_partition
 

@@ -314,5 +314,375 @@ if grep -q "fsck executed.*sda1" "$ACTION_LOG"; then
 fi
 echo "PASS: fsck_partition safely skipped offline fsck on zfs partition"
 
+# -----------------------------------------------------------------------------
+# TEST 10: gen_chksum_for_files_in_dev skips ZFS partition
+# -----------------------------------------------------------------------------
+echo "--- Test 10: Testing gen_chksum_for_files_in_dev skips ZFS partition ---"
+export OCS_LOGFILE="$TMP_DIR/ocs.log"
+touch "$OCS_LOGFILE"
+
+cat << 'EOF' > "$MOCK_BIN/mount"
+#!/bin/bash
+echo "mount executed: $*" >> "$ACTION_LOG"
+exit 1
+EOF
+chmod +x "$MOCK_BIN/mount"
+
+cat << 'EOF' > "$MOCK_BIN/ocs-get-dev-info"
+#!/bin/bash
+dev="$1"
+field="$2"
+if [ "$field" = "filesystem" ] || [ "$field" = "fs" ]; then
+  case "$dev" in
+    /dev/sda1|/dev/nvme0n1p2|/dev/nvme0n1p4)
+      echo "zfs"
+      exit 0
+      ;;
+    /dev/nvme0n1p1)
+      echo "vfat"
+      exit 0
+      ;;
+    /dev/nvme0n1p3)
+      echo "swap"
+      exit 0
+      ;;
+    /dev/sdd1)
+      echo "zfs_member"
+      exit 0
+      ;;
+  esac
+fi
+exit 1
+EOF
+chmod +x "$MOCK_BIN/ocs-get-dev-info"
+
+CHKSUM_TEST_DIR="$TMP_DIR/img_chksum"
+mkdir -p "$CHKSUM_TEST_DIR"
+
+rc_gen=0
+gen_chksum_for_files_in_dev /dev/nvme0n1p2 "$CHKSUM_TEST_DIR" || rc_gen=$?
+if [ "$rc_gen" -ne 0 ]; then
+  echo "FAIL: gen_chksum_for_files_in_dev returned non-zero ($rc_gen) on ZFS partition!"
+  exit 1
+fi
+
+if grep -q "mount executed.*/dev/nvme0n1p2" "$ACTION_LOG"; then
+  echo "FAIL: gen_chksum_for_files_in_dev attempted to mount ZFS partition /dev/nvme0n1p2!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if ! grep -q "ZFS file-level checksum generation requires zfs tools and kernel module, hence skip creating checksum file for partition /dev/nvme0n1p2" "$OCS_LOGFILE"; then
+  echo "FAIL: gen_chksum_for_files_in_dev did not log expected skip notice for /dev/nvme0n1p2!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+echo "PASS: gen_chksum_for_files_in_dev gracefully skipped ZFS partition without mount attempt"
+
+# -----------------------------------------------------------------------------
+# TEST 11: inspect_chksum_for_files_in_dev skips ZFS partition
+# -----------------------------------------------------------------------------
+echo "--- Test 11: Testing inspect_chksum_for_files_in_dev skips ZFS partition ---"
+rc_inspect=0
+inspect_chksum_for_files_in_dev /dev/nvme0n1p2 "$CHKSUM_TEST_DIR" || rc_inspect=$?
+if [ "$rc_inspect" -ne 0 ]; then
+  echo "FAIL: inspect_chksum_for_files_in_dev returned non-zero ($rc_inspect) on ZFS partition!"
+  exit 1
+fi
+
+if grep -q "mount executed.*/dev/nvme0n1p2" "$ACTION_LOG"; then
+  echo "FAIL: inspect_chksum_for_files_in_dev attempted to mount ZFS partition /dev/nvme0n1p2!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if ! grep -q "ZFS file-level checksum inspection requires zfs tools and kernel module, hence skip inspecting checksum for partition /dev/nvme0n1p2" "$OCS_LOGFILE"; then
+  echo "FAIL: inspect_chksum_for_files_in_dev did not log expected skip notice for /dev/nvme0n1p2!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+echo "PASS: inspect_chksum_for_files_in_dev gracefully skipped ZFS partition without mount attempt"
+
+# -----------------------------------------------------------------------------
+# TEST 12: dev-fs.list processing loop skips zfs and zfs_member partitions
+# -----------------------------------------------------------------------------
+echo "--- Test 12: Testing dev-fs.list loop skips zfs and zfs_member partitions ---"
+cat << 'EOF' > "$MOCK_BIN/mount"
+#!/bin/bash
+echo "mount executed: $*" >> "$ACTION_LOG"
+args=("$@")
+target_dir="${args[-1]}"
+dev_arg="${args[-2]}"
+dev_name="$(basename "$dev_arg")"
+if [[ "$*" == *"/dev/nvme0n1p2"* ]] || [[ "$*" == *"/dev/nvme0n1p4"* ]] || [[ "$*" == *"/dev/sdd1"* ]]; then
+  echo "ERROR: Attempted mount of ZFS partition!" >> "$ACTION_LOG"
+  exit 1
+fi
+echo "$target_dir" > "$TMP_DIR/mounted_$dev_name"
+mkdir -p "$target_dir"
+echo "dummy vfat file" > "$target_dir/efi.bin"
+exit 0
+EOF
+chmod +x "$MOCK_BIN/mount"
+
+cat << 'EOF' > "$MOCK_BIN/umount"
+#!/bin/bash
+args=("$@")
+target="${args[-1]}"
+dev_name="$(basename "$target")"
+if [ -f "$TMP_DIR/mounted_$dev_name" ]; then
+  mnt="$(cat "$TMP_DIR/mounted_$dev_name")"
+  rm -rf "$mnt"/* "$mnt"/.[!.]* "$mnt"/..?* 2>/dev/null || true
+  rm -f "$TMP_DIR/mounted_$dev_name"
+elif [ -d "$target" ]; then
+  rm -rf "$target"/* "$target"/.[!.]* "$target"/..?* 2>/dev/null || true
+fi
+exit 0
+EOF
+chmod +x "$MOCK_BIN/umount"
+
+DEV_FS_LIST="$CHKSUM_TEST_DIR/dev-fs.list"
+cat << 'EOF' > "$DEV_FS_LIST"
+# <Device name>   <File system>   <Size>
+# File system is got from ocs-get-dev-info. It might be different from that of blkid or parted.
+/dev/nvme0n1p1 vfat 953M
+/dev/nvme0n1p2 zfs 1.8G
+/dev/nvme0n1p4 zfs 13.8G
+/dev/nvme0n1p3 swap 3.5G
+EOF
+
+chksum_cmd_for_files_in_dev="b3sum"
+> "$OCS_LOGFILE"
+while read dev_ x_fs y; do
+  [ "$dev_" = "#" ] && continue
+  [ "$x_fs" = "swap" -o "$x_fs" = "MS_Reserved_Partition" ] && continue
+  if [ "$x_fs" = "zfs" -o "$x_fs" = "zfs_member" ]; then
+    if ! is_zfs_kernel_supported; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "ZFS file-level checksum generation requires zfs tools and kernel module, hence skip creating checksum file for partition $dev_." | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      continue
+    fi
+  fi
+  gen_chksum_for_files_in_dev "$dev_" "$CHKSUM_TEST_DIR"
+done < "$DEV_FS_LIST"
+
+if ! grep -q "ZFS file-level checksum generation requires zfs tools and kernel module, hence skip creating checksum file for partition /dev/nvme0n1p2" "$OCS_LOGFILE"; then
+  echo "FAIL: dev-fs.list loop did not log skip notice for /dev/nvme0n1p2!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+
+if ! grep -q "ZFS file-level checksum generation requires zfs tools and kernel module, hence skip creating checksum file for partition /dev/nvme0n1p4" "$OCS_LOGFILE"; then
+  echo "FAIL: dev-fs.list loop did not log skip notice for /dev/nvme0n1p4!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+
+if grep -q "ERROR: Attempted mount of ZFS partition" "$ACTION_LOG"; then
+  echo "FAIL: Mount was erroneously attempted on ZFS partition in dev-fs.list!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if [ ! -f "$CHKSUM_TEST_DIR/nvme0n1p1.files-b3sum.info.gz" ]; then
+  echo "FAIL: Checksum file for /dev/nvme0n1p1 was not created!"
+  exit 1
+fi
+
+if [ -f "$CHKSUM_TEST_DIR/nvme0n1p2.files-b3sum.info.gz" ] || [ -f "$CHKSUM_TEST_DIR/nvme0n1p4.files-b3sum.info.gz" ]; then
+  echo "FAIL: Checksum file was unexpectedly created for ZFS partition!"
+  exit 1
+fi
+echo "PASS: dev-fs.list processing loop correctly processed vfat and skipped ZFS partitions"
+
+# -----------------------------------------------------------------------------
+# TEST 13: zfs_member normalization in checksum functions
+# -----------------------------------------------------------------------------
+echo "--- Test 13: Testing zfs_member normalization in checksum functions ---"
+rc_member_gen=0
+gen_chksum_for_files_in_dev /dev/sdd1 "$CHKSUM_TEST_DIR" || rc_member_gen=$?
+if [ "$rc_member_gen" -ne 0 ]; then
+  echo "FAIL: gen_chksum_for_files_in_dev returned non-zero ($rc_member_gen) for zfs_member!"
+  exit 1
+fi
+
+rc_member_inspect=0
+inspect_chksum_for_files_in_dev /dev/sdd1 "$CHKSUM_TEST_DIR" || rc_member_inspect=$?
+if [ "$rc_member_inspect" -ne 0 ]; then
+  echo "FAIL: inspect_chksum_for_files_in_dev returned non-zero ($rc_member_inspect) for zfs_member!"
+  exit 1
+fi
+echo "PASS: zfs_member normalized to zfs and skipped cleanly in gen and inspect checksum functions"
+
+# -----------------------------------------------------------------------------
+# TEST 14: Full ZFS checksum generation when ZFS tools and kernel are supported
+# -----------------------------------------------------------------------------
+echo "--- Test 14: Testing full ZFS checksum generation with mock zpool & zfs ---"
+cat << 'EOF' > "$MOCK_BIN/zpool"
+#!/bin/bash
+echo "zpool $*" >> "$ACTION_LOG"
+cmd="$1"
+shift
+case "$cmd" in
+  status)
+    exit 0
+    ;;
+  import)
+    altroot=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -R)
+          altroot="$2"
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    if [ -n "$altroot" ]; then
+      mkdir -p "$altroot/etc" "$altroot/home/user"
+      echo "zfs system config" > "$altroot/etc/zfs_test.conf"
+      echo "zfs user data" > "$altroot/home/user/document.txt"
+      echo "$altroot" > "$TMP_DIR/zfs_altroot"
+    fi
+    exit 0
+    ;;
+  export)
+    if [ -f "$TMP_DIR/zfs_altroot" ]; then
+      altroot="$(cat "$TMP_DIR/zfs_altroot")"
+      if [ -d "$altroot" ]; then
+        rm -rf "$altroot"/* "$altroot"/.[!.]* "$altroot"/..?* 2>/dev/null || true
+      fi
+      rm -f "$TMP_DIR/zfs_altroot"
+    fi
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+EOF
+chmod +x "$MOCK_BIN/zpool"
+
+cat << 'EOF' > "$MOCK_BIN/zfs"
+#!/bin/bash
+echo "zfs $*" >> "$ACTION_LOG"
+exit 0
+EOF
+chmod +x "$MOCK_BIN/zfs"
+
+# Mock blkid for nvme0n1p2 and nvme0n1p4
+cat << 'EOF' > "$MOCK_BIN/blkid"
+#!/bin/bash
+for arg in "$@"; do
+  if [[ "$arg" == *"/dev/nvme0n1p2"* ]]; then
+    if [[ "$*" == *"-s UUID"* ]]; then
+      echo "11669959192160078484"
+    elif [[ "$*" == *"-s LABEL"* ]]; then
+      echo "bpool"
+    elif [[ "$*" == *"-s TYPE"* ]]; then
+      echo "zfs_member"
+    else
+      echo '/dev/nvme0n1p2: LABEL="bpool" UUID="11669959192160078484" TYPE="zfs_member"'
+    fi
+    exit 0
+  elif [[ "$arg" == *"/dev/nvme0n1p4"* ]]; then
+    if [[ "$*" == *"-s UUID"* ]]; then
+      echo "17969138287380862017"
+    elif [[ "$*" == *"-s LABEL"* ]]; then
+      echo "rpool"
+    elif [[ "$*" == *"-s TYPE"* ]]; then
+      echo "zfs_member"
+    else
+      echo '/dev/nvme0n1p4: LABEL="rpool" UUID="17969138287380862017" TYPE="zfs_member"'
+    fi
+    exit 0
+  fi
+done
+exit 1
+EOF
+chmod +x "$MOCK_BIN/blkid"
+
+ZFS_TGT_IMG="$TMP_DIR/img_zfs_full"
+mkdir -p "$ZFS_TGT_IMG"
+
+chksum_cmd_for_files_in_dev="b3sum"
+rc_zfs_gen=0
+gen_chksum_for_files_in_dev /dev/nvme0n1p2 "$ZFS_TGT_IMG" || rc_zfs_gen=$?
+if [ "$rc_zfs_gen" -ne 0 ]; then
+  echo "FAIL: gen_chksum_for_files_in_dev failed for ZFS with exit code $rc_zfs_gen!"
+  exit 1
+fi
+
+EXPECTED_ZFS_CHKSUM="$ZFS_TGT_IMG/nvme0n1p2.files-b3sum.info.gz"
+if [ ! -f "$EXPECTED_ZFS_CHKSUM" ]; then
+  echo "FAIL: Expected ZFS checksum file $EXPECTED_ZFS_CHKSUM was not created!"
+  exit 1
+fi
+
+ZFS_FILE_COUNT="$(LC_ALL=C zcat "$EXPECTED_ZFS_CHKSUM" | wc -l)"
+if [ "$ZFS_FILE_COUNT" -ne 2 ]; then
+  echo "FAIL: Expected 2 files in ZFS checksum file, got $ZFS_FILE_COUNT!"
+  zcat "$EXPECTED_ZFS_CHKSUM"
+  exit 1
+fi
+
+if ! grep -q "zpool import -f -o readonly=on -R" "$ACTION_LOG"; then
+  echo "FAIL: zpool import was not called with readonly=on and -R!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+
+if ! grep -q "zpool export -f" "$ACTION_LOG"; then
+  echo "FAIL: zpool export was not called to clean up pool!"
+  cat "$ACTION_LOG"
+  exit 1
+fi
+echo "PASS: Full ZFS checksum generation succeeded with 2 files indexed and clean pool export"
+
+# -----------------------------------------------------------------------------
+# TEST 15: Full ZFS checksum inspection when ZFS tools and kernel are supported
+# -----------------------------------------------------------------------------
+echo "--- Test 15: Testing full ZFS checksum inspection with mock zpool & zfs ---"
+rc_zfs_inspect=0
+inspect_chksum_for_files_in_dev /dev/nvme0n1p2 "$ZFS_TGT_IMG" || rc_zfs_inspect=$?
+if [ "$rc_zfs_inspect" -ne 0 ]; then
+  echo "FAIL: inspect_chksum_for_files_in_dev failed for ZFS with exit code $rc_zfs_inspect!"
+  exit 1
+fi
+echo "PASS: Full ZFS checksum inspection verified all files and exported pool cleanly"
+
+# -----------------------------------------------------------------------------
+# TEST 16: dev-fs.list loop executes full ZFS checksum generation when supported
+# -----------------------------------------------------------------------------
+echo "--- Test 16: Testing dev-fs.list loop processes ZFS when tools are supported ---"
+> "$OCS_LOGFILE"
+while read dev_ x_fs y; do
+  [ "$dev_" = "#" ] && continue
+  [ "$x_fs" = "swap" -o "$x_fs" = "MS_Reserved_Partition" ] && continue
+  if [ "$x_fs" = "zfs" -o "$x_fs" = "zfs_member" ]; then
+    if ! is_zfs_kernel_supported; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+      echo "ZFS file-level checksum generation requires zfs tools and kernel module, hence skip creating checksum file for partition $dev_." | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      continue
+    fi
+  fi
+  gen_chksum_for_files_in_dev "$dev_" "$ZFS_TGT_IMG"
+done < "$DEV_FS_LIST"
+
+if [ ! -f "$ZFS_TGT_IMG/nvme0n1p2.files-b3sum.info.gz" ]; then
+  echo "FAIL: dev-fs.list loop did not create checksum file for /dev/nvme0n1p2!"
+  exit 1
+fi
+
+if [ ! -f "$ZFS_TGT_IMG/nvme0n1p4.files-b3sum.info.gz" ]; then
+  echo "FAIL: dev-fs.list loop did not create checksum file for /dev/nvme0n1p4!"
+  exit 1
+fi
+echo "PASS: dev-fs.list processing loop successfully generated checksums for all ZFS partitions"
+
 echo "=== All ZFS Support Tests Passed Successfully! ==="
 exit 0
