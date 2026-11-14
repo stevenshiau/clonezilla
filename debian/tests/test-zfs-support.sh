@@ -117,6 +117,7 @@ echo "PASS: ocs-get-dev-info correctly mapped lsblk fstype=zfs_member to 'zfs' o
 # -----------------------------------------------------------------------------
 echo "--- Test 3: Testing is_partclone_support_fs logic ---"
 . scripts/sbin/ocs-functions
+export ocs_batch_mode="on"
 
 # Subshell with a clean PATH lacking partclone.zfs
 NO_ZFS_BIN="$TMP_DIR/no_zfs_bin"
@@ -1036,6 +1037,44 @@ if ! grep -q "警告！Clonezilla 對 ZFS 的支援仍是一項測試功能！�
   exit 1
 fi
 echo "PASS: warn_zfs_testing_feature correctly used localized msg_zfs_support_is_still_under_test"
+
+# Verify pause and wait for enter in non-batch mode for ocs-sr and ocs-onthefly
+PAUSE_OUT="$(
+  ocs_batch_mode="off"
+  unset OCS_ONTHEFLY_BATCH_MODE
+  echo "" | warn_zfs_testing_feature
+)"
+if [[ "$PAUSE_OUT" != *"Press \"Enter\" to continue"* && "$PAUSE_OUT" != *"Press Enter to continue"* ]]; then
+  echo "FAIL: warn_zfs_testing_feature did not prompt for Enter when ocs_batch_mode='off'!"
+  echo "Output was: '$PAUSE_OUT'"
+  exit 1
+fi
+echo "PASS: warn_zfs_testing_feature correctly paused and prompted for Enter when ocs_batch_mode is off"
+
+# Verify ocs-onthefly non-batch mode pauses even if child ocs-sr has ocs_batch_mode="on"
+PAUSE_OTF_OUT="$(
+  ocs_batch_mode="on"
+  OCS_ONTHEFLY_BATCH_MODE="off"
+  echo "" | warn_zfs_testing_feature
+)"
+if [[ "$PAUSE_OTF_OUT" != *"Press \"Enter\" to continue"* && "$PAUSE_OTF_OUT" != *"Press Enter to continue"* ]]; then
+  echo "FAIL: warn_zfs_testing_feature did not prompt for Enter when OCS_ONTHEFLY_BATCH_MODE='off'!"
+  echo "Output was: '$PAUSE_OTF_OUT'"
+  exit 1
+fi
+echo "PASS: warn_zfs_testing_feature correctly paused and prompted for Enter when OCS_ONTHEFLY_BATCH_MODE is off"
+
+# Verify ocs-onthefly batch mode bypasses pause
+BATCH_OTF_OUT="$(
+  ocs_batch_mode="off"
+  OCS_ONTHEFLY_BATCH_MODE="on"
+  warn_zfs_testing_feature
+)"
+if [[ "$BATCH_OTF_OUT" == *"Press \"Enter\" to continue"* || "$BATCH_OTF_OUT" == *"Press Enter to continue"* ]]; then
+  echo "FAIL: warn_zfs_testing_feature prompted for Enter when OCS_ONTHEFLY_BATCH_MODE='on'!"
+  exit 1
+fi
+echo "PASS: warn_zfs_testing_feature bypassed pause when OCS_ONTHEFLY_BATCH_MODE is on"
 
 echo "=== All ZFS Support Tests Passed Successfully! ==="
 exit 0
