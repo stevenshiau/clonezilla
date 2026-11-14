@@ -191,6 +191,13 @@ if ! grep -q "partclone.zfs.*-c -s /dev/sda1" "$ACTION_LOG"; then
 fi
 echo "PASS: save_part_by_partclone correctly called partclone.zfs in clone mode (-c)"
 
+if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
+  echo "FAIL: save_part_by_partclone did not warn about ZFS testing feature!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+echo "PASS: save_part_by_partclone warned that ZFS support is a testing feature under test"
+
 # -----------------------------------------------------------------------------
 # TEST 5: is_partclone_image for zfs images
 # -----------------------------------------------------------------------------
@@ -224,6 +231,13 @@ if ! grep -q "partclone.zfs.*-s - -r -o /dev/sda1" "$ACTION_LOG"; then
 fi
 echo "PASS: unicast_restore_by_partclone correctly called partclone.zfs in restore mode (-r)"
 
+if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
+  echo "FAIL: unicast_restore_by_partclone did not warn about ZFS testing feature!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+echo "PASS: unicast_restore_by_partclone warned that ZFS support is a testing feature under test"
+
 # -----------------------------------------------------------------------------
 # TEST 7: local_partition_to_partiton_clone (device-to-device cloning)
 # -----------------------------------------------------------------------------
@@ -255,6 +269,13 @@ if ! grep -q "partclone.zfs.*-b -s /dev/sda1 -O /dev/sdc1" "$ACTION_LOG"; then
   exit 1
 fi
 echo "PASS: local_partition_to_partiton_clone normalized zfs_member to zfs"
+
+if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
+  echo "FAIL: local_partition_to_partiton_clone did not warn about ZFS testing feature!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+echo "PASS: local_partition_to_partiton_clone warned that ZFS support is a testing feature under test"
 
 # -----------------------------------------------------------------------------
 # TEST 8: Network on-the-fly cloning (feed and receive)
@@ -293,6 +314,13 @@ if ! grep -q "partclone.zfs.*-s - -r -o /dev/sdb1" "$ACTION_LOG"; then
   exit 1
 fi
 echo "PASS: onthefly_receive_partition_from_server_then_write restored zfs stream with partclone.zfs"
+
+if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
+  echo "FAIL: onthefly routines did not warn about ZFS testing feature!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+echo "PASS: onthefly routines warned that ZFS support is a testing feature under test"
 
 # -----------------------------------------------------------------------------
 # TEST 9: fsck_partition bypass for zfs
@@ -951,6 +979,63 @@ fi
 umount_zfs_partition /dev/nvme0n1p4 "$PRE_MNT"
 clean_temp_mount_dir "$PRE_MNT" || true
 echo "PASS: Pre-imported ZFS pool was detected, exported, and successfully mounted read-only"
+
+# -----------------------------------------------------------------------------
+# TEST 20: Testing ZFS warning is prompted on save/restore/clone, and not for non-ZFS
+# -----------------------------------------------------------------------------
+echo "--- Test 20: Testing ZFS testing feature warnings for save, restore, and clone ---"
+> "$OCS_LOGFILE"
+
+# Non-ZFS should not trigger the warning
+save_part_by_partclone ext4 2>/dev/null || true
+if grep -q "The support for ZFS in Clonezilla is still a testing feature" "$OCS_LOGFILE"; then
+  echo "FAIL: Non-ZFS filesystem (ext4) triggered ZFS testing feature warning!"
+  exit 1
+fi
+echo "PASS: Non-ZFS filesystem (ext4) did not trigger ZFS warning"
+
+# Direct call to warn_zfs_testing_feature outputs expected warning
+> "$OCS_LOGFILE"
+warn_zfs_testing_feature
+if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
+  echo "FAIL: warn_zfs_testing_feature did not output expected warning message!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+echo "PASS: warn_zfs_testing_feature correctly outputted testing feature warning"
+
+# Multicast restore triggers warning
+> "$OCS_LOGFILE"
+multicast_restore_by_partclone zfs "cat" 2>/dev/null || true
+if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
+  echo "FAIL: multicast_restore_by_partclone did not warn about ZFS testing feature!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+echo "PASS: multicast_restore_by_partclone warned that ZFS support is a testing feature under test"
+
+# clone_lv_to_lv triggers warning
+> "$OCS_LOGFILE"
+clone_lv_to_lv zfs /dev/vg1/lv1 /dev/vg2/lv1 2>/dev/null || true
+if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
+  echo "FAIL: clone_lv_to_lv did not warn about ZFS testing feature!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+echo "PASS: clone_lv_to_lv warned that ZFS support is a testing feature under test"
+
+# Verify l10n localization variable is respected when set
+> "$OCS_LOGFILE"
+(
+  msg_zfs_support_is_still_under_test="警告！Clonezilla 對 ZFS 的支援仍是一項測試功能！此功能仍在測試中。"
+  warn_zfs_testing_feature
+)
+if ! grep -q "警告！Clonezilla 對 ZFS 的支援仍是一項測試功能！此功能仍在測試中。" "$OCS_LOGFILE"; then
+  echo "FAIL: warn_zfs_testing_feature did not respect localized msg_zfs_support_is_still_under_test!"
+  cat "$OCS_LOGFILE"
+  exit 1
+fi
+echo "PASS: warn_zfs_testing_feature correctly used localized msg_zfs_support_is_still_under_test"
 
 echo "=== All ZFS Support Tests Passed Successfully! ==="
 exit 0

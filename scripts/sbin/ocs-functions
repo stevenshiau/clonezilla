@@ -1420,16 +1420,29 @@ is_dd_image() {
   return $rc
 } # end of is_dd_image
 #
+warn_zfs_testing_feature() {
+  # Function to prompt warning when ZFS partition is saved, restored, or cloned
+  local warn_msg="${msg_zfs_support_is_still_under_test:-"WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test."}"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo "$warn_msg" | tee --append ${OCS_LOGFILE}
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  return 0
+} # end of warn_zfs_testing_feature
+#
 save_part_by_partclone() {
   # partclone is preferred
   local fs_save partclone_img_info_tmp IP fs_p fs_pre comp_suf
   fs_save="$1"
+  [ "$fs_save" = "zfs_member" ] && fs_save="zfs"
   if [ -z "$fs_save" ]; then
     echo "///ERROR/// The filesystem must be assigned in function save_part_by_partclone." | tee --append ${OCS_LOGFILE}
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
     # Saving mode, always copy error log to image dir.
     copy_error_log
     exit 1
+  fi
+  if [ "$fs_save" = "zfs" ]; then
+    warn_zfs_testing_feature
   fi
 
   # Now the image file for partclone is like:
@@ -6062,6 +6075,9 @@ unicast_restore_by_partclone() {
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
     exit 1
   fi
+  if [ "$fs_" = "zfs" ]; then
+    warn_zfs_testing_feature
+  fi
 
   if [ -h "$file_" ]; then
     link_flag="yes"
@@ -6442,6 +6458,9 @@ multicast_restore_by_partclone() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop." | tee --append  ${OCS_LOGFILE}
     exit 1
+  fi
+  if [ "$fs_" = "zfs" ]; then
+    warn_zfs_testing_feature
   fi
 
   if [ -z "$unzip_stdin_cmd" ]; then
@@ -7672,6 +7691,9 @@ clone_lv_to_lv() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Source LV file system is $pt_fs..." | tee --append $OCS_LOGFILE
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  if [ "$pt_fs" = "zfs" ]; then
+    warn_zfs_testing_feature
+  fi
 
   echo "Cloning $src_lv to $tgt_lv..." | tee --append $OCS_LOGFILE
   clean_filesystem_header_in_dev $tgt_lv
@@ -16766,6 +16788,9 @@ local_partition_to_partiton_clone() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Source partition file system is $pt_fs..." | tee --append $OCS_LOGFILE
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  if [ "$pt_fs" = "zfs" ]; then
+    warn_zfs_testing_feature
+  fi
 
   esp_part="no"
   if [[ "$pt_fs" =~ "fat" ]]; then
@@ -17077,6 +17102,9 @@ onthefly_receive_partition_from_server_then_write() {
   local ret pt_size
   local cmd_partclone netpipe_cli_cmd
   [ "$pt_fs" = "zfs_member" ] && pt_fs="zfs"
+  if [ "$pt_fs" = "zfs" ]; then
+    warn_zfs_testing_feature
+  fi
   # $netpipe_cli_cmd | $net_filter_decomp
   echo "$msg_delimiter_star_line"
   echo "Restoring $tgt_p from $SOURCE_IP:$NC_PORT..."
@@ -17197,6 +17225,9 @@ feed_dev_in_onthefly_server() {
   local cmd_partclone netpipe_srv_cmd cmd_pipeline
   local bg_opt="&"
   [ "$pt_fs" = "zfs_member" ] && pt_fs="zfs"
+  if [ "$pt_fs" = "zfs" ]; then
+    warn_zfs_testing_feature
+  fi
   if [ "$reverse_connection" = "yes" ]; then
     bg_opt=""
   fi
