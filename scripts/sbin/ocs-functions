@@ -1444,6 +1444,91 @@ warn_zfs_testing_feature() {
   return 0
 } # end of warn_zfs_testing_feature
 #
+is_zfs_in_dev() {
+  # Checks if a device or any of its partitions has a ZFS filesystem
+  local dev_="$1"
+  [ -z "$dev_" ] && return 1
+  local dev_name="${dev_#/dev/}"
+  dev_name="${dev_name//\"/}"
+  local fs_=""
+
+  # 1. Check device itself
+  fs_="$(LC_ALL=C ocs-get-dev-info "/dev/$dev_name" filesystem 2>/dev/null || true)"
+  [ -z "$fs_" ] && fs_="$(LC_ALL=C blkid -s TYPE -o value "/dev/$dev_name" 2>/dev/null || true)"
+  if [ "$fs_" = "zfs" -o "$fs_" = "zfs_member" ]; then
+    return 0
+  fi
+
+  # 2. Check child partitions if dev_name is a disk
+  local parts_to_check=""
+  if type lsblk &>/dev/null; then
+    parts_to_check="$(LC_ALL=C lsblk -nlo NAME "/dev/$dev_name" 2>/dev/null | tail -n +2 || true)"
+  fi
+  if [ -z "$parts_to_check" ]; then
+    get_partition_list false "$dev_name" 2>/dev/null || true
+    parts_to_check="$partition_list"
+  fi
+  for cp in $parts_to_check; do
+    [ "$cp" = "$dev_name" ] && continue
+    fs_="$(LC_ALL=C ocs-get-dev-info "/dev/$cp" filesystem 2>/dev/null || true)"
+    [ -z "$fs_" ] && fs_="$(LC_ALL=C blkid -s TYPE -o value "/dev/$cp" 2>/dev/null || true)"
+    if [ "$fs_" = "zfs" -o "$fs_" = "zfs_member" ]; then
+      return 0
+    fi
+  done
+
+  # 3. Check blkid output for any partitions of this disk
+  if type blkid &>/dev/null; then
+    if LC_ALL=C blkid 2>/dev/null | grep -E "^/dev/${dev_name}[0-9p]+" | grep -Eiq 'TYPE="zfs(_member)?"'; then
+      return 0
+    fi
+  fi
+
+  return 1
+} # end of is_zfs_in_dev
+#
+is_zfs_in_dev_list() {
+  # Checks a list of devices (disks or partitions) for ZFS filesystem
+  local d item
+  for d in "$@"; do
+    for item in $d; do
+      if is_zfs_in_dev "$item"; then
+        return 0
+      fi
+    done
+  done
+  return 1
+} # end of is_zfs_in_dev_list
+#
+is_zfs_in_img_dir() {
+  # Checks if an image repository directory contains any ZFS partition image files
+  local img_dir="$1"
+  [ ! -d "$img_dir" ] && return 1
+
+  # 1. Check if any image file in img_dir has zfs in its name (e.g. *.zfs-ptcl-img* or *.zfs-img*)
+  local zfs_imgs
+  zfs_imgs="$(unalias ls &>/dev/null; ls "$img_dir"/*zfs*-img* "$img_dir"/*.zfs-ptcl-img* "$img_dir"/*.zfs-img* 2>/dev/null || true)"
+  if [ -n "$zfs_imgs" ]; then
+    return 0
+  fi
+
+  # 2. Check dev-fs.list if present in the image dir
+  if [ -f "$img_dir/dev-fs.list" ]; then
+    if awk '{print $2}' "$img_dir/dev-fs.list" 2>/dev/null | grep -Ewq "zfs|zfs_member"; then
+      return 0
+    fi
+  fi
+
+  # 3. Check blkdev.list if present
+  if [ -f "$img_dir/blkdev.list" ]; then
+    if grep -Eiq "zfs(_member)?" "$img_dir/blkdev.list" 2>/dev/null; then
+      return 0
+    fi
+  fi
+
+  return 1
+} # end of is_zfs_in_img_dir
+#
 save_part_by_partclone() {
   # partclone is preferred
   local fs_save partclone_img_info_tmp IP fs_p fs_pre comp_suf
@@ -1455,9 +1540,6 @@ save_part_by_partclone() {
     # Saving mode, always copy error log to image dir.
     copy_error_log
     exit 1
-  fi
-  if [ "$fs_save" = "zfs" ]; then
-    warn_zfs_testing_feature
   fi
 
   # Now the image file for partclone is like:
@@ -6090,9 +6172,6 @@ unicast_restore_by_partclone() {
     echo "$msg_program_stop." | tee --append ${OCS_LOGFILE}
     exit 1
   fi
-  if [ "$fs_" = "zfs" ]; then
-    warn_zfs_testing_feature
-  fi
 
   if [ -h "$file_" ]; then
     link_flag="yes"
@@ -6473,9 +6552,6 @@ multicast_restore_by_partclone() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
     echo "$msg_program_stop." | tee --append  ${OCS_LOGFILE}
     exit 1
-  fi
-  if [ "$fs_" = "zfs" ]; then
-    warn_zfs_testing_feature
   fi
 
   if [ -z "$unzip_stdin_cmd" ]; then
@@ -7706,9 +7782,6 @@ clone_lv_to_lv() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Source LV file system is $pt_fs..." | tee --append $OCS_LOGFILE
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  if [ "$pt_fs" = "zfs" ]; then
-    warn_zfs_testing_feature
-  fi
 
   echo "Cloning $src_lv to $tgt_lv..." | tee --append $OCS_LOGFILE
   clean_filesystem_header_in_dev $tgt_lv
@@ -9849,6 +9922,12 @@ task_savedisk() {
   target_hd="$(cat $ANS_TMP | tr -d \")"
   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
 
+  # Check if source device contains ZFS filesystem in the beginning
+  if [ "$OCS_ZFS_WARNED" != "yes" ] && is_zfs_in_dev_list "$target_hd"; then
+    warn_zfs_testing_feature
+    export OCS_ZFS_WARNED="yes"
+  fi
+
   # Tune NVMe block queue settings if target disks are NVMe
   tune_nvme_block_queue_settings $target_hd
 
@@ -10271,6 +10350,12 @@ task_saveparts() {
   # will work (Specially for FC3/4...)
   target_parts="$(cat $ANS_TMP | tr -d \")"
   [ -f "$ANS_TMP" ] && rm -f $ANS_TMP
+
+  # Check if source device contains ZFS filesystem in the beginning
+  if [ "$OCS_ZFS_WARNED" != "yes" ] && is_zfs_in_dev_list "$target_parts"; then
+    warn_zfs_testing_feature
+    export OCS_ZFS_WARNED="yes"
+  fi
 
   # Tune NVMe block queue settings if target partitions are on NVMe
   tune_nvme_block_queue_settings $target_parts
@@ -10796,6 +10881,13 @@ task_d2d_restoreparts() {
     # Mapping the reserved ocs block device name to Linux kernel block device name
     target_parts="$(get_mapped_kernel_or_ocs_blkname "$target_parts")"
   fi
+  # Check if source device contains ZFS filesystem in the beginning
+  if [ "$OCS_ZFS_WARNED" != "yes" ]; then
+    if is_zfs_in_img_dir "$ocsroot/$target_dir"; then
+      warn_zfs_testing_feature
+      export OCS_ZFS_WARNED="yes"
+    fi
+  fi
   task_restoreparts "$target_dir" "$target_parts" "$port"
 } # end of task_d2d_restoreparts 
 
@@ -10982,6 +11074,16 @@ task_restoreparts() {
   # Use "$target_dir_fullpath" as the absolute path, i.e. put leading $ocsroot, since from now on we need the full path dir to access them.
   target_dir_fullpath="$ocsroot/$target_dir"
   check_input_target_image "$target_dir_fullpath"
+
+  # Check if image repository contains ZFS image files in the beginning
+  if [ "$port" != "ld2d" -a "$port" != "nd2d" ]; then
+    if [ "$OCS_ZFS_WARNED" != "yes" ]; then
+      if is_zfs_in_img_dir "$target_dir_fullpath" || ([ -n "$orig_ocsroot" -a -n "$orig_target_dir" ] && is_zfs_in_img_dir "$orig_ocsroot/$orig_target_dir"); then
+        warn_zfs_testing_feature
+        export OCS_ZFS_WARNED="yes"
+      fi
+    fi
+  fi
 
   # turn on hd dma 
   for ihd in $target_hd; do
@@ -16803,9 +16905,6 @@ local_partition_to_partiton_clone() {
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Source partition file system is $pt_fs..." | tee --append $OCS_LOGFILE
   [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
-  if [ "$pt_fs" = "zfs" ]; then
-    warn_zfs_testing_feature
-  fi
 
   esp_part="no"
   if [[ "$pt_fs" =~ "fat" ]]; then
@@ -17117,9 +17216,6 @@ onthefly_receive_partition_from_server_then_write() {
   local ret pt_size
   local cmd_partclone netpipe_cli_cmd
   [ "$pt_fs" = "zfs_member" ] && pt_fs="zfs"
-  if [ "$pt_fs" = "zfs" ]; then
-    warn_zfs_testing_feature
-  fi
   # $netpipe_cli_cmd | $net_filter_decomp
   echo "$msg_delimiter_star_line"
   echo "Restoring $tgt_p from $SOURCE_IP:$NC_PORT..."
@@ -17240,9 +17336,6 @@ feed_dev_in_onthefly_server() {
   local cmd_partclone netpipe_srv_cmd cmd_pipeline
   local bg_opt="&"
   [ "$pt_fs" = "zfs_member" ] && pt_fs="zfs"
-  if [ "$pt_fs" = "zfs" ]; then
-    warn_zfs_testing_feature
-  fi
   if [ "$reverse_connection" = "yes" ]; then
     bg_opt=""
   fi

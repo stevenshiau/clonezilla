@@ -192,13 +192,6 @@ if ! grep -q "partclone.zfs.*-c -s /dev/sda1" "$ACTION_LOG"; then
 fi
 echo "PASS: save_part_by_partclone correctly called partclone.zfs in clone mode (-c)"
 
-if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
-  echo "FAIL: save_part_by_partclone did not warn about ZFS testing feature!"
-  cat "$OCS_LOGFILE"
-  exit 1
-fi
-echo "PASS: save_part_by_partclone warned that ZFS support is a testing feature under test"
-
 # -----------------------------------------------------------------------------
 # TEST 5: is_partclone_image for zfs images
 # -----------------------------------------------------------------------------
@@ -232,13 +225,6 @@ if ! grep -q "partclone.zfs.*-s - -r -o /dev/sda1" "$ACTION_LOG"; then
 fi
 echo "PASS: unicast_restore_by_partclone correctly called partclone.zfs in restore mode (-r)"
 
-if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
-  echo "FAIL: unicast_restore_by_partclone did not warn about ZFS testing feature!"
-  cat "$OCS_LOGFILE"
-  exit 1
-fi
-echo "PASS: unicast_restore_by_partclone warned that ZFS support is a testing feature under test"
-
 # -----------------------------------------------------------------------------
 # TEST 7: local_partition_to_partiton_clone (device-to-device cloning)
 # -----------------------------------------------------------------------------
@@ -270,13 +256,6 @@ if ! grep -q "partclone.zfs.*-b -s /dev/sda1 -O /dev/sdc1" "$ACTION_LOG"; then
   exit 1
 fi
 echo "PASS: local_partition_to_partiton_clone normalized zfs_member to zfs"
-
-if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
-  echo "FAIL: local_partition_to_partiton_clone did not warn about ZFS testing feature!"
-  cat "$OCS_LOGFILE"
-  exit 1
-fi
-echo "PASS: local_partition_to_partiton_clone warned that ZFS support is a testing feature under test"
 
 # -----------------------------------------------------------------------------
 # TEST 8: Network on-the-fly cloning (feed and receive)
@@ -315,13 +294,6 @@ if ! grep -q "partclone.zfs.*-s - -r -o /dev/sdb1" "$ACTION_LOG"; then
   exit 1
 fi
 echo "PASS: onthefly_receive_partition_from_server_then_write restored zfs stream with partclone.zfs"
-
-if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
-  echo "FAIL: onthefly routines did not warn about ZFS testing feature!"
-  cat "$OCS_LOGFILE"
-  exit 1
-fi
-echo "PASS: onthefly routines warned that ZFS support is a testing feature under test"
 
 # -----------------------------------------------------------------------------
 # TEST 9: fsck_partition bypass for zfs
@@ -982,20 +954,86 @@ clean_temp_mount_dir "$PRE_MNT" || true
 echo "PASS: Pre-imported ZFS pool was detected, exported, and successfully mounted read-only"
 
 # -----------------------------------------------------------------------------
-# TEST 20: Testing ZFS warning is prompted on save/restore/clone, and not for non-ZFS
+# TEST 20: Testing ZFS warning checks at beginning of save, restore, and clone
 # -----------------------------------------------------------------------------
 echo "--- Test 20: Testing ZFS testing feature warnings for save, restore, and clone ---"
 > "$OCS_LOGFILE"
+export ocs_batch_mode="on"
 
-# Non-ZFS should not trigger the warning
-save_part_by_partclone ext4 2>/dev/null || true
-if grep -q "The support for ZFS in Clonezilla is still a testing feature" "$OCS_LOGFILE"; then
-  echo "FAIL: Non-ZFS filesystem (ext4) triggered ZFS testing feature warning!"
+# Test 20.1: Source device check when saving an image (is_zfs_in_dev_list)
+# Mock blkid for sda1 is zfs_member, sdb1 is ext4
+if ! is_zfs_in_dev_list "/dev/sda1"; then
+  echo "FAIL: is_zfs_in_dev_list failed to detect ZFS on /dev/sda1!"
   exit 1
 fi
-echo "PASS: Non-ZFS filesystem (ext4) did not trigger ZFS warning"
+echo "PASS: is_zfs_in_dev_list detected ZFS on /dev/sda1"
 
-# Direct call to warn_zfs_testing_feature outputs expected warning
+# Mock non-ZFS partition
+cat << 'EOF' > "$MOCK_BIN/blkid"
+#!/bin/bash
+if [[ "$*" == *"/dev/sdb1"* ]]; then
+  echo "DEVNAME=/dev/sdb1"
+  echo "TYPE=ext4"
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$MOCK_BIN/blkid"
+
+if is_zfs_in_dev_list "/dev/sdb1"; then
+  echo "FAIL: is_zfs_in_dev_list reported ZFS for ext4 /dev/sdb1!"
+  exit 1
+fi
+echo "PASS: is_zfs_in_dev_list correctly returned false for non-ZFS partition"
+
+# Restore blkid mock for sda1
+cat << 'EOF' > "$MOCK_BIN/blkid"
+#!/bin/bash
+if [[ "$*" == *"/dev/sda1"* ]]; then
+  echo "DEVNAME=/dev/sda1"
+  echo "TYPE=zfs_member"
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$MOCK_BIN/blkid"
+
+# Test 20.2: Image repository check when restoring an image (is_zfs_in_img_dir)
+ZFS_REPO_TMP="$TMP_DIR/zfs_repo_test"
+mkdir -p "$ZFS_REPO_TMP"
+touch "$ZFS_REPO_TMP/sda1.zfs-ptcl-img.zst"
+
+if ! is_zfs_in_img_dir "$ZFS_REPO_TMP"; then
+  echo "FAIL: is_zfs_in_img_dir failed to detect ZFS image file!"
+  exit 1
+fi
+echo "PASS: is_zfs_in_img_dir detected ZFS image in repository"
+
+NON_ZFS_REPO_TMP="$TMP_DIR/non_zfs_repo_test"
+mkdir -p "$NON_ZFS_REPO_TMP"
+touch "$NON_ZFS_REPO_TMP/sda1.ext4-ptcl-img.zst"
+
+if is_zfs_in_img_dir "$NON_ZFS_REPO_TMP"; then
+  echo "FAIL: is_zfs_in_img_dir reported ZFS for repository with only ext4 images!"
+  exit 1
+fi
+echo "PASS: is_zfs_in_img_dir correctly returned false for non-ZFS image repository"
+
+# Test 20.3: dev-fs.list check in image directory
+ZFS_DEVFS_REPO_TMP="$TMP_DIR/zfs_devfs_repo_test"
+mkdir -p "$ZFS_DEVFS_REPO_TMP"
+cat << 'EOF' > "$ZFS_DEVFS_REPO_TMP/dev-fs.list"
+/dev/nvme0n1p1 vfat 1G
+/dev/nvme0n1p2 zfs 2G
+EOF
+
+if ! is_zfs_in_img_dir "$ZFS_DEVFS_REPO_TMP"; then
+  echo "FAIL: is_zfs_in_img_dir failed to detect ZFS in dev-fs.list!"
+  exit 1
+fi
+echo "PASS: is_zfs_in_img_dir detected ZFS in dev-fs.list"
+
+# Test 20.4: warn_zfs_testing_feature outputs expected warning
 > "$OCS_LOGFILE"
 warn_zfs_testing_feature
 if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
@@ -1005,27 +1043,7 @@ if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feat
 fi
 echo "PASS: warn_zfs_testing_feature correctly outputted testing feature warning"
 
-# Multicast restore triggers warning
-> "$OCS_LOGFILE"
-multicast_restore_by_partclone zfs "cat" 2>/dev/null || true
-if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
-  echo "FAIL: multicast_restore_by_partclone did not warn about ZFS testing feature!"
-  cat "$OCS_LOGFILE"
-  exit 1
-fi
-echo "PASS: multicast_restore_by_partclone warned that ZFS support is a testing feature under test"
-
-# clone_lv_to_lv triggers warning
-> "$OCS_LOGFILE"
-clone_lv_to_lv zfs /dev/vg1/lv1 /dev/vg2/lv1 2>/dev/null || true
-if ! grep -q "WARNING: The support for ZFS in Clonezilla is still a testing feature! This feature is still under test." "$OCS_LOGFILE"; then
-  echo "FAIL: clone_lv_to_lv did not warn about ZFS testing feature!"
-  cat "$OCS_LOGFILE"
-  exit 1
-fi
-echo "PASS: clone_lv_to_lv warned that ZFS support is a testing feature under test"
-
-# Verify l10n localization variable is respected when set
+# Test 20.5: Verify l10n localization variable is respected when set
 > "$OCS_LOGFILE"
 (
   msg_zfs_support_is_still_under_test="警告！Clonezilla 對 ZFS 的支援仍是一項測試功能！此功能仍在測試中。"
@@ -1038,7 +1056,7 @@ if ! grep -q "警告！Clonezilla 對 ZFS 的支援仍是一項測試功能！�
 fi
 echo "PASS: warn_zfs_testing_feature correctly used localized msg_zfs_support_is_still_under_test"
 
-# Verify pause and wait for enter in non-batch mode for ocs-sr and ocs-onthefly
+# Test 20.6: Verify pause and wait for enter in non-batch mode for ocs-sr and ocs-onthefly
 PAUSE_OUT="$(
   ocs_batch_mode="off"
   unset OCS_ONTHEFLY_BATCH_MODE
