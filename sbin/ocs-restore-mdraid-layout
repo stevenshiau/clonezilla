@@ -19,13 +19,20 @@ USAGE() {
     echo "$ocs - To restore the MDRAID layout from image dir"
     echo "Usage:"
     echo "To run $ocs:"
-    echo "$ocs [OPTION] IMAGE_DIR_PATH"
+    echo "$ocs [OPTION] IMAGE_DIR_PATH [TARGET_DEV...]"
     echo
     echo "Options:"
     echo "-b, --batch-mode   Run image checking in batch mode"
+    echo
+    echo "TARGET_DEV can be target disk(s) or partition(s), e.g., nvme0n1, /dev/sda."
+    echo "If TARGET_DEV is specified, only MDRAID arrays whose members are on TARGET_DEV will be recreated,"
+    echo "and member devices outside of TARGET_DEV will never be wiped or modified."
+    echo
     echo "Ex:"
     echo "To restore the MDRAID device from the image \"my-image\", which is located in $ocsroot, run"
     echo "   $ocs $ocsroot/my-image"
+    echo "To restore only arrays associated with target disk nvme0n1, run"
+    echo "   $ocs -b $ocsroot/my-image nvme0n1"
     echo
 } # end of USAGE
 
@@ -51,17 +58,65 @@ check_if_root
 ask_and_load_lang_set
 
 #
-if [ "$#" -ne 1 ]; then
+if [ "$#" -lt 1 ]; then
     USAGE
     exit 1
 fi
 
 IMG_DIR="${1%/}"
+shift
+TARGET_DEVICES="$(echo "$*" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 
 if [ ! -d "$IMG_DIR" ]; then
     echo "Error: Directory '$IMG_DIR' does not exist."
     exit 1
 fi
+
+# Helper: check if an array configuration belongs to target devices
+array_belongs_to_target() {
+    local env_f="$1"
+    [ -z "$TARGET_DEVICES" ] && return 0
+
+    local members member member_kname member_disk tdev env_md_name
+    env_md_name="$(basename "$env_f" -config.env)"
+    for tdev in $TARGET_DEVICES; do
+        tdev="${tdev#/dev/}"
+        if [ "$env_md_name" = "$tdev" ]; then
+            return 0
+        fi
+    done
+    members="$(awk -F= '/^MD_MEMBERS_ORDERED=/ {gsub(/"/, "", $2); print $2}' "$env_f" 2>/dev/null)"
+    for member in $members; do
+        [ "$member" = "missing" ] && continue
+        member_kname="$(basename "$member")"
+        member_disk="$(get_diskname "$member_kname")"
+        for tdev in $TARGET_DEVICES; do
+            tdev="${tdev#/dev/}"
+            if [ "$member_disk" = "$tdev" ] || [ "$member_kname" = "$tdev" ]; then
+                return 0
+            fi
+        done
+    done
+    return 1
+}
+
+# Helper: check if a specific member device is on target devices
+is_member_on_target() {
+    local member="$1"
+    [ -z "$TARGET_DEVICES" ] && return 0
+    [ "$member" = "missing" ] && return 1
+
+    local member_kname member_disk tdev
+    member_kname="$(basename "$member")"
+    member_disk="$(get_diskname "$member_kname")"
+    for tdev in $TARGET_DEVICES; do
+        tdev="${tdev#/dev/}"
+        if [ "$member_disk" = "$tdev" ] || [ "$member_kname" = "$tdev" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
 
 echo "------------------------------------------"
 echo "1: Recreating the MDRAID Arrays"
@@ -73,24 +128,53 @@ if ! ls "$IMG_DIR"/md*-config.env 1> /dev/null 2>&1; then
     exit 1
 fi
 
+# If target devices are specified, check if any config files match
+if [ -n "$TARGET_DEVICES" ]; then
+    has_target_array=0
+    for ENV_FILE in "$IMG_DIR"/md*-config.env; do
+        [ -e "$ENV_FILE" ] || continue
+        if array_belongs_to_target "$ENV_FILE"; then
+            has_target_array=1
+            break
+        fi
+    done
+    if [ "$has_target_array" -eq 0 ]; then
+        echo "No MDRAID configuration files matching target devices ($TARGET_DEVICES) found."
+        echo "Skipping MDRAID restoration."
+        echo "------------------------------------------"
+        exit 0
+    fi
+fi
+
 # ====================================================================
 # The "udev Auto-Assembly Race Condition" Preventer
 # We MUST stop all arrays and zero all superblocks across ALL configs 
 # simultaneously before recreating, otherwise udev will lock the disks.
 # ====================================================================
-echo "  -> Stopping any background arrays auto-assembled by udev..."
-ocs-mdraid-stop
+echo "  -> Stopping background arrays auto-assembled by udev..."
+if [ -n "$TARGET_DEVICES" ]; then
+    ocs-mdraid-stop $TARGET_DEVICES
+else
+    ocs-mdraid-stop
+fi
 udevadm settle
 sleep 2
 
 echo "  -> Pre-wiping all MDRAID superblocks to clear stale metadata..."
 for ENV_FILE in "$IMG_DIR"/md*-config.env; do
     [ -e "$ENV_FILE" ] || continue
+    array_belongs_to_target "$ENV_FILE" || continue
+    MD_DEV_NAME=$(basename "$ENV_FILE" -config.env)
+    if grep -qE "^${MD_DEV_NAME}[[:space:]]*:" /proc/mdstat 2>/dev/null; then
+        echo "  -> Target array /dev/$MD_DEV_NAME is already active. Skipping pre-wiping of superblocks."
+        continue
+    fi
     # Run in subshell to isolate variables
     (
         source "$ENV_FILE"
         for MEMBER in $MD_MEMBERS_ORDERED; do
             if [ "$MEMBER" != "missing" ] && [ -b "$MEMBER" ]; then
+                is_member_on_target "$MEMBER" || continue
                 mdadm --zero-superblock "$MEMBER" 2>/dev/null || true
                 wipefs -a "$MEMBER" 2>/dev/null || true
             fi
@@ -108,6 +192,11 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
     MD_DEV_PATH="/dev/$MD_DEV_NAME"
     MD_DUMP="$IMG_DIR/${MD_DEV_NAME}-pt.sf"
 
+    if ! array_belongs_to_target "$ENV_FILE"; then
+        echo "  -> Skipping $MD_DEV_PATH: array members do not belong to target devices ($TARGET_DEVICES)."
+        continue
+    fi
+
     if [ "$ocs_batch_mode" != "on" ]; then
       echo "WARNING: This will overwrite MDRAID layout on target device $MD_DEV_PATH."
       confirm_continue_or_not_default_quit
@@ -115,83 +204,88 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
 
     echo "  -> Target MD array: $MD_DEV_PATH"
 
-    MD_UUID_PARAM=""
-    MD_NAME_PARAM=""
-    MD_META_PARAM=""
-    MD_LEVEL_PARAM=""
-    MD_DEVICES_PARAM=""
-    MD_CHUNK_PARAM=""
-    MD_LAYOUT_PARAM=""
-    MD_DATA_OFFSET_PARAM=""
-    MD_MEMBERS=""
-
-    # Unset variables to prevent leakage from the previous loop iteration
-    unset MD_UUID MD_NAME MD_META MD_LEVEL MD_DEVICES_COUNT MD_CHUNK MD_LAYOUT MD_DATA_OFFSET MD_MEMBERS_ORDERED
-    
-    # Parse all advanced variables from the env config
-    source "$ENV_FILE"
-
-    [ -n "${MD_NAME:-}" ] && MD_NAME_PARAM="--name=$MD_NAME"
-    [ -n "${MD_UUID:-}" ] && MD_UUID_PARAM="--uuid=$MD_UUID"
-    [ -n "${MD_META:-}" ] && MD_META_PARAM="--metadata=$MD_META"
-    [ -n "${MD_LEVEL:-}" ] && MD_LEVEL_PARAM="--level=$MD_LEVEL"
-    [ -n "${MD_DEVICES_COUNT:-}" ] && MD_DEVICES_PARAM="--raid-devices=$MD_DEVICES_COUNT"
-    [ -n "${MD_CHUNK:-}" ] && MD_CHUNK_PARAM="--chunk=$MD_CHUNK"
-    [ -n "${MD_LAYOUT:-}" ] && MD_LAYOUT_PARAM="--layout=$MD_LAYOUT"
-    [ -n "${MD_DATA_OFFSET:-}" ] && MD_DATA_OFFSET_PARAM="--data-offset=${MD_DATA_OFFSET}s"
-    [ -n "${MD_MEMBERS_ORDERED:-}" ] && MD_MEMBERS="$MD_MEMBERS_ORDERED"
-
-    echo "  -> Array Level: ${MD_LEVEL:-Unknown} | Devices: ${MD_DEVICES_COUNT:-Unknown}"
-    echo "  -> Exact Device Order: $MD_MEMBERS"
-
-    # ====================================================================
-    # Selective MDRAID Assassination
-    # Prevent mdadm --create from failing or grabbing the wrong size if 
-    # the kernel still holds the physical partitions in a phantom array.
-    # ====================================================================
-    for MEMBER in $MD_MEMBERS; do
-        if [ "$MEMBER" != "missing" ] && [ -b "$MEMBER" ]; then
-            MEMBER_KNAME="$(basename "$MEMBER")"
-            for md_sys in /sys/class/block/md*; do
-                if [ -d "$md_sys" ] && [ -e "$md_sys/slaves/$MEMBER_KNAME" ]; then
-                    stale_md="/dev/$(basename "$md_sys")"
-                    echo "  -> Target $MEMBER is held by stale array $stale_md. Stopping $stale_md..."
-                    umount "$stale_md" 2>/dev/null || true
-                    mdadm --stop "$stale_md" 2>/dev/null || true
-                fi
-            done
-            # Ensure the superblock is wiped one last time before creation
-            mdadm --zero-superblock "$MEMBER" 2>/dev/null || true
-        fi
-    done
-    udevadm settle
-    sleep 2
-    # ====================================================================
-
-    # ====================================================================
-    # Smart Array Name Retry Logic
-    # ====================================================================
-    BASE_CMD="mdadm --create \"$MD_DEV_PATH\" --force --run $MD_LEVEL_PARAM $MD_DEVICES_PARAM $MD_META_PARAM $MD_DATA_OFFSET_PARAM $MD_UUID_PARAM $MD_CHUNK_PARAM $MD_LAYOUT_PARAM $MD_MEMBERS --assume-clean"
-
-    echo "  -> Attempting to create array with original name: ${MD_NAME:-None}"
-    if ! eval "yes | $BASE_CMD $MD_NAME_PARAM" 2>/dev/null; then
-        echo "  -> [Warning] Creation failed! Current mdadm likely rejects non-POSIX characters like ':'."
-        
-        SAFE_MD_NAME="$(echo "$MD_NAME" | sed -r -e 's/[^a-zA-Z0-9.-]/_/g')"
-        echo "  -> Retrying with sanitized name: $SAFE_MD_NAME..."
-        
-        MD_NAME_PARAM="--name=$SAFE_MD_NAME"
-        if ! eval "yes | $BASE_CMD $MD_NAME_PARAM"; then
-            echo "  -> [Error] Array creation failed completely!"
-            exit 1
-        fi
+    if grep -qE "^${MD_DEV_NAME}[[:space:]]*:" /proc/mdstat 2>/dev/null; then
+        echo "  -> Array $MD_DEV_PATH is already active in /proc/mdstat. Skipping array recreation."
     else
-        echo "  -> Array created successfully with original name."
-    fi
+        MD_UUID_PARAM=""
+        MD_NAME_PARAM=""
+        MD_META_PARAM=""
+        MD_LEVEL_PARAM=""
+        MD_DEVICES_PARAM=""
+        MD_CHUNK_PARAM=""
+        MD_LAYOUT_PARAM=""
+        MD_DATA_OFFSET_PARAM=""
+        MD_MEMBERS=""
 
-    udevadm settle
-    sleep 3
-    # ====================================================================
+        # Unset variables to prevent leakage from the previous loop iteration
+        unset MD_UUID MD_NAME MD_META MD_LEVEL MD_DEVICES_COUNT MD_CHUNK MD_LAYOUT MD_DATA_OFFSET MD_MEMBERS_ORDERED
+        
+        # Parse all advanced variables from the env config
+        source "$ENV_FILE"
+
+        [ -n "${MD_NAME:-}" ] && MD_NAME_PARAM="--name=$MD_NAME"
+        [ -n "${MD_UUID:-}" ] && MD_UUID_PARAM="--uuid=$MD_UUID"
+        [ -n "${MD_META:-}" ] && MD_META_PARAM="--metadata=$MD_META"
+        [ -n "${MD_LEVEL:-}" ] && MD_LEVEL_PARAM="--level=$MD_LEVEL"
+        [ -n "${MD_DEVICES_COUNT:-}" ] && MD_DEVICES_PARAM="--raid-devices=$MD_DEVICES_COUNT"
+        [ -n "${MD_CHUNK:-}" ] && MD_CHUNK_PARAM="--chunk=$MD_CHUNK"
+        [ -n "${MD_LAYOUT:-}" ] && MD_LAYOUT_PARAM="--layout=$MD_LAYOUT"
+        [ -n "${MD_DATA_OFFSET:-}" ] && MD_DATA_OFFSET_PARAM="--data-offset=${MD_DATA_OFFSET}s"
+        [ -n "${MD_MEMBERS_ORDERED:-}" ] && MD_MEMBERS="$MD_MEMBERS_ORDERED"
+
+        echo "  -> Array Level: ${MD_LEVEL:-Unknown} | Devices: ${MD_DEVICES_COUNT:-Unknown}"
+        echo "  -> Exact Device Order: $MD_MEMBERS"
+
+        # ====================================================================
+        # Selective MDRAID Assassination
+        # Prevent mdadm --create from failing or grabbing the wrong size if 
+        # the kernel still holds the physical partitions in a phantom array.
+        # ====================================================================
+        for MEMBER in $MD_MEMBERS; do
+            if [ "$MEMBER" != "missing" ] && [ -b "$MEMBER" ]; then
+                is_member_on_target "$MEMBER" || continue
+                MEMBER_KNAME="$(basename "$MEMBER")"
+                for md_sys in /sys/class/block/md*; do
+                    if [ -d "$md_sys" ] && [ -e "$md_sys/slaves/$MEMBER_KNAME" ]; then
+                        stale_md="/dev/$(basename "$md_sys")"
+                        echo "  -> Target $MEMBER is held by stale array $stale_md. Stopping $stale_md..."
+                        umount "$stale_md" 2>/dev/null || true
+                        mdadm --stop "$stale_md" 2>/dev/null || true
+                    fi
+                done
+                # Ensure the superblock is wiped one last time before creation
+                mdadm --zero-superblock "$MEMBER" 2>/dev/null || true
+            fi
+        done
+        udevadm settle
+        sleep 2
+        # ====================================================================
+
+        # ====================================================================
+        # Smart Array Name Retry Logic
+        # ====================================================================
+        BASE_CMD="mdadm --create \"$MD_DEV_PATH\" --force --run $MD_LEVEL_PARAM $MD_DEVICES_PARAM $MD_META_PARAM $MD_DATA_OFFSET_PARAM $MD_UUID_PARAM $MD_CHUNK_PARAM $MD_LAYOUT_PARAM $MD_MEMBERS --assume-clean"
+
+        echo "  -> Attempting to create array with original name: ${MD_NAME:-None}"
+        if ! eval "yes | $BASE_CMD $MD_NAME_PARAM" 2>/dev/null; then
+            echo "  -> [Warning] Creation failed! Current mdadm likely rejects non-POSIX characters like ':'."
+            
+            SAFE_MD_NAME="$(echo "$MD_NAME" | sed -r -e 's/[^a-zA-Z0-9.-]/_/g')"
+            echo "  -> Retrying with sanitized name: $SAFE_MD_NAME..."
+            
+            MD_NAME_PARAM="--name=$SAFE_MD_NAME"
+            if ! eval "yes | $BASE_CMD $MD_NAME_PARAM"; then
+                echo "  -> [Error] Array creation failed completely!"
+                exit 1
+            fi
+        else
+            echo "  -> Array created successfully with original name."
+        fi
+
+        udevadm settle
+        sleep 3
+        # ====================================================================
+    fi
 
     if [ -f "$MD_DUMP" ]; then
         echo "------------------------------------------"

@@ -18,11 +18,16 @@ USAGE() {
     echo "$ocs - To save the MDRAID layout to the image dir"
     echo "Usage:"
     echo "To run $ocs:"
-    echo "$ocs [OPTION] IMAGE_DIR_PATH"
+    echo "$ocs [OPTION] IMAGE_DIR_PATH [DEVICE...]"
+    echo
+    echo "DEVICE can be disk(s) or partition(s), e.g., sda, /dev/sda1, md0."
+    echo "If DEVICE is not specified, all active MDRAID devices will be processed."
     echo
     echo "Ex:"
     echo "To save the MDRAID device to the image \"my-image\", which is located in $ocsroot, run"
     echo "   $ocs $ocsroot/my-image"
+    echo "To save only MDRAID devices associated with disk sda to the image \"my-image\", run"
+    echo "   $ocs $ocsroot/my-image sda"
     echo
 } # end of USAGE
 
@@ -46,7 +51,7 @@ done
 check_if_root
 ask_and_load_lang_set
 
-if [ "$#" -ne 1 ]; then
+if [ "$#" -lt 1 ]; then
     USAGE
     exit 1
 fi
@@ -54,16 +59,28 @@ fi
 echo $msg_delimiter_star_line
 # Create the backup directory with a timestamp
 IMG_DIR="$1"
+shift
+SPECIFIED_DEVS="$(echo "$*" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
 mkdir -p "$IMG_DIR"
 
 echo "Starting Advanced MDRAID layout backup into: $IMG_DIR"
 
-# Find active MD devices from /proc/mdstat
-MD_DEVICES=$(LC_ALL=C awk '/^md/ {print $1}' /proc/mdstat)
-
-if [ -z "$MD_DEVICES" ]; then
-    echo "No MDRAID devices found in /proc/mdstat."
-    exit 1
+# Find active MD devices
+if [ -n "$SPECIFIED_DEVS" ]; then
+    MD_DEVICES="$(get_md_devices_from_disk_or_part "$SPECIFIED_DEVS")"
+    if [ -z "$MD_DEVICES" ]; then
+        echo "No MDRAID devices associated with specified device(s) ($SPECIFIED_DEVS) found."
+        echo $msg_delimiter_star_line
+        exit 0
+    fi
+else
+    MD_DEVICES=$(LC_ALL=C awk '/^md/ {print $1}' /proc/mdstat 2>/dev/null)
+    if [ -z "$MD_DEVICES" ]; then
+        echo "No MDRAID devices found in /proc/mdstat."
+        echo $msg_delimiter_star_line
+        exit 0
+    fi
 fi
 
 for MD in $MD_DEVICES; do
@@ -161,6 +178,17 @@ for MD in $MD_DEVICES; do
         # Backup the GPT partition table
         if [ -b "$PARENT_PATH" ]; then
             if ! is_block_device_with_fs $PARENT_PATH; then
+              if [ -n "$SPECIFIED_DEVS" ]; then
+                  parent_in_specified="no"
+                  for sdev in $SPECIFIED_DEVS; do
+                      sdev="${sdev#/dev/}"
+                      if [ "$PARENT_KNAME" = "$sdev" ] || [ "$(get_diskname "$sdev")" = "$PARENT_KNAME" ]; then
+                          parent_in_specified="yes"
+                          break
+                      fi
+                  done
+                  [ "$parent_in_specified" = "no" ] && continue
+              fi
               if [ ! -f "$IMG_DIR/${PARENT_KNAME}-pt.sf" ]; then
                   echo "  -> Dumping physical partition table for $PARENT_PATH..."
                   sfdisk -d "$PARENT_PATH" > "$IMG_DIR/${PARENT_KNAME}-pt.sf" 2>/dev/null || true
