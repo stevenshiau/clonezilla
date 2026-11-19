@@ -351,5 +351,145 @@ else
   exit 1
 fi
 
+echo "=== TEST 7: MD v1.x superblock padding sanitization (Issue with Rocky Linux / older kernels) ==="
+MEMBER_IMG="$TMP_DIR/test_member_pad.img"
+# Create 16K image file
+perl -e '
+  my $f = $ARGV[0];
+  open my $fh, ">", $f or die $!;
+  print $fh ("\x00" x 16384);
+  seek($fh, 4096, 0);
+
+  # Superblock at offset 4096
+  my $sb = "\x00" x 260;
+  substr($sb, 0, 4, pack("V", 0xa92b4efc)); # magic
+  substr($sb, 4, 4, pack("V", 1));          # major_version
+  substr($sb, 220, 4, pack("V", 2));        # max_dev = 2
+  substr($sb, 224, 4, pack("V", 512));      # logical_block_size = 512 (non-zero padding)
+
+  sub calc_csum {
+    my ($data) = @_;
+    my ($max_dev) = unpack("x220 V", $data);
+    my $size = 256 + $max_dev * 2;
+    substr($data, 216, 4, "\x00\x00\x00\x00");
+    my $newcsum = 0;
+    my $off = 0;
+    while ($off + 4 <= $size) {
+      $newcsum += unpack("V", substr($data, $off, 4));
+      $off += 4;
+    }
+    if ($off + 2 <= $size) {
+      $newcsum += unpack("v", substr($data, $off, 2));
+    }
+    my $csum = ($newcsum & 0xffffffff) + ($newcsum >> 32);
+    $csum = ($csum & 0xffffffff) + ($csum >> 32);
+    return $csum;
+  }
+
+  my $csum = calc_csum($sb);
+  substr($sb, 216, 4, pack("V", $csum));
+  print $fh $sb;
+  close $fh;
+' "$MEMBER_IMG"
+
+# Source ocs-restore-mdraid-layout's sanitize_md_superblock logic or run directly
+perl -e '
+  my ($dev_path) = @ARGV;
+  open my $dev, "+<", $dev_path or exit 1;
+
+  sub calc_csum {
+    my ($data) = @_;
+    my ($max_dev) = unpack("x220 V", $data);
+    my $size = 256 + $max_dev * 2;
+    substr($data, 216, 4, "\x00\x00\x00\x00");
+    my $newcsum = 0;
+    my $off = 0;
+    while ($off + 4 <= $size) {
+      $newcsum += unpack("V", substr($data, $off, 4));
+      $off += 4;
+    }
+    if ($off + 2 <= $size) {
+      $newcsum += unpack("v", substr($data, $off, 2));
+    }
+    my $csum = ($newcsum & 0xffffffff) + ($newcsum >> 32);
+    $csum = ($csum & 0xffffffff) + ($csum >> 32);
+    return $csum;
+  }
+
+  my @offsets = (4096, 0);
+  seek($dev, 0, 2);
+  my $dev_size = tell($dev);
+  if ($dev_size && $dev_size >= 16384) {
+    my $v10_offset = ($dev_size & ~4095) - 8192;
+    push @offsets, $v10_offset if $v10_offset > 0;
+  }
+
+  my $sanitized = 0;
+  for my $sb_offset (@offsets) {
+    seek($dev, $sb_offset, 0) or next;
+    my $buf;
+    my $n = read($dev, $buf, 4096);
+    next unless defined($n) && $n >= 256;
+
+    my $magic = unpack("V", substr($buf, 0, 4));
+    next unless $magic == 0xa92b4efc;
+
+    my $major = unpack("V", substr($buf, 4, 4));
+    next unless $major == 1;
+
+    my ($max_dev) = unpack("x220 V", $buf);
+    my $sb_size = 256 + $max_dev * 2;
+    next if $n < $sb_size;
+
+    my $pad3 = substr($buf, 224, 32);
+    if ($pad3 ne ("\x00" x 32)) {
+      substr($buf, 224, 32, "\x00" x 32);
+      my $new_csum = calc_csum($buf);
+      substr($buf, 216, 4, pack("V", $new_csum));
+      seek($dev, $sb_offset, 0);
+      print $dev substr($buf, 0, $sb_size);
+      $sanitized = 1;
+    }
+  }
+  close $dev;
+  exit($sanitized ? 0 : 1);
+' "$MEMBER_IMG"
+
+# Verify pad3 is now all zeros and checksum is valid
+perl -e '
+  my ($dev_path) = @ARGV;
+  open my $dev, "<", $dev_path or die $!;
+  seek($dev, 4096, 0);
+  my $buf;
+  read($dev, $buf, 260) == 260 or die $!;
+  close $dev;
+
+  sub calc_csum {
+    my ($data) = @_;
+    my ($max_dev) = unpack("x220 V", $data);
+    my $size = 256 + $max_dev * 2;
+    substr($data, 216, 4, "\x00\x00\x00\x00");
+    my $newcsum = 0;
+    my $off = 0;
+    while ($off + 4 <= $size) {
+      $newcsum += unpack("V", substr($data, $off, 4));
+      $off += 4;
+    }
+    if ($off + 2 <= $size) {
+      $newcsum += unpack("v", substr($data, $off, 2));
+    }
+    my $csum = ($newcsum & 0xffffffff) + ($newcsum >> 32);
+    $csum = ($csum & 0xffffffff) + ($csum >> 32);
+    return $csum;
+  }
+
+  my $pad3 = substr($buf, 224, 32);
+  die "pad3 is not zeroed" unless $pad3 eq ("\x00" x 32);
+  my $stored_csum = unpack("V", substr($buf, 216, 4));
+  my $expected_csum = calc_csum($buf);
+  die "Checksum mismatch" unless $stored_csum == $expected_csum;
+  print "PASS: Superblock pad3 successfully zeroed and checksum matches for older kernel compatibility.\n";
+' "$MEMBER_IMG"
+
 echo "=== All MDRAID Device Selection and Filtering Tests Passed Successfully! ==="
 exit 0

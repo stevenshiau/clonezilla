@@ -223,6 +223,32 @@ do_run_update_initrd_from_restored_os() {
       return 1
       ;;
   esac
+
+  # Ensure MDRAID module compatibility for older kernels (e.g., Rocky Linux, RHEL) where non-zero padding triggers -EINVAL
+  if [ -e /proc/mdstat ] && grep -qE "^md[0-9]+" /proc/mdstat 2>/dev/null; then
+    mkdir -p "$target_root/etc/modprobe.d" "$target_root/etc/cmdline.d"
+    if [ ! -f "$target_root/etc/modprobe.d/mdraid-compat.conf" ]; then
+      echo "options md_mod check_new_feature=0" > "$target_root/etc/modprobe.d/mdraid-compat.conf"
+    fi
+    if [ ! -f "$target_root/etc/cmdline.d/99-mdraid-compat.conf" ]; then
+      echo "md_mod.check_new_feature=0" > "$target_root/etc/cmdline.d/99-mdraid-compat.conf"
+    fi
+    # Also update BLS entries in /boot/loader/entries/*.conf if they exist
+    if [ -d "$target_root/boot/loader/entries" ]; then
+      for entry_f in "$target_root/boot/loader/entries"/*.conf; do
+        [ -f "$entry_f" ] || continue
+        if ! grep -q "md_mod.check_new_feature=0" "$entry_f"; then
+          sed -i -E '/^[[:space:]]*options[[:space:]]/ s/$/ md_mod.check_new_feature=0/' "$entry_f"
+        fi
+      done
+    fi
+    if [ -f "$target_root/etc/default/grub" ]; then
+      if ! grep -q "md_mod.check_new_feature=0" "$target_root/etc/default/grub"; then
+        sed -i -E '/^[[:space:]]*GRUB_CMDLINE_LINUX=/ s/"$/ md_mod.check_new_feature=0"/' "$target_root/etc/default/grub"
+      fi
+    fi
+  fi
+
   cat <<-SH_END > $mkinitrd_run_sh
 #!/bin/sh
 export LC_ALL=C
