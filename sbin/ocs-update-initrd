@@ -497,14 +497,25 @@ mount $grub_partition $hd_img
 # Check if /boot is in its own partition, if so, different mount point.
 # grub root-directory must have "/boot/". If no "/boot/", it must be the grub partition itself (i.e. a separate partition will be mounted as /boot, and it conains /grub/ in the partition.)
 # For btrfs (e.g. openSUSE, Ubuntu, Fedora), /boot might reside inside a subvolume (@/.snapshots/*/snapshot/boot, @/boot, root/boot).
+# Note: A separate /boot partition also contains vmlinuz*, so finding vmlinuz alone must NOT be treated as a combined boot+root partition.
 boot_in_grub_pt="no"
-if [ -d "$hd_img/boot/" ]; then
-   boot_in_grub_pt="yes"
-elif [ -n "$(ls -d "$hd_img"/@/.snapshots/*/snapshot/boot 2>/dev/null)" -o \
-       -d "$hd_img/@/boot/" -o \
-       -d "$hd_img/root/boot/" -o \
-       -n "$(LC_ALL=C find "$hd_img" -maxdepth 5 -name "vmlinuz*" 2>/dev/null)" ]; then
-   boot_in_grub_pt="yes"
+has_root_os="no"
+if [ -f "$hd_img/etc/fstab" -o -f "$hd_img/etc/os-release" -o \
+     -f "$hd_img/@/etc/fstab" -o -f "$hd_img/@/etc/os-release" -o \
+     -n "$(ls "$hd_img"/@/.snapshots/*/snapshot/etc/os-release 2>/dev/null)" -o \
+     -n "$(ls "$hd_img"/@/.snapshots/*/snapshot/etc/fstab 2>/dev/null)" -o \
+     -f "$hd_img/root/etc/fstab" -o -f "$hd_img/root/etc/os-release" ] && [ ! -e "$hd_img/Clonezilla-Live-Version" ]; then
+   has_root_os="yes"
+fi
+
+if [ "$has_root_os" = "yes" ]; then
+   if [ -d "$hd_img/boot/" ]; then
+      boot_in_grub_pt="yes"
+   elif [ -n "$(ls -d "$hd_img"/@/.snapshots/*/snapshot/boot 2>/dev/null)" -o \
+          -d "$hd_img/@/boot/" -o \
+          -d "$hd_img/root/boot/" ]; then
+      boot_in_grub_pt="yes"
+   fi
 fi
 
 if [ "$boot_in_grub_pt" = "no" ]; then
