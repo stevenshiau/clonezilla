@@ -3494,7 +3494,19 @@ turn_off_swap_LVM2_MDRAID() {
   # ONLY shut down arrays during RESTORE! If we shut them down during save,
   # they vanish from /proc/mdstat and we cannot back them up!
   if [[ "$ocs_sr_type" == *restore* ]]; then
-    ocs-mdraid-stop | tee --append ${OCS_LOGFILE}
+    local md_stop_target=""
+    if [ -n "$*" ]; then
+      md_stop_target="$*"
+    elif [ -n "$target_hd" ]; then
+      md_stop_target="$target_hd"
+    elif [ -n "$ocs_sr_dev" ] && [[ "$ocs_sr_type" == *d2d* ]]; then
+      md_stop_target="$ocs_sr_dev"
+    fi
+    if [ -n "$md_stop_target" ]; then
+      ocs-mdraid-stop $md_stop_target | tee --append ${OCS_LOGFILE}
+    else
+      ocs-mdraid-stop | tee --append ${OCS_LOGFILE}
+    fi
     sleep 1
   fi
 
@@ -9775,6 +9787,7 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   # Overwrite the variables before ocs-cvt-dev sees them
   dsksname_from_img="$(echo $filtered_src | xargs)"
   target_hd="$(echo $filtered_tgt | xargs)"
+  [ -n "$target_hd" ] && dest_dev_="$target_hd"
   # =================================================================
   [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
   echo "Creating a tmp Clonezilla image \"${target_dir}-tmp-cnvted\" based on the image \"$target_dir\" so that we can restore the image $target_dir (was saved from $dsksname_from_img) to $dest_dev_..."
@@ -10812,6 +10825,7 @@ task_restoredisk() {
   check_checksums_for_img "$ocsroot/$target_dir"
 
   #
+  local orig_source_hd="$(get_disk_list_from_img "$ocsroot/$target_dir" | sed -e "s/ *$//g")"
   create_temp_img_flag=""
   orig_ocsroot="$ocsroot"
   orig_target_dir="$target_dir"
@@ -10849,6 +10863,9 @@ task_restoredisk() {
           target_hd="$target_hd $md_dev"
           echo "Auto-appended MDRAID device $md_dev to target disks." | tee --append $OCS_LOGFILE
         fi
+        if [ -z "$(echo $orig_source_hd | grep -Ew "$md_dev")" ]; then
+          orig_source_hd="$orig_source_hd $md_dev"
+        fi
       fi
     done
   fi
@@ -10868,7 +10885,7 @@ task_restoredisk() {
 
   # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
   # instead it's on a disk (e.g. /dev/sdb).
-  pv_on_dsk="$(get_pv_on_disk_from_PV_conf_list "$ocsroot/$target_dir/lvm_vg_dev.list")"
+  pv_on_dsk="$(get_pv_on_disk_from_PV_conf_list "$ocsroot/$target_dir/lvm_vg_dev.list" || true)"
   for ip in $pv_on_dsk; do
     if [ -n "$(LC_ALL=C echo "$target_hd" | grep -Ew "${ip}")" ]; then
       # Found PV on disk, force do_LVM_restore as "yes"
@@ -10892,8 +10909,9 @@ task_restoredisk() {
   done
   echo "Running: task_restoreparts \"$target_dir\" \"$target_parts\" \"$port\"" >> $OCS_LOGFILE
 
-  # Export intended target disks to prevent drops
+  # Export intended target and source disks to prevent drops or index misalignment
   export INTENDED_TARGET_HD="$target_hd"
+  export INTENDED_SOURCE_HD="$orig_source_hd"
 
   task_restoreparts "$target_dir" "$target_parts" "$port"
 
@@ -11113,9 +11131,27 @@ task_restoreparts() {
   if [ "$create_temp_img_flag" = "done" ]; then
     if [ -e "$ocsroot/$target_dir/device_name_converted.info" ]; then
       # File device_name_converted.info exists, it means the image was converted.
-      . "$ocsroot/$target_dir/device_name_converted.info" # Obtain new_dev & orig_dev
+      . "$ocsroot/$target_dir/device_name_converted.info" # Obtain new_dev & orig_dev, orig_dev_list, new_dev_list
       for jpart in `get_parts_list_from_img "$ocsroot/$target_dir"`; do
-        shd_tmp="$(get_diskname `echo $jpart | replace_disk_name_stdin $new_dev $orig_dev`)"
+        local matched_src_d=""
+        local target_dsk="$(get_diskname "$jpart")"
+        if [ -n "$new_dev_list" -a -n "$orig_dev_list" ]; then
+          local n_idx=1
+          for nd in $new_dev_list; do
+            if [ "$nd" = "$target_dsk" ]; then
+              matched_src_d="$(echo "$orig_dev_list" | awk -v i=$n_idx '{print $i}')"
+              break
+            fi
+            n_idx=$((n_idx + 1))
+          done
+        fi
+        if [ -n "$matched_src_d" ]; then
+          shd_tmp="$(get_diskname $(echo "$jpart" | replace_disk_name_stdin "$target_dsk" "$matched_src_d"))"
+        elif [ -n "$new_dev" -a -n "$orig_dev" ]; then
+          shd_tmp="$(get_diskname $(echo "$jpart" | replace_disk_name_stdin "$new_dev" "$orig_dev"))"
+        else
+          shd_tmp="$(get_diskname "$jpart")"
+        fi
         if [ -z "$source_hd" ]; then
           source_hd="$shd_tmp"
         elif [ -z "$(echo $source_hd | grep -Ew "$shd_tmp" 2>/dev/null)" ]; then
@@ -11157,20 +11193,38 @@ task_restoreparts() {
         fi
       done
     fi
-    local disk_file=""
-    if [ "$create_temp_img_flag" = "done" ] && [ -n "$orig_ocsroot" ] && [ -n "$orig_target_dir" ] && [ -f "$orig_ocsroot/$orig_target_dir/disk" ]; then
-      disk_file="$orig_ocsroot/$orig_target_dir/disk"
-    elif [ -f "$ocsroot/$target_dir/disk" ]; then
-      disk_file="$ocsroot/$target_dir/disk"
+    if [ -n "$INTENDED_SOURCE_HD" ]; then
+      source_hd="$INTENDED_SOURCE_HD"
+      dsksname_from_img="$source_hd"
+      src_dsk_no="$(echo $dsksname_from_img | wc -w)"
+    else
+      local disk_file=""
+      if [ "$create_temp_img_flag" = "done" ] && [ -n "$orig_ocsroot" ] && [ -n "$orig_target_dir" ] && [ -f "$orig_ocsroot/$orig_target_dir/disk" ]; then
+        disk_file="$orig_ocsroot/$orig_target_dir/disk"
+      elif [ -f "$ocsroot/$target_dir/disk" ]; then
+        disk_file="$ocsroot/$target_dir/disk"
+      fi
+      if [ -n "$disk_file" -a -f "$disk_file" ]; then
+        intended_src="$(cat "$disk_file")"
+        for idisk in $intended_src; do
+          if [ -z "$(echo $source_hd | grep -Ew "$idisk" 2>/dev/null)" ]; then
+            source_hd="$source_hd $idisk"
+            echo "Auto-recovered intended source disk $idisk into source_hd." | tee --append $OCS_LOGFILE
+          fi
+        done
+        dsksname_from_img="$source_hd"
+        src_dsk_no="$(echo $dsksname_from_img | wc -w)"
+      fi
     fi
-    if [ -n "$disk_file" -a -f "$disk_file" ]; then
-      intended_src="$(cat "$disk_file")"
-      for idisk in $intended_src; do
-        if [ -z "$(echo $source_hd | grep -Ew "$idisk" 2>/dev/null)" ]; then
-          source_hd="$source_hd $idisk"
-          echo "Auto-recovered intended source disk $idisk into source_hd." | tee --append $OCS_LOGFILE
+    # Extra safety in d2d mode: ensure no target physical disks contaminate source_hd
+    if [ "$net_mode" = "d2d" -a -n "$new_dev_list" ]; then
+      local clean_src_hd=""
+      for sh in $source_hd; do
+        if ! echo " $new_dev_list " | grep -qE "[[:space:]]+$sh[[:space:]]+"; then
+          clean_src_hd="$clean_src_hd $sh"
         fi
       done
+      source_hd="$(echo $clean_src_hd | xargs)"
       dsksname_from_img="$source_hd"
       src_dsk_no="$(echo $dsksname_from_img | wc -w)"
     fi
@@ -11243,7 +11297,7 @@ task_restoreparts() {
     # Find the existing partition(s) in the system.
     gen_proc_partitions_map_file
     if [ -n "$target_hd" ]; then
-      parts_included="$(grep -Eo "${target_hd}[[:digit:]]+" $partition_table)"
+      parts_included="$(grep -Eo "${target_hd}[[:digit:]]+" $partition_table 2>/dev/null || true)"
     fi
     [ -f "$partition_table" ] && rm -f $partition_table
     dev_to_be_overwrite="$target_hd $whole_disk $parts_included"
@@ -11256,8 +11310,8 @@ task_restoreparts() {
   countdown_or_confirm_before_restore "$target_dir_fullpath" "$target_hd $target_parts"
 
   # check if it's spawned by clonezilla server 
-  is_spawned_by_drbl_ocs $ocs_ppid
-  rc=$?
+  rc=0
+  is_spawned_by_drbl_ocs $ocs_ppid || rc=$?
   if [ "$rc" -gt 0 -a "$ocs_batch_mode" != "on" ]; then
     echo "This program is not started by clonezilla server." | tee --append $OCS_LOGFILE
     #
@@ -11442,22 +11496,30 @@ task_restoreparts() {
         continue
       fi
     fi
-    echo "Restoring partition /dev/$partition..." | tee --append $OCS_LOGFILE
+    local real_tgt_part="$partition"
+    if [ -e "$target_dir_fullpath/md_tgt_map.info" ] && [[ "$partition" =~ ^md[0-9]+ ]]; then
+      local base_md="$(echo "$partition" | sed -r -e 's/p[0-9]+$//')"
+      local shadow_md="$(awk -v m="$base_md" '$1==m {print $2}' "$target_dir_fullpath/md_tgt_map.info")"
+      if [ -n "$shadow_md" ]; then
+        real_tgt_part="$(echo "$partition" | sed -r -e "s/^$base_md/$shadow_md/")"
+      fi
+    fi
+    echo "Restoring partition /dev/$real_tgt_part..." | tee --append $OCS_LOGFILE
     # From partimage 0.6.6, batch mode won't stop if checkInodeForDevice is not run. Therefore comment it.
     # checkInodeForDevice /dev/$partition
-    # Before we start to clone, check if kernel can find /dev/$partition
-    check_specify_part_exists $partition
+    # Before we start to clone, check if kernel can find /dev/$real_tgt_part
+    check_specify_part_exists $real_tgt_part
     case "$net_mode" in 
      "unicast")
-        do_unicast_stdin_restore "$target_dir_fullpath" $partition /dev/$partition
+        do_unicast_stdin_restore "$target_dir_fullpath" $partition /dev/$real_tgt_part
         rc="$?"
         ;;
      "multicast")
-        do_multicast_udpcast_restore "$target_dir_fullpath" $partition /dev/$partition
+        do_multicast_udpcast_restore "$target_dir_fullpath" $partition /dev/$real_tgt_part
         rc="$?"
         ;;
      "bittorrent")
-        collect_bittorrent_restore_dev "$target_dir_fullpath" $partition /dev/$partition
+        collect_bittorrent_restore_dev "$target_dir_fullpath" $partition /dev/$real_tgt_part
         rc="$?"
         ;;
      "d2d")
@@ -11478,13 +11540,18 @@ task_restoreparts() {
             idx=$((idx + 1))
           done
           local current_source_hd="$(echo $source_hd | awk -v i=$found_idx '{print $i}')"
-	  lsrc_dev="$(echo $partition | replace_disk_name_stdin $current_target_hd $current_source_hd)" ;;
+          if [[ "$partition" =~ ^md[0-9]+ ]]; then
+            lsrc_dev="$partition"
+          else
+            lsrc_dev="$(echo $partition | replace_disk_name_stdin $current_target_hd $current_source_hd)"
+          fi
+          ;;
         "ld2d_restoreparts")
           # Local part to local part only allows differents partition name clone, e.g., sda2 -> sdb1
 	  # source_part is a global variable from ocs-sr.
 	  lsrc_dev="$source_part" ;;
         esac
-        do_d2d_local_restore "$target_dir_fullpath" $lsrc_dev /dev/$partition
+        do_d2d_local_restore "$target_dir_fullpath" $lsrc_dev /dev/$real_tgt_part
         rc="$?"
         ;;
      "netcat_nuttcp")
@@ -11492,13 +11559,13 @@ task_restoreparts() {
         netcat_nuttcp_check
         set_onthefly_net_filter_program
 	# We use NC_PORT to receive data from onthefly server
-        do_d2d_network_restore "$target_dir_fullpath" /dev/$partition
+        do_d2d_network_restore "$target_dir_fullpath" /dev/$real_tgt_part
         rc="$?"
         ;;
     esac
     if [ $rc -gt 0 ]; then
        [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
-       echo "Failed to restore partition image file $target_dir_fullpath/${partition}* to /dev/$partition! Maybe this image is corrupt or there is no $target_dir_fullpath/${partition}*! If you are restoring the image of partition to different partition, check the FAQ on Clonezilla website for how to make it." | tee --append $OCS_LOGFILE
+       echo "Failed to restore partition image file $target_dir_fullpath/${partition}* to /dev/$real_tgt_part! Maybe this image is corrupt or there is no $target_dir_fullpath/${partition}*! If you are restoring the image of partition to different partition, check the FAQ on Clonezilla website for how to make it." | tee --append $OCS_LOGFILE
        [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
        if [ "$ocs_batch_mode" != "on" ]; then
          confirm_continue_or_not_default_quit
@@ -11566,7 +11633,12 @@ task_restoreparts() {
         [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
         # Check if this "unknown" disk is actually a standalone swap partition (e.g. md127)
         if [ -e "$target_dir_fullpath/swappt-$(to_filename ${ihd}).info" ]; then
-          echo "Found the swap partition /dev/$ihd info in the image dir, create it by:" | tee --append $OCS_LOGFILE
+          local swp_tgt_dev="$ihd"
+          if [ -e "$target_dir_fullpath/md_tgt_map.info" ]; then
+            local mapped_swp="$(awk -v m="$ihd" '$1==m {print $2}' "$target_dir_fullpath/md_tgt_map.info")"
+            [ -n "$mapped_swp" ] && swp_tgt_dev="$mapped_swp"
+          fi
+          echo "Found the swap partition /dev/$swp_tgt_dev info in the image dir, create it by:" | tee --append $OCS_LOGFILE
           UUID=""
           LABEL=""
           . "$target_dir_fullpath/swappt-$(to_filename ${ihd}).info"
@@ -11574,8 +11646,8 @@ task_restoreparts() {
           label_opt=""
           [ -n "$UUID" ] && uuid_opt="-U $UUID"
           [ -n "$LABEL" ] && label_opt="-L $LABEL"
-          echo "mkswap $label_opt $uuid_opt /dev/$ihd" | tee --append $OCS_LOGFILE
-          mkswap $label_opt $uuid_opt /dev/$ihd | tee --append $OCS_LOGFILE
+          echo "mkswap $label_opt $uuid_opt /dev/$swp_tgt_dev" | tee --append $OCS_LOGFILE
+          mkswap $label_opt $uuid_opt /dev/$swp_tgt_dev | tee --append $OCS_LOGFILE
           echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
         fi
         ;;
@@ -11620,7 +11692,7 @@ task_restoreparts() {
 
   # There is still one possiblity that we need to deal with LVM, i.e. PV is not on partition, 
   # instead it's on a disk (e.g. /dev/sdb).
-  pv_on_dsk="$(get_pv_on_disk_from_PV_conf_list "$PV_PARSE_CONF")"
+  pv_on_dsk="$(get_pv_on_disk_from_PV_conf_list "$PV_PARSE_CONF" || true)"
   for ip in $pv_on_dsk; do
     if [ -n "$(LC_ALL=C echo "$target_hd" | grep -Ew "${ip}")" ]; then
       # Found PV on disk, force do_LVM_restore as "yes"
@@ -11792,6 +11864,12 @@ task_restoreparts() {
   if [ "$install_grub" = "on" ]; then
     # Because grub boot loader might be on extended partition, here we add that for ocs-install-grub to search.
     grub_cand_parts="$target_parts $processed_extended_parts"
+    if [ -e "$target_dir_fullpath/md_tgt_map.info" ]; then
+      while read orig_md shadow_md; do
+        [ -n "$shadow_md" ] || continue
+        grub_cand_parts="$(echo " $grub_cand_parts " | sed -e "s/ $orig_md / $shadow_md /g" -e 's/^ //' -e 's/ $//')"
+      done < "$target_dir_fullpath/md_tgt_map.info"
+    fi
     echo "Running: ocs-install-grub -p \"$grub_cand_parts\" $grub_partition" | tee --append $OCS_LOGFILE
     ocs-install-grub -p "$grub_cand_parts" $grub_partition | tee --append $OCS_LOGFILE
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
@@ -11800,6 +11878,12 @@ task_restoreparts() {
   # Update initramfs here
   if [ "$do_update_initrd" = "yes" ]; then
     grub_cand_parts="$target_parts $processed_extended_parts"
+    if [ -e "$target_dir_fullpath/md_tgt_map.info" ]; then
+      while read orig_md shadow_md; do
+        [ -n "$shadow_md" ] || continue
+        grub_cand_parts="$(echo " $grub_cand_parts " | sed -e "s/ $orig_md / $shadow_md /g" -e 's/^ //' -e 's/ $//')"
+      done < "$target_dir_fullpath/md_tgt_map.info"
+    fi
     if [ -z "$grub_partition" ]; then 
       # E.g., restoreparts so there is no grub_partition assigned.
       # Since option "-p" is used, this won't modify any unrelated partition.
@@ -11872,6 +11956,15 @@ task_restoreparts() {
   for id in $clted_luks_devs_map_rt; do
     cryptsetup close $id
   done
+
+  # Stop shadow target MDRAID devices if any were created
+  if [ -e "$target_dir_fullpath/md_tgt_map.info" ]; then
+    while read orig_md shadow_md; do
+      [ -n "$shadow_md" -a "$orig_md" != "$shadow_md" ] || continue
+      echo "Stopping shadow target MDRAID device /dev/$shadow_md..." | tee --append $OCS_LOGFILE
+      mdadm --stop "/dev/$shadow_md" 2>/dev/null || true
+    done < "$target_dir_fullpath/md_tgt_map.info"
+  fi
 
   # Remove the temp converted image. //NOTE// Now target_dir is *-tmp-cnvted. img_cnvt_count is just for insurance.
   rm_tmp_cnvt_img
@@ -14539,7 +14632,7 @@ ocs_log_rotate() {
   local file_="$1"
   [ -z "$file_" ] && return 3
   if [ ! -e "${file_}" ]; then
-    return 2
+    return 0
   fi
   # Find the next digit
   # Use "/bin/ls" to avoid alias
@@ -17010,7 +17103,7 @@ local_partition_to_partiton_clone() {
   local pt_fs="$1"
   local src_p="$2"  # src_p is like /dev/hda1
   local tgt_p="$3"  # tgt_p is like /dev/hdb1
-  local pt_size ret dd_img_info_tmp dd_report_sig_pid start_time end_time partition
+  local pt_size ret=0 dd_img_info_tmp dd_report_sig_pid start_time end_time partition
   local cmd_partclone
   local hdtmp esp_part part_orig
   # FORCE_TO_USE_DD, USE_NTFSCLONE_IN_OCS_ONTHEFLY, USE_PARTCLONE_IN_OCS_ONTHEFLY are global variabls.

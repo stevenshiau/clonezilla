@@ -118,6 +118,64 @@ is_member_on_target() {
     return 1
 }
 
+# Helper: check if an active MD array in /proc/mdstat belongs to target devices
+is_array_active_on_target() {
+    local md="$1"
+    grep -qE "^${md}[[:space:]]*:" /proc/mdstat 2>/dev/null || return 1
+
+    # Extract member disks from the active array in /proc/mdstat or sysfs or mdadm
+    local members=""
+    if [ -f /proc/mdstat ]; then
+        members="$(awk -v m="$md" '$1==m {for(i=3;i<=NF;i++) if($i ~ /\[[0-9]+\]/) {sub(/\[[0-9]+\].*/, "", $i); print $i}}' /proc/mdstat 2>/dev/null)"
+    fi
+    if [ -z "$members" ] && [ -d "/sys/class/block/$md/slaves" ]; then
+        for s in /sys/class/block/"$md"/slaves/*; do
+            [ -e "$s" ] && members="$members $(basename "$s")"
+        done
+    fi
+    if [ -z "$members" ] && type mdadm &>/dev/null; then
+        members="$(mdadm --detail "/dev/$md" 2>/dev/null | awk '/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+[0-9]+/ {print $NF}')"
+    fi
+
+    # Check if TARGET_DEVICES specifies physical disks (non-md devices)
+    local has_target_physical_disks="no"
+    for tdev in $TARGET_DEVICES; do
+        tdev="${tdev#/dev/}"
+        if [[ ! "$tdev" =~ ^md[0-9]+ ]]; then
+            has_target_physical_disks="yes"
+            break
+        fi
+    done
+
+    if [ "$has_target_physical_disks" = "yes" ]; then
+        # When physical target disks are specified, the active array is ONLY on target
+        # if its member devices belong to the physical target disks
+        [ -z "$members" ] && return 1
+        for m in $members; do
+            [ "$m" = "missing" ] && continue
+            local m_kname="$(basename "$m")"
+            local m_disk="$(get_diskname "$m_kname")"
+            local m_found="no"
+            for tdev in $TARGET_DEVICES; do
+                tdev="${tdev#/dev/}"
+                if [ "$m_disk" = "$tdev" ] || [ "$m_kname" = "$tdev" ]; then
+                    m_found="yes"
+                    break
+                fi
+            done
+            [ "$m_found" = "no" ] && return 1
+        done
+        return 0
+    else
+        # No physical target disks specified (e.g. targeting md1 directly in MD-to-MD cloning)
+        for tdev in $TARGET_DEVICES; do
+            tdev="${tdev#/dev/}"
+            [ "$md" = "$tdev" ] && return 0
+        done
+        return 1
+    fi
+}
+
 # Helper: sanitize MD v1.x superblock padding (zeroing pad3 and recalculating checksum)
 # to maintain compatibility with older kernels (e.g. RHEL/Rocky Linux) where non-zero
 # padding triggers -EINVAL in super_1_load.
@@ -240,7 +298,7 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
     [ -e "$ENV_FILE" ] || continue
     array_belongs_to_target "$ENV_FILE" || continue
     MD_DEV_NAME=$(basename "$ENV_FILE" -config.env)
-    if grep -qE "^${MD_DEV_NAME}[[:space:]]*:" /proc/mdstat 2>/dev/null; then
+    if is_array_active_on_target "$MD_DEV_NAME"; then
         echo "  -> Target array /dev/$MD_DEV_NAME is already active. Skipping pre-wiping of superblocks."
         continue
     fi
@@ -279,9 +337,29 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
 
     echo "  -> Target MD array: $MD_DEV_PATH"
 
-    if grep -qE "^${MD_DEV_NAME}[[:space:]]*:" /proc/mdstat 2>/dev/null; then
+    if is_array_active_on_target "$MD_DEV_NAME"; then
         echo "  -> Array $MD_DEV_PATH is already active in /proc/mdstat. Skipping array recreation."
     else
+        TARGET_MD_DEV="$MD_DEV_NAME"
+        if grep -qE "^${MD_DEV_NAME}[[:space:]]*:" /proc/mdstat 2>/dev/null; then
+            # MD_DEV_NAME is occupied by source or unrelated array. Find an unused md minor for shadow target array
+            free_num=200
+            while [ $free_num -lt 500 ]; do
+                if [ -e "$IMG_DIR/md_tgt_map.info" ] && grep -qE "[[:space:]]+md${free_num}\$" "$IMG_DIR/md_tgt_map.info"; then
+                    free_num=$((free_num + 1))
+                    continue
+                fi
+                if ! grep -qE "^md${free_num}[[:space:]]*:" /proc/mdstat 2>/dev/null && [ ! -b "/dev/md${free_num}" ]; then
+                    TARGET_MD_DEV="md${free_num}"
+                    break
+                fi
+                free_num=$((free_num + 1))
+            done
+            echo "  -> Notice: Array $MD_DEV_PATH is active on source/host system. Creating shadow target array /dev/$TARGET_MD_DEV for cloning."
+            echo "$MD_DEV_NAME $TARGET_MD_DEV" >> "$IMG_DIR/md_tgt_map.info"
+            MD_DEV_PATH="/dev/$TARGET_MD_DEV"
+        fi
+
         MD_UUID_PARAM=""
         MD_NAME_PARAM=""
         MD_META_PARAM=""
