@@ -9811,6 +9811,65 @@ create_temp_image_for_different_target_dev_name_if_necessary() {
   create_temp_img_flag="done"
 } # end of create_temp_image_for_different_target_dev_name_if_necessary
 #
+# Helper: sanitize MD v1.x superblock padding (zeroing pad3 and recalculating checksum)
+# to maintain compatibility with older kernels (e.g. RHEL/Rocky Linux) where non-zero
+# padding triggers -EINVAL in super_1_load.
+sanitize_md_superblock() {
+    local member_dev="$1"
+    [ -b "$member_dev" ] || return 0
+
+    perl -e '
+        use strict;
+        use warnings;
+
+        my ($dev_path) = @ARGV;
+        open my $dev, "+<", $dev_path or exit 0;
+
+        sub calc_csum {
+            my ($data) = @_;
+            my ($max_dev) = unpack("x220 V", $data);
+            my $size = 256 + $max_dev * 2;
+            substr($data, 216, 4, "\x00\x00\x00\x00");
+            my $newcsum = 0;
+            my $off = 0;
+            while ($off + 4 <= $size) {
+                $newcsum += unpack("V", substr($data, $off, 4));
+                $off += 4;
+            }
+            if ($off + 2 <= $size) {
+                $newcsum += unpack("v", substr($data, $off, 2));
+            }
+            my $csum = ($newcsum & 0xffffffff) + ($newcsum >> 32);
+            $csum = ($csum & 0xffffffff) + ($csum >> 32);
+            return $csum;
+        }
+
+        for my $offset (4096, 0) {
+            sysseek($dev, $offset, 0) or next;
+            my $buf;
+            sysread($dev, $buf, 256) or next;
+            my ($magic, $major) = unpack("V V", $buf);
+            if ($magic == 0xa92b4efc && $major == 1) {
+                my ($max_dev) = unpack("x220 V", $buf);
+                my $full_size = 256 + $max_dev * 2;
+                sysseek($dev, $offset, 0);
+                sysread($dev, $buf, $full_size);
+                my ($pad3) = unpack("x224 v", $buf);
+                if ($pad3 != 0) {
+                    print "  -> Sanitizing MD v1.x superblock padding at offset $offset on $dev_path...\n";
+                    substr($buf, 224, 2, "\x00\x00");
+                    my $csum = calc_csum($buf);
+                    substr($buf, 216, 4, pack("V", $csum));
+                    sysseek($dev, $offset, 0);
+                    syswrite($dev, $buf, $full_size);
+                }
+                last;
+            }
+        }
+        close $dev;
+    ' "$member_dev" 2>/dev/null || true
+}
+#
 check_mbr_gpt_partition_table() {
   # With fdisk, sfdisk and sgdisk, we can decide the partition type is MBR or GPT, or corrupt
   local tdisk="${1#/dev/*}" # Input is like /dev/sda, so tdisk becomes sda
@@ -11992,6 +12051,17 @@ task_restoreparts() {
       [ -n "$shadow_md" -a "$orig_md" != "$shadow_md" ] || continue
       echo "Stopping shadow target MDRAID device /dev/$shadow_md..." | tee --append $OCS_LOGFILE
       mdadm --stop "/dev/$shadow_md" 2>/dev/null || true
+      udevadm settle 2>/dev/null || true
+      if [ -f "$target_dir_fullpath/${orig_md}-config.env" ]; then
+        (
+          source "$target_dir_fullpath/${orig_md}-config.env"
+          for mem in $MD_MEMBERS_ORDERED; do
+            [ "$mem" = "missing" ] && continue
+            [ -b "$mem" ] || continue
+            sanitize_md_superblock "$mem" 2>/dev/null || true
+          done
+        )
+      fi
     done < "$target_dir_fullpath/md_tgt_map.info"
   fi
 

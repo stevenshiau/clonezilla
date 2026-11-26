@@ -441,20 +441,24 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
         # ====================================================================
 
         # Sanitize MD v1.x superblock padding to ensure compatibility with older kernels (e.g. RHEL/Rocky Linux)
-        echo "  -> Checking and sanitizing superblock padding for older kernel compatibility..."
-        mdadm --stop "$MD_DEV_PATH" 2>/dev/null || true
-        udevadm settle
-        sleep 1
-        for MEMBER in $MD_MEMBERS; do
-            [ "$MEMBER" = "missing" ] && continue
-            [ -b "$MEMBER" ] || continue
-            sanitize_md_superblock "$MEMBER"
-        done
-        udevadm settle
-        sleep 1
-        mdadm --assemble --run "$MD_DEV_PATH" $MD_MEMBERS 2>/dev/null || true
-        udevadm settle
-        sleep 2
+        if [ "$TARGET_MD_DEV" = "$MD_DEV_NAME" ]; then
+            echo "  -> Checking and sanitizing superblock padding for older kernel compatibility..."
+            mdadm --stop "$MD_DEV_PATH" 2>/dev/null || true
+            udevadm settle
+            sleep 1
+            for MEMBER in $MD_MEMBERS; do
+                [ "$MEMBER" = "missing" ] && continue
+                [ -b "$MEMBER" ] || continue
+                sanitize_md_superblock "$MEMBER"
+            done
+            udevadm settle
+            sleep 1
+            mdadm --assemble --run "$MD_DEV_PATH" $MD_MEMBERS 2>/dev/null || true
+            udevadm settle
+            sleep 2
+        else
+            echo "  -> Shadow target array $MD_DEV_PATH is active for d2d cloning. Keeping array running for data clone."
+        fi
     fi
 
     if [ -f "$MD_DUMP" ]; then
