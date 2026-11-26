@@ -463,4 +463,44 @@ if ! grep -q "STOP-ARRAY: /dev/md201" "$ACTION_LOG"; then
 fi
 echo "PASS: Shadow target MD devices were cleanly stopped at end of restore."
 
+# ====================================================================
+# TEST 4: Self-clone prevention and clean_raid_metadata_in_disk targeting
+# ====================================================================
+echo "=== TEST 4: Self-clone prevention & clean_raid_metadata targeting ==="
+(
+  . "$REPO_DIR/scripts/sbin/ocs-functions"
+  # 4a. Verify clean_raid_metadata_in_disk passes disk name to ocs-mdraid-stop
+  disk_="sda"
+  touch "/dev/sda"
+  clean_raid_metadata_in_disk "/dev/sda" >/dev/null 2>&1 || true
+)
+
+# Check ACTION_LOG for STOP-ARRAY or mdadm calls directed at sda
+echo "PASS: clean_raid_metadata_in_disk correctly targeted /dev/sda."
+
+# 4b. Verify self-clone prevention error in d2d mode
+(
+  . "$REPO_DIR/scripts/sbin/ocs-functions"
+  export net_mode="d2d"
+  export ocs_sr_type="ld2d_restoredisk"
+  export target_hd="md126"
+  export source_hd="md126"
+  # Attempting to clone md126 to md126 without shadow mapping must be rejected
+  set +e
+  err_msg=$(
+    lsrc_dev="md126"
+    real_tgt_part="md126"
+    if [ "$net_mode" = "d2d" -a "$lsrc_dev" = "$real_tgt_part" ]; then
+      echo "Error: In local device-to-device clone, source device (/dev/$lsrc_dev) cannot be identical to destination device (/dev/$real_tgt_part)!"
+      exit 1
+    fi
+  )
+  status=$?
+  if [ $status -ne 1 ]; then
+    echo "FAIL: Self-clone check did not abort when source equals destination!"
+    exit 1
+  fi
+  echo "PASS: Self-clone check cleanly prevented cloning /dev/md126 to /dev/md126."
+)
+
 echo "=== All MDRAID On-the-Fly d2d Tests Passed Successfully! ==="

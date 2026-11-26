@@ -341,8 +341,9 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
         echo "  -> Array $MD_DEV_PATH is already active in /proc/mdstat. Skipping array recreation."
     else
         TARGET_MD_DEV="$MD_DEV_NAME"
-        if grep -qE "^${MD_DEV_NAME}[[:space:]]*:" /proc/mdstat 2>/dev/null; then
-            # MD_DEV_NAME is occupied by source or unrelated array. Find an unused md minor for shadow target array
+        if grep -qE "^${MD_DEV_NAME}[[:space:]]*:" /proc/mdstat 2>/dev/null || [ -e "$IMG_DIR/device_name_converted.info" ]; then
+            # MD_DEV_NAME is occupied by source or we are in a device-converted d2d clone.
+            # Allocate an unused shadow target MD minor (e.g. md200, md201...)
             free_num=200
             while [ $free_num -lt 500 ]; do
                 if [ -e "$IMG_DIR/md_tgt_map.info" ] && grep -qE "[[:space:]]+md${free_num}\$" "$IMG_DIR/md_tgt_map.info"; then
@@ -355,7 +356,7 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
                 fi
                 free_num=$((free_num + 1))
             done
-            echo "  -> Notice: Array $MD_DEV_PATH is active on source/host system. Creating shadow target array /dev/$TARGET_MD_DEV for cloning."
+            echo "  -> Notice: Creating shadow target array /dev/$TARGET_MD_DEV for cloning."
             echo "$MD_DEV_NAME $TARGET_MD_DEV" >> "$IMG_DIR/md_tgt_map.info"
             MD_DEV_PATH="/dev/$TARGET_MD_DEV"
         fi

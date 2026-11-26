@@ -11000,6 +11000,9 @@ task_d2d_restoredisk() {
     # Mapping the reserved ocs block device name to Linux kernel block device name
     target_hd="$(get_mapped_kernel_or_ocs_blkname "$target_hd")"
   fi
+  if [ "$port" = "ld2d" ] && type ocs-mdraid-start &>/dev/null; then
+    ocs-mdraid-start >/dev/null 2>&1
+  fi
   task_restoredisk "$target_dir" "$target_hd" "$port"
 } # end of task_d2d_restoredisk
 #
@@ -11024,6 +11027,9 @@ task_d2d_restoreparts() {
       warn_zfs_testing_feature
       export OCS_ZFS_WARNED="yes"
     fi
+  fi
+  if [ "$port" = "ld2d" ] && type ocs-mdraid-start &>/dev/null; then
+    ocs-mdraid-start >/dev/null 2>&1
   fi
   task_restoreparts "$target_dir" "$target_parts" "$port"
 } # end of task_d2d_restoreparts 
@@ -11551,6 +11557,12 @@ task_restoreparts() {
 	  # source_part is a global variable from ocs-sr.
 	  lsrc_dev="$source_part" ;;
         esac
+        if [ "$net_mode" = "d2d" -a "$lsrc_dev" = "$real_tgt_part" ]; then
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+          echo "Error: In local device-to-device clone, source device (/dev/$lsrc_dev) cannot be identical to destination device (/dev/$real_tgt_part)!" | tee --append $OCS_LOGFILE
+          [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+          exit 1
+        fi
         do_d2d_local_restore "$target_dir_fullpath" $lsrc_dev /dev/$real_tgt_part
         rc="$?"
         ;;
@@ -11760,10 +11772,21 @@ task_restoreparts() {
       prebuild_opt="-p"
     fi
     for ihd in $target_hd; do
+      if [[ "$ihd" =~ ^md[0-9]+ ]]; then
+        continue
+      fi
       echo "Running: ocs-restore-mbr --ocsroot $ocsroot $prebuild_opt $target_dir $ihd" | tee --append ${OCS_LOGFILE}
       ocs-restore-mbr --ocsroot $ocsroot $prebuild_opt "$target_dir" $ihd | tee --append ${OCS_LOGFILE}
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
     done
+  fi
+
+  local active_target_parts="$target_parts"
+  if [ -e "$target_dir_fullpath/md_tgt_map.info" ]; then
+    while read orig_md shadow_md; do
+      [ -n "$shadow_md" ] || continue
+      active_target_parts="$(echo " $active_target_parts " | sed -e "s/ $orig_md / $shadow_md /g" -e 's/^ //' -e 's/ $//')"
+    done < "$target_dir_fullpath/md_tgt_map.info"
   fi
 
   # resize partition if necessary
@@ -11773,7 +11796,7 @@ task_restoreparts() {
       # Force to run ntfsfix before running ntfsresize. This is specially for when forcing to restore an image from larger partition to smaller one. Then the NTFS partition has to be fixed by ntfsfix first before resizing.
       resize_ntfsfix_opt="--ntfsfix"
     fi
-    for partition in $target_parts; do
+    for partition in $active_target_parts; do
       is_whole_disk $partition && continue
       echo "Now tuning the file system size on partition /dev/$partition to fit the partition size..." | tee --append $OCS_LOGFILE
       echo "Running: ocs-resize-part $resize_ntfsfix_opt --batch /dev/$partition" | tee --append $OCS_LOGFILE
@@ -11781,7 +11804,7 @@ task_restoreparts() {
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
     done
     echo "Processing the PV/LV if necessary..." | tee --append $OCS_LOGFILE
-    for partition in $target_parts; do
+    for partition in $active_target_parts; do
       echo "Running: ocs-expand-lvm -b /dev/$partition" | tee --append $OCS_LOGFILE
       ocs-expand-lvm -b /dev/$partition | tee --append $OCS_LOGFILE
       echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
@@ -11792,18 +11815,18 @@ task_restoreparts() {
   # Otherwise you have to enter MS Windows rescue mode, in the command prompt run:
   # chkdsk c: /f
   if [ "$do_ntfs_512to4k_fix_flag" = "yes" ]; then
-    do_ntfs_512to4k_fix $target_parts
+    do_ntfs_512to4k_fix $active_target_parts
     show_bcdboot_cmd_after_4k_512B_ntfsfix
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   elif [ "$do_ntfs_4kto512_fix_flag" = "yes" ]; then
-    do_ntfs_4kto512_fix $target_parts
+    do_ntfs_4kto512_fix $active_target_parts
     show_bcdboot_cmd_after_4k_512B_ntfsfix
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
   # Do files checksum check. This must be before any further commands (like grub reinstalling) are done.
   if [ "$chk_chksum_for_files_in_dev" = "yes" ]; then
-    for ipartition in $target_parts; do
+    for ipartition in $active_target_parts; do
       is_whole_disk $ipartition && continue
       echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
       inspect_chksum_for_files_in_dev /dev/$ipartition "$target_dir_fullpath"
@@ -11842,21 +11865,21 @@ task_restoreparts() {
 
   # Clear the NTFS volume dirty flag if the volume can be fixed and mounted.
   if [ "$rm_ntfs_vol_dirty_flag" = "yes" ]; then
-    clear_ntfs_volume_dirty_flag $target_parts
+    clear_ntfs_volume_dirty_flag $active_target_parts
     echo $msg_delimiter_star_line | tee --append ${OCS_LOGFILE}
   fi
 
   # Remove the udev MAC address records on the restored GNU/Linux
   if [ "$do_rm_hardware_record" = "yes" ]; then
-    echo "Running: ocs-tux-postprocess $target_parts $target_logv" | tee --append $OCS_LOGFILE
-    ocs-tux-postprocess $target_parts $target_logv | tee --append $OCS_LOGFILE
+    echo "Running: ocs-tux-postprocess $active_target_parts $target_logv" | tee --append $OCS_LOGFILE
+    ocs-tux-postprocess $active_target_parts $target_logv | tee --append $OCS_LOGFILE
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
   # re-install syslinux
   if [ "$do_update_syslinux" = "yes" ]; then
-    echo "Running: ocs-update-syslinux -b $target_parts" | tee --append $OCS_LOGFILE
-    ocs-update-syslinux -b $target_parts | tee --append $OCS_LOGFILE
+    echo "Running: ocs-update-syslinux -b $active_target_parts" | tee --append $OCS_LOGFILE
+    ocs-update-syslinux -b $active_target_parts | tee --append $OCS_LOGFILE
     echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
   fi
 
@@ -11907,6 +11930,9 @@ task_restoreparts() {
     turn_off_swap_LVM2_MDRAID $target_hd
     sleep 1
     for ihd in $target_hd; do
+      if [[ "$ihd" =~ ^md[0-9]+ ]]; then
+        continue
+      fi
       # Ref: http://en.wikipedia.org/wiki/Master_boot_record
       # Master Boot Record (MBR) is the 512-byte boot sector:
       # 446 bytes (executable code area) + 64 bytes (table of primary partitions) + 2 bytes (MBR signature; # 0xAA55) = 512 bytes.
@@ -11926,6 +11952,9 @@ task_restoreparts() {
   # Updating EFI NVRAM for the boot device
   if [ "$update_efi_nvram" = "yes" ]; then
     for ihd in $target_hd; do
+      if [[ "$ihd" =~ ^md[0-9]+ ]]; then
+        continue
+      fi
       # Updating EFI NVRAM for the boot device
       # Only attempt EFI updates if the disk is GPT and the system is actually booted in UEFI mode
       if `is_gpt_partitition_table_disk /dev/$ihd` && [ -d "/sys/firmware/efi/efivars" ]; then
@@ -18150,7 +18179,7 @@ clean_raid_metadata_in_disk() {
     # reassembling arrays and locking the disk while sfdisk rewrites the layout.
     # ====================================================================
     if type ocs-mdraid-stop &>/dev/null; then
-      ocs-mdraid-stop >/dev/null 2>&1
+      ocs-mdraid-stop "$disk_" >/dev/null 2>&1
     fi
 
     shopt -s nullglob
