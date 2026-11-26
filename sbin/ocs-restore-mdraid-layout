@@ -387,6 +387,34 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
         [ -n "${MD_DATA_OFFSET:-}" ] && MD_DATA_OFFSET_PARAM="--data-offset=${MD_DATA_OFFSET}s"
         [ -n "${MD_MEMBERS_ORDERED:-}" ] && MD_MEMBERS="$MD_MEMBERS_ORDERED"
 
+        # Filter MD_MEMBERS to only include devices on TARGET_DEVICES.
+        # Any device not on target (e.g. source disks in d2d clone) is replaced with 'missing'
+        # so mdadm creates a degraded array and never attempts to touch busy source devices.
+        if [ -n "$TARGET_DEVICES" ]; then
+            CLEANED_MD_MEMBERS=""
+            for MEMBER in $MD_MEMBERS; do
+                if [ "$MEMBER" = "missing" ]; then
+                    CLEANED_MD_MEMBERS="$CLEANED_MD_MEMBERS missing"
+                elif is_member_on_target "$MEMBER"; then
+                    CLEANED_MD_MEMBERS="$CLEANED_MD_MEMBERS $MEMBER"
+                else
+                    echo "  -> Notice: Member $MEMBER does not belong to target devices ($TARGET_DEVICES). Replacing with 'missing' for degraded array."
+                    CLEANED_MD_MEMBERS="$CLEANED_MD_MEMBERS missing"
+                fi
+            done
+            MD_MEMBERS="$(echo "$CLEANED_MD_MEMBERS" | xargs)"
+        fi
+
+        # Ensure at least one member is present on target
+        active_count=0
+        for m in $MD_MEMBERS; do
+            [ "$m" != "missing" ] && active_count=$((active_count + 1))
+        done
+        if [ "$active_count" -eq 0 ]; then
+            echo "  -> Skipping $MD_DEV_PATH: none of its member devices belong to target devices ($TARGET_DEVICES)."
+            continue
+        fi
+
         echo "  -> Array Level: ${MD_LEVEL:-Unknown} | Devices: ${MD_DEVICES_COUNT:-Unknown}"
         echo "  -> Exact Device Order: $MD_MEMBERS"
 

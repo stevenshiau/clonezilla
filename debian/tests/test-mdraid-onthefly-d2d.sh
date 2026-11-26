@@ -503,4 +503,50 @@ echo "PASS: clean_raid_metadata_in_disk correctly targeted /dev/sda."
   echo "PASS: Self-clone check cleanly prevented cloning /dev/md126 to /dev/md126."
 )
 
+# ====================================================================
+# TEST 5: Degraded array creation (source disk excluded) & batch exit
+# ====================================================================
+echo "=== TEST 5: Degraded array creation & non-interactive batch exit ==="
+IMG_DEGRADED="$TMP_DIR/img-degraded"
+mkdir -p "$IMG_DEGRADED"
+cat <<'EOF' > "$IMG_DEGRADED/md0-config.env"
+MD_UUID="c000-uuid-3333"
+MD_NAME="localhost:0"
+MD_META="1.2"
+MD_LEVEL="raid1"
+MD_DEVICES_COUNT="2"
+MD_DATA_OFFSET="34816"
+MD_MEMBERS_ORDERED="/dev/vdc1 /dev/vdb1"
+EOF
+
+# When TARGET_DEVICES is vdc, vdb1 must be replaced with missing
+# so mdadm creates degraded array on /dev/vdc1 missing without touching busy vdb1
+"$REPO_DIR/sbin/ocs-restore-mdraid-layout" -b "$IMG_DEGRADED" vdc
+
+if ! grep -q "CREATE-ARRAY:.*--raid-devices=2.*\/dev\/vdc1 missing" "$ACTION_LOG"; then
+  echo "FAIL: mdadm --create was not called with degraded /dev/vdc1 missing! Action log:"
+  grep "CREATE-ARRAY" "$ACTION_LOG" || true
+  exit 1
+fi
+echo "PASS: ocs-restore-mdraid-layout correctly created degraded array using '/dev/vdc1 missing'."
+
+# 5b. Verify check_specify_part_exists exits immediately in batch mode without prompting
+status=0
+(
+  . "$REPO_DIR/scripts/sbin/ocs-functions"
+  export ocs_batch_mode="on"
+  gen_proc_partitions_map_file() {
+    partition_table="$(mktemp /tmp/parttable-test.XXXXXX)"
+    echo "major minor #blocks name" > "$partition_table"
+  }
+  export -f gen_proc_partitions_map_file
+  check_specify_part_exists "nonexistent_part99" >/dev/null 2>&1
+) || status=$?
+
+if [ $status -ne 1 ]; then
+  echo "FAIL: check_specify_part_exists did not exit with 1 in batch mode (got: $status)!"
+  exit 1
+fi
+echo "PASS: check_specify_part_exists exited immediately without prompting in batch mode."
+
 echo "=== All MDRAID On-the-Fly d2d Tests Passed Successfully! ==="
