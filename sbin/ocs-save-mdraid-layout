@@ -103,8 +103,9 @@ for MD in $MD_DEVICES; do
     MD_LAYOUT="$(LC_ALL=C mdadm --detail "$MD_PATH" | awk -F: '/[ \t]Layout[ \t]*:/ {print $2}' | tr -d ' ')"
 
     # 5. Extract strict device order (Handles 5+ disks, missing drives, AND Hot Spares)
-    # The regex matches the first 3 columns (Number, Major, Minor). 
-    MD_MEMBERS_ORDERED="$(LC_ALL=C mdadm --detail "$MD_PATH" | awk '/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+[0-9]+/ {
+    # The regex matches the first 3 columns (Number, Major, Minor). In degraded arrays
+    # with removed/failed devices, Number may be '-' (e.g. ' - 0 0 1 removed').
+    MD_MEMBERS_ORDERED="$(LC_ALL=C mdadm --detail "$MD_PATH" | awk '/^[ \t]*[0-9-]+[ \t]+[0-9]+[ \t]+[0-9]+/ {
         slot = $4;
         dev = $NF;
         if (dev ~ /removed|faulty|missing/) {

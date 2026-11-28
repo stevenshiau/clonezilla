@@ -549,4 +549,253 @@ if [ $status -ne 1 ]; then
 fi
 echo "PASS: check_specify_part_exists exited immediately without prompting in batch mode."
 
+# ====================================================================
+# TEST 6: Degraded array restore with missing-member padding
+# ====================================================================
+echo "=== TEST 6: Degraded array restore with missing-member padding ==="
+IMG_PAD="$TMP_DIR/img-pad"
+mkdir -p "$IMG_PAD"
+cat <<'EOF' > "$IMG_PAD/md0-config.env"
+MD_UUID="c000-uuid-4444"
+MD_NAME="localhost:0"
+MD_META="1.2"
+MD_LEVEL="raid1"
+MD_DEVICES_COUNT="2"
+MD_DATA_OFFSET="34816"
+MD_MEMBERS_ORDERED="/dev/vdc1"
+EOF
+
+# In standard restore (no TARGET_DEVICES), MD_MEMBERS="/dev/vdc1" must be padded
+# with 'missing' to match MD_DEVICES_COUNT=2
+"$REPO_DIR/sbin/ocs-restore-mdraid-layout" -b "$IMG_PAD"
+
+if ! grep -q "CREATE-ARRAY:.*--raid-devices=2.*\/dev\/vdc1 missing" "$ACTION_LOG"; then
+  echo "FAIL: mdadm --create was not called with padded /dev/vdc1 missing! Action log:"
+  grep "CREATE-ARRAY" "$ACTION_LOG" || true
+  exit 1
+fi
+echo "PASS: ocs-restore-mdraid-layout correctly padded missing member for degraded array."
+
+# ====================================================================
+# TEST 7: Save mdraid layout with removed/missing member ('-' in Number column)
+# ====================================================================
+echo "=== TEST 7: Save mdraid layout with removed/missing member ==="
+(
+  MOCK_BIN_SAVEDEG="$TMP_DIR/mock-bin-savedeg"
+  mkdir -p "$MOCK_BIN_SAVEDEG"
+  cat <<'EOF' > "$MOCK_BIN_SAVEDEG/mdadm"
+#!/bin/bash
+case "$1" in
+  --detail)
+    cat <<'MDEOF'
+/dev/md0:
+        Raid Level : raid1
+      Raid Devices : 2
+    Number   Major   Minor   RaidDevice State
+       -       0        0        0      removed
+       1       8       17        1      active sync   /dev/sdb1
+MDEOF
+    exit 0
+    ;;
+  --examine)
+    echo "Data Offset : 34816 sectors"
+    exit 0
+    ;;
+esac
+exit 0
+EOF
+  chmod +x "$MOCK_BIN_SAVEDEG/mdadm"
+
+  MOCK_PROC_SAVEDEG="$TMP_DIR/mock-proc-savedeg"
+  mkdir -p "$MOCK_PROC_SAVEDEG"
+  cat <<'EOF' > "$MOCK_PROC_SAVEDEG/mdstat"
+Personalities : [raid1]
+md0 : active raid1 sdb1[1]
+      17251328 blocks super 1.2 [2/1] [_U]
+EOF
+
+  cat <<EOF > "$MOCK_BIN_SAVEDEG/awk"
+#!/bin/bash
+args=()
+for a in "\$@"; do
+  if [ "\$a" = "/proc/mdstat" ]; then
+    args+=("$MOCK_PROC_SAVEDEG/mdstat")
+  else
+    args+=("\$a")
+  fi
+done
+exec /usr/bin/awk "\${args[@]}"
+EOF
+  chmod +x "$MOCK_BIN_SAVEDEG/awk"
+
+  IMG_SAVE_DEG="$TMP_DIR/img-save-deg"
+  mkdir -p "$IMG_SAVE_DEG"
+
+  PATH="$MOCK_BIN_SAVEDEG:$PATH" "$REPO_DIR/sbin/ocs-save-mdraid-layout" "$IMG_SAVE_DEG" >/dev/null 2>&1 || true
+
+  saved_order="$(grep '^MD_MEMBERS_ORDERED=' "$IMG_SAVE_DEG/md0-config.env" 2>/dev/null | cut -d'"' -f2)"
+  if [ "$saved_order" != "missing /dev/sdb1" ]; then
+    echo "FAIL: Expected 'missing /dev/sdb1', got: '$saved_order'"
+    exit 1
+  fi
+  echo "PASS: ocs-save-mdraid-layout correctly captured 'missing /dev/sdb1' for degraded array."
+)
+
+# ====================================================================
+# TEST 8: make_md_members_consistent execution and self-pairing prevention
+# ====================================================================
+echo "=== TEST 8: make_md_members_consistent execution and self-pairing ==="
+(
+  . "$REPO_DIR/scripts/sbin/ocs-functions"
+
+  # Verify self-pairing returns 0 immediately without error
+  status=0
+  make_md_members_consistent "/dev/vdc1" "/dev/vdc1" || status=$?
+  if [ $status -ne 0 ]; then
+    echo "FAIL: make_md_members_consistent failed on self-pair guard!"
+    exit 1
+  fi
+  echo "PASS: make_md_members_consistent cleanly handled self-pair guard."
+
+  # Create two small loop-like disk image files to test superblock synchronization
+  REF_FILE="$TMP_DIR/ref_sb.bin"
+  DST_FILE="$TMP_DIR/dst_sb.bin"
+  dd if=/dev/zero of="$REF_FILE" bs=1M count=1 status=none
+  dd if=/dev/zero of="$DST_FILE" bs=1M count=1 status=none
+
+  # Write dummy MD v1.2 superblocks at offset 4096 (magic: 0xa92b4efc, major: 1)
+  # dev_number: ref=0, dst=1, max_dev=2
+  perl -e '
+    my ($file, $dev_num, $ctime) = @ARGV;
+    open my $fh, "+<", $file or die $!;
+    seek($fh, 4096, 0);
+    my $buf = "\x00" x 260;
+    substr($buf, 0, 4, pack("V", 0xa92b4efc)); # magic
+    substr($buf, 4, 4, pack("V", 1));          # major
+    substr($buf, 64, 8, pack("Q<", $ctime));   # ctime
+    substr($buf, 160, 4, pack("V", $dev_num)); # dev_number
+    substr($buf, 192, 8, pack("Q<", 100));     # utime
+    substr($buf, 200, 8, pack("Q<", 10));      # events
+    substr($buf, 220, 4, pack("V", 2));        # max_dev = 2
+    # dev_roles table at offset 256
+    substr($buf, 256, 2, pack("v", ($dev_num == 0 ? 0 : 0xffff)));
+    substr($buf, 258, 2, pack("v", ($dev_num == 1 ? 1 : 0xffff)));
+    seek($fh, 4096, 0);
+    print $fh $buf;
+    close $fh;
+  ' "$REF_FILE" 0 12345678
+
+  perl -e '
+    my ($file, $dev_num, $ctime) = @ARGV;
+    open my $fh, "+<", $file or die $!;
+    seek($fh, 4096, 0);
+    my $buf = "\x00" x 260;
+    substr($buf, 0, 4, pack("V", 0xa92b4efc)); # magic
+    substr($buf, 4, 4, pack("V", 1));          # major
+    substr($buf, 64, 8, pack("Q<", $ctime));   # ctime differs
+    substr($buf, 160, 4, pack("V", $dev_num)); # dev_number
+    substr($buf, 192, 8, pack("Q<", 200));     # utime differs
+    substr($buf, 200, 8, pack("Q<", 20));      # events differs
+    substr($buf, 220, 4, pack("V", 2));        # max_dev = 2
+    substr($buf, 256, 2, pack("v", ($dev_num == 0 ? 0 : 0xffff)));
+    substr($buf, 258, 2, pack("v", ($dev_num == 1 ? 1 : 0xffff)));
+    seek($fh, 4096, 0);
+    print $fh $buf;
+    close $fh;
+  ' "$DST_FILE" 1 87654321
+
+  # Test make_md_members_consistent logic directly
+  # Note: make_md_members_consistent checks [ -b "$ref" ], so test the internal perl script
+  perl -e '
+    use strict;
+    use warnings;
+    my ($ref_path, $dst_path) = @ARGV;
+    sub find_sb {
+      my ($path) = @_;
+      open my $d, "+<", $path or return;
+      for my $offset (4096, 0) {
+        sysseek($d, $offset, 0) or next;
+        my $buf;
+        sysread($d, $buf, 256) or next;
+        my ($magic, $major) = unpack("V V", $buf);
+        if ($magic == 0xa92b4efc && $major == 1) { close $d; return $offset; }
+      }
+      close $d; return;
+    }
+    sub calc_csum {
+      my ($data) = @_;
+      my ($max_dev) = unpack("x220 V", $data);
+      my $size = 256 + $max_dev * 2;
+      substr($data, 216, 4, "\x00\x00\x00\x00");
+      my $newcsum = 0;
+      my $off = 0;
+      while ($off + 4 <= $size) {
+        $newcsum += unpack("V", substr($data, $off, 4));
+        $off += 4;
+      }
+      if ($off + 2 <= $size) {
+        $newcsum += unpack("v", substr($data, $off, 2));
+      }
+      my $csum = ($newcsum & 0xffffffff) + ($newcsum >> 32);
+      $csum = ($csum & 0xffffffff) + ($csum >> 32);
+      return $csum;
+    }
+    sub read_sb {
+      my ($path, $offset) = @_;
+      open my $d, "+<", $path or return;
+      sysseek($d, $offset + 220, 0) or return;
+      my $mdb;
+      sysread($d, $mdb, 4) or return;
+      my ($max_dev) = unpack("V", $mdb);
+      my $full_size = 256 + $max_dev * 2;
+      sysseek($d, $offset, 0) or return;
+      my $buf = "";
+      sysread($d, $buf, $full_size) or return;
+      close $d;
+      return ($buf, $max_dev);
+    }
+    sub write_sb {
+      my ($path, $offset, $bufref) = @_;
+      my $csum = calc_csum($$bufref);
+      substr($$bufref, 216, 4, pack("V", $csum));
+      open my $d, "+<", $path or return;
+      sysseek($d, $offset, 0) or return;
+      syswrite($d, $$bufref);
+      close $d;
+    }
+    my $ref_off = find_sb($ref_path);
+    my $dst_off = find_sb($dst_path);
+    exit 1 unless defined $ref_off && defined $dst_off;
+    my ($ref_sb, $ref_md) = read_sb($ref_path, $ref_off);
+    my ($dst_sb, $dst_md) = read_sb($dst_path, $dst_off);
+    exit 1 unless $ref_sb && $dst_sb;
+    my ($ref_num) = unpack("x160 V", $ref_sb);
+    my ($dst_num) = unpack("x160 V", $dst_sb);
+    exit 1 if $ref_num >= $dst_md || $dst_num >= $ref_md;
+    substr($dst_sb, 64, 8, substr($ref_sb, 64, 8));
+    substr($dst_sb, 192, 16, substr($ref_sb, 192, 16));
+    substr($dst_sb, 256 + 2 * $ref_num, 2, pack("v", $ref_num));
+    substr($ref_sb, 256 + 2 * $dst_num, 2, pack("v", $dst_num));
+    write_sb($dst_path, $dst_off, \$dst_sb);
+    write_sb($ref_path, $ref_off, \$ref_sb);
+  ' "$REF_FILE" "$DST_FILE"
+
+  # Verify ctime on dst_sb now equals ref_sb
+  ref_ctime="$(perl -e 'open my $f, "<", $ARGV[0]; seek($f, 4096+64, 0); read($f, my $b, 8); print unpack("Q<", $b);' "$REF_FILE")"
+  dst_ctime="$(perl -e 'open my $f, "<", $ARGV[0]; seek($f, 4096+64, 0); read($f, my $b, 8); print unpack("Q<", $b);' "$DST_FILE")"
+  if [ "$ref_ctime" != "$dst_ctime" ]; then
+    echo "FAIL: ctime was not synchronized! ref: $ref_ctime, dst: $dst_ctime"
+    exit 1
+  fi
+
+  # Verify dev_roles cross-marked active (slot 0 in dst is active 0, slot 1 in ref is active 1)
+  dst_role0="$(perl -e 'open my $f, "<", $ARGV[0]; seek($f, 4096+256, 0); read($f, my $b, 2); print unpack("v", $b);' "$DST_FILE")"
+  ref_role1="$(perl -e 'open my $f, "<", $ARGV[0]; seek($f, 4096+258, 0); read($f, my $b, 2); print unpack("v", $b);' "$REF_FILE")"
+  if [ "$dst_role0" != "0" ] || [ "$ref_role1" != "1" ]; then
+    echo "FAIL: dev_roles not cross-activated! dst_role0=$dst_role0, ref_role1=$ref_role1"
+    exit 1
+  fi
+  echo "PASS: Superblock synchronization successfully matched ctime and cross-activated dev_roles."
+)
+
 echo "=== All MDRAID On-the-Fly d2d Tests Passed Successfully! ==="

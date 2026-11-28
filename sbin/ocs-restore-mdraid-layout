@@ -405,6 +405,19 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
             MD_MEMBERS="$(echo "$CLEANED_MD_MEMBERS" | xargs)"
         fi
 
+        # Pad with 'missing' members up to raid-devices. A degraded source
+        # array is saved with only its online members in MD_MEMBERS_ORDERED
+        # (e.g. "/dev/vda1"), which is one short of "--raid-devices=2" and
+        # makes mdadm refuse to create the array ("You haven't given enough
+        # devices (real or missing) to create this array").
+        member_count=0
+        for m in $MD_MEMBERS; do member_count=$((member_count + 1)); done
+        while [ "$member_count" -lt "${MD_DEVICES_COUNT:-0}" ]; do
+            echo "  -> Notice: degraded array, padding member list with 'missing'."
+            MD_MEMBERS="$MD_MEMBERS missing"
+            member_count=$((member_count + 1))
+        done
+
         # Ensure at least one member is present on target
         active_count=0
         for m in $MD_MEMBERS; do
@@ -481,11 +494,73 @@ for ENV_FILE in "$IMG_DIR"/md*-config.env; do
             done
             udevadm settle
             sleep 1
-            mdadm --assemble --run "$MD_DEV_PATH" $MD_MEMBERS 2>/dev/null || true
+            # udev may have auto-incrementally (re)assembled some members in the
+            # meantime; stop those first so the reassembly cannot fail with
+            # "Device or resource busy".
+            for MEMBER in $MD_MEMBERS; do
+                [ "$MEMBER" = "missing" ] && continue
+                [ -b "$MEMBER" ] || continue
+                M_KNAME="$(basename "$MEMBER")"
+                for md_sys in /sys/class/block/md*; do
+                    if [ -d "$md_sys" ] && [ -e "$md_sys/slaves/$M_KNAME" ]; then
+                        mdadm --stop "/dev/$(basename "$md_sys")" 2>/dev/null || true
+                    fi
+                done
+            done
+            udevadm settle
+            if ! mdadm --assemble --force --run "$MD_DEV_PATH" $MD_MEMBERS 2>/dev/null; then
+                # Reassembly with the full member list (including 'missing')
+                # failed; try again with only the available members so the
+                # degraded array is at least usable for the partition restore.
+                echo "  -> [Warning] reassembly of $MD_DEV_PATH failed; retrying with available members only."
+                avail_members=""
+                for MEMBER in $MD_MEMBERS; do
+                    [ "$MEMBER" != "missing" ] && [ -b "$MEMBER" ] && avail_members="$avail_members $MEMBER"
+                done
+                [ -n "$avail_members" ] && mdadm --assemble --force --run "$MD_DEV_PATH" $avail_members 2>/dev/null || true
+            fi
             udevadm settle
             sleep 2
         else
             echo "  -> Shadow target array $MD_DEV_PATH is active for d2d cloning. Keeping array running for data clone."
+        fi
+
+        # Record the source->target member mapping so that task_restoreparts
+        # can later make the superblocks of separately cloned members of this
+        # array mutually consistent (ctime/events/dev_roles) before the final
+        # user-side assembly. Only needed for member-by-member d2d clones,
+        # i.e. when some members were replaced with 'missing' (the target is
+        # not fully covered in this run); single-pass full-array clones do not
+        # need this.
+        MD_MEMBERS_NEEDS_PAIRING="yes"
+        case " $MD_MEMBERS " in
+            *" missing "*) ;;
+            *) MD_MEMBERS_NEEDS_PAIRING="no" ;;
+        esac
+        if [ -e "$IMG_DIR/device_name_converted.info" ] && [ "${MD_MEMBERS_NEEDS_PAIRING:-yes}" = "yes" ]; then
+            D2D_MAP="/tmp/ocs-mdraid-d2d-member-map.info"
+            src_d="$(sed -n 's/^orig_dev="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$IMG_DIR/device_name_converted.info" | tail -1)"
+            tgt_d="$(sed -n 's/^new_dev="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$IMG_DIR/device_name_converted.info" | tail -1)"
+            if [ -n "$src_d" ] && [ -n "$tgt_d" ]; then
+                for NM in $MD_MEMBERS; do
+                    [ "$NM" = "missing" ] && continue
+                    [ -b "$NM" ] || continue
+                    # Compose the source member name with the source disk's
+                    # own naming scheme (nvme/mmc/etc. need a 'p' separator,
+                    # e.g. /dev/sda1 -> /dev/nvme0n1p1).
+                    part_num="$(basename "$NM" | sed -e "s/^${tgt_d}p\?//")"
+                    [ -z "$part_num" ] && continue
+                    case "$src_d" in
+                        nvme*|mmcblk*|loop*|nbd*|md*|rd*|ida*) src_m="/dev/${src_d}p${part_num}" ;;
+                        *) src_m="/dev/${src_d}${part_num}" ;;
+                    esac
+                    touch "$D2D_MAP"
+                    grep -v "^$src_m " "$D2D_MAP" > "$D2D_MAP.tmp" 2>/dev/null || true
+                    mv "$D2D_MAP.tmp" "$D2D_MAP"
+                    echo "$src_m $NM" >> "$D2D_MAP"
+                done
+                echo "  -> Recorded d2d member map: $(tr '\n' ';' < "$D2D_MAP")"
+            fi
         fi
     fi
 

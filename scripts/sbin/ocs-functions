@@ -9878,6 +9878,103 @@ sanitize_md_superblock() {
     ' "$member_dev" 2>/dev/null || true
 }
 #
+# Helper: make two MD v1.x member superblocks mutually consistent so that a
+# plain "mdadm --assemble" accepts both. Needed for member-by-member d2d
+# clones: each member gets its metadata from a separate degraded
+# "mdadm --create", so (a) their array creation times (ctime) differ, which
+# makes compare_super1() reject them ("superblock ... doesn't match others"),
+# (b) their events counters drift apart, so Assemble() drops the older one
+# ("added ... (possibly out of date)"), and (c) each one's dev_roles[] table
+# marks the other slot as 0xffff (not active), which makes Assemble() drop
+# the later member ("ignoring ... as it reports ... as failed"). This helper
+# copies ctime/utime/events from the reference member and marks each member's
+# slot as active in the other member's dev_roles[] table, recalculating the
+# superblock checksums. Must only be called on stopped arrays.
+make_md_members_consistent() {
+    local ref_dev="$1" dst_dev="$2"
+    [ -b "$ref_dev" ] && [ -b "$dst_dev" ] || return 0
+    [ "$ref_dev" != "$dst_dev" ] || return 0
+
+    perl -e '
+        use strict;
+        use warnings;
+
+        my ($ref_path, $dst_path) = @ARGV;
+        sub find_sb {
+            my ($path) = @_;
+            open my $d, "+<", $path or return;
+            for my $offset (4096, 0) {
+                sysseek($d, $offset, 0) or next;
+                my $buf;
+                sysread($d, $buf, 256) or next;
+                my ($magic, $major) = unpack("V V", $buf);
+                if ($magic == 0xa92b4efc && $major == 1) { close $d; return $offset; }
+            }
+            close $d; return;
+        }
+        sub calc_csum {
+            my ($data) = @_;
+            my ($max_dev) = unpack("x220 V", $data);
+            my $size = 256 + $max_dev * 2;
+            substr($data, 216, 4, "\x00\x00\x00\x00");
+            my $newcsum = 0;
+            my $off = 0;
+            while ($off + 4 <= $size) {
+                $newcsum += unpack("V", substr($data, $off, 4));
+                $off += 4;
+            }
+            if ($off + 2 <= $size) {
+                $newcsum += unpack("v", substr($data, $off, 2));
+            }
+            my $csum = ($newcsum & 0xffffffff) + ($newcsum >> 32);
+            $csum = ($csum & 0xffffffff) + ($csum >> 32);
+            return $csum;
+        }
+        sub read_sb {
+            my ($path, $offset) = @_;
+            open my $d, "+<", $path or return;
+            sysseek($d, $offset + 220, 0) or return;
+            my $mdb;
+            sysread($d, $mdb, 4) or return;
+            my ($max_dev) = unpack("V", $mdb);
+            my $full_size = 256 + $max_dev * 2;
+            sysseek($d, $offset, 0) or return;
+            my $buf = "";
+            sysread($d, $buf, $full_size) or return;
+            close $d;
+            return ($buf, $max_dev);
+        }
+        sub write_sb {
+            my ($path, $offset, $bufref) = @_;
+            my $csum = calc_csum($$bufref);
+            substr($$bufref, 216, 4, pack("V", $csum));
+            open my $d, "+<", $path or return;
+            sysseek($d, $offset, 0) or return;
+            syswrite($d, $$bufref);
+            close $d;
+        }
+        my $ref_off = find_sb($ref_path);
+        my $dst_off = find_sb($dst_path);
+        exit 0 unless defined $ref_off && defined $dst_off;
+        my ($ref_sb, $ref_md) = read_sb($ref_path, $ref_off);
+        my ($dst_sb, $dst_md) = read_sb($dst_path, $dst_off);
+        exit 0 unless $ref_sb && $dst_sb;
+        my ($ref_num) = unpack("x160 V", $ref_sb);
+        my ($dst_num) = unpack("x160 V", $dst_sb);
+        exit 0 if $ref_num >= $dst_md || $dst_num >= $ref_md;
+        # 1) Synchronize ctime (offset 64, 8 bytes) from reference, plus the
+        #    utime (offset 192) + events (offset 200) counters.
+        substr($dst_sb, 64, 8, substr($ref_sb, 64, 8));
+        substr($dst_sb, 192, 16, substr($ref_sb, 192, 16));
+        # 2) Mark each member as active in the dev_roles table of the other.
+        substr($dst_sb, 256 + 2 * $ref_num, 2, pack("v", $ref_num));
+        substr($ref_sb, 256 + 2 * $dst_num, 2, pack("v", $dst_num));
+        write_sb($dst_path, $dst_off, \$dst_sb);
+        write_sb($ref_path, $ref_off, \$ref_sb);
+        print "  -> Made MD members mutually consistent: $ref_path (slot $ref_num) and $dst_path (slot $dst_num).\n";
+    ' "$ref_dev" "$dst_dev" 2>/dev/null || true
+}
+#
 check_mbr_gpt_partition_table() {
   # With fdisk, sfdisk and sgdisk, we can decide the partition type is MBR or GPT, or corrupt
   local tdisk="${1#/dev/*}" # Input is like /dev/sda, so tdisk becomes sda
@@ -12058,17 +12155,47 @@ task_restoreparts() {
     while read orig_md shadow_md; do
       [ -n "$shadow_md" -a "$orig_md" != "$shadow_md" ] || continue
       echo "Stopping shadow target MDRAID device /dev/$shadow_md..." | tee --append $OCS_LOGFILE
+      # Sanitize only the shadow array's own member superblocks (its slaves
+      # recorded before stopping). Do NOT use MD_MEMBERS_ORDERED from the
+      # config: in device-converted d2d clones it may still reference members
+      # of the source disks, which are busy in the active source array.
+      shadow_members=""
+      for slv in /sys/class/block/"$shadow_md"/slaves/*; do
+        [ -e "$slv" ] && shadow_members="$shadow_members /dev/$(basename "$slv")"
+      done
       mdadm --stop "/dev/$shadow_md" 2>/dev/null || true
       udevadm settle 2>/dev/null || true
-      if [ -f "$target_dir_fullpath/${orig_md}-config.env" ]; then
-        (
-          source "$target_dir_fullpath/${orig_md}-config.env"
-          for mem in $MD_MEMBERS_ORDERED; do
-            [ "$mem" = "missing" ] && continue
+      for mem in $shadow_members; do
+        [ -b "$mem" ] || continue
+        sanitize_md_superblock "$mem" 2>/dev/null || true
+      done
+      # Member-by-member d2d: make the freshly restored member's superblock
+      # mutually consistent with a previously restored sibling member (mapping
+      # recorded by ocs-restore-mdraid-layout): separately created members
+      # differ in ctime (compare_super1() rejects: "superblock ... doesn't
+      # match others"), events (dropped as "out of date") and dev_roles[]
+      # ("ignoring ... as it reports ... as failed").
+      D2D_MAP="/tmp/ocs-mdraid-d2d-member-map.info"
+      if [ -e "$D2D_MAP" ] && [ -f "$target_dir_fullpath/${orig_md}-config.env" ]; then
+        ref_mem=""
+        for orig_mem in $(awk -F\" '/^MD_MEMBERS_ORDERED=/ {print $2}' "$target_dir_fullpath/${orig_md}-config.env"); do
+          [ "$orig_mem" = "missing" ] && continue
+          mapped_target="$(awk -v m="$orig_mem" '$1==m {print $2; exit}' "$D2D_MAP" 2>/dev/null)"
+          [ -n "$mapped_target" ] && [ -b "$mapped_target" ] || continue
+          # Ensure reference member is not one of the currently restored shadow members
+          case " $shadow_members " in
+            *" $mapped_target "*) continue ;;
+          esac
+          ref_mem="$mapped_target"
+          break
+        done
+        if [ -n "$ref_mem" ]; then
+          for mem in $shadow_members; do
             [ -b "$mem" ] || continue
-            sanitize_md_superblock "$mem" 2>/dev/null || true
+            [ "$ref_mem" != "$mem" ] || continue
+            make_md_members_consistent "$ref_mem" "$mem" 2>/dev/null || true
           done
-        )
+        fi
       fi
     done < "$target_dir_fullpath/md_tgt_map.info"
   fi
