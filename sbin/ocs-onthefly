@@ -39,6 +39,8 @@ d2d_psuedo_img="d2d-pseudo"
 enable_dio="no"
 # Default not to use ocs alias block device name
 use_ocs_alias_blkdev="no"
+# By default enable hybrid read-only armour for source device(s)
+source_dev_armour="${source_dev_armour:-enable}"
 # Put Clonezilla related log files to Clonezilla live USB drive or not.
 put_log_usb=""
 # Default not to use reverse connection
@@ -704,6 +706,8 @@ USAGE() {
     echo "-em, --expert-mode       Run in expert mode. This is a short way for \"-um expert\"."
     echo "-um, --user-mode [beginner|expert]      Specify the mode to use."
     echo "-edio, --enable-direct-io   Enable the direct IO mode of Partclone when reading from or writing to NVMe SSD."
+    echo "-sro, --source-read-only, --source-dev-armour   Enable hybrid read-only write-blocking armour for source block device(s), MDRAID arrays, and LVM volumes when cloning."
+    echo "-nsro, --no-source-read-only, --skip-source-read-only, --disable-source-dev-armour  Disable write-blocking armour for source device(s)."
     echo "Ex:"
     echo "1. To clone local sda to local sdb, run"
     echo "   $ocs -f sda -d sdb"
@@ -1261,6 +1265,8 @@ parse_ocs_onthefly_cmd_options() {
       -v|--verbose) shift; verbose="on";;
       -uoab|--use-ocs-alias-blkdev) shift; use_ocs_alias_blkdev="yes";;
       -ruoab|--reset-use-ocs-alias-blkdev) shift; reset_use_ocs_alias_blkdev; exit 0;;
+      -sro|--source-read-only|--source-dev-armour) shift; source_dev_armour="enable";;
+      -nsro|--no-source-read-only|--skip-source-read-only|--disable-source-dev-armour) shift; source_dev_armour="disable";;
       -*)     echo "${0}: ${1}: invalid option" >&2
               USAGE >& 2
               exit 2 ;;
@@ -1999,6 +2005,11 @@ do_fsck_in_source_dev_if_assigned
 # Remove dirty ntfs volume flag
 do_rm_ntfs_vol_dirty_flag_in_source_dev_if_assigned
 
+# Enable hybrid read-only armour for source device(s)
+if [ "$mode" = "local" -o "$STATUS" = "clone_server" ]; then
+  enable_source_dev_armour $src_dev
+fi
+
 #
 echo "$msg_delimiter_star_line"
 # Start cloning
@@ -2006,6 +2017,11 @@ case "$mode" in
   local) local_dev_clone ;;
   network) clone_over_net ;;
 esac
+
+# Restore source device write access
+if [ "$mode" = "local" -o "$STATUS" = "clone_server" ]; then
+  disable_source_dev_armour
+fi
 
 # create swap partition, resize partition, clean the temp partition table, and re-install grub
 # post_process_in_target_dev

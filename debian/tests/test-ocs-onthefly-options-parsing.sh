@@ -100,5 +100,51 @@ if [[ "$clean_opts" == *"-f"* || "$clean_opts" == *"-d"* ]]; then
   exit 1
 fi
 
+# Test 5: Option -sro, --source-read-only, --source-dev-armour
+echo "Testing -sro, --source-read-only, --source-dev-armour options..."
+source_dev_armour="disable"
+parse_ocs_onthefly_cmd_options -sro
+if [ "$source_dev_armour" != "enable" ]; then
+  echo "FAIL: Expected source_dev_armour='enable' with -sro, but got '$source_dev_armour'"
+  exit 1
+fi
+
+source_dev_armour="disable"
+parse_ocs_onthefly_cmd_options --source-read-only
+if [ "$source_dev_armour" != "enable" ]; then
+  echo "FAIL: Expected source_dev_armour='enable' with --source-read-only, but got '$source_dev_armour'"
+  exit 1
+fi
+
+source_dev_armour="disable"
+parse_ocs_onthefly_cmd_options --source-dev-armour
+if [ "$source_dev_armour" != "enable" ]; then
+  echo "FAIL: Expected source_dev_armour='enable' with --source-dev-armour, but got '$source_dev_armour'"
+  exit 1
+fi
+
+# Test 6: Option -nsro, --no-source-read-only, --disable-source-dev-armour
+echo "Testing -nsro, --no-source-read-only, --disable-source-dev-armour options..."
+source_dev_armour="enable"
+parse_ocs_onthefly_cmd_options -nsro
+if [ "$source_dev_armour" != "disable" ]; then
+  echo "FAIL: Expected source_dev_armour='disable' with -nsro, but got '$source_dev_armour'"
+  exit 1
+fi
+
+source_dev_armour="enable"
+parse_ocs_onthefly_cmd_options --skip-source-read-only
+if [ "$source_dev_armour" != "disable" ]; then
+  echo "FAIL: Expected source_dev_armour='disable' with --skip-source-read-only, but got '$source_dev_armour'"
+  exit 1
+fi
+
+source_dev_armour="enable"
+parse_ocs_onthefly_cmd_options --disable-source-dev-armour
+if [ "$source_dev_armour" != "disable" ]; then
+  echo "FAIL: Expected source_dev_armour='disable' with --disable-source-dev-armour, but got '$source_dev_armour'"
+  exit 1
+fi
+
 echo "PASS: All ocs-onthefly options parsing assertions passed successfully!"
 exit 0

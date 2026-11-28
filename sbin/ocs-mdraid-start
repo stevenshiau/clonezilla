@@ -27,8 +27,14 @@ if type mdadm &>/dev/null; then
     fi
 
     # Switch any read-only/auto-read-only arrays to read-write mode so they can be mounted or written
+    # Skip any array that is registered as a protected source armour device
     if [ -f /proc/mdstat ]; then
         for md in $(awk '/^md.*\(.*read-only.*\)/ {print $1}' /proc/mdstat 2>/dev/null); do
+            if (type is_recorded_source_armour_dev &>/dev/null && is_recorded_source_armour_dev "/dev/$md") || \
+               (type is_recorded_source_ro_dev &>/dev/null && is_recorded_source_ro_dev "/dev/$md"); then
+                echo "  Keeping protected source MDRAID array /dev/$md in read-only mode."
+                continue
+            fi
             mdadm --readwrite "/dev/$md" >/dev/null 2>&1 || true
         done
     fi

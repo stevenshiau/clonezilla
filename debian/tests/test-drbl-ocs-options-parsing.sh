@@ -170,5 +170,43 @@ if [[ "$res" != *"-z11"* ]]; then
   exit 1
 fi
 
+# Test 8: Test source read-only protection options (-sro, --source-dev-armour, -nsro, --disable-source-dev-armour)
+echo "Testing -sro, --source-dev-armour, -nsro, --disable-source-dev-armour options..."
+res=$(test_parse -sro)
+if [[ "$res" != *"--source-dev-armour"* ]]; then
+  echo "FAIL: -sro not mapped to --source-dev-armour in OCS_OPT (got: $res)"
+  exit 1
+fi
+
+res=$(test_parse --source-read-only)
+if [[ "$res" != *"--source-dev-armour"* ]]; then
+  echo "FAIL: --source-read-only not mapped to --source-dev-armour in OCS_OPT (got: $res)"
+  exit 1
+fi
+
+res=$(test_parse --source-dev-armour)
+if [[ "$res" != *"--source-dev-armour"* ]]; then
+  echo "FAIL: --source-dev-armour not added to OCS_OPT (got: $res)"
+  exit 1
+fi
+
+res=$(test_parse -nsro)
+if [[ "$res" != *"--disable-source-dev-armour"* ]]; then
+  echo "FAIL: -nsro not mapped to --disable-source-dev-armour in OCS_OPT (got: $res)"
+  exit 1
+fi
+
+res=$(test_parse --no-source-read-only)
+if [[ "$res" != *"--disable-source-dev-armour"* ]]; then
+  echo "FAIL: --no-source-read-only not mapped to --disable-source-dev-armour in OCS_OPT (got: $res)"
+  exit 1
+fi
+
+res=$(test_parse --disable-source-dev-armour)
+if [[ "$res" != *"--disable-source-dev-armour"* ]]; then
+  echo "FAIL: --disable-source-dev-armour not added to OCS_OPT (got: $res)"
+  exit 1
+fi
+
 echo "PASS: All options parsed and verified successfully!"
 exit 0

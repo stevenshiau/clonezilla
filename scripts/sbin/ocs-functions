@@ -10324,6 +10324,8 @@ task_savedisk() {
   # Export intended target disks to prevent drops
   export INTENDED_TARGET_HD="$target_hd"
 
+  enable_source_dev_armour $target_hd
+
   task_saveparts "$target_dir" "$target_parts"
   rc_task_savedisk="$(($rc_task_savedisk + $?))"
   
@@ -10368,6 +10370,8 @@ task_savedisk() {
     [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
   fi
   echo "End of savedisk job for image $target_dir." | tee --append $OCS_LOGFILE
+
+  disable_source_dev_armour
 
   return $rc_task_savedisk
 } # end of task_savedisk
@@ -10633,6 +10637,8 @@ task_saveparts() {
   # Tune NVMe block queue settings if target partitions are on NVMe
   tune_nvme_block_queue_settings $target_parts
 
+  enable_source_dev_armour $target_parts
+
   # find the target hd
   # maybe we will have one more sd (like sda1, sda2, sdb1, sdb3 -> sda, sdb)
   for ipart in $target_parts; do
@@ -10808,7 +10814,7 @@ task_saveparts() {
       while [ "$ask_luks_passphrase" = "yes" ]; do
         echo $msg_delimiter_star_line | tee --append $OCS_LOGFILE
         echo "$msg_now_open_luks_dev: /dev/$id" | tee --append $OCS_LOGFILE
-        lks_open_cmd="cryptsetup open --type luks /dev/$id $lks_dev_map_basenm"
+        lks_open_cmd="cryptsetup open --readonly --type luks /dev/$id $lks_dev_map_basenm"
         echo "Running: $lks_open_cmd" | tee --append $OCS_LOGFILE
         eval $lks_open_cmd
         rc=$?
@@ -10817,6 +10823,7 @@ task_saveparts() {
           lkuuid="$(LC_ALL=C ocs-get-dev-info /dev/$id uuid)"
           echo "/dev/$id $lkuuid $lks_dev_map_basenm" >> "$target_dir_fullpath/luks-dev.list"
           clted_luks_devs_map_sv="$clted_luks_devs_map_sv $lks_dev_map_basenm"
+          [ -b "/dev/mapper/$lks_dev_map_basenm" ] && enable_source_dev_armour "/dev/mapper/$lks_dev_map_basenm"
           ask_luks_passphrase="no"
 	else
           ask_luks_flag="yes"
@@ -10926,6 +10933,8 @@ task_saveparts() {
 
   # TODO: show error message if failing; check image?
   echo "End of saveparts job for image $target_dir_fullpath." | tee --append $OCS_LOGFILE
+
+  disable_source_dev_armour
 
   rc_savepts="$(($rc_savepts + $rc))"
   return $rc_savepts
@@ -11154,7 +11163,7 @@ task_d2d_restoredisk() {
   local target_dir="$1"
   local target_hd="$2"
   local port=$3  # for device to device, the port is assigned as "ld2d" or "nd2d" from ocs-sr
-  local imtd
+  local imtd d2d_src_hd="" rc_d2d=0
   # For d2d, we check md5/sha1/b2 sums on DRBL server, not clients. Force to set check_md5sum, check_sha1sum and check_b2sum as no
   for imtd in $checksum_method_for_img; do
     # e.g., check_md5sum="no"
@@ -11167,14 +11176,23 @@ task_d2d_restoredisk() {
   if [ "$port" = "ld2d" ] && type ocs-mdraid-start &>/dev/null; then
     ocs-mdraid-start >/dev/null 2>&1
   fi
+  if [ "$port" = "ld2d" ] && [ -f "$ocsroot/$target_dir/disk" ]; then
+    d2d_src_hd="$(cat "$ocsroot/$target_dir/disk" 2>/dev/null)"
+    [ -n "$d2d_src_hd" ] && enable_source_dev_armour $d2d_src_hd
+  fi
   task_restoredisk "$target_dir" "$target_hd" "$port"
+  rc_d2d=$?
+  if [ "$port" = "ld2d" ] && [ -n "$d2d_src_hd" ]; then
+    disable_source_dev_armour
+  fi
+  return $rc_d2d
 } # end of task_d2d_restoredisk
 #
 task_d2d_restoreparts() {
   local target_dir="$1"
   local target_parts="$2"
   local port=$3  # for device to device, the port is assigned as "ld2d" or "nd2d" from ocs-sr
-  local imtd
+  local imtd d2d_src_parts="" rc_d2d=0
   # For d2d, we check md5/sha1/b2 sums on DRBL server, not clients. Force to set check_md5sum, check_sha1sum and check_b2sum as no
   for imtd in $checksum_method_for_img; do
     # e.g., check_md5sum="no"
@@ -11195,7 +11213,16 @@ task_d2d_restoreparts() {
   if [ "$port" = "ld2d" ] && type ocs-mdraid-start &>/dev/null; then
     ocs-mdraid-start >/dev/null 2>&1
   fi
+  if [ "$port" = "ld2d" ] && [ -f "$ocsroot/$target_dir/parts" ]; then
+    d2d_src_parts="$(cat "$ocsroot/$target_dir/parts" 2>/dev/null)"
+    [ -n "$d2d_src_parts" ] && enable_source_dev_armour $d2d_src_parts
+  fi
   task_restoreparts "$target_dir" "$target_parts" "$port"
+  rc_d2d=$?
+  if [ "$port" = "ld2d" ] && [ -n "$d2d_src_parts" ]; then
+    disable_source_dev_armour
+  fi
+  return $rc_d2d
 } # end of task_d2d_restoreparts 
 
 # task "restoreparts" 
@@ -12830,6 +12857,8 @@ USAGE_common_save(){
     echo " -j2, --clone-hidden-data  Use dd to clone the image of the data between MBR (1st sector, i.e. 512 bytes) and 1st partition, which might be useful for some recovery tool."
     echo " -ntfs-ok, --ntfs-ok      Assume the NTFS integrity is OK, do NOT check again (for ntfsclone only)"
     echo " -rm-win-swap-hib, --rm-win-swap-hib  Try to remove the MS windows swap file in the source partition."
+    echo " -sro, --source-read-only, --source-dev-armour   Enable hybrid read-only write-blocking armour for source block device(s), MDRAID arrays, and LVM volumes when saving."
+    echo " -nsro, --no-source-read-only, --skip-source-read-only, --disable-source-dev-armour  Disable write-blocking armour for source device(s)."
     echo " -q, --use-ntfsclone      If the partition to be saved is NTFS, use program ntfsclone instead of partimage (i.e. Priority: ntfsclone > partimage > dd)"
     echo " -q1, --force-to-use-dd   Force to use dd to save partition(s) (inefficient method, very slow, but works for all the file system)."
     echo " -q2, --use-partclone     Use partclone to save partition(s) (i.e. partclone > partimage > dd)."
@@ -16303,6 +16332,14 @@ gen_chksum_for_files_in_dev() {
       ntfs-3g -o ro "/dev/$sum_part" "$sum_part_tmpd"
       rc=$?
       ;;
+    ext[34]*)
+      mount -o ro,noload /dev/$sum_part $sum_part_tmpd 2>/dev/null || mount -o ro /dev/$sum_part $sum_part_tmpd 2>/dev/null
+      rc=$?
+      ;;
+    xfs*)
+      mount -o ro,norecovery /dev/$sum_part $sum_part_tmpd 2>/dev/null || mount -o ro /dev/$sum_part $sum_part_tmpd 2>/dev/null
+      rc=$?
+      ;;
     *)
       mount -o ro /dev/$sum_part $sum_part_tmpd 2>/dev/null
       rc=$?
@@ -18647,7 +18684,7 @@ extract_crypttab_from_initramfs() {
   extract_tmp="$(mktemp -d /tmp/extract_tmp.XXX)"
   crypttab_f=$img_d_/luks-crypttab-from-OS.info
   for id in $initrd_part; do
-    if mount -o ro $id $ird_mnt 2>/dev/null; then
+    if mount -o ro $id $ird_mnt 2>/dev/null || mount -o ro,noload $id $ird_mnt 2>/dev/null || mount -o ro,norecovery $id $ird_mnt 2>/dev/null; then
       ird_f="$(find $ird_mnt -maxdepth 2 -type f \( -iname "initrd.img*" -o -iname "initramfs*.img" \) -print |\
 	       grep -vE "(fallback|kdump|rescue)" | sort -Vr | uniq | head -n 1)"
       if [ -n "$ird_f" ]; then
@@ -19035,6 +19072,289 @@ tune_nvme_block_queue_settings() {
     fi
   done
 } # end of tune_nvme_block_queue_settings
+#
+# State file and re-entrancy depth for source read-only protection (source device armour)
+OCS_SRC_RO_STATE_FILE="${OCS_SRC_RO_STATE_FILE:-/tmp/ocs_src_ro_state.$$$}"
+OCS_SRC_RO_DEPTH=0
+
+is_recorded_source_armour_dev() {
+  local dev_="$1"
+  [ -z "$dev_" ] && return 1
+  [ ! -f "$OCS_SRC_RO_STATE_FILE" ] && return 1
+  dev_="${dev_#/dev/}"
+  grep -qE "^(DEV|MD)[[:space:]]+(/dev/)?${dev_}$" "$OCS_SRC_RO_STATE_FILE" 2>/dev/null
+} # end of is_recorded_source_armour_dev
+is_recorded_source_ro_dev() { is_recorded_source_armour_dev "$@"; }
+
+enable_source_dev_armour() {
+  # Function to enable hybrid read-only write-blocking armour on source device(s).
+  # Prevents Clonezilla or background processes from modifying source disks, partitions,
+  # MDRAID arrays, LVM volumes, LUKS encrypted mappings, multipath devices, and eMMC boot partitions
+  # during saving or cloning.
+  #
+  # Architecture:
+  # 1. Native MDRAID read-only: Array switched to mdadm --readonly first so kernel RAID
+  #    driver does not write superblocks, resync, or flag members faulty.
+  # 2. Native LVM read-only: Volume Groups activated with vgchange -a y -r or LVs switched
+  #    to read-only so Device Mapper tables enforce read-only semantics cleanly.
+  # 3. Multipath expansion: Automatically includes all underlying paths for aggregate multipath devices.
+  # 4. Device hierarchy traversal: Queries sysfs holders and slaves to protect layered devices.
+  # 5. eMMC boot protection: Enforces hardware write-protection (force_ro=1).
+  # 6. Kernel block layer read-only: blockdev --setro applied to disks, partitions, MD devices,
+  #    and LVs, recording original state via blockdev --getro for accurate restoration.
+  # 7. Re-entrancy counter to handle nested calls (e.g. task_savedisk -> task_saveparts).
+  local dev_list="$*"
+  local idev p bdev blk_devs=""
+  local auto_mds imd imd_name
+  local vgs_list="" pv_cand pv_cand_list vg vg_name lv ro_status
+
+  [ -z "$dev_list" ] && return 0
+
+  # Check if source device armour is disabled via config or parameter
+  local armour_mode="${source_dev_armour:-enable}"
+  case "$armour_mode" in
+    disable|disabled|no|false|0|off)
+      return 0
+      ;;
+  esac
+
+  local is_forced="no"
+  case "$armour_mode" in
+    enable|enabled|yes|true|1|on)
+      is_forced="yes"
+      ;;
+  esac
+
+  # Check for mutually exclusive write options on source
+  if [ "$rm_win_swap_hib" = "yes" ] || [ "$fsck_src_part_auto" = "yes" ] || [ "$fsck_src_part_intr" = "yes" ] || [ "$rm_ntfs_vol_dirty_flag" = "yes" ]; then
+    if [ "$is_forced" = "yes" ]; then
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+      echo "Error: Source device armour (read-only mode) cannot be combined with source-modifying options (-rm-win-swap-hib, -fsck-src-part, -rvd)!" | tee --append ${OCS_LOGFILE}
+      [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+      return 1
+    else
+      echo "Notice: Skipping source device write-blocking armour because write action was requested on source device." | tee --append ${OCS_LOGFILE}
+      return 0
+    fi
+  fi
+
+  # Handle re-entrancy
+  OCS_SRC_RO_DEPTH=$((OCS_SRC_RO_DEPTH + 1))
+  if [ "$OCS_SRC_RO_DEPTH" -gt 1 ] && [ -f "$OCS_SRC_RO_STATE_FILE" ]; then
+    return 0
+  fi
+
+  echo "Enabling hybrid read-only armour for source device(s): $dev_list" | tee --append ${OCS_LOGFILE}
+  mkdir -p "$(dirname "$OCS_SRC_RO_STATE_FILE")"
+  : > "$OCS_SRC_RO_STATE_FILE"
+
+  # Expand multipath devices if present so all paths are protected together
+  if type expand_multipath_dev &>/dev/null; then
+    local expanded_devs
+    expanded_devs="$(expand_multipath_dev $dev_list 2>/dev/null || true)"
+    [ -n "$expanded_devs" ] && dev_list="$expanded_devs"
+  fi
+
+  # Step 1: MDRAID Arrays
+  # If any source device is part of an MD array, or is itself an MD array,
+  # put the MD array in native readonly mode FIRST before setting member disks read-only.
+  if type mdadm &>/dev/null && [ -f /proc/mdstat ]; then
+    auto_mds="$(get_md_devices_from_disk_or_part "$dev_list")"
+    for imd in $auto_mds; do
+      imd_name="${imd#/dev/}"
+      if grep -E "^${imd_name}[[:space:]]*:[[:space:]]*active[[:space:]]+\(read-only\)" /proc/mdstat &>/dev/null; then
+        echo "  MDRAID array /dev/$imd_name is already in read-only mode." | tee --append ${OCS_LOGFILE}
+      else
+        echo "  Setting MDRAID array /dev/$imd_name to native read-only mode..." | tee --append ${OCS_LOGFILE}
+        mdadm --readonly "/dev/$imd_name" >/dev/null 2>&1 || echo readonly > "/sys/block/$imd_name/md/array_state" 2>/dev/null || true
+        echo "MD /dev/$imd_name" >> "$OCS_SRC_RO_STATE_FILE"
+      fi
+      blk_devs="$blk_devs /dev/$imd_name"
+    done
+  fi
+
+  # Step 2: LVM Volumes
+  # If any source device is an LVM PV, activate or enforce read-only mode
+  if type pvs &>/dev/null && type vgchange &>/dev/null; then
+    for idev in $dev_list; do
+      idev="${idev#/dev/}"
+      pv_cand_list=""
+      if type lsblk &>/dev/null; then
+        pv_cand_list="$(LC_ALL=C lsblk -lnpo name "/dev/$idev" 2>/dev/null || true)"
+      fi
+      [ -z "$pv_cand_list" ] && pv_cand_list="/dev/$idev"
+      for pv_cand in $pv_cand_list; do
+        vg_name="$(LC_ALL=C pvs --noheadings -o vg_name "$pv_cand" 2>/dev/null | tr -d ' ')"
+        if [ -n "$vg_name" ]; then
+          vgs_list="$vgs_list $vg_name"
+        fi
+      done
+    done
+    vgs_list="$(echo $vgs_list | tr ' ' '\n' | sort -u)"
+    for vg in $vgs_list; do
+      echo "  Enforcing read-only mode for LVM Volume Group $vg..." | tee --append ${OCS_LOGFILE}
+      vgchange -a y -r "$vg" >/dev/null 2>&1 || lvchange -p r "/dev/$vg"/* >/dev/null 2>&1 || true
+      echo "LVM_VG $vg" >> "$OCS_SRC_RO_STATE_FILE"
+      if type lvs &>/dev/null; then
+        for lv in $(LC_ALL=C lvs --noheadings -o lv_path "$vg" 2>/dev/null | tr -d ' '); do
+          blk_devs="$blk_devs $lv"
+        done
+      fi
+    done
+  fi
+
+  # Step 3: Collect physical disks, partitions, MD arrays, and traverse sysfs holders/slaves
+  for idev in $dev_list; do
+    idev="${idev#/dev/}"
+    local p_list=""
+    if type lsblk &>/dev/null; then
+      p_list="$(LC_ALL=C lsblk -lnpo name "/dev/$idev" 2>/dev/null || true)"
+    fi
+    if [ -n "$p_list" ]; then
+      for p in $p_list; do
+        blk_devs="$blk_devs $p"
+      done
+    else
+      blk_devs="$blk_devs /dev/$idev"
+    fi
+
+    # Check compound device holders (layered on top) and slaves (layered underneath) in sysfs
+    local sys_dir="${SYSFS_PATH:-/sys}"
+    local dev_kname="$(basename "$idev")"
+    local sys_block_dir="$sys_dir/block/$dev_kname"
+    [ ! -d "$sys_block_dir" ] && sys_block_dir="$sys_dir/class/block/$dev_kname"
+    if [ -d "$sys_block_dir" ]; then
+      if [ -d "$sys_block_dir/holders" ]; then
+        for h in "$sys_block_dir/holders"/*; do
+          [ -e "$h" ] || continue
+          local hname="$(basename "$h")"
+          blk_devs="$blk_devs /dev/$hname"
+        done
+      fi
+      if [ -d "$sys_block_dir/slaves" ]; then
+        for s in "$sys_block_dir/slaves"/*; do
+          [ -e "$s" ] || continue
+          local sname="$(basename "$s")"
+          blk_devs="$blk_devs /dev/$sname"
+        done
+      fi
+    fi
+  done
+
+  if [ -n "$auto_mds" ]; then
+    for imd in $auto_mds; do
+      imd_name="${imd#/dev/}"
+      local md_parts=""
+      if type lsblk &>/dev/null; then
+        md_parts="$(LC_ALL=C lsblk -lnpo name "/dev/$imd_name" 2>/dev/null || true)"
+      fi
+      if [ -n "$md_parts" ]; then
+        for p in $md_parts; do
+          blk_devs="$blk_devs $p"
+        done
+      else
+        blk_devs="$blk_devs /dev/$imd_name"
+      fi
+    done
+  fi
+
+  # Step 4: Apply blockdev --setro
+  if type blockdev &>/dev/null; then
+    blk_devs="$(echo $blk_devs | tr ' ' '\n' | sort -u)"
+    for bdev in $blk_devs; do
+      [ -z "$bdev" ] && continue
+      ro_status="$(blockdev --getro "$bdev" 2>/dev/null)"
+      if [ "$?" -eq 0 ] && [ "$ro_status" = "0" ]; then
+        echo "DEV $bdev" >> "$OCS_SRC_RO_STATE_FILE"
+        blockdev --setro "$bdev" 2>/dev/null || true
+        echo "  Set block device $bdev to read-only mode." | tee --append ${OCS_LOGFILE}
+      fi
+    done
+  fi
+
+  # Step 5: Enforce eMMC hardware boot partition write protection (force_ro=1)
+  local sys_dir="${SYSFS_PATH:-/sys}"
+  for bdev in $blk_devs; do
+    [ -z "$bdev" ] && continue
+    local bname="$(basename "$bdev")"
+    local force_ro_file=""
+    if [ -f "$sys_dir/block/$bname/force_ro" ]; then
+      force_ro_file="$sys_dir/block/$bname/force_ro"
+    elif [ -f "$sys_dir/class/block/$bname/force_ro" ]; then
+      force_ro_file="$sys_dir/class/block/$bname/force_ro"
+    fi
+    if [ -n "$force_ro_file" ] && [ -w "$force_ro_file" ]; then
+      local cur_force_ro="$(cat "$force_ro_file" 2>/dev/null || echo 1)"
+      if [ "$cur_force_ro" = "0" ]; then
+        echo "FORCE_RO $force_ro_file" >> "$OCS_SRC_RO_STATE_FILE"
+        echo 1 > "$force_ro_file" 2>/dev/null || true
+        echo "  Enforced eMMC hardware write-protect (force_ro=1) for $bname." | tee --append ${OCS_LOGFILE}
+      fi
+    fi
+  done
+
+  # Ensure cleanup is called on script exit or interrupt
+  local existing_exit_trap
+  existing_exit_trap="$(trap -p EXIT 2>/dev/null | sed -e "s/^trap -- '//" -e "s/' EXIT$//")"
+  if [ -n "$existing_exit_trap" ]; then
+    if ! echo "$existing_exit_trap" | grep -q "disable_source_dev_armour\|disable_source_dev_read_only"; then
+      trap "disable_source_dev_armour --force; ${existing_exit_trap}" EXIT HUP INT QUIT TERM
+    fi
+  else
+    trap 'disable_source_dev_armour --force' EXIT HUP INT QUIT TERM
+  fi
+} # end of enable_source_dev_armour
+enable_source_dev_read_only() { enable_source_dev_armour "$@"; }
+
+disable_source_dev_armour() {
+  # Function to restore write access for previously protected source devices.
+  # Restores blockdev --setrw, MDRAID readwrite, eMMC force_ro, and cleans up state tracking.
+  local force_opt="$1"
+  local entry_type entry_val
+
+  if [ "$force_opt" != "--force" ]; then
+    OCS_SRC_RO_DEPTH=$((OCS_SRC_RO_DEPTH - 1))
+    if [ "$OCS_SRC_RO_DEPTH" -gt 0 ]; then
+      return 0
+    fi
+  fi
+  OCS_SRC_RO_DEPTH=0
+
+  if [ ! -f "$OCS_SRC_RO_STATE_FILE" ]; then
+    return 0
+  fi
+
+  echo "Restoring write access for source device(s)..." | tee --append ${OCS_LOGFILE} 2>/dev/null || true
+
+  # 1. Restore blockdev --setrw
+  if type blockdev &>/dev/null; then
+    while read -r entry_type entry_val; do
+      if [ "$entry_type" = "DEV" ]; then
+        blockdev --setrw "$entry_val" 2>/dev/null || true
+      fi
+    done < "$OCS_SRC_RO_STATE_FILE"
+  fi
+
+  # 2. Restore MDRAID arrays
+  if type mdadm &>/dev/null; then
+    while read -r entry_type entry_val; do
+      if [ "$entry_type" = "MD" ]; then
+        echo "  Restoring MDRAID array $entry_val to read-write mode..." | tee --append ${OCS_LOGFILE} 2>/dev/null || true
+        mdadm --readwrite "$entry_val" >/dev/null 2>&1 || true
+      fi
+    done < "$OCS_SRC_RO_STATE_FILE"
+  fi
+
+  # 3. Restore eMMC force_ro if altered
+  while read -r entry_type entry_val; do
+    if [ "$entry_type" = "FORCE_RO" ] && [ -w "$entry_val" ]; then
+      echo 0 > "$entry_val" 2>/dev/null || true
+    fi
+  done < "$OCS_SRC_RO_STATE_FILE"
+
+  rm -f "$OCS_SRC_RO_STATE_FILE"
+} # end of disable_source_dev_armour
+disable_source_dev_read_only() { disable_source_dev_armour "$@"; }
 #
 get_partclone_direct_io_opt() {
   local i_type_="$1"
